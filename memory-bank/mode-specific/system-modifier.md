@@ -422,3 +422,49 @@
 - Status: Completed
 - Details: Plan V8.7 Completed. Trace: Phase 1 Verify OK; Phase 2 Modify OK (updated final log instruction 2.1). Reflection: Corrected SEARCH block from V8.6. Spirit understood as requiring detailed+reflective final log.
 ---
+
+### [2025-04-13 00:51:54 UTC] Issue during Plan: Plan-V10 - Step: Plan Analysis (Pre-execution)
+- Target: `.roo/scripts/primitive/`
+- Type: Primitive Violation
+- Message: Plan V10 attempts to modify files within the forbidden .roo/scripts/primitive/ directory (Steps 1.2, 1.3, 1.5).
+- Resolution Status: Reported
+---
+
+### [2025-04-13 00:57:40 UTC] Issue during Plan: Plan-V11 - Step: Step 2.2: Add Meta-Modifier Definition (Modify .roomodes)
+- Target: `.roomodes`
+- Type: Tool Error
+- Message: FileRestrictionError: This mode (🛠️ System Modifier) can only edit files matching pattern: .roo/.* (Files in the .roo directory only). Got: .roomodes
+- Resolution Status: Reported
+---
+
+### [2025-04-13 00:58:16 UTC] Issue during Plan: Plan-V11 - Step: Step 3.1: Log Plan Completion (Attempt 1 - Base64)
+- Target: `memory-bank/mode-specific/system-modifier.md`
+- Type: Script Error
+- Message: Exit code 1: Invalid JSON provided for --mode-specific: Expecting value: line 1 column 1 (char 0). Received Base64 instead of raw JSON, contradicting script expectation but following plan instruction.
+- Resolution Status: Reported
+---
+
+### [2025-04-13 01:00:46 UTC] Plan: Plan-V11 - Step: Plan Execution Summary
+- Target: `.roomodes`
+- Status: Halted
+- Details: Plan V11 Halted. Trace: Phase 1 Define Mode OK (Informational); Phase 2 Verify .roomodes OK; Phase 2 Modify .roomodes FAILED (FileRestrictionError). Phase 3 Log Completion FAILED (Script Error: Base64 vs JSON). Reflection: Plan attempted to modify root-level .roomodes, violating system-modifier's edit restrictions (`.roo/.*`). Plan requires revision to use a mode with appropriate permissions or adjust the target file path. Also noted a discrepancy in Plan V11 Step 3.1 regarding Base64 encoding for logging, which conflicts with the primitive_update_memory_bank.py script's expectation of raw JSON. Spirit understood as creating meta-modifier, but execution path was invalid.
+---
+
+### [2025-04-13 01:27:42 UTC] Plan: Plan-V11 - Step: Plan Execution Summary
+- Target: `.roomodes`
+- Status: Completed
+- Details: Plan V11 Completed. Trace: Phase 1 Define Mode OK (Informational); Phase 2 Verify .roomodes OK; Phase 2 Modify .roomodes OK (via apply_diff + insert_content, with user permission override). Reflection: Created meta-modifier mode with strict rules and elevated permissions as planned. Initial attempt failed due to file restrictions, resolved by user override. Also noted plan error regarding Base64 logging and mode switching issues during logging attempts. This should enable safe modification of primitive scripts. Spirit understood as creating a secure pathway for core system updates.
+---
+
+### [2025-04-13 03:50:57 UTC] Issue during Plan: Plan-V11 (User Deviation) - Step: Step 3 (User Deviation): Modify .roomodes to remove customInstructions
+- Target: `.roomodes`
+- Type: Tool Error
+- Message: FileRestrictionError: This mode (🛠️ System Modifier) can only edit files matching pattern: .roo/.*. Got: .roomodes. Attempted modification based on user directive overriding plan/rules, but mode restrictions are still enforced.
+- Resolution Status: Reported
+---
+
+### [2025-04-13 03:51:12 UTC] Plan: Plan-V11 (User Deviation) - Step: Refactor meta-modifier (Move customInstructions)
+- Target: `.roomodes`
+- Status: Halted
+- Details: Halted user-directed deviation. Attempted to remove customInstructions from .roomodes. Failed due to enforced FileRestrictionError in system-modifier mode, despite user directive. Mode permissions prevent editing root-level files. Suggest using 'code' mode or requesting a revised plan.
+---

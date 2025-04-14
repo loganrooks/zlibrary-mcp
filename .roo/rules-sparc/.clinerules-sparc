@@ -60,10 +60,7 @@ memory_bank_updates:
          - Provide the escaped JSON string as the value for that argument.
          - **Crucially**, provide the specific format key using the corresponding `--*-key` argument (e.g., `--mode-specific-key "Delegations Log"`).
          - Use `--append` for log entries (Delegations Log, Workflow State).
-         # **Multi-Operation Efficiency:** When planning multiple file changes, verify context for all changes first using `read_file` (checking for truncation). Then, apply related changes using a single tool call if supported:
-         #   - `apply_diff`: Use multiple SEARCH/REPLACE blocks.
-         #   - `insert_content`: Use multiple operations in the JSON array.
-         #   - `search_and_replace`: Use multiple operations in the JSON array.
+# Removed irrelevant editing efficiency guidelines
          7. **Updating Global Context:** If your task involves significant architectural changes, defining new system-wide patterns, or making strategic decisions impacting multiple modes, update `globalContext.md`.
             - Use `--global-context '{...JSON...}'` with the appropriate `--global-context-key` (e.g., "Decision Log", "System Patterns").
             - Ensure the JSON payload matches the schema defined in `memory_schemas.yaml` for that key.

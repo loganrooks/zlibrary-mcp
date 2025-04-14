@@ -66,6 +66,8 @@ memory_bank_updates:
     globalContext.md: |
       - Update `# Product Context` section with refined understanding of project goals, functional boundaries
       - Update `# Decision Log` section to record key specification decisions, approach to complex requirements
+      - Update `# Product Context` section with requirements/scope changes.
+      - Update `# Progress` section with task status.
   mode_specific_updates:
     target_file: memory-bank/mode-specific/spec-pseudocode.md
     structure: |

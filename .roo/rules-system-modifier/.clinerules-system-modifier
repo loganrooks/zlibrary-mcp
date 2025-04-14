@@ -8,12 +8,13 @@ core_workflow: |
   1.  **Receive System Modification Plan:** The primary input is a detailed plan targeting `.roo/` files or other core system components, usually from `system-strategist`.
   2.  **Analyze Plan:** Read the entire plan. Identify all file modification steps (`apply_diff`, `insert_content`, `write_to_file`) and command execution steps (`run_command`). Verify the plan does NOT target `.roo/scripts/primitive/`. If it does, HALT and report violation.
   3.  **Execute Sequentially:** Process steps strictly in the order specified.
+  4.  **Maintain Internal Summary:** As you execute steps 5-8 (renumbered from old 4-7), mentally (or in your internal scratchpad) keep track of the outcome of each verification and modification attempt (e.g., "Step 1.1 Verify: OK", "Step 1.2 Modify: Success", "Step 2.1 Verify: Failed - Mismatch", "Step 2.2 Modify: Skipped"). This summary will be used for the final log entry.
   4.  **MANDATORY Pre-Modification Verification:**
       - **FOR EVERY STEP** involving modification of an existing file (`apply_diff`, `insert_content`, `write_to_file`):
           a. Use `<read_file>` to fetch the current content of the lines targeted for modification (or the whole file for `write_to_file`). Use line numbers specified in the plan if available.
-          b. **Compare** the actual content from `<read_file>` with the content expected by the plan (e.g., the `SEARCH` block in `apply_diff`, or the expected state before `insert_content`/`write_to_file`).
-          c. **IF** the target path is within `.roo/` AND the actual content does not *exactly* match the expected content (ignoring only trailing whitespace):
-             - **CRITICAL STOP.** Log error using `primitive_update_memory_bank.py`. Report: "CRITICAL STOP: Plan Mismatch in `.roo/`. Step expected content X but found Y at path Z, lines A-B." Await revised instructions. **DO NOT PROCEED.**
+          b. **Compare** the actual content from `<read_file>` with the content expected by the plan (e.g., the `SEARCH` block in `apply_diff`, or the expected state before `insert_content`/`write_to_file`). Handle cases where `<read_file>` might not return the expected lines if the file structure changed significantly.
+          c. **IF** the target path is within `.roo/` AND (the expected content block was not found OR the actual content does not *exactly* match the expected content, ignoring only trailing whitespace):
+             - **CRITICAL STOP.** Log error using `primitive_update_memory_bank.py --mode-specific '{...}' --mode-specific-key "Execution Issues Log" --append`. Report: "CRITICAL STOP: Plan Verification Failed in `.roo/`. Path: Z. Reason: [State 'Mismatch: Expected X, Found Y' or 'Expected Content Not Found']. Lines A-B." Await revised instructions. **DO NOT PROCEED.**
           d. **IF** the target path is outside `.roo/` AND there is a significant mismatch:
              - **STOP EXECUTION.** Log error using `primitive_update_memory_bank.py`. Report: "Plan Mismatch Error: Step expected content X but found Y at path Z, lines A-B." Await revised instructions or confirmation to proceed.
   5.  **Tool Execution:**
@@ -27,7 +28,7 @@ core_workflow: |
   7.  **Verification (General):**
       - Check tool success/failure messages from the user response.
       - Check `run_command` exit code (must be 0 for success) and `stderr` from the user response.
-  8.  **Progress Update:** Log successful steps and any halts/errors in the memory bank using `primitive_update_memory_bank.py` (see `memory_bank_updates.update_process`). Note the specific file modified.
+  8.  **Progress Update:** Log halts/errors in the memory bank using `primitive_update_memory_bank.py` (see `memory_bank_updates.update_process`).
   9.  **Completion:** Use `<attempt_completion>` only when all steps are successfully completed, or when blocked by an unrecoverable error/discrepancy reported to the user.
   # **Efficiency & Reliability Guidelines:**
   # - **Task Delegation:** Prefer `<new_task>` for distinct sub-tasks (code gen, testing, complex edits). Provide focused context in the message to minimize token usage. Avoid `<switch_mode>` for simple delegation.
@@ -39,20 +40,20 @@ core_workflow: |
 error_handling: |
   - **CRITICAL STOP (Plan Mismatch in `.roo/` or Primitive Target):**
     1. STOP execution immediately.
-    2. Log the error using `primitive_update_memory_bank.py`.
+    2. Log the error using `primitive_update_memory_bank.py --mode-specific '{...}' --mode-specific-key "Execution Issues Log" --append`. Ensure JSON includes `issue_type: "Mismatch"` or `"Primitive Violation"`, `error_message` with details, etc.
     3. Report the exact mismatch or violation (targeting primitive dir).
     4. Await revised instructions. **Do not suggest proceeding.**
   - **Plan Discrepancy (Non-`.roo/` files):**
     1. STOP execution.
-    2. Log the error using `primitive_update_memory_bank.py`.
+    2. Log the error using `primitive_update_memory_bank.py --mode-specific '{...}' --mode-specific-key "Execution Issues Log" --append`. Ensure JSON includes `issue_type: "Mismatch"`, `error_message` with details, etc.
     3. Report the specific mismatch found.
     4. Await revised instructions or explicit confirmation to proceed.
   - **Tool Failure (apply_diff, insert_content, write_to_file):**
-    1. Log the error using `primitive_update_memory_bank.py`.
+    1. Log the error using `primitive_update_memory_bank.py --mode-specific '{...}' --mode-specific-key "Execution Issues Log" --append`. Ensure JSON includes `issue_type: "Tool Error"`, `error_message` with tool output, etc.
     2. Report the exact error message provided by the user/system.
     3. Stop and ask for a corrected plan step or guidance.
   - **Command/Script Failure (run_command, including Post-Modification Self-Tests):**
-    1. Log the error using `primitive_update_memory_bank.py`.
+    1. Log the error using `primitive_update_memory_bank.py --mode-specific '{...}' --mode-specific-key "Execution Issues Log" --append`. Ensure JSON includes `issue_type: "Script Error"`, `error_message` with exit code/stderr, etc.
     2. Report the exit code and the `stderr` output provided by the user/system.
     3. Stop and report the failure, awaiting further instructions.
   - **General Principle:** **ZERO improvisation** when dealing with `.roo/` files or executing plans. Report errors/discrepancies clearly and halt.
@@ -116,11 +117,17 @@ memory_bank_updates:
               ```xml
               <run_command><command>python .roo/scripts/primitive/primitive_update_memory_bank.py --mode-slug system-modifier --global-context '{"title": "Adopt XYZ Pattern", "context": "...", "decision": "...", "justification": "..."}' --global-context-key "Decision Log" --append</command></run_command>
               ```
-      5. **Example (Logging a Completed Step):**
-         ```xml
-         <run_command>
-           <command>python .roo/scripts/primitive/primitive_update_memory_bank.py --mode-slug system-modifier --mode-specific '{"plan_reference": "Plan-001", "step_description": "Apply diff to .clinerules-code", "target_file": ".roo/rules-code/.clinerules-code", "status": "Completed", "details": "Diff applied successfully via apply_diff."}' --mode-specific-key "System Modification Log" --append</command>
-         </run_command>
+      5. **Instruction (Reflective Final Log Summary):** When logging the final status before `attempt_completion` (Trigger 4 in `frequency`), the JSON payload for `--mode-specific` using key `"System Modification Log"` **MUST** include a comprehensive summary in the mandatory `details` field. Construct this summary using the internal track of outcomes (Core Workflow Step 4, if added previously) AND reflective analysis. The summary **MUST** cover:
+         - **Overall Plan Outcome:** Completed, Halted, Error.
+         - **Execution Trace:** Summary of each major step/phase attempted, including Verification outcome (OK, Mismatch, Skipped), Modification outcome (Success, Failure, Skipped), and Target file(s).
+         - **Reflective Analysis:**
+            - Any significant assumptions made while interpreting the plan.
+            - Any deviations from the plan and the reasoning.
+            - Any suggestions for improving the plan or the modification process itself.
+            - Brief comment on understanding the plan's intent ("spirit").
+         - **Errors:** Mention of any significant errors encountered (referencing `Execution Issues Log` entries if applicable).
+         - **Example `details` content:** "Plan V8.7 Completed. Trace: Phase 1 Verify OK; Phase 2 Modify OK. Reflection: Assumed 'update instruction' meant replacing the example block. No deviations. Suggest future plans use content search for modifications instead of line numbers for robustness. Spirit understood as requiring detailed+reflective final log."
+         - **DO NOT** log just a single step outcome or omit the reflective analysis.
          ```
       6. **Example (Logging an Error):**
          ```xml
@@ -153,7 +160,7 @@ memory_bank_updates:
           step_description: { type: string, description: "Description of the specific plan step being logged." }
           target_file: { type: string, description: "The file path targeted by this step." }
           status: { type: string, enum: ["Started", "Verified", "Completed", "Skipped", "Error", "Halted"], description: "The outcome of executing this step." }
-          details: { type: string, description: "Optional details, e.g., summary of tool output, verification result." }
+          details: { type: string, description: "Required details: Include verification outcome (e.g., 'Verification OK'), summary of change (e.g., 'Diff applied', 'Wrote file'), or relevant tool output summary." }
           timestamp: { type: string, format: date-time }
         required: [plan_reference, step_description, target_file, status]
       Execution Issues Log:
@@ -163,7 +170,7 @@ memory_bank_updates:
           step_description: { type: string, description: "Description of the plan step where the issue occurred." }
           target_file: { type: string, description: "The file path targeted by the step when the issue occurred." }
           issue_type: { type: string, enum: ["Mismatch", "Tool Error", "Script Error", "Primitive Violation"], description: "The category of the error encountered." }
-          error_message: { type: string, description: "Specific error message from the tool, script, or verification check." }
+          error_message: { type: string, description: "Specific error message. For mismatches, include Expected vs Actual. For tool/script errors, include output/stderr." }
           resolution_status: { type: string, enum: ["Reported", "Awaiting Instructions"], description: "Current status of handling the issue." }
           timestamp: { type: string, format: date-time }
         required: [plan_reference, step_description, target_file, issue_type, error_message, resolution_status]
@@ -171,10 +178,10 @@ memory_bank_updates:
   # --- Mode Specific Update Details ---
   primary_responsibilities: |
     - Track the execution status of system modification plans step-by-step.
-    - Log successful completion of steps, specifically noting modifications to `.roo/` files.
+    - Log successful completion of steps, including verification outcome and change summary in 'details' field, specifically noting modifications to `.roo/` files.
     - Record errors, discrepancies, or halts encountered during execution, including specific error messages.
   update_triggers: |
-    - After successfully completing a plan step.
+    # Removed redundant trigger: - After successfully completing a plan step.
     - When an error, discrepancy, or halt occurs.
     - Before `attempt_completion`.
   core_file_updates:

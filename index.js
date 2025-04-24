@@ -4,7 +4,7 @@
 // Import the Server class (capital S) from the correct CJS path
 // Moved SDK requires inside start function
 const z = require('zod'); // Import Zod
-const zodToJsonSchema = require('zod-to-json-schema').default; // Import converter
+const zodToJsonSchema = require('zod-to-json-schema').default; // Import converter (re-added .default for CJS)
 const { ensureVenvReady } = require('./lib/venv-manager'); // New venv manager
 const fs = require('fs'); // For reading package.json
 const path = require('path'); // For reading package.json
@@ -196,7 +196,7 @@ const toolRegistry = {
   }, // Added comma
   // New entry
   process_document_for_rag: {
-    description: 'Process a downloaded document (EPUB, TXT) to extract text content for RAG',
+    description: 'Process a downloaded document (EPUB, TXT, PDF) to extract text content for RAG', // Updated description
     schema: ProcessDocumentForRagParamsSchema, // Uses new schema
     handler: handlers.processDocumentForRag,
   },
@@ -238,13 +238,23 @@ async function start(opts = {}) {
 
 // Implement tools/list handler - access schema inside start function
 server.setRequestHandler(mcpTypes.ListToolsRequestSchema, async (request) => {
+  // Generate schemas, handling empty schemas explicitly like TS examples (Reverted to this state)
   const tools = Object.entries(toolRegistry).map(([name, tool]) => {
-    // Convert Zod schema to JSON schema
-    const jsonSchema = zodToJsonSchema(tool.schema, name);
+    let jsonSchema;
+    // Check if the Zod schema object has defined keys
+    // Use Object.keys().length > 0 to check if the shape is non-empty
+    if (tool.schema && typeof tool.schema.shape === 'object' && Object.keys(tool.schema.shape).length > 0) {
+      // Generate schema only if parameters are defined
+      // Re-added optional 'name' argument as it didn't seem to be the issue
+      jsonSchema = zodToJsonSchema(tool.schema, name);
+    } else {
+      // Use a hardcoded empty schema for tools without parameters
+      jsonSchema = { type: "object", properties: {}, required: [] };
+    }
     return {
       name: name,
       description: tool.description,
-      input_schema: jsonSchema, // Use the generated JSON schema
+      input_schema: jsonSchema,
     };
   });
   return { tools };
@@ -275,7 +285,7 @@ server.setRequestHandler(mcpTypes.CallToolRequestSchema, async (request) => {
     if (result && typeof result === 'object' && result.error) {
        return { error: { message: result.error } };
     }
-    return { result }; // Wrap the successful result
+    return result; // Return the successful result directly
   } catch (error) {
     // Catch errors thrown by the handler
     console.error(`Error calling tool "${tool_name}":`, error);

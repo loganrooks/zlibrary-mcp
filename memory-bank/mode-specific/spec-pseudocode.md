@@ -1,6 +1,33 @@
 # Specification Writer Specific Memory
 <!-- Entries below should be added reverse chronologically (newest first) -->
 ## Functional Requirements
+### Feature: RAG Document Processing Pipeline (v2 - File Output)
+- Added: 2025-04-23 23:37:09
+- Description: Update the RAG pipeline to save processed text (EPUB, TXT, PDF) to `./processed_rag_output/` and return the `processed_file_path` instead of raw text. Involves updating `download_book_to_file` and `process_document_for_rag` tools (schemas, Node handlers), and Python bridge (`process_document` orchestrates extraction and saving via new `_save_processed_text` helper).
+- Acceptance criteria: 1. `download_book_to_file` (process=true) returns `file_path` and `processed_file_path`. 2. `process_document_for_rag` returns `processed_file_path`. 3. Python bridge saves text to `./processed_rag_output/<original>.processed.<format>`. 4. File saving errors (`FileSaveError`) are handled and propagated. 5. Image-based/empty PDFs result in `processed_file_path: None`. 6. Tool schemas reflect new inputs/outputs.
+- Dependencies: Node.js (`zod`), Python (`ebooklib`, `beautifulsoup4`, `lxml`, `PyMuPDF`), Existing `zlibrary` Python lib, Managed Python Venv.
+- Status: Draft (Specification Complete)
+- Related: Decision-RAGOutputFile-01, Pattern-RAGPipeline-FileOutput-01, `docs/rag-pipeline-implementation-spec.md` (v2), `docs/pdf-processing-implementation-spec.md` (v2)
+
+
+### Feature: Search-First Internal ID Lookup
+- Added: 2025-04-16 18:14:41
+- Description: Implement internal fetching/parsing logic in `lib/python_bridge.py` to handle ID-based lookups (`get_book_by_id`, `get_download_info`) using a search-first approach. Uses `httpx` to search for the ID, parses the result to find the book page URL, fetches the book page, and parses details using `BeautifulSoup`. Defines `InternalBookNotFoundError`, `InternalParsingError`, `InternalFetchError`, modifies callers, adds `httpx`, `beautifulsoup4`, `lxml` dependencies (already present).
+- Acceptance criteria: 1. `_internal_search` finds the correct book URL via search. 2. `_internal_search` handles no results gracefully. 3. `_internal_search` handles search page parsing errors (`InternalParsingError`). 4. `_internal_search` handles network/HTTP errors (`InternalFetchError`). 5. `_internal_get_book_details_by_id` calls search, fetches URL, parses details. 6. Raises `InternalBookNotFoundError` if search finds nothing or book page fetch is 404. 7. Raises `InternalParsingError` on search result or book page parsing failure. 8. Raises `InternalFetchError` on network/HTTP errors during fetch. 9. Callers (`get_book_details`/`get_download_info` handlers) correctly call internal function and translate `InternalBookNotFoundError` to `ValueError`, other errors to `RuntimeError`.
+- Dependencies: Python (`httpx`, `beautifulsoup4`, `lxml`, `urllib.parse`), Existing Python bridge structure, Managed Python Venv.
+- Status: Draft (Specification Complete)
+- Related: Decision-SearchFirstIDLookup-01, `docs/search-first-id-lookup-spec.md`
+
+
+
+### Feature: Internal ID-Based Book Lookup
+- Added: 2025-04-16 08:12:25
+- Description: Implement internal fetching/parsing logic in `lib/python_bridge.py` to handle ID-based lookups (`get_book_by_id`, `get_download_info`) due to external library failures. Uses `httpx` to fetch `/book/ID`, handles expected 404 as `InternalBookNotFoundError`, parses 200 OK if received (unexpected), defines `InternalParsingError`, modifies callers, adds `httpx` dependency.
+- Acceptance criteria: 1. `_internal_get_book_details_by_id` raises `InternalBookNotFoundError` on 404. 2. Raises `httpx.HTTPStatusError` on other non-200 errors. 3. Parses details correctly on unexpected 200 OK. 4. Raises `InternalParsingError` on parsing failure. 5. Handles `httpx.RequestError`. 6. Callers (`get_book_details`/`get_download_info` handlers) correctly call internal function and translate `InternalBookNotFoundError` to `ValueError`, other errors to `RuntimeError`. 7. `httpx` is added to `requirements.txt` and installed.
+- Dependencies: Python (`httpx`, `beautifulsoup4`, `lxml`), Existing Python bridge structure, Managed Python Venv.
+- Status: Draft (Specification Complete)
+- Related: Decision-InternalIDLookupURL-01, Pattern-InternalIDScraper-01
+
 <!-- Append new requirements using the format below -->
 
 ### Feature: PDF Processing Integration (RAG Pipeline - Task 3)
@@ -34,7 +61,30 @@
 
 
 ## System Constraints
+### Constraint: Processed Output Directory
+- Added: 2025-04-23 23:37:09
+- Description: Processed RAG text output is saved to `./processed_rag_output/` relative to the workspace root. The Python bridge must have write permissions to this directory.
+- Impact: Requires the directory to exist or be creatable by the server process. Potential for clutter if not managed.
+- Mitigation strategy: Python bridge's `_save_processed_text` function includes logic to create the directory (`mkdir(parents=True, exist_ok=True)`). Ensure server process has necessary permissions. Consider cleanup strategies if needed later.
+- Related: Pattern-RAGPipeline-FileOutput-01
+
+
 <!-- Append new constraints using the format below -->
+### Constraint: Search-First Strategy Reliability
+- Added: 2025-04-16 18:14:41
+- Description: The 'Search-First' strategy depends entirely on the website's general search returning the correct book when queried with its ID. Previous investigations ([2025-04-16 07:27:22]) suggest this may be unreliable or non-functional.
+- Impact: If search-by-ID fails, the entire lookup process fails (`InternalBookNotFoundError`). The strategy is also vulnerable to changes in search result page structure and book detail page structure.
+- Mitigation strategy: Implement robust error handling for search failures (`InternalBookNotFoundError`). Use specific but potentially adaptable CSS selectors. Log search failures clearly. Consider this strategy high-risk and potentially temporary.
+- Related: Decision-SearchFirstIDLookup-01
+
+
+
+### Constraint: Web Scraping Brittleness (Internal ID Lookup)
+- Added: 2025-04-16 08:12:25
+- Description: The internal ID lookup relies on scraping the `/book/ID` page structure (in the unlikely event of a 200 OK). This is highly susceptible to website HTML changes and anti-scraping measures. The primary path (handling 404) is more robust but provides no book data.
+- Impact: The 200 OK parsing logic may break frequently, requiring updates to CSS selectors. The 404 path provides limited functionality (only confirms non-existence).
+- Mitigation strategy: Minimize reliance on the 200 OK path. Implement robust error handling and logging for parsing failures. Use specific, but potentially adaptable, CSS selectors. Regularly test against the live site (if feasible).
+
 
 ### Constraint: PyMuPDF Dependency and License
 - Added: 2025-04-14 14:08:30
@@ -57,7 +107,45 @@
 
 
 ## Edge Cases
+### Edge Case: File Saving - OS Error
+- Identified: 2025-04-23 23:37:09
+- Scenario: `_save_processed_text` attempts to write the processed file but encounters an OS error (e.g., insufficient permissions, disk full).
+- Expected behavior: `_save_processed_text` raises `FileSaveError`. `process_document` catches it and propagates the error (or a `RuntimeError`) to Node.js. Node.js returns a structured error to the agent.
+- Testing approach: Mock `open()` or `file.write()` within `_save_processed_text` to raise `OSError`. Verify `FileSaveError` is raised and handled correctly up the chain.
+
+### Edge Case: File Saving - Unexpected Error
+- Identified: 2025-04-23 23:37:09
+- Scenario: An unexpected error occurs within `_save_processed_text` (e.g., during path manipulation, directory creation).
+- Expected behavior: The function catches the generic `Exception`, logs it, and raises `FileSaveError` wrapping the original error.
+- Testing approach: Inject errors into path manipulation or directory creation logic. Verify `FileSaveError` is raised.
+
+
 <!-- Append new edge cases using the format below -->
+### Edge Case: Search-First - Search Returns No Results
+- Identified: 2025-04-16 18:14:41
+- Scenario: `_internal_search` is called with a valid or invalid book ID, but the website's search yields no results (or parsing finds no items).
+- Expected behavior: `_internal_search` returns an empty list. `_internal_get_book_details_by_id` catches this and raises `InternalBookNotFoundError`.
+- Testing approach: Mock `httpx.get` to return HTML with no search results. Call `_internal_get_book_details_by_id`. Verify `InternalBookNotFoundError`.
+
+### Edge Case: Search-First - Search Page Parsing Error
+- Identified: 2025-04-16 18:14:41
+- Scenario: `_internal_search` receives HTML, but the structure has changed, causing `BeautifulSoup` selectors (`#searchResultBox .book-item`, `a[href]`) to fail.
+- Expected behavior: `_internal_search` raises `InternalParsingError`.
+- Testing approach: Mock `httpx.get` to return malformed/changed HTML. Call `_internal_search`. Verify `InternalParsingError`.
+
+### Edge Case: Search-First - Book Page Fetch 404
+- Identified: 2025-04-16 18:14:41
+- Scenario: `_internal_search` successfully returns a `book_page_url`, but fetching that URL results in a 404.
+- Expected behavior: `_internal_get_book_details_by_id` catches the 404 and raises `InternalBookNotFoundError`.
+- Testing approach: Mock `_internal_search` to return a URL. Mock `httpx.get` for that URL to return a 404 status. Call `_internal_get_book_details_by_id`. Verify `InternalBookNotFoundError`.
+
+### Edge Case: Search-First - Book Page Parsing Error
+- Identified: 2025-04-16 18:14:41
+- Scenario: Book page is fetched successfully, but its structure has changed, causing detail selectors (title, author, download link) to fail.
+- Expected behavior: `_internal_get_book_details_by_id` raises `InternalParsingError` (either during parsing or when checking for essential missing data).
+- Testing approach: Mock `_internal_search` to return a URL. Mock `httpx.get` to return malformed/changed book page HTML. Call `_internal_get_book_details_by_id`. Verify `InternalParsingError`.
+
+
 
 ### Edge Case: PDF Processing - Encrypted PDF
 - Identified: 2025-04-14 14:08:30
@@ -140,7 +228,847 @@
 
 
 ## Pseudocode Library
+### Pseudocode: Python Bridge (`lib/python_bridge.py`) - `_save_processed_text` (New)
+- Created: 2025-04-23 23:37:09
+- Updated: 2025-04-23 23:37:09
+```python
+# File: lib/python_bridge.py (New Helper Function)
+# Dependencies: logging, pathlib
+
+import logging
+from pathlib import Path
+
+PROCESSED_OUTPUT_DIR = Path("./processed_rag_output") # Define output dir
+
+class FileSaveError(Exception):
+    """Custom exception for errors during processed file saving."""
+    pass
+
+def _save_processed_text(original_file_path: Path, text_content: str, output_format: str = "txt") -> Path:
+    """
+    Saves the processed text content to a file in the PROCESSED_OUTPUT_DIR.
+
+    Args:
+        original_file_path: Path object of the original input file.
+        text_content: The string content to save.
+        output_format: The desired file extension for the output file (default 'txt').
+
+    Returns:
+        The Path object of the successfully saved file.
+
+    Raises:
+        ValueError: If text_content is None.
+        FileSaveError: If any OS or unexpected error occurs during saving.
+    """
+    if text_content is None:
+         raise ValueError("Cannot save None content.")
+
+    try:
+        # Ensure output directory exists
+        PROCESSED_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+        # Construct output filename: <original_name>.processed.<format>
+        base_name = original_file_path.name
+        output_filename = f"{base_name}.processed.{output_format}"
+        output_file_path = PROCESSED_OUTPUT_DIR / output_filename
+
+        logging.info(f"Saving processed text to: {output_file_path}")
+
+        # Write content to file (UTF-8)
+        with open(output_file_path, 'w', encoding='utf-8') as f:
+            f.write(text_content)
+
+        logging.info(f"Successfully saved processed text for {original_file_path.name}")
+        return output_file_path
+
+    except OSError as e:
+        logging.error(f"OS error saving processed file {output_file_path}: {e}")
+        raise FileSaveError(f"Failed to save processed file due to OS error: {e}") from e
+    except Exception as e:
+        logging.error(f"Unexpected error saving processed file {output_file_path}: {e}")
+        raise FileSaveError(f"An unexpected error occurred while saving processed file: {e}") from e
+```
+#### TDD Anchors:
+- Test successful save returns correct `Path` object.
+- Test directory creation (`./processed_rag_output/`).
+- Test correct filename generation (`<original>.processed.<format>`).
+- Test raises `FileSaveError` on OS errors (mock `open`/`write` to fail).
+- Test raises `ValueError` if `text_content` is None.
+
+### Pseudocode: Python Bridge (`lib/python_bridge.py`) - `process_document` (Updated for File Output)
+- Created: 2025-04-14 14:08:30
+- Updated: 2025-04-23 23:37:09
+```python
+# File: lib/python_bridge.py (Updated Core Function)
+# Dependencies: os, logging, pathlib
+# Assumes _process_pdf, _process_epub, _process_txt, _save_processed_text are defined
+# Assumes SUPPORTED_FORMATS = ['.epub', '.txt', '.pdf']
+
+import os
+import logging
+from pathlib import Path
+
+# Assume other imports and helpers are present
+
+def process_document(file_path_str: str, output_format: str = "txt") -> dict:
+    """
+    Detects file type, calls the appropriate processing function, saves the result,
+    and returns a dictionary containing the processed file path.
+
+    Args:
+        file_path_str: Absolute path string to the document file.
+        output_format: Desired output file format extension (default 'txt').
+
+    Returns:
+        A dictionary: {"processed_file_path": "path/to/output.processed.txt"}
+        or {"processed_file_path": None} if no text was extracted/saved.
+
+    Raises:
+        FileNotFoundError: If input file not found.
+        ValueError: If format is unsupported or PDF is encrypted.
+        ImportError: If required processing library is missing.
+        FileSaveError: If saving the processed text fails.
+        RuntimeError: For other processing or unexpected errors.
+    """
+    file_path = Path(file_path_str)
+    if not file_path.exists():
+        raise FileNotFoundError(f"File not found: {file_path_str}")
+
+    _, ext = file_path.suffix.lower()
+    processed_text = None
+
+    try:
+        logging.info(f"Starting processing for: {file_path}")
+        if ext == '.epub':
+            processed_text = _process_epub(file_path)
+        elif ext == '.txt':
+            processed_text = _process_txt(file_path)
+        elif ext == '.pdf':
+            processed_text = _process_pdf(file_path) # Gets text string
+        else:
+            raise ValueError(f"Unsupported file format: {ext}. Supported: {SUPPORTED_FORMATS}")
+
+        # Save the result if non-empty text was extracted
+        if processed_text: # Check if string is not None and not empty
+            output_path = _save_processed_text(file_path, processed_text, output_format)
+            return {"processed_file_path": str(output_path)}
+        else:
+            # Handle cases where no text was extracted (e.g., image PDF, empty file)
+            logging.warning(f"No processable text extracted from {file_path}. No output file saved.")
+            return {"processed_file_path": None} # Indicate no file saved
+
+    except ImportError as imp_err:
+         logging.error(f"Missing dependency for processing {ext} file {file_path}: {imp_err}")
+         raise RuntimeError(f"Missing required library to process {ext} files.") from imp_err
+    except FileSaveError as save_err:
+        # Propagate file saving errors directly
+        logging.error(f"Failed to save processed output for {file_path}: {save_err}")
+        raise save_err # Re-raise FileSaveError
+    except Exception as e:
+        logging.exception(f"Failed to process document {file_path}")
+        # Re-raise specific errors if they weren't caught earlier
+        if isinstance(e, (FileNotFoundError, ValueError)):
+            raise e
+        # Wrap unexpected errors
+        raise RuntimeError(f"An unexpected error occurred processing {file_path}: {e}") from e
+
+```
+#### TDD Anchors:
+- Test routes `.pdf` extension to `_process_pdf`.
+- Test calls `_save_processed_text` when helper returns non-empty text.
+- Test returns `{"processed_file_path": path}` on successful processing and saving.
+- Test does *not* call `_save_processed_text` if helper returns empty string.
+- Test returns `{"processed_file_path": None}` if helper returns empty string.
+- Test propagates errors from helpers (e.g., `ValueError`, `RuntimeError`, `ImportError`).
+- Test propagates `FileSaveError` from `_save_processed_text`.
+- Test raises `FileNotFoundError` if input path doesn't exist.
+
+### Pseudocode: Python Bridge (`lib/python_bridge.py`) - `download_book` (Updated for File Output)
+- Created: 2025-04-14 12:13:00
+- Updated: 2025-04-23 23:37:09
+```python
+# File: lib/python_bridge.py (Updated Core Function)
+# Dependencies: zlibrary, os, logging, pathlib
+# Assumes process_document is defined and handles saving
+
+import os
+import logging
+from pathlib import Path
+from zlibrary import ZLibrary
+
+def download_book(book_id, format=None, output_dir=None, process_for_rag=False, processed_output_format="txt"):
+    """
+    Downloads a book and optionally processes it, saving the processed text.
+    Returns a dictionary containing file_path and optionally processed_file_path.
+    """
+    zl = ZLibrary() # Adjust initialization as needed
+    logging.info(f"Attempting download for book_id: {book_id}, format: {format}")
+
+    # Perform download (assuming library handles naming)
+    download_result_path_str = zl.download_book(
+        book_id=book_id,
+        # format=format, # Pass if library supports
+        output_dir=output_dir,
+    )
+
+    if not download_result_path_str or not os.path.exists(download_result_path_str):
+        raise RuntimeError(f"Download failed or file not found for book_id: {book_id}")
+
+    download_result_path = Path(download_result_path_str)
+    logging.info(f"Book downloaded successfully to: {download_result_path}")
+
+    result = {"file_path": str(download_result_path)}
+    processed_path_str = None
+
+    if process_for_rag:
+        logging.info(f"Processing downloaded file for RAG: {download_result_path}")
+        try:
+            # Call the updated process_document which saves the file
+            process_result = process_document(str(download_result_path), processed_output_format)
+            processed_path_str = process_result.get("processed_file_path") # Get the path string
+            if processed_path_str:
+                 result["processed_file_path"] = processed_path_str
+            else:
+                 logging.warning(f"Processing requested for {download_result_path}, but no output file was saved.")
+                 result["processed_file_path"] = None # Explicitly set to None
+
+        except Exception as e:
+            logging.error(f"Failed to process document after download for {download_result_path}: {e}")
+            result["processed_file_path"] = None # Indicate processing failure
+
+    return result
+```
+#### TDD Anchors:
+- Mock `zlibrary.download_book`.
+- Test `process_for_rag=False` -> Returns only `file_path`.
+- Test `process_for_rag=True` -> Calls `process_document` internally.
+- Test `process_for_rag=True` (Successful Processing) -> Returns `file_path` and `processed_file_path` (string path).
+- Test `process_for_rag=True` (Processing Fails/No Text) -> Returns `file_path` and `processed_file_path: None`.
+- Test download failure handling.
+
+### Pseudocode: Python Bridge (`lib/python_bridge.py`) - `_process_pdf` (Updated Return)
+- Created: 2025-04-14 14:08:30
+- Updated: 2025-04-23 23:37:09
+```python
+# File: lib/python_bridge.py (Helper Function - Updated Return Logic)
+# ... (imports and function signature as before) ...
+def _process_pdf(file_path: Path) -> str:
+    # ... (error checking, opening doc, encryption check as before) ...
+    try:
+        # ... (page iteration and text extraction as before) ...
+        full_text = "\n\n".join(all_text).strip()
+
+        if not full_text:
+            logging.warning(f"No extractable text found in PDF (possibly image-based): {file_path}")
+            return "" # RETURN EMPTY STRING
+
+        logging.info(f"Finished PDF: {file_path}. Extracted length: {len(full_text)}")
+        return full_text
+    # ... (exception handling as before) ...
+    finally:
+        # ... (doc.close() as before) ...
+```
+#### TDD Anchors:
+- Test returns empty string (`""`) for image-based PDF.
+- Test returns empty string (`""`) for empty PDF.
+- (Other anchors remain the same)
+
+### Pseudocode: Tool Schemas (Zod) - Updated for File Output
+- Created: 2025-04-14 12:13:00
+- Updated: 2025-04-23 23:37:09
+```typescript
+// File: src/lib/schemas.ts (or inline in index.ts)
+import { z } from 'zod';
+
+// Updated Input for download_book_to_file
+export const DownloadBookToFileInputSchema = z.object({
+  id: z.string().describe("The Z-Library book ID"),
+  format: z.string().optional().describe("File format (e.g., \"pdf\", \"epub\")"),
+  outputDir: z.string().optional().default("./downloads").describe("Directory to save the original file (default: './downloads')"),
+  process_for_rag: z.boolean().optional().default(false).describe("If true, process content for RAG and save to processed output file"),
+  processed_output_format: z.string().optional().default("txt").describe("Desired format for the processed output file (default: 'txt')")
+});
+
+// Updated Output for download_book_to_file
+export const DownloadBookToFileOutputSchema = z.object({
+    file_path: z.string().describe("The absolute path to the original downloaded file"),
+    processed_file_path: z.string().optional().describe("The absolute path to the file containing processed text (only if process_for_rag was true)")
+});
+
+// Updated Input for process_document_for_rag
+export const ProcessDocumentForRagInputSchema = z.object({
+  file_path: z.string().describe("The absolute path to the document file to process"),
+  output_format: z.string().optional().default("txt").describe("Desired format for the processed output file (default: 'txt')")
+});
+
+// Updated Output for process_document_for_rag
+export const ProcessDocumentForRagOutputSchema = z.object({
+  processed_file_path: z.string().describe("The absolute path to the file containing extracted and processed plain text content")
+});
+```
+#### TDD Anchors:
+- Verify `DownloadBookToFileInputSchema` accepts `process_for_rag`, `processed_output_format`.
+- Verify `DownloadBookToFileOutputSchema` includes optional `processed_file_path`.
+- Verify `ProcessDocumentForRagInputSchema` requires `file_path`, accepts optional `output_format`.
+- Verify `ProcessDocumentForRagOutputSchema` requires `processed_file_path`.
+
+### Pseudocode: Tool Registration (`index.ts` Snippet) - Updated for File Output
+- Created: 2025-04-14 12:13:00
+- Updated: 2025-04-23 23:37:09
+```typescript
+// File: src/index.ts (Conceptual Snippet)
+// ... imports (Server, StdioServerTransport, z, zlibraryApi, schemas) ...
+
+import {
+  DownloadBookToFileInputSchema,
+  DownloadBookToFileOutputSchema,
+  ProcessDocumentForRagInputSchema,
+  ProcessDocumentForRagOutputSchema,
+  // ... other schemas
+} from './lib/schemas';
+import * as zlibraryApi from './lib/zlibrary-api';
+
+const server = new Server({
+  // ... other server options
+  tools: {
+    list: async () => {
+      return [
+        // ... other tools
+        {
+          name: 'download_book_to_file',
+          description: 'Downloads a book file from Z-Library and optionally processes its content for RAG, saving the result to a separate file.',
+          inputSchema: DownloadBookToFileInputSchema,
+          outputSchema: DownloadBookToFileOutputSchema,
+        },
+        {
+          name: 'process_document_for_rag',
+          description: 'Processes an existing local document file (EPUB, TXT, PDF) to extract plain text content for RAG, saving the result to a file.',
+          inputSchema: ProcessDocumentForRagInputSchema,
+          outputSchema: ProcessDocumentForRagOutputSchema,
+        },
+      ];
+    },
+    call: async (request) => {
+      // ... generic validation ...
+      if (request.name === 'download_book_to_file') {
+        const validatedArgs = DownloadBookToFileInputSchema.parse(request.arguments);
+        const result = await zlibraryApi.downloadBookToFile(validatedArgs);
+        return result;
+      }
+      if (request.name === 'process_document_for_rag') {
+        const validatedArgs = ProcessDocumentForRagInputSchema.parse(request.arguments);
+        const result = await zlibraryApi.processDocumentForRag(validatedArgs);
+        return result;
+      }
+      // ... handle other tools
+      throw new Error(`Tool not found: ${request.name}`);
+    },
+  },
+});
+// ... transport setup and server.connect() ...
+```
+#### TDD Anchors:
+- Test `tools/list` includes updated descriptions/schemas.
+- Test `tools/call` routes correctly.
+- Test input validation using updated Zod schemas.
+
+### Pseudocode: Node.js Handlers (`lib/zlibrary-api.ts`) - Updated for File Output
+- Created: 2025-04-14 12:13:00
+- Updated: 2025-04-23 23:37:09
+```pseudocode
+// File: src/lib/zlibrary-api.ts
+// Dependencies: ./python-bridge, path
+
+IMPORT callPythonFunction FROM './python-bridge'
+IMPORT path
+
+ASYNC FUNCTION downloadBookToFile(args):
+  // args = { id, format?, outputDir?, process_for_rag?, processed_output_format? }
+  LOG `Downloading book ${args.id}, process_for_rag=${args.process_for_rag}`
+  pythonArgs = {
+    book_id: args.id,
+    format: args.format,
+    output_dir: args.outputDir,
+    process_for_rag: args.process_for_rag,
+    processed_output_format: args.processed_output_format
+  }
+  TRY
+    resultJson = AWAIT callPythonFunction('download_book', pythonArgs)
+    IF NOT resultJson OR NOT resultJson.file_path THEN
+      THROW Error("Invalid response from Python: Missing original file_path.")
+    ENDIF
+    IF args.process_for_rag AND resultJson.processed_file_path IS UNDEFINED THEN // Check if key exists
+       THROW Error("Invalid response from Python: Processing requested but processed_file_path missing or null.")
+    ENDIF
+    response = { file_path: resultJson.file_path }
+    IF args.process_for_rag THEN // Always include the key if processing was requested
+      response.processed_file_path = resultJson.processed_file_path // Could be null if processing yielded no text
+    ENDIF
+    RETURN response
+  CATCH error
+    LOG `Error in downloadBookToFile: ${error.message}`
+    THROW Error(`Failed to download/process book ${args.id}: ${error.message}`)
+  ENDTRY
+END FUNCTION
+
+ASYNC FUNCTION processDocumentForRag(args):
+  // args = { file_path, output_format? }
+  LOG `Processing document for RAG: ${args.file_path}`
+  absolutePath = path.resolve(args.file_path)
+  pythonArgs = {
+    file_path: absolutePath,
+    output_format: args.output_format
+  }
+  TRY
+    resultJson = AWAIT callPythonFunction('process_document', pythonArgs)
+    IF NOT resultJson OR resultJson.processed_file_path IS UNDEFINED THEN // Check if key exists
+      THROW Error("Invalid response from Python: Missing processed_file_path.")
+    ENDIF
+    RETURN { processed_file_path: resultJson.processed_file_path } // Could be null
+  CATCH error
+    LOG `Error in processDocumentForRag: ${error.message}`
+    THROW Error(`Failed to process document ${args.file_path}: ${error.message}`)
+  ENDTRY
+END FUNCTION
+
+EXPORT { downloadBookToFile, processDocumentForRag /*, ... */ }
+```
+#### TDD Anchors:
+- `downloadBookToFile`: Mock `callPythonFunction`. Test `process_for_rag` flag passed. Test handling of responses with/without `processed_file_path` (including null). Test error handling (missing paths).
+- `processDocumentForRag`: Mock `callPythonFunction`. Test `file_path` and `output_format` passed. Test handling of successful response (`processed_file_path`, including null) and error response.
+
+
 <!-- Append new pseudocode blocks using the format below -->
+### Pseudocode: Python Bridge (`lib/python_bridge.py`) - `_internal_search`
+- Created: 2025-04-16 18:14:41
+- Updated: 2025-04-16 18:14:41
+```python
+# File: lib/python_bridge.py (Addition)
+# Dependencies: httpx, bs4, logging, asyncio, urllib.parse
+
+IMPORT httpx
+IMPORT logging
+IMPORT asyncio
+FROM bs4 IMPORT BeautifulSoup
+FROM urllib.parse IMPORT urljoin
+
+# Assume logging is configured
+# Assume InternalFetchError, InternalParsingError are defined
+
+ASYNC FUNCTION _internal_search(query: str, domain: str, count: int = 1) -> list[dict]:
+    """Performs an internal search and extracts book page URLs."""
+    search_url = f"https://{domain}/s/{query}" # Example search URL pattern
+    headers = { 'User-Agent': 'Mozilla/5.0 ...' } # Standard User-Agent
+    timeout_seconds = 20
+
+    LOG info f"Performing internal search for '{query}' at {search_url}"
+
+    TRY
+        ASYNC WITH httpx.AsyncClient(follow_redirects=True, timeout=timeout_seconds) as client:
+            response = AWAIT client.get(search_url, headers=headers)
+
+            IF response.status_code != 200 THEN
+                LOG error f"Internal search failed for '{query}'. Status: {response.status_code}"
+                RAISE InternalFetchError(f"Search request failed with status {response.status_code}")
+            ENDIF
+
+            # Parse HTML
+            TRY
+                soup = BeautifulSoup(response.text, 'lxml')
+                results = []
+                # Selector based on prompt - needs verification
+                book_items = soup.select('#searchResultBox .book-item')
+
+                IF NOT book_items THEN
+                    LOG warning f"No book items found in search results for '{query}' using selector '#searchResultBox .book-item'."
+                    RETURN [] # No results found is not necessarily an error here
+                ENDIF
+
+                FOR item IN book_items[:count]:
+                    link_element = item.select_one('a[href]') # Find the main link
+                    IF link_element AND link_element.has_attr('href'):
+                        relative_url = link_element['href']
+                        # Ensure URL is absolute
+                        absolute_url = urljoin(str(response.url), relative_url)
+                        results.append({'book_page_url': absolute_url})
+                        LOG info f"Found potential book URL: {absolute_url}"
+                    ELSE
+                        LOG warning f"Could not find valid link element in search result item for '{query}'."
+                    ENDIF
+                ENDFOR
+
+                RETURN results
+
+            EXCEPT Exception as parse_exc:
+                LOG exception f"Error parsing search results page for '{query}': {parse_exc}"
+                RAISE InternalParsingError(f"Failed to parse search results page: {parse_exc}")
+
+    EXCEPT httpx.RequestError as req_err:
+        LOG error f"Network error during internal search for '{query}': {req_err}"
+        RAISE InternalFetchError(f"Network error during search: {req_err}")
+    EXCEPT Exception as e:
+         LOG exception f"Unexpected error during internal search for '{query}': {e}"
+         RAISE InternalFetchError(f"An unexpected error occurred during search: {e}") # Or re-raise
+
+END FUNCTION
+```
+#### TDD Anchors:
+- Test successful search returns list with `{'book_page_url': '...'}`.
+- Test search with no results returns empty list `[]`.
+- Test search page parsing error raises `InternalParsingError`.
+- Test network error (timeout, connection refused) raises `InternalFetchError`.
+- Test non-200 HTTP status code raises `InternalFetchError`.
+- Test `urljoin` correctly makes relative URLs absolute.
+
+### Pseudocode: Python Bridge (`lib/python_bridge.py`) - `_internal_get_book_details_by_id` (Search-First)
+- Created: 2025-04-16 18:14:41
+- Updated: 2025-04-16 18:14:41
+```python
+# File: lib/python_bridge.py (Addition/Modification)
+# Dependencies: httpx, bs4, logging, asyncio, urllib.parse
+# Assumes _internal_search and custom exceptions are defined
+
+ASYNC FUNCTION _internal_get_book_details_by_id(book_id: str, domain: str) -> dict:
+    """Fetches book details using the Search-First strategy."""
+    LOG info f"Attempting Search-First internal lookup for book ID {book_id}"
+
+    # 1. Search for the book ID to find the correct URL
+    TRY
+        search_results = AWAIT _internal_search(query=str(book_id), domain=domain, count=1)
+    EXCEPT (InternalFetchError, InternalParsingError) as search_err:
+        LOG error f"Internal search step failed for book ID {book_id}: {search_err}"
+        # Propagate or wrap the error; using InternalFetchError as a general category
+        RAISE InternalFetchError(f"Search step failed for ID {book_id}: {search_err}")
+    EXCEPT Exception as e:
+        LOG exception f"Unexpected error during search step for ID {book_id}: {e}"
+        RAISE InternalFetchError(f"Unexpected error during search step for ID {book_id}: {e}")
+
+
+    IF NOT search_results:
+        LOG warning f"Internal search for book ID {book_id} returned no results."
+        RAISE InternalBookNotFoundError(f"Book ID {book_id} not found via internal search.")
+    ENDIF
+
+    book_page_url = search_results[0].get('book_page_url')
+    IF NOT book_page_url:
+        LOG error f"Internal search result for book ID {book_id} missing 'book_page_url'."
+        RAISE InternalParsingError("Search result parsing failed: book_page_url missing.")
+    ENDIF
+
+    LOG info f"Found book page URL via search: {book_page_url}"
+
+    # 2. Fetch the book detail page
+    headers = { 'User-Agent': 'Mozilla/5.0 ...' }
+    timeout_seconds = 15
+
+    TRY
+        ASYNC WITH httpx.AsyncClient(follow_redirects=True, timeout=timeout_seconds) as client:
+            response = AWAIT client.get(book_page_url, headers=headers)
+
+            IF response.status_code == 404 THEN
+                 LOG warning f"Book page fetch for ID {book_id} resulted in 404 at {book_page_url}."
+                 # This might indicate the search result was stale or incorrect
+                 RAISE InternalBookNotFoundError(f"Book page not found (404) at {book_page_url} for ID {book_id}.")
+            ENDIF
+
+            response.raise_for_status() # Raise for other non-200 errors
+
+            # 3. Parse the book detail page
+            TRY
+                soup = BeautifulSoup(response.text, 'lxml')
+                details = {}
+
+                # --- Placeholder Selectors (MUST BE VERIFIED/REFINED) ---
+                title_element = soup.select_one('h1[itemprop="name"]') # Example
+                details['title'] = title_element.text.strip() IF title_element ELSE None
+
+                author_element = soup.select_one('a[itemprop="author"]') # Example
+                details['author'] = author_element.text.strip() IF author_element ELSE None
+
+                year_element = soup.select_one('.property-year .property_value') # Example
+                details['year'] = year_element.text.strip() IF year_element ELSE None
+
+                publisher_element = soup.select_one('.property-publisher .property_value') # Example
+                details['publisher'] = publisher_element.text.strip() IF publisher_element ELSE None
+
+                description_element = soup.select_one('.book-description') # Example
+                details['description'] = description_element.text.strip() IF description_element ELSE None
+
+                # Download URL(s) - This often requires specific logic
+                download_link_element = soup.select_one('a.btn-primary[href*="/download"]') # Example
+                download_url = None
+                IF download_link_element AND download_link_element.has_attr('href'):
+                    download_url = urljoin(str(response.url), download_link_element['href'])
+                details['download_url'] = download_url
+                # --- End Placeholder Selectors ---
+
+                # Check for essential missing data
+                IF details['title'] IS None OR details['download_url'] IS None THEN
+                    LOG error f"Parsing failed for book ID {book_id}: Essential details missing (title or download_url)."
+                    RAISE InternalParsingError(f"Failed to parse essential details (title/download_url) for book ID {book_id}.")
+                ENDIF
+
+                LOG info f"Successfully parsed details for book ID {book_id} from {book_page_url}"
+                RETURN details
+
+            EXCEPT Exception as parse_exc:
+                LOG exception f"Error parsing book detail page for ID {book_id} at {book_page_url}: {parse_exc}"
+                RAISE InternalParsingError(f"Failed to parse book detail page: {parse_exc}")
+
+    EXCEPT httpx.RequestError as req_err:
+        LOG error f"Network error fetching book page for ID {book_id} at {book_page_url}: {req_err}"
+        RAISE InternalFetchError(f"Network error fetching book page: {req_err}")
+    EXCEPT httpx.HTTPStatusError as status_err:
+        LOG error f"HTTP status error {status_err.response.status_code} fetching book page for ID {book_id} at {book_page_url}: {status_err}"
+        RAISE InternalFetchError(f"HTTP error {status_err.response.status_code} fetching book page.")
+    # InternalBookNotFoundError, InternalParsingError raised directly from parsing block
+    EXCEPT Exception as e:
+         LOG exception f"Unexpected error fetching/parsing book page for ID {book_id}: {e}"
+         RAISE InternalFetchError(f"An unexpected error occurred fetching/parsing book page: {e}") # Or re-raise
+
+END FUNCTION
+```
+#### TDD Anchors:
+- Test successful flow: search -> fetch -> parse -> returns details dict.
+- Test `_internal_search` fails (raises `InternalFetchError`) -> raises `InternalFetchError`.
+- Test `_internal_search` returns empty list -> raises `InternalBookNotFoundError`.
+- Test `_internal_search` result missing `book_page_url` -> raises `InternalParsingError`.
+- Test book page fetch fails (network error) -> raises `InternalFetchError`.
+- Test book page fetch returns 404 -> raises `InternalBookNotFoundError`.
+- Test book page fetch returns other non-200 status -> raises `InternalFetchError`.
+- Test book page parsing fails (bad HTML) -> raises `InternalParsingError`.
+- Test book page parsing succeeds but essential data (title, download_url) is missing -> raises `InternalParsingError`.
+
+### Pseudocode: Python Bridge (`lib/python-bridge.py`) - Caller Modifications (Search-First)
+- Created: 2025-04-16 18:14:41
+- Updated: 2025-04-16 18:14:41
+```python
+# File: lib/python-bridge.py (Modification in __main__ block)
+
+# Example for 'get_book_details' action handler
+elif cli_args.function_name == 'get_book_details':
+    book_id = args_dict.get('book_id')
+    domain = args_dict.get('domain', 'z-library.sk') # Or get from config/args
+    IF NOT book_id: RAISE ValueError("Missing 'book_id'")
+
+    TRY
+        # Call the new async function using asyncio.run()
+        details = asyncio.run(_internal_get_book_details_by_id(book_id, domain))
+        response = details # Format if needed
+
+    EXCEPT InternalBookNotFoundError as e:
+        # Translate to ValueError for Node.js
+        LOG warning f"BookNotFound for ID {book_id}: {e}"
+        RAISE ValueError(f"Book ID {book_id} not found.")
+    EXCEPT (InternalFetchError, InternalParsingError) as e:
+        # Translate fetch/parse errors to RuntimeError
+        LOG error f"Fetch/Parse error for ID {book_id}: {e}"
+        RAISE RuntimeError(f"Failed to fetch or parse details for book ID {book_id}.")
+    EXCEPT Exception as e:
+         # Catch any other unexpected errors from the async function or asyncio.run
+         LOG exception f"Unexpected error processing book ID {book_id}"
+         RAISE RuntimeError(f"An unexpected error occurred processing book ID {book_id}.")
+
+# Similar logic for 'get_download_info', potentially extracting just 'download_url' from details dict
+elif cli_args.function_name == 'get_download_info':
+     # ... get book_id, domain ...
+     TRY
+         details = asyncio.run(_internal_get_book_details_by_id(book_id, domain))
+         IF details.get('download_url') IS None:
+             RAISE InternalParsingError("Download URL missing from parsed details.") # Caught below
+         response = {"download_url": details['download_url']}
+     EXCEPT InternalBookNotFoundError as e:
+         RAISE ValueError(f"Book ID {book_id} not found.")
+     EXCEPT (InternalFetchError, InternalParsingError) as e:
+         RAISE RuntimeError(f"Failed to get download info for book ID {book_id}.")
+     EXCEPT Exception as e:
+         RAISE RuntimeError(f"An unexpected error occurred getting download info for book ID {book_id}.")
+
+# ... rest of main block ...
+# print(json.dumps(response))
+```
+#### TDD Anchors:
+- Test `get_book_details` handler calls `asyncio.run(_internal_get_book_details_by_id)`.
+- Test `get_book_details` handler translates `InternalBookNotFoundError` to `ValueError`.
+- Test `get_book_details` handler translates `InternalFetchError` to `RuntimeError`.
+- Test `get_book_details` handler translates `InternalParsingError` to `RuntimeError`.
+- Test `get_download_info` handler calls `asyncio.run(_internal_get_book_details_by_id)`.
+- Test `get_download_info` handler translates `InternalBookNotFoundError` to `ValueError`.
+- Test `get_download_info` handler translates `InternalFetchError`/`InternalParsingError` to `RuntimeError`.
+- Test `get_download_info` handler raises `RuntimeError` if `download_url` is missing after successful parse.
+
+
+
+### Pseudocode: Python Bridge (`lib/python-bridge.py`) - `_internal_get_book_details_by_id`
+- Created: 2025-04-16 08:12:25
+- Updated: 2025-04-16 08:12:25
+```python
+# File: lib/python_bridge.py (Addition)
+# Dependencies: httpx, bs4, logging, asyncio
+
+import httpx
+from bs4 import BeautifulSoup
+import logging
+import asyncio
+
+# Assume logging is configured elsewhere
+
+class InternalBookNotFoundError(Exception):
+    """Custom exception for when a book ID lookup results in a 404."""
+    pass
+
+class InternalParsingError(Exception):
+    """Custom exception for errors during HTML parsing of book details."""
+    pass
+
+async def _internal_get_book_details_by_id(book_id: str, domain: str) -> dict:
+    """
+    Attempts to fetch book details by directly accessing https://<domain>/book/<book_id>.
+    Primarily expects a 404, raising InternalBookNotFoundError.
+    If a 200 is received, attempts to parse the page.
+    """
+    target_url = f"https://{domain}/book/{book_id}"
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36' # Example User-Agent
+    }
+    timeout_seconds = 15 # Configurable timeout
+
+    logging.info(f"Attempting internal lookup for book ID {book_id} at {target_url}")
+
+    try:
+        async with httpx.AsyncClient(follow_redirects=True, timeout=timeout_seconds) as client:
+            response = await client.get(target_url, headers=headers)
+
+            # --- Status Code Handling ---
+            if response.status_code == 404:
+                logging.warning(f"Internal lookup for book ID {book_id} resulted in 404 (Not Found).")
+                raise InternalBookNotFoundError(f"Book ID {book_id} not found via internal lookup (404).")
+
+            # Raise error for other non-200 statuses
+            response.raise_for_status() # Raises httpx.HTTPStatusError for 4xx/5xx other than 404
+
+            # --- 200 OK Parsing (Unexpected Case) ---
+            logging.warning(f"Received unexpected 200 OK for internal lookup of book ID {book_id}. Attempting to parse.")
+            try:
+                soup = BeautifulSoup(response.text, 'lxml')
+                details = {}
+
+                # Example Selectors (These MUST be verified and adjusted based on actual page structure)
+                title_element = soup.select_one('h1[itemprop="name"]')
+                details['title'] = title_element.text.strip() if title_element else None
+
+                author_element = soup.select_one('a[itemprop="author"]') # Adjust selector
+                details['author'] = author_element.text.strip() if author_element else None
+
+                # Add selectors for other fields: year, publisher, description, etc.
+                # Example:
+                # year_element = soup.select_one('.book-details .property-year .property_value')
+                # details['year'] = year_element.text.strip() if year_element else None
+
+                # Example Download URL Selector (Verify this)
+                download_link_element = soup.select_one('a.btn-primary[href*="/download"]') # Adjust selector
+                details['download_url'] = download_link_element['href'] if download_link_element and download_link_element.has_attr('href') else None
+                # Potentially need to make URL absolute: urljoin(response.url, details['download_url'])
+
+                if not details.get('title'): # Check if essential data is missing
+                     logging.error(f"Parsing failed for book ID {book_id}: Essential data (e.g., title) missing.")
+                     raise InternalParsingError(f"Failed to parse essential details for book ID {book_id} from 200 OK page.")
+
+                logging.info(f"Successfully parsed details for book ID {book_id} from unexpected 200 OK.")
+                return details
+
+            except Exception as parse_exc:
+                logging.exception(f"Error parsing 200 OK page for book ID {book_id}: {parse_exc}")
+                raise InternalParsingError(f"Failed to parse page content for book ID {book_id}: {parse_exc}") from parse_exc
+
+    except httpx.RequestError as req_err:
+        # Handles connection errors, timeouts, etc.
+        logging.error(f"HTTP request error during internal lookup for book ID {book_id}: {req_err}")
+        raise RuntimeError(f"Network error during internal lookup for book ID {book_id}: {req_err}") from req_err
+    except httpx.HTTPStatusError as status_err:
+        # Handles non-200/404 errors raised by response.raise_for_status()
+        logging.error(f"Unexpected HTTP status {status_err.response.status_code} during internal lookup for book ID {book_id}: {status_err}")
+        raise RuntimeError(f"Unexpected HTTP status {status_err.response.status_code} for book ID {book_id}.") from status_err
+    # InternalBookNotFoundError and InternalParsingError are raised directly
+    except Exception as e:
+         # Catch any other unexpected errors
+         logging.exception(f"Unexpected error during internal lookup for book ID {book_id}: {e}")
+         raise RuntimeError(f"An unexpected error occurred during internal lookup for book ID {book_id}: {e}") from e
+```
+#### TDD Anchors:
+- Test case 1: 404 Not Found raises InternalBookNotFoundError.
+- Test case 2: Other HTTP Error raises httpx.HTTPStatusError.
+- Test case 3: Network Error raises httpx.RequestError.
+- Test case 4: Successful 200 OK (Mock HTML) returns details dict.
+- Test case 5: Parsing Error (200 OK) raises InternalParsingError.
+- Test case 6: Missing Elements (200 OK) handled gracefully / raises InternalParsingError.
+
+### Pseudocode: Python Bridge (`lib/python-bridge.py`) - Caller Modifications
+- Created: 2025-04-16 08:12:25
+- Updated: 2025-04-16 08:12:25
+```python
+# File: lib/python-bridge.py (Modification)
+# Dependencies: asyncio, logging
+import asyncio
+import logging
+# Assume _internal_get_book_details_by_id, InternalBookNotFoundError, InternalParsingError are defined above
+# Assume httpx is imported
+
+# Inside if __name__ == "__main__": block
+
+# Example modification for a function handling 'get_book_details' action
+elif cli_args.function_name == 'get_book_details': # Assuming a unified function now
+    book_id = args_dict.get('book_id')
+    domain = args_dict.get('domain', 'z-library.sk') # Get domain from args or use default
+    if not book_id: raise ValueError("Missing 'book_id'")
+
+    try:
+        # Use asyncio.run() to call the async function from sync context
+        details = asyncio.run(_internal_get_book_details_by_id(book_id, domain))
+        # Format 'details' dictionary as needed for the Node.js response
+        response = details # Or transform structure if necessary
+
+    except InternalBookNotFoundError:
+        # Translate internal error to ValueError for Node.js
+        raise ValueError(f"Book ID {book_id} not found.")
+    except (InternalParsingError, httpx.RequestError, RuntimeError) as e:
+        # Translate other internal/HTTP errors to RuntimeError
+        logging.error(f"Failed to get details for book ID {book_id}: {e}")
+        raise RuntimeError(f"Failed to fetch or parse book details for ID {book_id}.")
+    except Exception as e:
+         logging.exception(f"Unexpected error in get_book_details handler for ID {book_id}")
+         raise RuntimeError(f"An unexpected error occurred processing book ID {book_id}.")
+
+# Similar logic needs to be applied if get_download_info is a separate entry point.
+# It might call the same _internal_get_book_details_by_id and extract the download_url.
+elif cli_args.function_name == 'get_download_info':
+     book_id = args_dict.get('book_id')
+     domain = args_dict.get('domain', 'z-library.sk')
+     if not book_id: raise ValueError("Missing 'book_id'")
+     try:
+         details = asyncio.run(_internal_get_book_details_by_id(book_id, domain))
+         if not details.get('download_url'):
+              raise InternalParsingError("Download URL not found in parsed details.")
+         response = {"download_url": details['download_url']} # Format as needed
+
+     except InternalBookNotFoundError:
+         raise ValueError(f"Book ID {book_id} not found.")
+     except (InternalParsingError, httpx.RequestError, RuntimeError) as e:
+         logging.error(f"Failed to get download info for book ID {book_id}: {e}")
+         raise RuntimeError(f"Failed to fetch or parse download info for ID {book_id}.")
+     except Exception as e:
+         logging.exception(f"Unexpected error in get_download_info handler for ID {book_id}")
+         raise RuntimeError(f"An unexpected error occurred processing book ID {book_id}.")
+
+# Ensure the main block correctly handles the response variable
+# print(json.dumps(response))
+```
+#### TDD Anchors:
+- Test case 1: Correctly calls asyncio.run(_internal_get_book_details_by_id).
+- Test case 2: Translates InternalBookNotFoundError to ValueError.
+- Test case 3: Translates InternalParsingError/httpx.RequestError to RuntimeError.
+- Test case 4: Formats return data correctly for Node.js.
+
 
 ### Pseudocode: Python Bridge (`lib/python-bridge.py`) - `_process_pdf`
 - Created: 2025-04-14 14:08:30

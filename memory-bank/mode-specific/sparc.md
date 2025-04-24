@@ -1,5 +1,285 @@
 # SPARC Orchestrator Specific Memory
 <!-- Entries below should be added reverse chronologically (newest first) -->
+### [2025-04-23 22:14:54] Task: Debug Tool Call Regression (REG-001: "Invalid tool name type")
+- Assigned to: debug
+- Description: Diagnose and fix the tool call failure occurring after ESM migration.
+- Expected deliverable: Root cause analysis and fix.
+- Status: completed
+- Completion time: 2025-04-23 22:14:54
+- Outcome: Resolved REG-001. Fixed multiple issues: tool name key mismatch (`name` vs `tool_name`), Node->Python argument serialization (array vs object), post-build Python path resolution, client response format (`content` array with `type: 'text'`). Applied fixes to `src/index.ts`, `src/lib/zlibrary-api.ts`, `lib/python_bridge.py`. Updated related tests. Tool calls now functional.
+- Link to Progress Entry: N/A
+### [2025-04-23 18:11:49] Task: Verify REG-001 Fix and Check for Regressions
+- Assigned to: tdd
+- Description: Verify REG-001 fix stability and check for regressions after ESM migration/DI implementation.
+- Expected deliverable: Test results and manual verification report.
+- Status: completed (New Regression Found)
+- Completion time: 2025-04-23 18:11:49
+- Outcome: Automated tests pass (except 11 TODOs in venv-manager). Tool discovery confirmed working. **New Regression (REG-001):** Manual tool calls fail with 'Error: Invalid tool name type'. Other Python errors (`AttributeError` for PDF, `ParseError`/`BookNotFound` for ID lookups, History/Recent errors) also observed.
+- Link to Progress Entry: N/A
+### [2025-04-16 18:51:26] Task: Refactor "Search-First" Internal ID Lookup (TDD Refactor Phase)
+- Assigned to: tdd
+- Description: Refactor internal ID lookup code (`_internal_search`, `_internal_get_book_details_by_id`) in `lib/python_bridge.py`.
+- Expected deliverable: Refactored code and confirmation.
+- Status: completed
+- Completion time: 2025-04-16 18:51:26
+- Outcome: Refactored code for clarity (comments, variable names, constants). Fixed related Python test assertions. Confirmed all tests pass (`pytest` and `npm test`).
+- Link to Progress Entry: N/A
+### [2025-04-16 18:41:26] Task: Implement "Search-First" Internal ID Lookup (TDD Green Phase)
+- Assigned to: code
+- Description: Implement internal ID lookup using search-first strategy in `lib/python_bridge.py`.
+- Expected deliverable: Passing code and confirmation.
+- Status: completed
+- Completion time: 2025-04-16 18:41:26
+- Outcome: Implemented `_internal_search` and modified `_internal_get_book_details_by_id` using `httpx`/`BeautifulSoup`. Updated callers and error handling. Added `pytest-asyncio` dev dependency. Fixed Python tests. All tests pass.
+- Link to Progress Entry: N/A
+### [2025-04-16 18:22:38] Task: Write Failing Tests for "Search-First" Internal ID Lookup (Red Phase)
+- Assigned to: tdd
+- Description: Write failing/xfail tests for internal ID lookup using search-first strategy.
+- Expected deliverable: Failing/xfail test files and confirmation.
+- Status: completed
+- Completion time: 2025-04-16 18:22:38
+- Outcome: Added `httpx` to `requirements.txt`. Added 14+ xfail tests to `__tests__/python/test_python_bridge.py` covering `_internal_search`, modified `_internal_get_book_details_by_id`, and caller logic/error translation. Confirmed tests xfail.
+- Link to Progress Entry: N/A
+### [2025-04-16 18:16:21] Task: Create Specification & Pseudocode for "Search-First" Internal ID Lookup
+- Assigned to: spec-pseudocode
+- Description: Create spec/pseudocode for internal ID lookup using search-first strategy.
+- Expected deliverable: Spec/pseudocode written to file and returned in result.
+- Status: completed
+- Completion time: 2025-04-16 18:16:21
+- Outcome: Read architecture. Generated spec/pseudocode for `_internal_search` and modified `_internal_get_book_details_by_id` in `lib/python_bridge.py`. Confirmed `httpx` dependency needed. Identified TDD anchors. Wrote output to `docs/search-first-id-lookup-spec.md` and returned content.
+- Link to Progress Entry: N/A
+### [2025-04-16 18:11:47] Task: Design Enhanced Internal ID-Based Lookup (Search-First Strategy)
+- Assigned to: architect
+- Description: Design internal ID lookup using search-first approach to find correct URL.
+- Expected deliverable: Architecture, search strategy, function outlines, selectors, risks.
+- Status: completed
+- Completion time: 2025-04-16 18:11:47
+- Outcome: Proposed 'Search-First' strategy: Use internal search (query=ID) to find book URL, then fetch/parse book page with `httpx`/`BeautifulSoup`. Outlined new `_internal_search` and modified `_internal_get_book_details_by_id` functions. Provided example selectors. Acknowledged high risk if search-by-ID is unreliable.
+- Link to Progress Entry: N/A
+### [2025-04-16 18:09:08] Task: Integrate and Verify Internal ID-Based Lookup Implementation
+- Assigned to: integration
+- Description: Integrate and verify internal ID lookup logic (handling 404s).
+- Expected deliverable: Confirmation, test report.
+- Status: completed
+- Completion time: 2025-04-16 18:09:08
+- Outcome: Integration successful. Manual verification confirmed `get_book_by_id`, `get_download_info`, `download_book_to_file` now correctly return 'Book ID not found' (ValueError) due to internal 404 handling, resolving previous `ParseError`/`BookNotFound`. `npm test` passes.
+- Link to Progress Entry: N/A
+### [2025-04-16 08:43:08] Task: Refactor Internal ID-Based Lookup Implementation (TDD Refactor Phase)
+- Assigned to: tdd
+- Description: Refactor internal ID lookup code (`_internal_get_book_details_by_id`) in `lib/python_bridge.py`.
+- Expected deliverable: Refactored code and confirmation.
+- Status: completed
+- Completion time: 2025-04-16 08:43:08
+- Outcome: Refactored `_internal_get_book_details_by_id` for clarity (variable names, comments, removed redundant check). Confirmed all tests pass (`pytest` and `npm test`).
+- Link to Progress Entry: N/A
+### [2025-04-16 08:39:31] Task: Implement Internal ID-Based Lookup (TDD Green Phase)
+- Assigned to: code
+- Description: Implement internal fetch/parse logic for ID lookups in `lib/python_bridge.py`.
+- Expected deliverable: Passing code and confirmation.
+- Status: completed
+- Completion time: 2025-04-16 08:39:31
+- Outcome: Implemented `_internal_get_book_details_by_id` using `httpx`, handling 404s as `InternalBookNotFoundError`. Modified callers (`get_by_id`, `get_download_info`) to use internal function and translate errors. Fixed related Python and Node.js tests. All tests pass.
+- Link to Progress Entry: N/A
+### [2025-04-16 08:19:43] Task: Write Failing Tests for Internal ID-Based Lookup (Red Phase)
+- Assigned to: tdd
+- Description: Write failing/xfail tests for internal ID lookup (fetch/parse `/book/ID`, handle 404).
+- Expected deliverable: Failing/xfail test files and confirmation.
+- Status: completed
+- Completion time: 2025-04-16 08:19:43
+- Outcome: Added `httpx` to `requirements.txt`. Added 14 xfail tests to `__tests__/python/test_python_bridge.py` covering `_internal_get_book_details_by_id` logic and caller modifications. Confirmed tests xfail.
+- Link to Progress Entry: N/A
+### [2025-04-16 08:14:47] Task: Create Specification & Pseudocode for Internal ID-Based Lookup
+- Assigned to: spec-pseudocode
+- Description: Create spec/pseudocode for internal ID lookup (fetch/parse `/book/ID`, handle 404).
+- Expected deliverable: Spec/pseudocode written to file and returned in result.
+- Status: completed
+- Completion time: 2025-04-16 08:14:47
+- Outcome: Read architecture. Generated spec/pseudocode for `_internal_get_book_details_by_id` and caller modifications in `lib/python_bridge.py`. Specified adding `httpx` dependency. Identified TDD anchors. Wrote output to `docs/internal-id-lookup-spec.md` and returned content.
+- Link to Progress Entry: N/A
+### [2025-04-16 08:11:06] Task: Design Architecture for Internal ID-Based Lookup Implementation
+- Assigned to: architect
+- Description: Design internal implementation for ID lookups (fetching/parsing) as external library failed.
+- Expected deliverable: Architecture, URL strategy, function outlines, dependencies, risks.
+- Status: completed
+- Completion time: 2025-04-16 08:11:06
+- Outcome: Proposed internal function `_internal_get_book_details_by_id` using `httpx` and `BeautifulSoup4`. Strategy involves fetching `/book/ID` URL and handling the expected 404 as `InternalBookNotFoundError`. Requires `httpx` dependency. Acknowledged risks (website changes, anti-scraping).
+- Link to Progress Entry: N/A
+### [2025-04-16 08:07:39] Task: Fix Failing Unit Tests in `venv-manager.test.js`
+- Assigned to: tdd
+- Description: Update 3 failing tests to expect correct `pip install` arguments.
+- Expected deliverable: Passing tests.
+- Status: completed
+- Completion time: 2025-04-16 08:07:39
+- Outcome: Successfully fixed tests by updating assertions in `__tests__/venv-manager.test.js` to include `--no-cache-dir`, `--force-reinstall`, `--upgrade` flags. Confirmed all tests pass (`npm test`).
+- Link to Progress Entry: N/A
+### [2025-04-16 07:30:00] Task: Debug `BookNotFound` Error in Forked `zlibrary` Library
+- Assigned to: debug
+- Description: Diagnose why `client.search(q=f'id:{book_id}')` fails.
+- Expected deliverable: Root cause analysis.
+- Status: completed
+- Completion time: 2025-04-16 07:30:00
+- Outcome: Confirmed root cause is external Z-Library website no longer supporting `id:` search syntax reliably. The local library fork correctly raises `BookNotFound`. The search-based workaround is invalid. ID-based lookups remain broken due to external factors.
+- Link to Progress Entry: N/A
+### [2025-04-16 01:37:38] Task: Update Python Dependency to Use Fixed Fork
+- Assigned to: devops
+- Description: Modify `requirements.txt` to install `zlibrary` from the user's fixed GitHub fork.
+- Expected deliverable: Updated `requirements.txt` and user instructions.
+- Status: completed
+- Completion time: 2025-04-16 01:37:38
+- Outcome: Updated `requirements.txt` with `git+https://github.com/loganrooks/zlibrary.git@896cffa#egg=zlibrary`. Instructed user to clear venv cache and restart server.
+- Link to Progress Entry: N/A
+### [2025-04-16 01:30:52] Task: Apply Fixes to Forked `zlibrary` Repository and Push
+- Assigned to: devops
+- Description: Clone user's fork, apply generated fixes, commit, and push.
+- Expected deliverable: Confirmation of success.
+- Status: completed
+- Completion time: 2025-04-16 01:30:52
+- Outcome: Successfully applied fixes to `libasync.py` and `abs.py` in the user's fork (`loganrooks/zlibrary`), committed (`896cffa`), and pushed to the `main` branch.
+- Link to Progress Entry: N/A
+### [2025-04-16 00:12:04] Info: User Confirmed Git Fork URL
+- **URL:** https://github.com/loganrooks/zlibrary
+- **Context:** Proceeding with 'Fork & Fix' strategy for external `zlibrary` library bugs.
+- **Note:** User confirmed SPARC has necessary Git permissions/tokens.
+### [2025-04-16 00:03:45] Task: Generate Fixes for `sertraline/zlibrary` Library Bugs
+- Assigned to: code
+- Description: Generate code changes/diffs for `get_by_id` and `search(id:...)` bugs in the external library fork.
+- Expected deliverable: Code diffs/snippets and explanation.
+- Status: completed
+- Completion time: 2025-04-16 00:03:45
+- Outcome: Generated fixes. `get_by_id` modified to use search result. `SearchPaginator.parse_page` modified to handle direct book page results from `id:` searches by extracting and using parsing logic from `BookItem.fetch`.
+- Link to Progress Entry: N/A
+### [2025-04-15 23:15:47] Task: Locate Source Code for `zlibrary` Python Library
+- Assigned to: debug
+- Description: Find the source repository for the external `zlibrary` package.
+- Expected deliverable: Source code URL.
+- Status: completed
+- Completion time: 2025-04-15 23:15:47
+- Outcome: Successfully located the source code repository via `pip show zlibrary`: https://github.com/sertraline/zlibrary
+- Link to Progress Entry: N/A
+### [2025-04-15 23:13:21] Task: Re-evaluate Strategy for ID-Based Lookup Failures (`ParseError`)
+- Assigned to: architect
+- Description: Re-evaluate options (Internal Implementation vs. Find/Fork/Fix) for ID lookup failures after search workaround failed.
+- Expected deliverable: Analysis and recommendation.
+- Status: completed
+- Completion time: 2025-04-15 23:13:21
+- Outcome: Recommended pursuing 'Fork & Fix' strategy first (find source, debug, fix external `zlibrary` library). If unsuccessful, pivot to 'Internal Implementation' (scraping/parsing).
+- Link to Progress Entry: N/A
+### [2025-04-15 23:10:44] Task: Integrate and Verify ID-Based Lookup Workaround
+- Assigned to: integration
+- Description: Integrate and verify search-based workaround for ID lookups.
+- Expected deliverable: Confirmation, test report.
+- Status: failed
+- Completion time: 2025-04-15 23:10:44
+- Outcome: Verification FAILED. Manual testing showed `client.search(q=f'id:{book_id}', ...)` also triggers `ParseError: Could not parse book list.`. The workaround is ineffective. ID-based lookups remain broken due to external library issues.
+- Link to Progress Entry: N/A
+### [2025-04-15 22:44:03] Task: Refactor ID-Based Lookup Workaround (TDD Refactor Phase)
+- Assigned to: tdd
+- Description: Refactor search-based workaround in `lib/python_bridge.py`.
+- Expected deliverable: Refactored code and confirmation.
+- Status: completed
+- Completion time: 2025-04-15 22:44:03
+- Outcome: Extracted common search logic into `_find_book_by_id_via_search` helper function in `lib/python_bridge.py`. Updated `get_by_id` and `get_download_info` to use helper. Fixed 2 Python tests with updated error messages. Confirmed all tests pass.
+- Link to Progress Entry: N/A
+### [2025-04-15 22:40:41] Task: Implement ID-Based Lookup Workaround (TDD Green Phase)
+- Assigned to: code
+- Description: Implement search-based workaround for `get_book_by_id` and `get_download_info` in `lib/python_bridge.py`.
+- Expected deliverable: Passing code and confirmation.
+- Status: completed
+- Completion time: 2025-04-15 22:40:41
+- Outcome: Modified `get_by_id` and `get_download_info` in `lib/python_bridge.py` to use `client.search`. Updated Python tests (`__tests__/python/test_python_bridge.py`) and fixed Node.js test regressions (`__tests__/zlibrary-api.test.js`, `__tests__/python-bridge.test.js`). All tests pass.
+- Link to Progress Entry: N/A
+### [2025-04-15 22:02:31] Task: Diagnose and Find Workaround for ID-Based Lookup `ParseError`
+- Assigned to: debug
+- Description: Diagnose `ParseError` from `get_by_id` and find workaround using existing library.
+- Expected deliverable: Analysis, workaround proposal, implementation outline.
+- Status: completed
+- Completion time: 2025-04-15 22:02:31
+- Outcome: Confirmed `ParseError` due to external library's `get_by_id` creating incorrect URL (missing slug). Proposed workaround: Replace `client.get_by_id(id)` with `client.search(q=f'id:{id}', exact=True, count=1)` in `lib/python_bridge.py` for `get_book_by_id` and `get_download_info` functions, extracting details from the search result.
+- Link to Progress Entry: N/A
+### [2025-04-15 20:53:16] Task: Debug PDF Processing AttributeError (`module 'fitz' has no attribute 'fitz'`)
+- Assigned to: debug
+- Description: Diagnose and fix the AttributeError preventing PDF processing.
+- Expected deliverable: Root cause analysis and fix.
+- Status: completed
+- Completion time: 2025-04-15 20:53:16
+- Outcome: Resolved `AttributeError` by correcting exception handling in `lib/python_bridge.py`. Also fixed related issues: renamed `python-bridge.py` to `python_bridge.py`, updated callers, fixed test setup (`pytest.ini`, `__init__.py`, dev dependencies). PDF processing confirmed working via manual test. All tests pass.
+- Link to Progress Entry: N/A
+### [2025-04-15 19:35:29] Task: Fix Failing Unit Tests in `zlibrary-api.test.js`
+- Assigned to: tdd
+- Description: Fix 2 failing unit tests related to error handling in `callPythonFunction`.
+- Expected deliverable: Passing tests.
+- Status: completed
+- Completion time: 2025-04-15 19:35:29
+- Outcome: Successfully fixed tests by adjusting assertions and mocks in `__tests__/zlibrary-api.test.js`. Confirmed all tests pass (`npm test`).
+- Link to Progress Entry: N/A
+### [2025-04-15 18:51:38] Task: Verify REG-001 Fix and Check for Regressions
+- Assigned to: tdd
+- Description: Verify REG-001 fix stability and check for new regressions after ESM migration.
+- Expected deliverable: Test results and manual verification report.
+- Status: completed (Multiple Issues Found)
+- Completion time: 2025-04-15 18:51:38
+- Outcome: REG-001 fix confirmed stable (tool calls initiated). However, found new issues: 2 failing unit tests (`zlibrary-api.test.js`), PDF processing `AttributeError`, ID-based lookup `ParseError` (due to incorrect URL construction), `get_download_history` `ParseError`, `get_recent_books` generic error.
+- Link to Progress Entry: N/A
+### [2025-04-15 17:48:08] Task: Debug Tool Call Regression ('Invalid tool name type')
+- Assigned to: debug
+- Description: Diagnose and fix the tool call failure occurring after ESM migration.
+- Expected deliverable: Root cause analysis and fix.
+- Status: completed
+- Completion time: 2025-04-15 17:48:08
+- Outcome: Resolved REG-001. Identified multiple issues: parameter key mismatch (`name` vs `tool_name`), incorrect post-build Python path, incompatible response format (`content` array with `type: 'text'` needed). Applied fixes to `src/index.ts`, `src/lib/zlibrary-api.ts`, `lib/python-bridge.py`. Tool calls now functional. New Python `ParseError` noted.
+- Link to Progress Entry: N/A
+### [2025-04-15 16:38:44] Task: Regression Testing after ESM Migration & INT-001 Fix
+- Assigned to: tdd
+- Description: Perform regression testing after ESM migration and DI implementation.
+- Expected deliverable: Test results, manual verification report.
+- Status: completed (Regression Found)
+- Completion time: 2025-04-15 16:38:44
+- Outcome: Unit tests pass. Venv management verified manually. Tool discovery (INT-001 fix) confirmed working. **Regression Detected:** Tool calls fail with 'Error: Invalid tool name type'.
+- Link to Progress Entry: N/A
+### [2025-04-15 15:34:05] Task: Fix Schema Generation / Migrate to ESM / Resolve INT-001
+- Assigned to: code
+- Description: Fix schema generation, migrate project to TypeScript/ESM, resolve test failures, and fix INT-001.
+- Expected deliverable: Passing code, passing tests, INT-001 resolved.
+- Status: completed
+- Completion time: 2025-04-15 15:34:05
+- Outcome: Successfully migrated project to TypeScript/ESM. Corrected capability declaration, schema generation (`zodToJsonSchema`, `inputSchema` key), and SDK usage in `src/index.ts`. Implemented Dependency Injection in `src/lib/venv-manager.ts` to fix Jest/ESM mocking issues. Updated Jest config and all test files. INT-001 resolved; tools now list correctly in client. All tests pass.
+- Link to Progress Entry: N/A
+### [2025-04-14 19:23:33] Task: Evaluate Migration Strategy (SDK Version / Module System) for INT-001
+- Assigned to: architect
+- Description: Evaluate migration options (SDK downgrade, CJS->ESM) vs. fixing schema generation for INT-001.
+- Expected deliverable: Comparative analysis and recommendation.
+- Status: completed
+- Completion time: 2025-04-14 19:23:33
+- Outcome: Confirmed root cause is inadequate dummy schemas, not SDK version/CJS. Recommended Pathway: 1. Fix schema generation using `zod-to-json-schema`. 2. (Optional) Consider ESM migration later for modernization.
+- Link to Progress Entry: N/A
+### [2025-04-14 18:25:45] Task: Debug Issue INT-001 ('No tools found' / ZodError)
+- Assigned to: integration (acting as debug)
+- Description: Investigate client-side errors preventing tool usage.
+- Expected deliverable: Root cause analysis and fix/recommendation.
+- Status: completed (session)
+- Completion time: 2025-04-14 18:25:45
+- Outcome: Debugging session concluded. Root cause suspected in `index.js` `ListToolsRequest` handler (`zodToJsonSchema` incompatibility). Task 2 integration remains paused. Recommendations provided for next debugging steps (isolate schema).
+- Link to Progress Entry: N/A
+### [2025-04-14 18:25:45] Status Update: Task 2 Integration Paused
+- **Task:** Integrate RAG Pipeline Features
+- **Status:** Paused due to unresolved Issue INT-001 ('No tools found'). Integration cannot be fully verified until the tool listing issue is resolved.
+- **Next:** Resume debugging INT-001.
+### [2025-04-14 14:35:51] Task: Refactor PDF Processing Implementation (TDD Refactor Phase)
+- Assigned to: tdd
+- Description: Refactor PDF processing code in `lib/python-bridge.py` while keeping tests passing.
+- Expected deliverable: Refactored code and confirmation.
+- Status: completed
+- Completion time: 2025-04-14 14:35:51
+- Outcome: Refactored `_process_pdf` for logging consistency and PEP 8. Confirmed all tests pass.
+- Link to Progress Entry: N/A
+### [2025-04-14 14:32:01] Task: Implement PDF Processing Features (TDD Green Phase)
+- Assigned to: code
+- Description: Implement PDF processing (Python bridge logic, dependency) to pass failing/xfail tests.
+- Expected deliverable: Passing code and confirmation.
+- Status: completed
+- Completion time: 2025-04-14 14:32:01
+- Outcome: Added `PyMuPDF` to `requirements.txt`. Implemented `_process_pdf` and updated `process_document` in `lib/python-bridge.py`. Fixed unrelated failing tests in `__tests__/index.test.js`. Confirmed all tests pass.
+- Link to Progress Entry: N/A
 ### [2025-04-14 14:22:05] Task: Write Failing Tests for PDF Processing Implementation (Red Phase)
 - Assigned to: tdd
 - Description: Write failing/xfail tests (Red phase) for PDF processing (Python bridge logic, dependency install).
@@ -151,11 +431,57 @@
 
 ## Delegations Log
 <!-- Append new delegation records here -->
+### [2025-04-23 23:40:42] Task: Update RAG Implementation Specifications (File Output Redesign)
+- Assigned to: spec-pseudocode
+- Description: Update RAG specs (`docs/rag-pipeline-implementation-spec.md`, `docs/pdf-processing-implementation-spec.md`) for file output redesign.
+- Expected deliverable: Updated spec files and confirmation.
+- Status: completed
+- Completion time: 2025-04-23 23:40:42
+- Outcome: Specifications updated successfully to reflect saving processed text to file and returning `processed_file_path`.
+- Link to Progress Entry: N/A
+
+### [2025-04-23 23:30:58] Task: Redesign RAG Pipeline Output Mechanism
+- Assigned to: architect
+- Description: Redesign RAG tools to save processed text to file and return path, addressing context overload issue.
+- Expected deliverable: Updated architecture docs and summary.
+- Status: completed
+- Completion time: 2025-04-23 23:30:58
+- Outcome: Redesign complete. Processed text saved to `./processed_rag_output/<original_filename>.processed.txt`. Tools return `processed_file_path`. Architecture docs (`docs/architecture/rag-pipeline.md`, `docs/architecture/pdf-processing-integration.md`) updated.
+- Link to Progress Entry: N/A
+
+### [2025-04-23 23:22:04] Task: Verify RAG Pipeline Integration (EPUB/TXT)
+- Assigned to: integration
+- Description: Resume and complete the integration verification for the RAG pipeline features supporting EPUB and TXT document processing (Task 2).
+- Expected deliverable: Confirmation report detailing verification steps and results.
+- Status: completed (partially blocked)
+- Completion time: 2025-04-23 23:22:04
+- Outcome: Standalone EPUB processing verified. Combined download/process workflow blocked by ID lookup failure (RAG-VERIFY-BLK-01). TXT processing unverified (no sample file).
+- Link to Progress Entry: [GlobalContext Progress 2025-04-14 13:15:49]
+
+### [2025-04-18 02:39:50] Task: Generate System Refinement Report
+- Assigned to: system-refiner
+- Description: Analyze feedback, logs, and mode memories to propose improvements to Roo system rules (.clinerules-*), ensuring generalizability.
+- Expected deliverable: Detailed report with findings, options, and recommendations.
+- Status: completed
+- Completion time: 2025-04-18 02:38:04
+- Outcome: Analysis completed. Report generated at memory-bank/reports/system-refinement-report-20250418023659.md, outlining findings and 8 proposals for .clinerules enhancements.
+- Link to Progress Entry: N/A
 
 
-## Workflow State
-<!-- Update current workflow state here (consider if this should be newest first or overwrite) -->
 
+## Workflow State (Current - Overwrite this section)
+- Current phase: Testing (TDD Red Phase)
+- Phase start: 2025-04-23 23:41:19
+- Current focus: Implementing the redesigned RAG output mechanism (save to file, return path) using TDD. Starting with Red phase (writing failing tests).
+- Next actions: Delegate TDD Red phase task to `tdd` mode.
+- Last Updated: 2025-04-23 23:41:19
+### [2025-04-23 23:26:50] Intervention: User Identified Critical RAG Pipeline Design Flaw
+- **Trigger**: User denied `new_task` for Task 3 Integration Verification.
+- **Context**: SPARC delegated verification based on existing specs where RAG tools return full processed text content.
+- **Action Taken**: Halted Task 2 & 3 integration verification. Acknowledged user feedback that returning full text content overloads agent context. Confirmed RAG tools must be redesigned to save processed text to a file and return the file path.
+- **Rationale**: Align with user feedback and context management best practices.
+- **Outcome**: Integration tasks halted. Redesign task will be delegated to `architect` mode.
+- **Follow-up**: Delegate redesign task to `architect`. [See Feedback 2025-04-23 23:26:20]
 
 ## Intervention Log
 <!-- Append intervention details using the format below -->

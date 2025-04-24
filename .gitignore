@@ -1,17 +1,26 @@
+# Node/TypeScript
 node_modules/
 coverage/
-__mocks__
-__tests__
-.env
+dist/
+build/
+*.tsbuildinfo
+*.js.map
+*.d.ts.map
+.npm
+.eslintcache
+.node_repl_history
+
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
 env/
-build/
+venv/
+.venv/
+ENV/
 develop-eggs/
-dist/
 downloads/
 eggs/
 .eggs/
@@ -22,8 +31,42 @@ var/
 *.egg-info/
 .installed.cfg
 *.egg
-venv/
-.venv/
-requirements.txt
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# IDE/Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+.history/
+
+# Project specific
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
 .roo/
 .roomodes
+
+# Keep these if needed for your project
+# __mocks__
+# __tests__
+# requirements.txt
+package-lock.json
+requirements.txt
+__mocks__/env-paths.js
+__mocks__/@modelcontextprotocol/sdk.js
+__mocks__/@modelcontextprotocol/server.js
+__tests__/index.test.d.ts
+__tests__/index.test.js
+__tests__/python-bridge.test.d.ts
+__tests__/python-bridge.test.js
+__tests__/venv-manager.test.d.ts
+__tests__/venv-manager.test.js
+__tests__/zlibrary-api.test.d.ts
+__tests__/zlibrary-api.test.js

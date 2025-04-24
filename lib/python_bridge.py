@@ -66,32 +66,67 @@ async def search(query, exact=False, from_year=None, to_year=None, languages=Non
     results = await paginator.next()
     return results
 
+async def _find_book_by_id_via_search(book_id):
+    """Helper to find a single book by ID using the search workaround."""
+    # Client initialization is handled by the calling function's check or implicitly by zlib_client calls
+    # if not zlib_client:
+    #     await initialize_client()
+
+    # No separate try/except here; let the caller handle logging context
+    paginator = await zlib_client.search(q=f'id:{book_id}', exact=True, count=1)
+    results = await paginator.next()
+
+    if len(results) == 1:
+        return results[0]
+    elif len(results) == 0:
+        raise ValueError(f"Book ID {book_id} not found via search.")
+    else:
+        # This case should ideally not happen with exact ID search and count=1
+        logging.warning(f"Ambiguous search result for Book ID {book_id}. Results: {results}")
+        raise ValueError(f"Ambiguous search result for Book ID {book_id}.")
+
+
 async def get_by_id(book_id):
-    """Get book details by ID"""
+    """Get book details by ID using search workaround"""
     if not zlib_client:
         await initialize_client()
         
-    return await zlib_client.get_by_id(id=book_id)
+    try:
+        book = await _find_book_by_id_via_search(book_id)
+        return book
+    except Exception as e:
+        logging.exception(f"Error in get_by_id for ID {book_id}")
+        raise e # Re-raise the exception after logging
 
 async def get_download_info(book_id, format=None):
     """
-    Get book info including download URL
-    This accurately represents what the function does - it gets book info with a download URL,
-    not actually downloading the file content
+    Get book info including download URL using search workaround.
     """
     if not zlib_client:
         await initialize_client()
-    
-    # Get book details
-    book = await zlib_client.get_by_id(id=book_id)
-    
-    return {
-        'title': book.get('name', f"book_{book_id}"),
-        'author': book.get('author', 'Unknown'),
-        'format': format or book.get('extension', 'pdf'),
-        'filesize': book.get('size', 'Unknown'),
-        'download_url': book.get('download_url')
-    }
+
+    try:
+        book = await _find_book_by_id_via_search(book_id)
+        
+        # Safely extract details using .get()
+        title = book.get('name', f"book_{book_id}")
+        author = book.get('author', 'Unknown')
+        # Use provided format if available, otherwise fallback to book extension, then 'pdf'
+        file_format = format or book.get('extension', 'pdf')
+        filesize = book.get('size', 'Unknown')
+        download_url = book.get('download_url') # Can be None
+
+        return {
+            'title': title,
+            'author': author,
+            'format': file_format,
+            'filesize': filesize,
+            'download_url': download_url # Return None if not present
+        }
+
+    except Exception as e:
+        logging.exception(f"Error in get_download_info for ID {book_id}")
+        raise e # Re-raise the exception after logging
 
 async def full_text_search(query, exact=False, phrase=True, words=False, languages=None, extensions=None, count=10):
     """Search for text within book contents"""
@@ -215,21 +250,27 @@ def _process_pdf(file_path: str) -> str:
         # Check if any text was extracted
         if not full_text:
             logging.warning(f"No extractable text found in PDF (possibly image-based): {file_path}")
-            raise ValueError("PDF contains no extractable text layer (possibly image-based)")
+            raise ValueError(
+                "PDF contains no extractable text layer (possibly image-based)"
+            )
 
         logging.info(f"Finished PDF: {file_path}. Extracted length: {len(full_text)}")
         return full_text
 
-    except fitz.fitz.FitzError as fitz_error: # Catch specific fitz errors
+    except RuntimeError as fitz_error: # Catch generic runtime errors, potentially from fitz
         logging.error(f"PyMuPDF error processing {file_path}: {fitz_error}")
-        raise RuntimeError(f"Error opening or processing PDF: {file_path} - {fitz_error}")
+        raise RuntimeError(
+            f"Error opening or processing PDF: {file_path} - {fitz_error}"
+        )
     except Exception as e:
         # Catch other potential errors during opening or processing
         logging.error(f"Unexpected error processing PDF {file_path}: {e}")
         # Re-raise specific errors if needed
         if isinstance(e, (ValueError, FileNotFoundError)):
-             raise e
-        raise RuntimeError(f"Error opening or processing PDF: {file_path} - {e}")
+            raise e
+        raise RuntimeError(
+            f"Error opening or processing PDF: {file_path} - {e}"
+        )
     finally:
         # Ensure the document is closed
         if doc:
@@ -333,9 +374,13 @@ def main():
         return 0
     
     except Exception as e:
+        # Print traceback to stderr first
+        print(traceback.format_exc(), file=sys.stderr)
+        # Then print JSON error to stdout
         print(json.dumps({
-            "error": str(e),
-            "traceback": traceback.format_exc()
+            "error": str(e)
+            # Optionally remove traceback from stdout JSON if it's now in stderr
+            # "traceback": traceback.format_exc()
         }))
         return 1
 

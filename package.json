@@ -3,17 +3,19 @@
   "version": "1.0.0",
   "description": "Z-Library MCP server for AI assistants",
   "main": "index.js",
-  "type": "commonjs",
+  "type": "module",
   "exports": {
-    ".": "./index.js",
-    "./lib/*": "./lib/*"
+    ".": "./dist/index.js",
+    "./lib/*": "./dist/lib/*"
   },
   "bin": {
-    "zlibrary-mcp": "./index.js"
+    "zlibrary-mcp": "./dist/index.js"
   },
   "scripts": {
-    "start": "node index.js",
-    "test": "jest --coverage"
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --coverage",
+    "prepublishOnly": "npm run build"
   },
   "keywords": [
     "mcp",
@@ -43,10 +45,17 @@
     "node": ">=14.0.0"
   },
   "devDependencies": {
+    "@types/jest": "^29.5.12",
+    "@types/mock-fs": "^4.13.4",
+    "@types/node": "^18.19.4",
+    "@types/sinon": "^17.0.3",
+    "@types/supertest": "^6.0.2",
     "jest": "^29.7.0",
     "mock-fs": "^5.2.0",
     "nock": "^13.4.0",
-    "sinon": "^16.1.0",
-    "supertest": "^6.3.3"
+    "sinon": "^17.0.2",
+    "supertest": "^7.0.0",
+    "ts-jest": "^29.3.2",
+    "typescript": "^5.5.3"
   }
 }

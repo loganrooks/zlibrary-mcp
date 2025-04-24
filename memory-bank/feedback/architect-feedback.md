@@ -1,5 +1,17 @@
 # Architect Feedback
 <!-- Entries below should be added reverse chronologically (newest first) -->
+[2025-04-14 18:35:37] - User Feedback on Migration Eval Completion (Attempt 2):
+- **Issue**: User denied completion again. Pointed out lack of external research to confirm the hypothesis that incorrect schema generation is the root cause of INT-001. Requested a prompt for Gemini Deep Research.
+- **Context**: Previous attempt saved the report but still relied only on internal context (comparison report, MB). Did not explicitly state lack of external search capability.
+- **Action**: Acknowledge feedback and limitation. Save feedback. Generate Gemini research prompt focusing on potential causes for MCP client failure despite valid server response structure, specifically considering SDK v1.8.0, CJS vs ESM, and `zod-to-json-schema` usage.
+
+
+[2025-04-14 18:33:49] - User Feedback on Migration Eval Completion:
+- **Issue**: User denied completion. Requested the evaluation be saved to a file in `docs/` first. Also requested clearer emphasis on the *primary suspected cause* of INT-001 before discussing migration pathways, ensuring pathways target the likely issue.
+- **Context**: Previous completion attempt presented the evaluation directly without saving to a file and discussed pathways before strongly concluding on the primary cause.
+- **Action**: Acknowledge feedback. Save feedback. Create `docs/migration-strategy-evaluation-INT001.md` with revised analysis emphasizing the primary cause first. Re-attempt completion including the report content.
+
+
 [2025-04-14 13:55:47] - User Feedback on PDF Arch Doc Completion:
 - **Issue**: User denied completion, requesting the architecture details also be included directly in the result message, in addition to the created file.
 - **Context**: Previous completion attempt only stated the file was created.

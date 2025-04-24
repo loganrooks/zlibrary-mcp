@@ -1,8 +1,105 @@
 # Product Context
 <!-- Entries below should be added reverse chronologically (newest first) -->
 
+### Product: Search-First ID Lookup Specification - [2025-04-16 18:14:19]
+- **Context**: Specification generated for an alternative internal ID lookup strategy requested by the user.
+- **Strategy**: Uses internal search (query=ID) via `httpx`/`BeautifulSoup` to find the book page URL, then fetches/parses that page.
+- **Components**: New `_internal_search` function, modified `_internal_get_book_details_by_id` function in `lib/python_bridge.py`, new exceptions (`InternalBookNotFoundError`, `InternalParsingError`, `InternalFetchError`).
+- **Status**: Specification generated (Draft).
+- **Related**: `docs/search-first-id-lookup-spec.md`, Decision-SearchFirstIDLookup-01
+
+
 # System Patterns
+### Pattern: RAG Pipeline File Output - [2025-04-23 23:30:58]
+- **Context**: Processing documents (EPUB, TXT, PDF) for RAG workflows.
+- **Problem**: Returning large amounts of extracted text directly via MCP tool results causes agent instability and context overload.
+- **Solution**: Modify RAG processing tools (`process_document_for_rag`, combined `download_book_to_file`) to save the extracted/processed text to a dedicated file (e.g., `./processed_rag_output/<original_filename>.processed.txt`). The tools return the path (`processed_file_path`) to this output file instead of the content itself.
+- **Components**: Updated `process_document_for_rag` and `download_book_to_file` tools, modifications to `lib/zlibrary-api.ts` (Node.js) and `lib/python-bridge.py` (Python - handles saving).
+- **Benefits**: Prevents context overload, provides stable access to processed content for agents, decouples processing from immediate context usage.
+- **Related**: Decision-RAGOutputFile-01, Intervention [2025-04-23 23:26:50], `docs/architecture/rag-pipeline.md` (v2), `docs/architecture/pdf-processing-integration.md` (v2)
+
+
+### Pattern: RAG Pipeline File Output - [2025-04-23 23:29:31]
+- **Context**: Redesign of RAG processing tools (`process_document_for_rag`, `download_book_to_file`) to address context overload issues.
+- **Problem**: Returning large amounts of processed text directly caused agent instability.
+- **Solution**: Modify tools to save processed text (EPUB/TXT/PDF) to a dedicated file (`./processed_rag_output/<original_name>.processed.txt`) and return the `processed_file_path` instead of raw text. Python bridge handles text extraction and file saving. Node.js layer returns the path(s).
+- **Components**: `lib/python-bridge.py` (new `_save_processed_text` helper, modified `process_document`), `lib/zlibrary-api.ts` (updated return value handling), `index.ts` (updated tool schemas/outputs).
+- **Error Handling**: File save errors in Python are caught and reported as structured errors by Node.js; raw text is not returned on save failure.
+- **Related**: Decision-RAGOutputFile-01, `docs/architecture/rag-pipeline.md` (v2), `docs/architecture/pdf-processing-integration.md` (v2)
+
+
+### Pattern: Node.js to Python Bridge Argument Passing (python-shell) - [2025-04-23 22:12:51]
+- **Context**: Passing arguments from Node.js (`zlibrary-api.ts`) to a Python script (`python_bridge.py`) using the `python-shell` library.
+- **Problem**: Passing `args: [functionName, JSON.stringify(argsObject)]` to `PythonShell` options caused the Python script (`sys.argv`) to receive the stringified object as the third argument (`sys.argv[2]`). The Python `main` function parsed this correctly, but then attempted `**args_dict` unpacking, leading to `TypeError: ... argument after ** must be a mapping, not list` because `args_dict` was derived incorrectly or used inappropriately.
+- **Solution**: Ensure the `args` array in `PythonShell` options contains only the function name and the *already serialized* JSON string of arguments: `const serializedArgs = JSON.stringify(argsObject); ... options = { ..., args: [functionName, serializedArgs] };`. The Python script's `main` function should then correctly parse `sys.argv[2]` into a dictionary.
+- **Related**: Issue REG-001, ActiveContext [2025-04-23 22:12:51]
+
+
+### Pattern: MCP Server Rebuild/Restart Workflow (RooCode) - [2025-04-23 20:51:53]
+- **Context**: Applying changes to a local MCP server (like `zlibrary-mcp`) requires a specific rebuild/restart process when used within RooCode.
+- **Problem**: Running `npm run build` via `execute_command` is insufficient for RooCode to pick up changes.
+- **Solution**: After modifying server source code:
+    1. Run `npm run build` (or equivalent build command) via `execute_command`.
+    2. **Crucially, ask the user to manually restart the specific MCP server using the restart button in the RooCode extension's MCP settings UI.** This ensures RooCode reloads the server process with the newly built code.
+- **Related**: Feedback [2025-04-23 20:51:53]
+
+
+### Pattern: Search-First Internal ID Lookup - [2025-04-16 18:40:05]
+- **Implementation**: Implemented `_internal_search` and modified `_internal_get_book_details_by_id` in `lib/python_bridge.py` using `httpx` and `BeautifulSoup` per `docs/search-first-id-lookup-spec.md`. `_internal_search` uses the book ID as a query. `_internal_get_book_details_by_id` calls `_internal_search`, fetches the resulting book page URL, and parses it using placeholder selectors. Callers (`get_by_id`, `get_download_info`, `main`) updated to use the new function and translate `InternalBookNotFoundError` -> `ValueError`, `InternalFetchError`/`InternalParsingError` -> `RuntimeError`.
+- **Status**: TDD Green Phase complete. Python tests pass (relevant ones), Node tests pass.
+- **Related**: `docs/search-first-id-lookup-spec.md`, ActiveContext [2025-04-16 18:40:05], Decision-SearchFirstIDLookup-01
+
+
+
+### Pattern Update: Internal ID-Based Book Lookup (Scraping) - [2025-04-16 08:38:32]
+- **Implementation**: Implemented `_internal_get_book_details_by_id` in `lib/python_bridge.py` using `httpx`. Handles 404 as `InternalBookNotFoundError`. Callers (`get_by_id`, `get_download_info`) updated to use this function and translate errors (`InternalBookNotFoundError` -> `ValueError`, others -> `RuntimeError`).
+- **Status**: TDD Green Phase complete. Python tests pass (relevant ones), Node tests pass.
+- **Related**: `docs/internal-id-lookup-spec.md`, ActiveContext [2025-04-16 08:38:32]
+
+
+### Pattern: Internal ID-Based Book Lookup (Scraping) - [2025-04-16 08:10:00]
+- **Context**: Replacing failed external `zlibrary` ID lookups (`get_book_by_id`, `get_download_info`).
+- **Problem**: External library fails due to website changes (404 on `/book/ID`, non-functional `id:` search). Slug required for direct URL is unobtainable.
+- **Solution**: Implement internal fetching/parsing within `lib/python_bridge.py`. Attempt to fetch `https://<domain>/book/ID` using `httpx`. **Explicitly handle the expected 404 response as 'Book Not Found'.** If a 200 OK is received (unlikely), parse HTML with `BeautifulSoup4`.
+- **Components**: New function `_internal_get_book_details_by_id` in `lib/python_bridge.py`, modifications to `get_book_by_id`/`get_download_info` callers, `httpx` dependency.
+- **Limitations**: Highly susceptible to website structure changes and anti-scraping measures. Does *not* resolve the missing slug issue; relies on 404 handling.
+- **Related**: Decision-InternalIDLookupURL-01, Issue-BookNotFound-IDLookup-02, ComponentSpec-InternalIDScraper-01
+
+
 <!-- Entries below should be added reverse chronologically (newest first) -->
+### Pattern: Direct Book Page Handling in Search Results - [2025-04-16 00:03:00]
+- **Identification**: `search(q='id:...')` queries in `zlibrary` library sometimes return a direct book page HTML instead of a standard search result list, causing `ParseError` in `SearchPaginator.parse_page`.
+- **Resolution**: Modified `SearchPaginator.parse_page` in `zlibrary/src/zlibrary/abs.py` to detect this case (missing `#searchResultBox` on an `id:` search URL). If detected, it attempts to parse the page directly using a new helper method `BookItem._parse_book_page_soup` (extracted from `BookItem.fetch`).
+- **Related**: Issue-ParseError-IDLookup-01, ActiveContext [2025-04-16 00:02:36]
+
+
+### Pattern: External Library URL Construction Error (zlibrary `get_by_id`) - [2025-04-15 21:51:00]
+- **Identification**: `zlibrary.exception.ParseError` on ID lookups, confirmed 404 response due to missing slug in URL generated by `client.get_by_id`.
+- **Causes**: Likely hardcoded URL format in the external `zlibrary` library's `get_by_id` method that doesn't account for required slugs.
+- **Components**: `lib/python_bridge.py` (calls `client.get_by_id`), external `zlibrary` library.
+    - **Resolution**: Fixed in `zlibrary/src/zlibrary/libasync.py` by modifying `get_by_id` to use `search(q=f'id:{id}', exact=True, count=1)` instead of constructing the URL directly. See ActiveContext [2025-04-16 00:02:36].
+
+- **Resolution**: Workaround proposed (`client.search(q=f'id:{id}')`) **FAILED**. Both `get_by_id` and `id:` search trigger `ParseError`. See Decision-IDLookupStrategy-01.
+- **Related**: Issue-ParseError-IDLookup-01, Decision-ParseErrorWorkaround-01
+- **Last Seen**: 2025-04-15 23:10:11 (Workaround Failure)
+
+
+### Pattern Update: External Library URL Construction Error (zlibrary `get_by_id`) - [2025-04-16 07:27:22]
+- **Note**: The previously attempted workaround (`client.search(q=f'id:{id}')`) is **invalid**. Further investigation confirmed the Z-Library website itself no longer returns results for `id:` queries, causing the search to fail and correctly raise `BookNotFound`. This prevents discovery of the correct book page URL (with slug).
+
+
+
+### Pattern Update: External Library URL Construction Error (zlibrary `get_by_id`) - [2025-04-16 07:23:30]
+- **Note**: The previously attempted workaround (`client.search(q=f'id:{id}')`) is **invalid**. Further investigation confirmed the Z-Library website itself no longer returns results for `id:` queries, causing the search to fail and correctly raise `BookNotFound`.
+
+
+### Pattern: MCP Server Implementation (CJS/SDK 1.8.0) - [2025-04-14 17:50:25]
+- **Context**: Documenting and comparing MCP server implementations, focusing on CJS projects using SDK v1.8.0.
+- **Findings (zlibrary-mcp)**: Uses correct SDK paths/instantiation. Tool listing currently uses dummy schemas, potentially causing client error INT-001 despite valid response structure.
+- **Documentation**: See comparison report `docs/mcp-server-comparison-report.md`.
+- **Related**: Issue INT-001
+
+
 ### Pattern: RAG Document Processing Pipeline - [2025-04-14 14:25:00] (Implementation Update)
 - **Implementation Detail**: PDF processing implemented using `PyMuPDF (fitz)` library within `lib/python-bridge.py`'s `_process_pdf` function, called from `process_document`.
 - **Related**: Pattern-RAGPipeline-01 (Updated), Decision-PDFLibraryChoice-01
@@ -36,6 +133,14 @@
 
 ### Pattern: Managed Python Virtual Environment for NPM Package - [2025-04-14 03:29:08]
 - **Context**: Providing a reliable Python dependency environment for a globally installed Node.js package (`zlibrary-mcp`).
+### Decision-RAGOutputFile-01 - [2025-04-23 23:30:58]
+- **Decision**: Redesign RAG processing tools (`process_document_for_rag`, combined `download_book_to_file`) to save processed text to a file (`./processed_rag_output/<original_filename>.processed.txt`) and return the `processed_file_path` instead of raw text content.
+- **Rationale**: Addresses critical user feedback ([Ref: SPARC Feedback 2025-04-23 23:26:20]) regarding agent instability caused by context overload from large text returns. Saving to file provides a stable and scalable mechanism for agents to access processed content.
+- **Alternatives Considered**: Returning truncated text (loses data), streaming text (complex agent handling), keeping original design (unstable).
+- **Implementation**: Modify Python bridge (`lib/python-bridge.py`) to handle file saving. Update tool schemas and return values in Node.js layer (`lib/zlibrary-api.ts`, `src/index.ts`). Update architecture docs.
+- **Related**: Pattern-RAGPipeline-FileOutput-01, Intervention [2025-04-23 23:26:50], `docs/architecture/rag-pipeline.md` (v2), `docs/architecture/pdf-processing-integration.md` (v2)
+
+
 - **Problem**: Global Python installations are inconsistent; relying on `PATH` or global `pip` is fragile.
 - **Solution**: Automate the creation and management of a dedicated Python virtual environment (`venv`) within a user-specific cache directory during a post-install script or first run. Install required Python packages (`zlibrary`) into this venv. Explicitly use the absolute path to the venv's Python interpreter when executing Python scripts from Node.js (`python-shell` or `child_process`).
 - **Components**: New setup script/logic, `lib/zlibrary-api.js` (modified to use venv path).
@@ -44,6 +149,72 @@
 
 # Decision Log
 <!-- Entries below should be added reverse chronologically (newest first) -->
+### Decision-RAGOutputFile-01 - [2025-04-23 23:29:31]
+- **Decision**: Modify RAG processing tools (`process_document_for_rag`, `download_book_to_file` with `process_for_rag: true`) to save extracted text content to a file and return the file path (`processed_file_path`) instead of the raw text content.
+- **Rationale**: Addresses critical feedback ([Ref: SPARC Feedback 2025-04-23 23:26:20]) regarding agent instability caused by context overload when handling large amounts of raw text returned by the tools. Returning a file path is more scalable and robust.
+- **Save Location**: `./processed_rag_output/` (relative to workspace root).
+- **Filename Convention**: `<original_filename>.processed.<format_extension>` (e.g., `book.epub.processed.txt`).
+- **Default Format**: `.txt`.
+- **Error Handling**: File save errors are explicitly handled and reported; raw text is not returned on failure.
+- **Alternatives Considered**: Returning truncated text (lossy), streaming text (complex implementation), increasing agent context limits (external dependency).
+- **Implementation**: Update tool schemas, Node.js handlers (`lib/zlibrary-api.ts`), Python bridge (`lib/python-bridge.py` to add saving logic), and architecture documents.
+- **Related**: Pattern-RAGPipeline-FileOutput-01, `docs/architecture/rag-pipeline.md` (v2), `docs/architecture/pdf-processing-integration.md` (v2), ActiveContext [2025-04-23 23:29:31]
+
+
+### Decision-SearchFirstIDLookup-01 - [2025-04-16 18:14:19]
+- **Decision**: Specify the 'Search-First' internal ID lookup strategy as requested by the user. This involves using internal search (query=ID) to find the book page URL, then fetching and parsing that page using `httpx` and `BeautifulSoup`.
+- **Rationale**: User explicitly requested this strategy despite known risks (search unreliability) documented in previous Memory Bank entries ([2025-04-16 07:27:22]). This specification fulfills the user's request.
+- **Alternatives Considered**: Using the previously implemented internal 404-handling strategy (already exists), further debugging external library (deemed unreliable).
+- **Implementation**: Specification generated in `docs/search-first-id-lookup-spec.md`. Includes pseudocode for `_internal_search`, `_internal_get_book_details_by_id`, caller modifications, exceptions, and TDD anchors.
+- **Related**: `docs/search-first-id-lookup-spec.md`, ActiveContext [2025-04-16 18:13:31]
+
+
+### Decision-InternalIDLookupURL-01 - [2025-04-16 08:10:00]
+- **Decision**: For internal ID lookup implementation, use the URL pattern `https://<domain>/book/ID`. Explicitly handle the expected 404 response as the primary failure mode ('Book Not Found'). Use `httpx` for fetching. Add `httpx` to `requirements.txt`.
+- **Rationale**: Fetching `/book/ID` confirmed to return 404 (missing slug). Searching for the slug via `id:` search is non-functional on the external site. General search is unreliable. This approach accepts the limitation and builds handling around the expected 404. `httpx` is a modern, robust async HTTP client suitable for scraping.
+- **Alternatives Considered**: Attempting slug guessing (unreliable), complex search heuristics (brittle), relying solely on external library (non-functional).
+- **Implementation**: Add `_internal_get_book_details_by_id` function in `python_bridge.py` using `httpx` and 404 handling. Update `requirements.txt`.
+- **Related**: Pattern-InternalIDScraper-01, Issue-BookNotFound-IDLookup-02, ActiveContext [2025-04-16 08:10:00]
+
+
+### Decision-IDLookupStrategy-01 - [2025-04-15 23:12:00]
+- **Decision**: Adopt a sequential strategy to resolve the ID lookup `ParseError`: 1. Briefly search for alternative libraries. 2. If none found, attempt to Fork & Fix the existing `zlibrary` library (targeting URL construction/parsing). 3. If Fork & Fix fails, implement internal web scraping/parsing functions.
+- **Rationale**: The previous workaround (`client.search(q='id:...')`) also failed with `ParseError`, confirming a deeper issue within the external library affecting both `get_by_id` and ID-based searches. Fork & Fix offers potential for leveraging existing code with moderate effort. Internal implementation provides full control but requires higher effort and maintenance.
+- **Alternatives Considered**: Only Internal Implementation (higher initial effort), Only Find Alternative (uncertain success).
+- **Implementation**: Next steps involve searching for alternatives, then potentially delegating debug/fix tasks.
+- **Related**: Issue-ParseError-IDLookup-01, Decision-ParseErrorWorkaround-01 (Superseded), ActiveContext [2025-04-15 23:12:00]
+
+
+### Decision-ParseErrorWorkaround-01 - [2025-04-15 21:51:00] (FAILED & Superseded)
+- **Decision**: ~~Propose workaround for `zlibrary.exception.ParseError` on ID-based lookups (`get_book_by_id`, `get_download_info`) by replacing `client.get_by_id(id)` calls with `client.search(q=f'id:{id}', exact=True, count=1)`.~~ **FAILED**.
+- **Rationale**: ~~Memory Bank and code review confirm `client.get_by_id` constructs an incorrect URL (missing slug), causing a 404 and subsequent `ParseError`. Using `client.search` bypasses this faulty method. Assumes search results contain sufficient data (including `download_url` for `get_download_info`). This avoids replacing the library immediately.~~ **FAILED**: Integration testing confirmed `client.search(q='id:...')` also triggers `ParseError`.
+- **Alternatives Considered**: Replacing the `zlibrary` library (deferred), attempting to guess slugs (unreliable), modifying the library (no source).
+- **Implementation**: ~~Modify `get_by_id` and `get_download_info` functions in `lib/python_bridge.py` to use the search logic and handle search results.~~ **FAILED**.
+- **Related**: Issue-ParseError-IDLookup-01, ActiveContext [2025-04-15 21:51:00], ActiveContext [2025-04-15 23:10:11], Decision-IDLookupStrategy-01 (Supersedes this)
+
+### Decision-VenvManagerDI-01 - [2025-04-15 04:27:00]
+- **Decision**: Refactor `src/lib/venv-manager.ts` to use dependency injection for `fs` and `child_process` modules.
+- **Rationale**: Persistent failures in Jest tests (`__tests__/venv-manager.test.js`) when mocking built-in modules (`fs`, `child_process`) using `jest.unstable_mockModule` or `jest.spyOn` in an ESM context. Dependency injection provides a reliable way to supply mocks during testing, bypassing ESM mocking complexities for built-ins.
+- **Alternatives Considered**: Further attempts at `unstable_mockModule` (failed), `jest.spyOn` (failed), skipping tests (undesirable).
+- **Implementation**: Modified `venv-manager.ts` functions to accept a `deps` object; updated tests to pass mock objects.
+- **Related**: Progress [2025-04-15 04:31:00]
+
+
+### Decision-JestMockingStrategy-01 - [2025-04-15 03:33:00]
+- **Decision**: Refactor `__tests__/zlibrary-api.test.js` to mock the exported API functions directly using `jest.unstable_mockModule` and `jest.resetModules()`, instead of mocking the lower-level `python-shell`. For `__tests__/venv-manager.test.js`, continue attempting to fix `fs`/`child_process` mocks using `unstable_mockModule` and dynamic imports.
+- **Rationale**: Mocking `python-shell` proved unreliable with `unstable_mockModule` and inconsistent `jest.resetModules()` usage, causing state bleed. Mocking the higher-level API provides better isolation and control for `zlibrary-api.test.js`. The `venv-manager.test.js` issues seemed closer to resolution with the existing `unstable_mockModule` approach, warranting further refinement attempts.
+- **Alternatives Considered**: Persisting with `python-shell` mock (failed), using `spyOn` (less suitable for full module replacement in ESM), skipping tests (undesirable).
+- **Related**: Progress [2025-04-15 03:41:00]
+
+
+### Decision-MigrationStrategy-INT001 - [2025-04-14 18:31:26]
+- **Decision**: Recommend fixing `zod-to-json-schema` implementation first within current CJS/SDK 1.8.0 setup as the primary approach to resolve INT-001. If unsuccessful, or for modernization, recommend migrating to ESM while keeping SDK 1.8.0 (Option 2), ensuring the schema fix is included.
+- **Rationale**: Comparison report indicates incorrect schema generation (bypassed `zod-to-json-schema`) is the most likely cause of INT-001, not SDK version or module type alone. Fixing schema generation directly targets this. ESM migration aligns with modern standards and other examples, removing CJS/ESM interop as a variable, and is compatible with SDK 1.8.0 + `zod-to-json-schema`.
+- **Alternatives Considered**: SDK Downgrade (doesn't target root cause, poor maintainability), ESM + SDK Downgrade (overly complex, highest risk).
+- **Implementation (Recommended Path)**: 1. Fix `zod-to-json-schema` in `index.js`. 2. Test. 3. (If needed/desired) Migrate to ESM (update package.json, convert imports/exports, handle CJS deps, update Jest config). 4. Test thoroughly.
+- **Related**: Issue INT-001, `docs/mcp-server-comparison-report.md`
+
+
 ### Decision-PDFLibraryChoice-01 - [2025-04-14 13:50:00]
 - **Decision**: Recommend using `PyMuPDF (fitz)` for PDF text extraction within the Python bridge.
 - **Rationale**: Offers superior accuracy and speed compared to `PyPDF2` and `pdfminer.six`, crucial for RAG quality. Handles complex layouts well. AGPL-3.0 license is manageable within the server-side context.
@@ -73,8 +244,45 @@
 - **Implementation**: Node.js logic (post-install/first run) to detect Python 3, create/manage a venv in a cache dir, install `zlibrary` via venv pip, and use the absolute path to venv Python for `python-shell`.
 ### Feature: RAG Document Pipeline - PDF Processing (Task 3) - [2025-04-14 14:30:00]
 - **Status**: TDD Green Phase Complete.
+### Jest Test Suite Fix (TS/ESM) - [2025-04-15 05:31:00]
+- **Status**: Complete.
+- **Details**: All Jest test suites now pass after resolving complex mocking issues in the ESM environment. This involved multiple attempts, delegation to `debug` mode (which implemented Dependency Injection for `venv-manager`), and verification/additions by `tdd` mode.
+- **Related**: ADR-001-Jest-ESM-Migration, ActiveContext [2025-04-15 05:31:00]
+
+
+
+### Feature: Jest Test Suite Fixes (TS/ESM) - [2025-04-15 05:04:00]
+- **Status**: Complete.
+- **Details**: Resolved all failures in `__tests__/zlibrary-api.test.js` by refactoring mocks. Failures in `__tests__/venv-manager.test.js` were resolved by a delegated `debug` task, which refactored `src/lib/venv-manager.ts` to use Dependency Injection, bypassing Jest ESM mocking issues for built-in modules. All test suites now pass.
+- **Related**: Decision-JestMockingStrategy-01, Decision-DIForVenvManager-01 (Assumed from Debug task), ActiveContext [2025-04-15 05:04:00]
+
+
 - **Details**: Added `PyMuPDF` to `requirements.txt`. Implemented `_process_pdf` function and integrated it into `process_document` in `lib/python-bridge.py`. Fixed unrelated test failures in `__tests__/index.test.js` by updating outdated expectations. All tests pass (`npm test`).
 - **Related**: SpecPseudo [2025-04-14 14:08:30], TDD Red [2025-04-14 14:13:42], Code Green [2025-04-14 14:30:00]
+### Issue: INT-001 - Client ZodError / No Tools Found - [2025-04-14 18:23:58]
+- **Status**: Debugging Halted; Root Cause Unconfirmed (Server-Side Suspected).
+- **Details**: Extensive debugging (response format changes, SDK downgrade, logging, schema isolation) failed to resolve the 'No tools found' error in the client UI, despite server logs indicating ListToolsResponse generation starts. Strong suspicion of incompatibility within `zlibrary-mcp` (SDK v1.8.0/CJS/zodToJsonSchema interaction). User directed halt to debugging.
+- **Related**: ActiveContext [2025-04-14 18:19:43], Debug Issue History INT-001
+
+
+### Feature: Jest Test Suite Fixes (TS/ESM) - [2025-04-15 04:08:00]
+- **Status**: Partially Complete.
+- **Details**: Resolved all failures in `__tests__/zlibrary-api.test.js`. Failures in `__tests__/venv-manager.test.js` persist despite multiple attempts using `unstable_mockModule` and `jest.spyOn` for `fs`/`child_process` mocks, adjusting error handling, and disabling Jest transforms. Root cause likely complex interaction between Jest ESM, built-in module mocking, and async rejection handling.
+- **Related**: Decision-JestMockingStrategy-01, ActiveContext [2025-04-15 04:08:00]
+
+
+### Feature: Jest Test Suite Fixes (TS/ESM) - [2025-04-15 04:00:00]
+- **Status**: Partially Complete.
+- **Details**: Resolved all failures in `__tests__/zlibrary-api.test.js` by refactoring mocks. Failures in `__tests__/venv-manager.test.js` persist despite multiple attempts (correcting `fs` mocks, adjusting error handling, disabling Jest transforms). Root cause likely complex interaction between Jest ESM, built-in module mocking (`fs`, `child_process`), and async rejection handling.
+- **Related**: Decision-JestMockingStrategy-01, ActiveContext [2025-04-15 04:00:00]
+
+
+
+
+### Task: Debug `BookNotFound` Error in Forked `zlibrary` Library - [2025-04-16 07:27:22]
+- **Status**: Complete.
+- **Details**: Added logging to `zlibrary` logger, `libasync.py`, and `abs.py`. Used `fetcher` tool to check direct website response and analyzed logs from `use_mcp_tool` call after enabling logger. Confirmed root cause: Z-Library website search (e.g., `/s/id:3433851?exact=1`) returns a standard search page with 'nothing has been found'. This prevents the library from discovering the correct book page URL (which includes a slug, e.g., `/book/ID/slug`). The library correctly parses the 'not found' response and raises `BookNotFound`. The issue is external website behavior, invalidating the previous `search(id:...)` workaround.
+- **Related**: Issue-BookNotFound-IDLookup-02, ActiveContext [2025-04-16 07:27:22]
 
 
 - **Related**: Pattern-ManagedVenv-01, Issue-GlobalExecFail-01
@@ -82,6 +290,157 @@
 
 # Progress
 <!-- Entries below should be added reverse chronologically (newest first) -->
+### Task: RAG Pipeline (EPUB/TXT) - [2025-04-23 23:31:58]
+- **Status**: Halted (Requires Redesign).
+- **Details**: Integration verification (Task 2) halted due to critical design flaw identified by user ([Ref: SPARC Feedback 2025-04-23 23:26:20]). RAG tools must be redesigned to save processed output to file and return path, instead of returning raw text. Architecture redesign completed ([Ref: Architect Completion 2025-04-23 23:30:58]). Awaiting specification update. Original TDD complete ([Ref: GlobalContext Progress 2025-04-14 12:58:00]).
+- **Related**: Decision-RAGOutputFile-01, Pattern-RAGPipeline-FileOutput-01, Intervention [2025-04-23 23:26:50]
+
+### Task: RAG Pipeline (PDF) - [2025-04-23 23:31:58]
+- **Status**: Halted (Requires Redesign).
+- **Details**: Integration verification (Task 3) halted due to critical design flaw identified by user ([Ref: SPARC Feedback 2025-04-23 23:26:20]). RAG tools must be redesigned to save processed output to file and return path. Architecture redesign completed ([Ref: Architect Completion 2025-04-23 23:30:58]). Awaiting specification update. Original TDD complete ([Ref: GlobalContext Progress 2025-04-14 14:35:51]).
+- **Related**: Decision-RAGOutputFile-01, Pattern-RAGPipeline-FileOutput-01, Intervention [2025-04-23 23:26:50]
+
+
+### Task: Search-First ID Lookup (TDD Refactor Phase) - [2025-04-16 18:49:56]
+- **Status**: Complete.
+- **Details**: Refactored `lib/python_bridge.py` (clarity, DRY, consistency). Verified with `pytest` and `npm test` (all passing).
+### Task: Debug REG-001 (Tool Call Regression) - [2025-04-23 22:12:51]
+- **Status**: Complete.
+- **Details**: Resolved 'Invalid tool name type' error by correcting tool name key usage (`name` vs `tool_name`) in `src/index.ts`. Resolved subsequent Python `TypeError` by fixing argument serialization/passing between Node.js (`src/lib/zlibrary-api.ts`) and Python (`lib/python_bridge.py`). Updated Jest tests (`__tests__/zlibrary-api.test.js`) to match correct argument structure. Verified with manual tool calls and `npm test`.
+- **Related**: Issue REG-001, ActiveContext [2025-04-23 22:12:51]
+
+
+- **Related**: ActiveContext [2025-04-16 18:49:56]
+
+
+
+### Task: Search-First ID Lookup (TDD Green Phase) - [2025-04-16 18:40:05]
+- **Status**: Complete.
+- **Details**: Implemented Search-First strategy in `lib/python_bridge.py` per spec. Added `pytest-asyncio` and fixed related Python test issues. Python and Node tests pass.
+- **Related**: `docs/search-first-id-lookup-spec.md`, ActiveContext [2025-04-16 18:40:05]
+
+
+
+### Task: Search-First ID Lookup (Red Phase) - [2025-04-16 18:21:19]
+- **Status**: Red Phase Complete.
+- **Details**: Added 13 xfail tests to `__tests__/python/test_python_bridge.py` covering `_internal_search` and modified `_internal_get_book_details_by_id` functions per `docs/search-first-id-lookup-spec.md`. Added dummy exceptions/functions to allow test collection. Verified xfail status via pytest.
+- **Related**: `docs/search-first-id-lookup-spec.md`, ActiveContext [2025-04-16 18:21:19]
+
+
+
+### Task: Verify Internal ID Lookup Integration - [2025-04-16 18:08:00]
+- **Status**: Complete.
+- **Details**: Manually verified `get_book_by_id`, `get_download_info`, `download_book_to_file` consistently return 'Book ID ... not found.' error for 404 scenarios (valid/invalid IDs) using internal `httpx` logic. `npm test` passes.
+- **Related**: ActiveContext [2025-04-16 18:08:00]
+
+
+
+### Task: Internal ID Lookup (TDD Refactor Phase) - [2025-04-16 08:42:01]
+- **Status**: Complete.
+- **Details**: Refactored `_internal_get_book_details_by_id` in `lib/python_bridge.py` for clarity (renamed exception vars, added comments for placeholder selectors, removed redundant response check). Verified with `pytest` (PASS: 16 skipped, 13 xfailed, 4 xpassed) and `npm test` (PASS: 4 suites, 47 tests, 11 todo).
+- **Related**: `docs/internal-id-lookup-spec.md`, ActiveContext [2025-04-16 08:42:01]
+
+
+
+### Task: Internal ID Lookup (TDD Green Phase) - [2025-04-16 08:38:32]
+- **Status**: Complete.
+- **Details**: Implemented `_internal_get_book_details_by_id` in `lib/python_bridge.py` and updated callers (`get_by_id`, `get_download_info`) per spec. Fixed Python test errors (venv path, missing deps, exception logic, test assertions). Python & Node tests pass.
+- **Related**: `docs/internal-id-lookup-spec.md`, ActiveContext [2025-04-16 08:38:32]
+
+
+### Task: Internal ID Lookup (Red Phase) - [2025-04-16 08:18:43]
+- **Status**: Red Phase Complete.
+- **Details**: Added failing/xfail tests to `__tests__/python/test_python_bridge.py` covering `_internal_get_book_details_by_id` function (404, HTTP errors, network errors, parsing) and caller modifications (`get_by_id`, `get_download_info`). Added `httpx` dependency to `requirements.txt`.
+- **Related**: `docs/internal-id-lookup-spec.md`, ActiveContext [2025-04-16 08:18:43]
+
+
+### Task: Debug `BookNotFound` Error in Forked `zlibrary` Library - [2025-04-16 07:23:30]
+- **Status**: Complete.
+- **Details**: Added logging to `zlibrary` logger, `libasync.py`, and `abs.py`. Used `fetcher` tool to check direct website response and analyzed logs from `use_mcp_tool` call after enabling logger. Confirmed root cause: Z-Library website search (e.g., `/s/id:3433851?exact=1`) returns a standard search page with 'nothing has been found'. The library correctly parses this, finds no results, and raises `BookNotFound`. The issue is external website behavior, invalidating the previous `search(id:...)` workaround.
+- **Related**: Issue-BookNotFound-IDLookup-02, ActiveContext [2025-04-16 07:23:30]
+
+
+### Task: Fix `zlibrary` ID Lookup Bugs - [2025-04-16 00:03:00]
+- **Status**: Complete.
+- **Details**: Applied fixes to `zlibrary/src/zlibrary/libasync.py` and `zlibrary/src/zlibrary/abs.py` based on the provided strategy. `get_by_id` now uses search. `SearchPaginator.parse_page` now handles potential direct book page results from `id:` searches.
+- **Related**: Issue-ParseError-IDLookup-01, Decision-IDLookupStrategy-01, ActiveContext [2025-04-16 00:02:36]
+
+
+### Task: Locate `zlibrary` Source Code - [2025-04-15 23:14:52]
+- **Status**: Complete.
+- **Details**: Successfully located the source code repository for the external `zlibrary` Python library (v1.0.2) using `pip show zlibrary`. The repository is at `https://github.com/sertraline/zlibrary`.
+- **Related**: Decision-IDLookupStrategy-01
+
+
+### Feature: ID Lookup Workaround (TDD Green Phase) - [2025-04-15 22:39:35]
+- **Status**: Complete.
+- **Details**: Implemented search-based workaround for `get_by_id` and `get_download_info` in `lib/python_bridge.py`. Fixed associated Python tests (`__tests__/python/test_python_bridge.py`) and Node.js regressions (`__tests__/zlibrary-api.test.js`, `__tests__/python-bridge.test.js`). All tests pass.
+- **Related**: Decision-ParseErrorWorkaround-01, ActiveContext [2025-04-15 22:39:35]
+
+
+### Issue: `ParseError` on ID-Based Lookups - Workaround Proposed - [2025-04-15 21:51:00]
+- **Status**: Investigation Complete; Workaround Proposed.
+- **Details**: Diagnosed `zlibrary.exception.ParseError` affecting `get_book_by_id` and `get_download_info`. Confirmed root cause is incorrect URL construction (missing slug) in the external `zlibrary` library's `get_by_id` method. Proposed a workaround using `client.search(q=f'id:{id}')` within `lib/python_bridge.py`.
+- **Related**: Issue-ParseError-IDLookup-01, Decision-ParseErrorWorkaround-01, ActiveContext [2025-04-15 21:51:00]
+
+### Feature: PDF Processing RAG (Task 3) - AttributeError Fix - [2025-04-15 20:46:14]
+- **Status**: Resolved.
+- **Details**: Fixed `AttributeError: module 'fitz' has no attribute 'fitz'` (and subsequent `AttributeError: module 'fitz' has no attribute 'RuntimeException'`) in `lib/python_bridge.py` by correcting the exception handler to catch generic `RuntimeError`. Also resolved subsequent `pytest` import errors by renaming the file (`lib/python_bridge.py`) and cleaning the test file (`__tests__/python/test_python_bridge.py`). Manual verification with a valid PDF (`__tests__/assets/sample.pdf`) confirmed the tool now works correctly.
+- **Related**: ActiveContext [2025-04-15 20:46:14], Debug Issue History PDF-AttrError-01
+
+
+### Jest Test Suite Fix (TS/ESM) - Confirmation [2025-04-15 13:44:48]
+- **Status**: Confirmed Complete.
+- **Details**: After a task reset due to context window issues, confirmed via Memory Bank that all Jest tests were previously fixed and passing as of [2025-04-15 05:31:00].
+- **Related**: ActiveContext [2025-04-15 13:44:30]
+
+
+
+### Feature: Jest Test Suite Fixes (TS/ESM - venv-manager) - [2025-04-15 04:31:00]
+- **Status**: Resolved.
+- **Details**: Fixed 3 persistent failing tests in `__tests__/venv-manager.test.js`. Refactored `src/lib/venv-manager.ts` for dependency injection (DI) of `fs`/`child_process`, updated tests to use DI mocks, corrected `requirements.txt` path logic, and ensured clean build/cache. All tests now pass.
+- **Related**: Decision-VenvManagerDI-01, ActiveContext [2025-04-15 04:31:00]
+
+
+### Feature: Jest Test Suite Fixes (TS/ESM) - [2025-04-15 03:41:00]
+- **Status**: Partially Complete.
+- **Details**: Resolved all failures in `__tests__/zlibrary-api.test.js` by refactoring mocks to target API functions directly instead of `python-shell`. Failures in `__tests__/venv-manager.test.js` persist despite multiple attempts to fix `fs` and `child_process` mocks using `unstable_mockModule` and adjusting error handling. Root cause likely complex interaction between Jest ESM, built-in module mocking, and dynamic imports.
+- **Related**: Decision-JestMockingStrategy-01
+
+
+### Issue: INT-001 - Client ZodError / No Tools Found - [2025-04-14 19:36:54]
+- **Status**: Investigation Concluded; Likely Client-Side Issue.
+- **Details**: Exhausted server-side fixes for `index.js` based on analysis reports and external examples (correcting `zodToJsonSchema` usage, CJS import, handling empty schemas, removing try-catch). Issue persists. GitHub issue search revealed RooCode issue #2085 describing identical behavior, suggesting a regression in RooCode v3.9.0+ affecting MCP server discovery/display.
+- **Related**: ActiveContext [2025-04-14 19:36:24], `docs/mcp-client-tool-failure-analysis.md`, `docs/mcp-server-comparison-report.md`, RooCode Issue #2085
+
+
+
+### Issue: INT-001 - Client ZodError / No Tools Found - [2025-04-14 19:29:08]
+- **Status**: Refining Fix Attempt (Attempt 2.1).
+- **Details**: Based on analysis reports confirming dummy schemas as the likely root cause, refined the previous fix in `index.js`. Corrected the CJS import for `zod-to-json-schema` (removed `.default`) and uncommented all tools in the `toolRegistry` to ensure they are processed by the schema generation logic.
+- **Related**: ActiveContext [2025-04-14 19:28:55], `docs/mcp-client-tool-failure-analysis.md`, `docs/mcp-server-comparison-report.md`
+
+
+
+### Issue: INT-001 - Client ZodError / No Tools Found - [2025-04-14 19:26:45]
+- **Status**: Fix Attempt Failed (Attempt 2).
+- **Details**: Modified `index.js` ListToolsRequest handler to correctly use `zod-to-json-schema` and skip tools that fail generation. User confirmed client UI still shows 'No tools found'. The fix targeting schema generation alone was insufficient.
+- **Related**: ActiveContext [2025-04-14 19:26:32], Decision-MigrationStrategy-INT001
+
+
+
+### Documentation: MCP Server Comparison Report - [2025-04-14 17:50:25]
+- **Status**: Draft Complete (Awaiting Comparison Data).
+- **Details**: Created initial draft of `docs/mcp-server-comparison-report.md`. Analyzed `zlibrary-mcp` implementation (SDK v1.8.0, CJS, tool registration, schema handling). Identified dummy schema usage as potential issue related to INT-001. Report includes placeholders for comparison data from other servers.
+- **Related**: ActiveContext [2025-04-14 17:49:54]
+
+
+### Feature: RAG Document Pipeline - PDF Processing (Task 3) - [2025-04-14 14:50:58]
+- **Status**: Integration Verification Blocked.
+- **Details**: Code review confirmed `PyMuPDF` dependency and correct logic in `lib/python-bridge.py`. Dependency installation assumed correct based on prior tests. End-to-end verification (manual/automated tests) blocked by client-side ZodError (INT-001) preventing tool calls needed to obtain test data (Book IDs).
+- **Related**: ActiveContext [2025-04-14 14:50:58], Issue INT-001
+
+
 ### Feature: RAG Document Pipeline - PDF Processing (Task 3) - [2025-04-14 14:25:00]
 - **Status**: TDD Green Phase Implementation Complete.
 - **Details**: Added `PyMuPDF` to `requirements.txt`. Implemented `_process_pdf` function and integrated it into `process_document` in `lib/python-bridge.py` following `docs/pdf-processing-implementation-spec.md`. Ready for test execution (`npm test`).

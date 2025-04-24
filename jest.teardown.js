@@ -1,5 +1,6 @@
 // jest.teardown.js
-module.exports = async () => {
+// Convert to ESM syntax
+export default async () => {
   console.log('Forcing Jest to exit via globalTeardown...');
   process.exit(0);
 };

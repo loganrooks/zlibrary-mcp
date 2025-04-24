@@ -1,0 +1,42 @@
+{
+  "compilerOptions": {
+    /* Base Options: */
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "target": "ES2022", // Target modern Node.js versions
+    "allowJs": true, // Allow gradual migration if needed
+    "resolveJsonModule": true,
+    "moduleDetection": "force",
+    "isolatedModules": true, // Recommended for faster builds
+
+    /* Strictness */
+    "strict": true,
+    "noUncheckedIndexedAccess": true, // Recommended for stricter checks
+    "noImplicitAny": true, // Enforce explicit types
+
+    /* If NOT transpiling with Babel: */
+    "module": "NodeNext", // Use Node.js's native ESM module system
+    "outDir": "./dist", // Output directory for compiled JS
+    "sourceMap": true, // Generate source maps for debugging
+
+    /* If your code runs in the DOM: */
+    // "lib": ["es2022", "dom", "dom.iterable"],
+
+    /* If your code doesn't run in the DOM: */
+    "lib": ["es2022"],
+
+    /* Path Aliases */
+    // "baseUrl": ".", // Optional: Define base directory for aliases
+    // "paths": { // Optional: Define path aliases
+    //   "@/*": ["./src/*"]
+    // }
+
+    /* Project Structure */
+    "rootDir": "./src", // Set rootDir to src
+    "declaration": true, // Generate .d.ts files
+    "declarationMap": true, // Generate source maps for .d.ts files
+    "incremental": true // Enable incremental compilation
+  },
+  "include": ["src/**/*.ts"], // Only include .ts files within the src directory
+  "exclude": ["node_modules", "dist", "**/*.test.ts", "**/*.spec.ts", "**/__mocks__/**", "jest.config.js", "jest.teardown.js"]
+}

@@ -1,34 +1,48 @@
-module.exports = {
+// Simplified jest.config.js for ESM troubleshooting
+import { createDefaultEsmPreset } from 'ts-jest';
+
+const preset = createDefaultEsmPreset();
+
+export default {
+  // Apply the ts-jest ESM preset
+  ...preset,
+
+  // Basic Node environment
   testEnvironment: 'node',
-  collectCoverage: true,
-  collectCoverageFrom: [
-    'lib/**/*.js',
-    'index.js'
-  ],
-  coverageDirectory: 'coverage',
-  coverageReporters: [
-    'text',
-    'lcov',
-    'clover'
-  ],
+
+  // Match test files in __tests__
   testMatch: [
-    '**/__tests__/**/*.test.js'
+    '**/__tests__/**/*.test.js' // Assuming tests remain JS files
   ],
+
+  // Ignore node_modules and dist (except for moduleNameMapper resolution)
   testPathIgnorePatterns: [
     '/node_modules/',
-    '/dist/'
+    '/dist/' // Ignore compiled output for test discovery
   ],
-  // transformIgnorePatterns removed as env-paths is mocked in venv-manager.test.js
-  // Skip integration tests by default
-  testTimeout: 10000,
-  // Automatically clear mock calls and instances between every test
-  clearMocks: true,
-  // Indicates whether the coverage information should be collected while executing the test
-  collectCoverage: true,
-  // Automatically mock the MCP server package
+
+  // Crucial: Map imports from __tests__ to compiled dist/ files
   moduleNameMapper: {
-    '^@modelcontextprotocol/server$': '<rootDir>/__mocks__/@modelcontextprotocol/server.js'
+    // Add preset's moduleNameMapper first
+    ...preset.moduleNameMapper,
+    // Map relative paths from __tests__ to the compiled files in dist/
+    // Match imports like '../lib/module.js' from '__tests__/...'
+    '^../lib/(.*)\\.js$': '<rootDir>/dist/lib/$1.js',
+    // Match imports like '../index.js' or '../dist/index.js' from '__tests__/...'
+    '^../(dist/)?index\\.js$': '<rootDir>/dist/index.js',
+    // Keep the SDK mock if still needed, otherwise remove
+    // '^@modelcontextprotocol/server$': '<rootDir>/__mocks__/@modelcontextprotocol/server.js',
   },
-  // Force exit after tests using global teardown
-  globalTeardown: '<rootDir>/jest.teardown.js'
+
+  // Keep global teardown if needed for force exit
+  globalTeardown: '<rootDir>/jest.teardown.js',
+
+  // Explicitly disable transformations to prevent Jest from interfering with ESM
+  transform: {},
+
+  // Removed for simplification:
+  // collectCoverage, collectCoverageFrom, coverageDirectory, coverageReporters
+  // transformIgnorePatterns (was already commented out)
+  // testTimeout
+  // clearMocks (handled inside tests now)
 };

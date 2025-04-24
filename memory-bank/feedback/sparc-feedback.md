@@ -1,5 +1,38 @@
 # SPARC Orchestrator Feedback
 <!-- Entries below should be added reverse chronologically (newest first) -->
+### [2025-04-24 17:52:23] Intervention: Prioritize Version Control Cleanup
+- **Trigger**: User input.
+- **Context**: SPARC was about to delegate TDD task after spec update.
+- **Action Taken**: Halted TDD delegation. Acknowledged user request to prioritize cleaning up uncommitted Git changes.
+- **Rationale**: Ensure proper version control hygiene before proceeding with new implementation phases.
+- **Outcome**: Task delegated to `devops` mode to analyze Git status and propose/execute commits.
+- **Follow-up**: Await `devops` analysis and commit plan.
+
+### [2025-04-24 17:27:32] Intervention: Delegate Clause Invoked (Context > 50%)
+- **Trigger**: Context window size reached 51%.
+- **Context**: Preparing to delegate RAG specification update task.
+- **Action Taken**: Halted task delegation. Initiated handover process as per Delegate Clause.
+- **Rationale**: Proactively manage context window limitations to prevent performance degradation or failure.
+- **Outcome**: Handover to new SPARC instance initiated.
+- **Follow-up**: Complete Memory Bank updates and generate handover message using `new_task`.
+
+### [2025-04-24 17:04:17] Intervention: User Query on `download_book_to_file` Input vs. Scraping Requirement
+- **Trigger**: User message questioning the use of `id` as input for `download_book_to_file` when the established strategy requires scraping a page URL.
+- **Context**: Architect mode completed investigation, reaffirming the scraping strategy within the internal `download_book` function, but the documentation presented showed the MCP tool taking an `id`.
+- **Action Taken**: Acknowledged the valid point. Explained the implicit two-step process: MCP tool takes ID -> calls `get_by_id`/`search` to get details (including page URL) -> calls internal `download_book` with details.
+- **Rationale**: The connection between the user-facing tool input and the internal scraping mechanism wasn't explicit enough in the previous summary/documentation.
+- **Outcome**: Will delegate documentation update to `docs-writer` to clarify this flow in `rag-pipeline.md` and `ADR-002`.
+- **Follow-up**: Delegate task to `docs-writer`.
+
+
+### [2025-04-24 16:41:02] Intervention: User Corrected Download Strategy & Halted TDD Task
+- **Trigger**: User message clarifying previous context and halting the delegated `tdd` task.
+- **Context**: SPARC delegated a `tdd` task to fix `download_book` based on incomplete integration report, without addressing the core issue of obtaining the download URL.
+- **Action Taken**: Halted the `tdd` task. Acknowledged the need to redesign the download workflow based on scraping the book's *page URL* (obtained via search/details) to find the download link, rather than relying on Book IDs or assuming a direct download URL is available.
+- **Rationale**: Align with user's correct diagnosis that the fundamental problem is obtaining the download URL, requiring architectural replanning before implementation/testing.
+- **Outcome**: TDD task halted. Will delegate redesign to `architect` mode.
+- **Follow-up**: Delegate redesign task to `architect`.
+
 ### [2025-04-24 01:02:21] Intervention: User Feedback on Version Control Practices
 - **Trigger**: User denied `new_task` delegation for TDD Refactor phase.
 - **Context**: SPARC attempted to delegate refactoring immediately after Green phase completion without explicitly addressing version control (branching/committing), despite previous ambiguity noted by `code` mode.

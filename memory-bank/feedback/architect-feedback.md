@@ -38,3 +38,8 @@
 - **Issue**: User denied completion, asking if the architecture was saved somewhere like 'docs'.
 - **Context**: The architecture *was* saved to the Memory Bank (`globalContext.md`, `architect.md`) as per Architect mode rules.
 - **Action**: Acknowledge feedback, explain MB storage, propose creating formal documentation, and ask for user's preferred location.
+
+[2025-04-24 17:11:35] - User Feedback on Download Workflow Completion Attempt:
+- **Issue**: User correctly pointed out that `get_book_by_id` was mentioned as a source for `bookDetails` in the documentation, despite Memory Bank logs indicating its unreliability due to external website issues (non-functional ID search/lookup).
+- **Context**: The documentation accurately described the download *process* (using `bookDetails['url']` for scraping) but inaccurately suggested `get_book_by_id` as a reliable way to *obtain* `bookDetails`.
+- **Action**: Acknowledge feedback. Confirm `get_book_by_id` unreliability via Memory Bank. Plan to update ADR-002 and rag-pipeline.md to remove/qualify `get_book_by_id` as a source, emphasizing `search_books` instead.

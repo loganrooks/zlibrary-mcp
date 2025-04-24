@@ -1,6 +1,13 @@
 # Product Context
 <!-- Entries below should be added reverse chronologically (newest first) -->
 
+### Product: RAG Spec Update (Download Workflow) - [2025-04-24 17:33:32]
+- **Context**: Updated `docs/rag-pipeline-implementation-spec.md` (to v2.1) to accurately reflect the download workflow defined in ADR-002.
+- **Changes**: Clarified the two-step process (search for `bookDetails`, pass details to `download_book_to_file`, internal scraping of book page URL using selector `a.btn.btn-primary.dlButton`). Updated tool schemas, Node/Python pseudocode, and TDD anchors accordingly. Input for `download_book_to_file` changed from `id` to `bookDetails`.
+- **Status**: Specification Updated (Draft).
+- **Related**: ADR-002, `docs/rag-pipeline-implementation-spec.md` (v2.1)
+
+
 ### Product: Search-First ID Lookup Specification - [2025-04-16 18:14:19]
 - **Context**: Specification generated for an alternative internal ID lookup strategy requested by the user.
 - **Strategy**: Uses internal search (query=ID) via `httpx`/`BeautifulSoup` to find the book page URL, then fetches/parses that page.
@@ -148,7 +155,23 @@
 - **Related**: Decision-PythonEnvStrategy-01, Issue-GlobalExecFail-01
 
 # Decision Log
+### Decision-DownloadBookDeps-01 - [2025-04-24 03:18:12]
+- **Decision**: Use `httpx` for async HTTP requests (with `follow_redirects=True`) and `aiofiles` for async file writing in the `download_book` implementation within the forked `zlibrary` library (`zlibrary/src/zlibrary/libasync.py`). Add `httpx` and `aiofiles` as dependencies to the forked library's `zlibrary/pyproject.toml`.
+- **Rationale**: `httpx` is preferred for async requests and supports redirects. `aiofiles` is needed for non-blocking file I/O within the async method. Dependencies must be declared within the sub-project's configuration.
+- **Alternatives Considered**: Using `aiohttp` (already present, but `httpx` was requested and is suitable), using standard blocking file I/O (would block the async event loop).
+- **Implementation**: Added dependencies to `zlibrary/pyproject.toml`. Implemented `download_book` using these libraries.
+- **Related**: ActiveContext [2025-04-24 03:49:26]
+
+
 <!-- Entries below should be added reverse chronologically (newest first) -->
+### Decision-DownloadScrapingStrategy-01 - [2025-04-24 16:59:28]
+- **Decision**: Reaffirm the download workflow strategy implemented in `zlibrary/src/zlibrary/libasync.py::download_book` (on `feature/rag-file-output` branch). This involves: obtaining the book page URL from search/get_by_id results (`BookItem['url']`), fetching that page, parsing with BeautifulSoup, selecting the download link via CSS selector (`a.btn.btn-primary.dlButton`), extracting the `href`, and downloading from the extracted URL.
+- **Rationale**: Investigation confirmed this aligns with the required strategy shift mandated by user feedback and integration failures (Ref: INT-RAG-003, SPARC Feedback 2025-04-24 16:41:02). It correctly uses the book page URL to find the actual download link, addressing the unreliability of direct ID-based URL construction.
+- **Alternatives Considered**: Direct URL construction (unreliable), relying on a non-existent dedicated download info function.
+- **Consequences**: More reliable than previous attempts, but dependent on website HTML structure (selector brittleness). Error handling is implemented.
+- **Related**: ADR-002, ActiveContext [2025-04-24 16:59:28]
+
+
 ### Decision-RAGOutputFile-01 - [2025-04-23 23:29:31]
 - **Decision**: Modify RAG processing tools (`process_document_for_rag`, `download_book_to_file` with `process_for_rag: true`) to save extracted text content to a file and return the file path (`processed_file_path`) instead of the raw text content.
 - **Rationale**: Addresses critical feedback ([Ref: SPARC Feedback 2025-04-23 23:26:20]) regarding agent instability caused by context overload when handling large amounts of raw text returned by the tools. Returning a file path is more scalable and robust.
@@ -282,6 +305,12 @@
 ### Task: Debug `BookNotFound` Error in Forked `zlibrary` Library - [2025-04-16 07:27:22]
 - **Status**: Complete.
 - **Details**: Added logging to `zlibrary` logger, `libasync.py`, and `abs.py`. Used `fetcher` tool to check direct website response and analyzed logs from `use_mcp_tool` call after enabling logger. Confirmed root cause: Z-Library website search (e.g., `/s/id:3433851?exact=1`) returns a standard search page with 'nothing has been found'. This prevents the library from discovering the correct book page URL (which includes a slug, e.g., `/book/ID/slug`). The library correctly parses the 'not found' response and raises `BookNotFound`. The issue is external website behavior, invalidating the previous `search(id:...)` workaround.
+### Task: Version Control Cleanup - [2025-04-24 17:52:23]
+- **Status**: Pending Delegation.
+- **Details**: User requested immediate focus on cleaning up uncommitted Git changes before proceeding with other tasks. Halted TDD delegation for RAG spec implementation. Preparing to delegate Git status analysis and commit task to devops mode.
+- **Related**: ActiveContext [2025-04-24 17:52:23]
+
+
 - **Related**: Issue-BookNotFound-IDLookup-02, ActiveContext [2025-04-16 07:27:22]
 
 
@@ -289,7 +318,24 @@
 - **Specification**: See SpecPseudo MB entry [2025-04-14 03:31:01]
 
 # Progress
+### Task: Implement `download_book` in Forked Library - [2025-04-24 03:49:26]
+- **Status**: Complete.
+- **Details**: Implemented the missing `download_book` async method in `zlibrary/src/zlibrary/libasync.py` using `httpx` and `aiofiles`. Added `DownloadError` exception and updated dependencies (`httpx`, `aiofiles`) in `zlibrary/pyproject.toml`. Committed changes (8a30920) to `feature/rag-file-output`. Addresses INT-RAG-003.
+- **Related**: ActiveContext [2025-04-24 03:49:26], Issue INT-RAG-003
+
+
 <!-- Entries below should be added reverse chronologically (newest first) -->
+### Task: Re-Verify RAG `download_book_to_file` Integration - [2025-04-24 16:36:00]
+- **Status**: Halted.
+- **Details**: Verification blocked by intractable errors in the `zlibrary` fork's download logic (dependency issues, signature mismatches, scraping failures). Requires dedicated fix in the library before integration can proceed.
+- **Related**: Issue INT-RAG-DOWNLOAD-REPLAN, ActiveContext [2025-04-24 16:36:00]
+
+
+### Task: Verify RAG File Output Integration - [2025-04-24 03:07:03]
+- **Status**: Partially Complete (Verification Blocked).
+- **Details**: Verified `process_document_for_rag` works for PDF, EPUB, TXT on `feature/rag-file-output` branch. Output correctly saved to `./processed_rag_output/`. Verification of `download_book_to_file` (combined workflow) is blocked due to missing `download_book` method implementation in the forked `zlibrary` library (AttributeError). `npm test` passed, but with 17 TODOs (6 more than expected) and a console error about `requirements.txt` path. Memory Bank updates were successful after initial rejections.
+- **Related**: ActiveContext [2025-04-24 03:06:50], Integration Issues INT-RAG-001, INT-RAG-002, INT-RAG-003, TEST-REQ-ERROR, TEST-TODO-DISCREPANCY.
+
 ### Task: RAG Pipeline - Feature Branch Creation - [2025-04-24 01:46:10]
 - **Status**: Complete.
 - **Details**: Created feature branch `feature/rag-file-output` after committing RAG Green Phase changes (commit d6bd8ab) and Memory Bank updates (commit 144429b) to `master`.

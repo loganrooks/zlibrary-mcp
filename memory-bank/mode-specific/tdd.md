@@ -1,6 +1,38 @@
 # Tester (TDD) Specific Memory
 <!-- Entries below should be added reverse chronologically (newest first) -->
 ## Test Execution Results
+### Test Execution: Integration (Node.js - RAG Refactor 3) - [2025-04-24 02:20:10]
+- **Trigger**: Manual (`npm test`) after removing unused helper in `src/lib/zlibrary-api.ts`.
+- **Outcome**: PASS / **Summary**: 4 suites passed, 46 tests passed, 17 todo.
+- **Failed Tests**: None
+- **Coverage Change**: Stable (Expected for removing unused code)
+- **Notes**: Confirmed final refactoring step did not introduce regressions.
+
+
+### Test Execution: Unit (Python - RAG Refactor 2) - [2025-04-24 02:18:06]
+- **Trigger**: Manual (`pytest`) after path consistency refactoring in `lib/python_bridge.py`.
+- **Outcome**: PASS / **Summary**: 7 passed, 14 xfailed, 3 xpassed.
+- **Failed Tests**: None
+- **Coverage Change**: N/A
+- **Notes**: Confirmed path consistency refactoring did not introduce regressions.
+
+
+### Test Execution: Integration (Node.js - RAG Refactor 1) - [2025-04-24 02:17:01]
+- **Trigger**: Manual (`npm test`) after DRY refactoring in `lib/python_bridge.py`.
+- **Outcome**: PASS / **Summary**: 4 suites passed, 46 tests passed, 17 todo.
+- **Failed Tests**: None
+- **Coverage Change**: Stable
+- **Notes**: Confirmed Python DRY refactoring did not introduce regressions in Node.js tests.
+
+
+### Test Execution: Unit (Python - RAG Refactor 1) - [2025-04-24 02:16:32]
+- **Trigger**: Manual (`pytest`) after DRY refactoring in `lib/python_bridge.py`.
+- **Outcome**: PASS / **Summary**: 7 passed, 13 xfailed, 4 xpassed.
+- **Failed Tests**: None
+- **Coverage Change**: N/A
+- **Notes**: Confirmed DRY refactoring did not introduce regressions.
+
+
 ### Test Execution: Regression (Post Arg Fix - npm test) - [2025-04-23 17:55:38]
 - **Trigger**: Manual (`npm test`) after fixing `callPythonFunction` signature in `src/lib/python-bridge.ts`.
 - **Outcome**: PASS / **Summary**: 4 suites passed, 47 tests passed, 11 todo.
@@ -209,6 +241,16 @@
 - **Notes**: Failures are expected as implementation is missing.
 
 ## TDD Cycles Log
+### TDD Cycle: RAG File Output Redesign - [2025-04-24 02:20:35]
+- **Red**: N/A (Refactor phase following Green Phase commit d6bd8ab)
+- **Green**: N/A (Refactor phase)
+- **Refactor**:
+    - `lib/python_bridge.py`: Refactored `download_book` to call `process_document` (DRY). Standardized path handling using `pathlib.Path`. Localized `PROCESSED_OUTPUT_DIR` constant. Removed unused `os` import.
+    - `src/lib/zlibrary-api.ts`: Removed unused `generateSafeFilename` helper function.
+- **Files Changed**: `lib/python_bridge.py`, `src/lib/zlibrary-api.ts`
+- **Outcome**: Refactor phase complete. Code improved for clarity, maintainability (DRY), and consistency. All tests (`pytest`, `npm test`) pass. Changes committed (a440e2a) to `feature/rag-file-output`.
+
+
 ### TDD Cycle: Search-First ID Lookup - [2025-04-16 18:49:56]
 - **Red**: Added 13 xfail tests to `__tests__/python/test_python_bridge.py` covering `_internal_search` (success, no results, parse/fetch errors) and modified `_internal_get_book_details_by_id` (success, search fail, URL extract fail, book page fetch/parse fail, missing details). Added mock HTML snippets. Added dummy exceptions/functions to allow collection. / Test File: `__tests__/python/test_python_bridge.py`
 - **Green**: Implemented `_internal_search` and modified `_internal_get_book_details_by_id` in `lib/python_bridge.py` using `httpx` and `BeautifulSoup` per spec. Updated callers (`get_by_id`, `get_download_info`, `main`). Added `pytest-asyncio` and fixed Python tests (async decorators, missing args, mock logic, assertions). / Code File: `lib/python_bridge.py`

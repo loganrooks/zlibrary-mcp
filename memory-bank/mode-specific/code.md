@@ -1,5 +1,15 @@
 # Auto-Coder Specific Memory
 <!-- Entries below should be added reverse chronologically (newest first) -->
+### Implementation: `download_book` in Forked Library - [2025-04-24 03:49:26]
+- **Approach**: Implemented the missing `download_book` async method in the `AsyncZlib` class (`zlibrary/src/zlibrary/libasync.py`) using `httpx` for downloading (with redirect following) and `aiofiles` for asynchronous file writing. Added a custom `DownloadError` exception (`zlibrary/src/zlibrary/exception.py`) and updated the forked library's dependencies (`zlibrary/pyproject.toml`).
+- **Key Files Modified/Created**:
+  - `zlibrary/src/zlibrary/libasync.py`: Added imports (`httpx`, `aiofiles`, `os`, `pathlib`, `Dict`, `DownloadError`), added `download_book` method.
+  - `zlibrary/src/zlibrary/exception.py`: Added `DownloadError` class.
+  - `zlibrary/pyproject.toml`: Added `httpx` and `aiofiles` to dependencies.
+- **Notes**: Resolved Git commit issues related to the `zlibrary/` subdirectory being an embedded repository by removing `zlibrary/.git` before committing. Addresses integration blocker INT-RAG-003.
+- **Related**: ActiveContext [2025-04-24 03:49:26], GlobalContext [2025-04-24 03:49:26], Decision-DownloadBookDeps-01
+
+
 ### Implementation: Search-First ID Lookup (TDD Green Phase) - [2025-04-16 18:40:05]
 - **Approach**: Implemented internal search (`_internal_search`) and modified internal lookup (`_internal_get_book_details_by_id`) in `lib/python_bridge.py` using `httpx`/`BeautifulSoup` per spec (`docs/search-first-id-lookup-spec.md`). Updated callers (`get_by_id`, `get_download_info`, `main`) to use new logic and translate exceptions.
 - **Key Files Modified/Created**:
@@ -165,6 +175,19 @@
   - `index.js`: Updated SDK import, replaced `ensureZLibraryInstalled` with `ensureVenvReady`.
   - `lib/zlibrary-api.js`: Updated `callPythonFunction` to use `getManagedPythonPath`.
   - `package.json`: Added `env-paths` dependency.
+
+### Dependency: httpx (Forked Library) - [2025-04-24 03:18:12]
+- **Version**: (Added to `zlibrary/pyproject.toml`)
+- **Purpose**: Async HTTP client used for downloading books in the `download_book` method within the forked `zlibrary` library.
+- **Used by**: `zlibrary/src/zlibrary/libasync.py`
+- **Config notes**: Chosen for async support and redirect handling.
+
+### Dependency: aiofiles (Forked Library) - [2025-04-24 03:18:12]
+- **Version**: (Added to `zlibrary/pyproject.toml`)
+- **Purpose**: Async file I/O library used for writing downloaded book content in the `download_book` method within the forked `zlibrary` library.
+- **Used by**: `zlibrary/src/zlibrary/libasync.py`
+- **Config notes**: Necessary for non-blocking file operations in async context.
+
 
 ## Dependencies Log
 

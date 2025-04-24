@@ -14,7 +14,7 @@ const __dirname = path.dirname(__filename);
  * @returns Promise resolving with the result from the Python function.
  * @throws {Error} If the Python process fails or returns an error.
  */
-export async function callPythonFunction(functionName: string, args: any[] = []): Promise<any> {
+export async function callPythonFunction(functionName: string, args: Record<string, any> = {}): Promise<any> {
   return new Promise(async (resolve, reject) => { // Make the promise executor async
     try {
       // Get the path to the managed Python executable

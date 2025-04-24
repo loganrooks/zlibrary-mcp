@@ -23,15 +23,17 @@ const BRIDGE_SCRIPT_NAME = 'python_bridge.py';
  * @returns Promise resolving with the result from the Python function
  * @throws {Error} If the Python process fails or returns an error.
  */
-async function callPythonFunction(functionName: string, args: any[] = []): Promise<any> {
+async function callPythonFunction(functionName: string, args: Record<string, any> = {}): Promise<any> { // Changed args type to Record<string, any>
   try {
     // Get the python path asynchronously INSIDE the try block
     const venvPythonPath = await getManagedPythonPath();
+    // Serialize arguments as JSON *before* creating options
+    const serializedArgs = JSON.stringify(args);
     const options: PythonShellOptions = {
       mode: 'json',
       pythonPath: venvPythonPath, // Use the Python from our managed venv
       scriptPath: BRIDGE_SCRIPT_PATH, // Use the calculated path to the source lib dir
-      args: [functionName, JSON.stringify(args)]
+      args: [functionName, serializedArgs] // Pass serialized string directly
     };
 
     // PythonShell.run call is already inside the try block (from line 33 in original)
@@ -107,6 +109,7 @@ interface DownloadBookToFileArgs {
     format?: string | null;
     outputDir?: string;
     process_for_rag?: boolean;
+    processed_output_format?: string; // Added for RAG output format
 }
 
 interface ProcessDocumentForRagArgs {
@@ -127,23 +130,26 @@ export async function searchBooks({
   extensions = [],
   count = 10
 }: SearchBooksArgs): Promise<any> {
-  return await callPythonFunction('search', [
-    query, exact, fromYear, toYear, languages, extensions, count
-  ]);
+  // Pass arguments as an object matching Python function signature
+  return await callPythonFunction('search', {
+    query, exact, from_year: fromYear, to_year: toYear, languages, extensions, count
+  });
 }
 
 /**
  * Get book details by ID
  */
 export async function getBookById({ id }: GetBookByIdArgs): Promise<any> {
-  return await callPythonFunction('get_by_id', [id]);
+  // Pass arguments as an object matching Python function signature
+  return await callPythonFunction('get_by_id', { book_id: id });
 }
 
 /**
  * Get download link for a book
  */
 export async function getDownloadInfo({ id, format = null }: GetDownloadInfoArgs): Promise<any> {
-  return await callPythonFunction('get_download_info', [id, format]);
+  // Pass arguments as an object matching Python function signature
+  return await callPythonFunction('get_download_info', { book_id: id, format });
 }
 
 /**
@@ -158,49 +164,61 @@ export async function fullTextSearch({
   extensions = [],
   count = 10
 }: FullTextSearchArgs): Promise<any> {
-  return await callPythonFunction('full_text_search', [
+  // Pass arguments as an object matching Python function signature
+  return await callPythonFunction('full_text_search', {
     query, exact, phrase, words, languages, extensions, count
-  ]);
+  });
 }
 
 /**
  * Get user's download history
  */
 export async function getDownloadHistory({ count = 10 }: GetDownloadHistoryArgs): Promise<any> {
-  return await callPythonFunction('get_download_history', [count]);
+  // Pass arguments as an object matching Python function signature
+  return await callPythonFunction('get_download_history', { count });
 }
 
 /**
  * Get user's download limits
  */
 export async function getDownloadLimits(): Promise<any> {
-  return await callPythonFunction('get_download_limits', []);
+  // Pass arguments as an object matching Python function signature
+  return await callPythonFunction('get_download_limits', {});
 }
 
 /**
  * Get recently added books
  */
 export async function getRecentBooks({ count = 10, format = null }: GetRecentBooksArgs): Promise<any> {
-  return await callPythonFunction('get_recent_books', [count, format]);
+  // Pass arguments as an object matching Python function signature
+  return await callPythonFunction('get_recent_books', { count, format });
 }
 
 
 /**
  * Process a downloaded document for RAG
  */
-export async function processDocumentForRag({ filePath, outputFormat = 'text' }: ProcessDocumentForRagArgs): Promise<any> {
+export async function processDocumentForRag({ filePath, outputFormat = 'txt' }: ProcessDocumentForRagArgs): Promise<{ processed_file_path: string }> {
   if (!filePath) {
     throw new Error("Missing required argument: filePath");
   }
   console.log(`Calling Python bridge to process document: ${filePath}`);
   // Ensure the file path is absolute or correctly relative for the Python script
   const absoluteFilePath = path.resolve(filePath);
-  const result = await callPythonFunction('process_document', [absoluteFilePath, outputFormat]);
-  // Add check for missing processed_text after successful Python call
-  if (!result?.processed_text) { // Check for null or undefined processed_text
-      throw new Error(`Invalid response from Python bridge during processing. Missing processed_text.`);
+  // Pass arguments as an object matching Python function signature
+  const result = await callPythonFunction('process_document', { file_path_str: absoluteFilePath, output_format: outputFormat });
+
+  // Check if the Python script returned an error structure
+  if (result && result.error) {
+      throw new Error(`Python processing failed: ${result.error}`);
   }
-  return result;
+
+  // Check for the expected processed_file_path key
+  if (!result?.processed_file_path) {
+      throw new Error(`Invalid response from Python bridge during processing. Missing processed_file_path.`);
+  }
+  // Return only the processed file path object
+  return { processed_file_path: result.processed_file_path };
 }
 
 /**
@@ -222,67 +240,45 @@ export async function downloadBookToFile({
     id,
     format = null,
     outputDir = './downloads',
-    process_for_rag = false
-}: DownloadBookToFileArgs): Promise<any> { // Added process_for_rag
+    process_for_rag = false,
+    processed_output_format = 'txt' // Add format for processed output
+}: DownloadBookToFileArgs): Promise<{ file_path: string; processed_file_path?: string | null; processing_error?: string }> {
   try {
-    // First get the download info (includes URL)
-    console.log(`[downloadBookToFile - ${id}] Attempting to get download info...`);
-    const downloadInfo = await getDownloadInfo({ id, format }); // Pass args object
-    console.log(`[downloadBookToFile - ${id}] Got download info:`, downloadInfo ? JSON.stringify(downloadInfo).substring(0, 100) + '...' : 'null/undefined');
+    console.log(`[downloadBookToFile - ${id}] Calling Python bridge... process_for_rag=${process_for_rag}`);
+    // Call the updated Python function which handles download and optional processing/saving
+    const result = await callPythonFunction('download_book', {
+        book_id: id,
+        format: format,
+        output_dir: outputDir,
+        process_for_rag: process_for_rag,
+        processed_output_format: processed_output_format
+    });
 
-    if (!downloadInfo || downloadInfo.error) {
-      throw new Error(downloadInfo.error || 'Failed to get download info');
+    // Check if the Python script returned an error structure
+    if (result && result.error) {
+        throw new Error(`Python download/processing failed: ${result.error}`);
     }
 
-    if (!downloadInfo.download_url) {
-      throw new Error('No download URL available for this book');
+    // Validate the response structure
+    if (!result?.file_path) {
+        throw new Error("Invalid response from Python bridge: Missing original file_path.");
     }
 
-    // Create output directory if it doesn't exist
-    if (!fs.existsSync(outputDir)) {
-      fs.mkdirSync(outputDir, { recursive: true });
+    // If processing was requested but the processed path is missing (and not explicitly null), it's an error
+    // Note: Python bridge now returns null if processing fails or yields no text, which is handled correctly here.
+    if (process_for_rag && !('processed_file_path' in result)) {
+         throw new Error("Invalid response from Python bridge: Processing requested but processed_file_path key is missing.");
     }
 
-    // Generate filename using helper
-    const filename = generateSafeFilename(id, format, downloadInfo);
-    const outputPath = path.join(outputDir, filename);
-
-    // Download the file
-    await downloadFile(downloadInfo.download_url, outputPath);
-
-    let processed_text: string | null = null;
-    if (process_for_rag) {
-        console.log(`Processing downloaded file for RAG: ${outputPath}`);
-        try {
-            const processingResult = await processDocumentForRag({ filePath: outputPath }); // Pass object
-            if (processingResult && !processingResult.error) {
-                processed_text = processingResult.processed_text;
-                console.log(`Successfully processed file for RAG.`);
-            } else {
-                console.warn(`Failed to process file for RAG: ${processingResult?.error || 'Unknown error'}`);
-                // Proceed with download result, but log the warning
-            }
-        } catch (processingError: any) {
-             console.warn(`Error during RAG processing: ${processingError.message}`);
-        }
-    }
-
-    const result: any = { // Define result type more explicitly if possible
-      success: true,
-      title: downloadInfo.title || `book_${id}`,
-      format: (downloadInfo.format || format || 'unknown').toLowerCase(), // Use consistent extension logic
-      path: outputPath,
-      size: downloadInfo.filesize, // May be undefined
+    // Return the result object containing file_path and optional processed_file_path/processing_error
+    return {
+        file_path: result.file_path,
+        processed_file_path: result.processed_file_path, // Will be string path or null
+        processing_error: result.processing_error // Will be string or undefined
     };
 
-    if (processed_text !== null) {
-        result.processed_text = processed_text;
-    }
-
-    return result;
-
   } catch (error: any) {
-    // Throw an error instead of returning an object
+    // Re-throw errors from callPythonFunction or validation checks
     throw new Error(`Failed to download book: ${error.message || 'Unknown error'}`);
   }
 }

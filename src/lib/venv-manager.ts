@@ -194,7 +194,7 @@ async function installDependencies(deps: VenvManagerDependencies, venvPythonPath
     console.log(`Installing packages from ${requirementsPath} using ${venvPythonPath}...`);
     try {
         // Use '-r' flag to install from requirements.txt
-        const { stderr, code } = await runCommand(deps, venvPythonPath, ['-m', 'pip', 'install', '-r', requirementsPath]);
+        const { stderr, code } = await runCommand(deps, venvPythonPath, ['-m', 'pip', 'install', '--no-cache-dir', '--force-reinstall', '--upgrade', '-r', requirementsPath]);
         if (code === 0) {
             console.log(`Packages from requirements.txt installed successfully.`);
         } else {

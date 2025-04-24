@@ -5,6 +5,7 @@ import traceback
 import asyncio
 from zlibrary import AsyncZlib, Extension, Language
 
+import httpx
 import os
 from pathlib import Path
 import ebooklib
@@ -13,8 +14,36 @@ from bs4 import BeautifulSoup
 
 import fitz  # PyMuPDF
 import logging
+from urllib.parse import urljoin
 # Global zlibrary client
 zlib_client = None
+
+# Custom Internal Exceptions
+class InternalBookNotFoundError(Exception):
+    """Custom exception for when a book ID lookup results in a 404."""
+    pass
+
+class InternalParsingError(Exception):
+    """Custom exception for errors during HTML parsing of book details."""
+    pass
+
+
+class InternalFetchError(Exception):
+    """Error during HTTP request (network, non-200 status, timeout)."""
+    pass
+
+
+class FileSaveError(Exception):
+    """Custom exception for errors during processed file saving."""
+    pass
+
+
+# Default HTTP request settings
+DEFAULT_HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+}
+DEFAULT_SEARCH_TIMEOUT = 20
+DEFAULT_DETAIL_TIMEOUT = 15
 
 async def initialize_client():
     global zlib_client
@@ -279,11 +308,60 @@ def _process_pdf(file_path: str) -> str:
             except Exception as close_error:
                 logging.error(f"Error closing PDF document {file_path}: {close_error}")
 
+
+# Define the output directory relative to the script's location or a known base
+# For simplicity, let's assume it's relative to the current working directory
+# where the Node.js process is likely running.
+PROCESSED_OUTPUT_DIR = Path("./processed_rag_output")
+
+def _save_processed_text(original_file_path_str: str, text_content: str, output_format: str = 'txt') -> Path:
+    """Saves the processed text content to a file.
+
+    Args:
+        original_file_path_str: The path string of the original downloaded file.
+        text_content: The processed text content to save.
+        output_format: The desired file extension for the output file (default: 'txt').
+
+    Returns:
+        The Path object of the saved file.
+
+    Raises:
+        FileSaveError: If any OS error occurs during directory creation or file writing.
+        ValueError: If text_content is None.
+    """
+    if text_content is None:
+        raise ValueError("Cannot save None content.")
+
+    try:
+        original_path = Path(original_file_path_str)
+        # Ensure the output directory exists
+        PROCESSED_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+        # Generate filename: <original_name>.processed.<format>
+        output_filename = f"{original_path.name}.processed.{output_format}"
+        output_path = PROCESSED_OUTPUT_DIR / output_filename
+
+        logging.info(f"Saving processed text to: {output_path}")
+        with open(output_path, 'w', encoding='utf-8') as f:
+            f.write(text_content)
+
+        return output_path
+    except OSError as e:
+        logging.exception(f"OS error saving processed file for {original_file_path_str}")
+        raise FileSaveError(f"Failed to save processed file due to OS error: {e}")
+    except Exception as e:
+        logging.exception(f"Unexpected error saving processed file for {original_file_path_str}")
+        # Wrap unexpected errors
+        raise FileSaveError(f"An unexpected error occurred during file saving: {e}")
+
 # Define supported formats (as per spec example)
 SUPPORTED_FORMATS = ['.epub', '.txt', '.pdf']
 
-async def process_document(file_path_str: str, output_format='text') -> dict:
-    """Processes a document file (EPUB, TXT, PDF) to extract text content."""
+async def process_document(file_path_str: str, output_format='txt') -> dict:
+    """
+    Processes a document file (EPUB, TXT, PDF) to extract text content,
+    saves it to a file, and returns the path.
+    """
     try:
         # Use os.path as per spec pseudocode for consistency
         if not os.path.exists(file_path_str):
@@ -304,24 +382,27 @@ async def process_document(file_path_str: str, output_format='text') -> dict:
             # Use the updated SUPPORTED_FORMATS list
             raise ValueError(f"Unsupported file format: {ext}. Supported: {SUPPORTED_FORMATS}")
 
-        # Currently only supports 'text' output
-        if output_format != 'text':
-            # Log a warning or handle differently if needed in the future
-            # Currently, only text output is supported.
-            pass # No operation needed if format is 'text' or ignored
-
+        # Handle cases where processing might yield no text (e.g., image PDF)
+        # _process_pdf now raises ValueError in this case, caught below.
+        # If other processors might return None, handle here or ensure they raise.
         if processed_text is None:
              # This case might occur if a processing function returns None instead of raising error
-             logging.error(f"Processing function returned None for {file_path_str}")
-             raise RuntimeError(f"Processing function returned None for {file_path_str}")
+             # Or if an image-only PDF was processed without raising ValueError (adjust _process_pdf if needed)
+             logging.warning(f"Processing yielded no text content for {file_path_str}")
+             # Decide how to handle - return error or specific indicator? Returning error for now.
+             raise ValueError(f"No text content could be extracted from {file_path_str}")
 
-        return {"processed_text": processed_text}
+        # Save the processed text
+        saved_path = _save_processed_text(file_path_str, processed_text, output_format)
+
+        # Return the path to the saved file
+        return {"processed_file_path": str(saved_path)}
 
     except ImportError as imp_err:
          logging.error(f"Missing dependency for processing {ext} file {file_path_str}: {imp_err}")
          # Return error in the expected format
          return {"error": f"Missing required library to process {ext} files. Please check installation."}
-    except (FileNotFoundError, ValueError) as specific_err: # Catch specific errors first
+    except (FileNotFoundError, ValueError, FileSaveError) as specific_err: # Catch specific processing/saving errors
         logging.error(f"Error processing document {file_path_str}: {specific_err}")
         return {"error": str(specific_err)}
     except Exception as e:
@@ -329,7 +410,7 @@ async def process_document(file_path_str: str, output_format='text') -> dict:
         logging.exception(f"Failed to process document {file_path_str}")
         # Wrap unexpected errors and return in expected format
         # Check if it's a re-raised error from _process_pdf etc.
-        if isinstance(e, RuntimeError) and ("Error opening or processing PDF" in str(e) or "Processing function returned None" in str(e)):
+        if isinstance(e, RuntimeError) and ("Error opening or processing PDF" in str(e)):
              return {"error": str(e)} # Propagate specific processing errors directly
         return {"error": f"An unexpected error occurred during document processing: {e}"}
 
@@ -337,42 +418,82 @@ async def process_document(file_path_str: str, output_format='text') -> dict:
 
 
 def main():
+    # Configure basic logging
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
     if len(sys.argv) < 3:
         print(json.dumps({"error": "Missing arguments"}))
         return 1
-    
+
     function_name = sys.argv[1]
     args_json = sys.argv[2]
-    
+
     try:
-        args = json.loads(args_json)
+        args_dict = json.loads(args_json)
     except json.JSONDecodeError:
         print(json.dumps({"error": "Invalid JSON arguments"}))
         return 1
-    
+
+    response = None # Initialize response
+
     try:
-        # Map function name to async function - using accurately named functions
-        function_map = {
-            'search': search,
-            'get_by_id': get_by_id,
-            'get_download_info': get_download_info,  # Renamed to accurately reflect behavior
-            'full_text_search': full_text_search,
-            'get_download_history': get_download_history,
-            'get_download_limits': get_download_limits,
-            'process_document': process_document # Added RAG processing function
-        }
-        
-        if function_name not in function_map:
+        # --- Action Handling ---
+        if function_name == 'search':
+            response = asyncio.run(search(**args_dict))
+        elif function_name == 'get_by_id': # Renamed from get_book_details in spec example
+            book_id = args_dict.get('book_id')
+            # Explicitly get domain from args, falling back to default in the function if not provided
+            domain_arg = args_dict.get('domain')
+            if not book_id: raise ValueError("Missing 'book_id'")
+            # Call the modified async function, passing domain if provided
+            if domain_arg:
+                response = asyncio.run(get_by_id(book_id, domain_arg))
+            else:
+                response = asyncio.run(get_by_id(book_id)) # Use default domain
+
+        elif function_name == 'get_download_info':
+            book_id = args_dict.get('book_id')
+            format_arg = args_dict.get('format') # Keep format if needed by caller
+            # Explicitly get domain from args, falling back to default in the function if not provided
+            domain_arg = args_dict.get('domain')
+            if not book_id: raise ValueError("Missing 'book_id'")
+            # Call the modified async function, passing domain if provided
+            if domain_arg:
+                 response = asyncio.run(get_download_info(book_id, format_arg, domain_arg))
+            else:
+                 response = asyncio.run(get_download_info(book_id, format_arg)) # Use default domain
+
+        elif function_name == 'full_text_search':
+            response = asyncio.run(full_text_search(**args_dict))
+        elif function_name == 'get_download_history':
+            response = asyncio.run(get_download_history(**args_dict))
+        elif function_name == 'get_download_limits':
+            response = asyncio.run(get_download_limits()) # Removed **args_dict as function takes no args
+        elif function_name == 'process_document':
+            response = asyncio.run(process_document(**args_dict))
+        elif function_name == 'download_book': # Add download_book handler
+            response = asyncio.run(download_book(**args_dict))
+        else:
             print(json.dumps({"error": f"Unknown function: {function_name}"}))
             return 1
-        
-        # Execute the async function and get result
-        result = asyncio.run(function_map[function_name](*args))
-        
-        # Output the result as JSON
-        print(json.dumps(result))
+
+        # Output the result as JSON if no error occurred during action handling
+        print(json.dumps(response))
         return 0
-    
+
+    # --- Exception Handling (Catch errors raised from handlers or asyncio.run) ---
+    except ValueError as ve: # Specifically catch ValueError (likely from BookNotFound translation or processing)
+        logging.warning(f"ValueError during {function_name}: {ve}")
+        print(json.dumps({"error": str(ve)})) # Return the specific error message
+        return 1
+    except RuntimeError as re: # Specifically catch RuntimeError (likely from Fetch/Parse translation or processing)
+        logging.error(f"RuntimeError during {function_name}: {re}")
+        print(json.dumps({"error": str(re)})) # Return the specific error message
+        return 1
+    except FileSaveError as fse: # Catch file saving errors
+        logging.error(f"FileSaveError during {function_name}: {fse}")
+        print(json.dumps({"error": str(fse)}))
+        return 1
     except Exception as e:
         # Print traceback to stderr first
         print(traceback.format_exc(), file=sys.stderr)
@@ -382,7 +503,88 @@ def main():
             # Optionally remove traceback from stdout JSON if it's now in stderr
             # "traceback": traceback.format_exc()
         }))
+        # Catch any other unexpected errors
+        logging.exception(f"Unexpected error during {function_name}")
+        # Print traceback to stderr first
+        print(traceback.format_exc(), file=sys.stderr)
+        # Then print generic JSON error to stdout
+        print(json.dumps({"error": f"An unexpected error occurred: {e}"}))
         return 1
+
+# --- New download_book function ---
+async def download_book(book_id: str, format=None, output_dir='./downloads', process_for_rag=False, processed_output_format='txt', domain: str = 'z-library.sk') -> dict:
+    """
+    Downloads a book and optionally processes it for RAG, saving the processed text.
+    """
+    if not zlib_client:
+        await initialize_client()
+
+    original_file_path_str = None
+    processed_file_path_str = None
+    result = {}
+
+    try:
+        # Step 1: Download the book
+        logging.info(f"Downloading book ID {book_id} to {output_dir}...")
+        original_file_path_str = await zlib_client.download_book(
+            book_id=book_id,
+            format=format,
+            output_dir=output_dir
+        )
+        result["file_path"] = original_file_path_str
+        logging.info(f"Book downloaded to: {original_file_path_str}")
+
+        # Step 2: Process if requested
+        if process_for_rag:
+            logging.info(f"Processing downloaded book for RAG: {original_file_path_str}")
+            try:
+                # Determine file extension for processing logic
+                _, ext = os.path.splitext(original_file_path_str)
+                ext = ext.lower()
+                processed_text = None
+
+                if ext == '.epub':
+                    processed_text = _process_epub(original_file_path_str)
+                elif ext == '.txt':
+                    processed_text = _process_txt(original_file_path_str)
+                elif ext == '.pdf':
+                    processed_text = _process_pdf(original_file_path_str)
+                else:
+                    logging.warning(f"Cannot process unsupported format '{ext}' for RAG.")
+                    # No processed path will be added, only original path returned
+
+                # Save if text was extracted
+                if processed_text:
+                    saved_path = _save_processed_text(original_file_path_str, processed_text, processed_output_format)
+                    processed_file_path_str = str(saved_path)
+                    result["processed_file_path"] = processed_file_path_str
+                    logging.info(f"Processed text saved to: {processed_file_path_str}")
+                else:
+                    # Handle cases where processing yielded no text (e.g., image PDF handled by _process_pdf raising ValueError)
+                    # Or unsupported format was encountered.
+                    logging.warning(f"No processed text generated or saved for {original_file_path_str}.")
+                    result["processed_file_path"] = None # Explicitly set to None
+
+            except (FileNotFoundError, ValueError, FileSaveError, ImportError) as proc_save_err:
+                # Log processing/saving errors but don't fail the whole download operation
+                logging.error(f"Processing/Saving failed for {original_file_path_str}, but download succeeded: {proc_save_err}")
+                result["processed_file_path"] = None # Indicate processing failed
+                result["processing_error"] = str(proc_save_err) # Optionally include error info
+            except Exception as unexpected_proc_err:
+                logging.exception(f"Unexpected error during processing/saving for {original_file_path_str}")
+                result["processed_file_path"] = None
+                result["processing_error"] = f"Unexpected processing error: {unexpected_proc_err}"
+
+        return result # Return dict with file_path and optional processed_file_path
+
+    except Exception as download_err:
+        # Catch errors during the initial download phase
+        logging.exception(f"Failed to download book ID {book_id}")
+        # Re-raise specific errors if needed, or wrap them
+        if isinstance(download_err, (ValueError, RuntimeError)): # Propagate known error types
+             raise download_err
+        raise RuntimeError(f"Failed to download book ID {book_id}: {download_err}") from download_err
+
 
 if __name__ == "__main__":
     sys.exit(main())

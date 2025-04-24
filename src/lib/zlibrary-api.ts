@@ -221,17 +221,7 @@ export async function processDocumentForRag({ filePath, outputFormat = 'txt' }: 
   return { processed_file_path: result.processed_file_path };
 }
 
-/**
- * Helper function to generate a safe filename from book info.
- */
-function generateSafeFilename(id: string, format: string | null, downloadInfo: any): string {
-    const title = (downloadInfo.title || `book_${id}`) // Fallback title
-      .replace(/[/\\?%*:|"<>]/g, '-') // Replace invalid characters
-      .substring(0, 100); // Limit length
-
-    const fileExt = (downloadInfo.format || format || 'unknown').toLowerCase(); // Ensure extension
-    return `${title}.${fileExt}`;
-}
+// Removed unused generateSafeFilename function
 
 /**
  * Download a book directly to a file

@@ -6,7 +6,7 @@ import asyncio
 from zlibrary import AsyncZlib, Extension, Language
 
 import httpx
-import os
+# import os # No longer needed after refactor
 from pathlib import Path
 import ebooklib
 from ebooklib import epub
@@ -309,37 +309,22 @@ def _process_pdf(file_path: str) -> str:
                 logging.error(f"Error closing PDF document {file_path}: {close_error}")
 
 
-# Define the output directory relative to the script's location or a known base
-# For simplicity, let's assume it's relative to the current working directory
-# where the Node.js process is likely running.
-PROCESSED_OUTPUT_DIR = Path("./processed_rag_output")
-
 def _save_processed_text(original_file_path_str: str, text_content: str, output_format: str = 'txt') -> Path:
-    """Saves the processed text content to a file.
+    """Saves the processed text content to a file."""
+    # Define output dir inside the function
+    processed_output_dir = Path("./processed_rag_output")
 
-    Args:
-        original_file_path_str: The path string of the original downloaded file.
-        text_content: The processed text content to save.
-        output_format: The desired file extension for the output file (default: 'txt').
-
-    Returns:
-        The Path object of the saved file.
-
-    Raises:
-        FileSaveError: If any OS error occurs during directory creation or file writing.
-        ValueError: If text_content is None.
-    """
     if text_content is None:
         raise ValueError("Cannot save None content.")
 
     try:
         original_path = Path(original_file_path_str)
         # Ensure the output directory exists
-        PROCESSED_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+        processed_output_dir.mkdir(parents=True, exist_ok=True) # Use the local variable
 
         # Generate filename: <original_name>.processed.<format>
         output_filename = f"{original_path.name}.processed.{output_format}"
-        output_path = PROCESSED_OUTPUT_DIR / output_filename
+        output_path = processed_output_dir / output_filename # Use the local variable
 
         logging.info(f"Saving processed text to: {output_path}")
         with open(output_path, 'w', encoding='utf-8') as f:
@@ -363,21 +348,22 @@ async def process_document(file_path_str: str, output_format='txt') -> dict:
     saves it to a file, and returns the path.
     """
     try:
-        # Use os.path as per spec pseudocode for consistency
-        if not os.path.exists(file_path_str):
-            raise FileNotFoundError(f"File not found: {file_path_str}")
+        # Use pathlib.Path consistently
+        file_path = Path(file_path_str)
+        if not file_path.exists():
+             raise FileNotFoundError(f"File not found: {file_path_str}")
 
-        _, ext = os.path.splitext(file_path_str)
-        ext = ext.lower()
+        ext = file_path.suffix.lower() # Use Path object's suffix attribute
         processed_text = None
 
+        # Keep passing str if sub-functions expect it
         if ext == '.epub':
             processed_text = _process_epub(file_path_str)
         elif ext == '.txt':
-            processed_text = _process_txt(file_path_str)
+            processed_text = _process_txt(file_path_str) # Keep passing str if sub-functions expect it
         elif ext == '.pdf':
              # Assuming fitz import check happens in _process_pdf
-            processed_text = _process_pdf(file_path_str)
+            processed_text = _process_pdf(file_path_str) # Keep passing str if sub-functions expect it
         else:
             # Use the updated SUPPORTED_FORMATS list
             raise ValueError(f"Unsupported file format: {ext}. Supported: {SUPPORTED_FORMATS}")
@@ -512,12 +498,13 @@ def main():
 async def download_book(book_id: str, format=None, output_dir='./downloads', process_for_rag=False, processed_output_format='txt', domain: str = 'z-library.sk') -> dict:
     """
     Downloads a book and optionally processes it for RAG, saving the processed text.
+    Returns a dictionary containing 'file_path' and optionally 'processed_file_path'
+    or 'processing_error'.
     """
     if not zlib_client:
         await initialize_client()
 
     original_file_path_str = None
-    processed_file_path_str = None
     result = {}
 
     try:
@@ -531,48 +518,34 @@ async def download_book(book_id: str, format=None, output_dir='./downloads', pro
         result["file_path"] = original_file_path_str
         logging.info(f"Book downloaded to: {original_file_path_str}")
 
-        # Step 2: Process if requested
+        # Step 2: Process if requested by calling process_document
         if process_for_rag:
             logging.info(f"Processing downloaded book for RAG: {original_file_path_str}")
             try:
-                # Determine file extension for processing logic
-                _, ext = os.path.splitext(original_file_path_str)
-                ext = ext.lower()
-                processed_text = None
+                # Use the existing process_document function
+                processing_result = await process_document(original_file_path_str, processed_output_format)
 
-                if ext == '.epub':
-                    processed_text = _process_epub(original_file_path_str)
-                elif ext == '.txt':
-                    processed_text = _process_txt(original_file_path_str)
-                elif ext == '.pdf':
-                    processed_text = _process_pdf(original_file_path_str)
+                if "error" in processing_result:
+                    # Log processing errors but don't fail the whole download operation
+                    logging.error(f"Processing failed for {original_file_path_str}, but download succeeded: {processing_result['error']}")
+                    result["processed_file_path"] = None # Indicate processing failed
+                    result["processing_error"] = processing_result['error'] # Include error info
+                elif "processed_file_path" in processing_result:
+                    result["processed_file_path"] = processing_result["processed_file_path"]
+                    logging.info(f"Processed text saved to: {result['processed_file_path']}")
                 else:
-                    logging.warning(f"Cannot process unsupported format '{ext}' for RAG.")
-                    # No processed path will be added, only original path returned
+                    # Should not happen if process_document returns correctly
+                    logging.error(f"Unexpected result from process_document for {original_file_path_str}: {processing_result}")
+                    result["processed_file_path"] = None
+                    result["processing_error"] = "Unexpected result from internal processing function."
 
-                # Save if text was extracted
-                if processed_text:
-                    saved_path = _save_processed_text(original_file_path_str, processed_text, processed_output_format)
-                    processed_file_path_str = str(saved_path)
-                    result["processed_file_path"] = processed_file_path_str
-                    logging.info(f"Processed text saved to: {processed_file_path_str}")
-                else:
-                    # Handle cases where processing yielded no text (e.g., image PDF handled by _process_pdf raising ValueError)
-                    # Or unsupported format was encountered.
-                    logging.warning(f"No processed text generated or saved for {original_file_path_str}.")
-                    result["processed_file_path"] = None # Explicitly set to None
-
-            except (FileNotFoundError, ValueError, FileSaveError, ImportError) as proc_save_err:
-                # Log processing/saving errors but don't fail the whole download operation
-                logging.error(f"Processing/Saving failed for {original_file_path_str}, but download succeeded: {proc_save_err}")
-                result["processed_file_path"] = None # Indicate processing failed
-                result["processing_error"] = str(proc_save_err) # Optionally include error info
             except Exception as unexpected_proc_err:
-                logging.exception(f"Unexpected error during processing/saving for {original_file_path_str}")
+                # Catch errors during the call to process_document itself
+                logging.exception(f"Unexpected error calling process_document for {original_file_path_str}")
                 result["processed_file_path"] = None
-                result["processing_error"] = f"Unexpected processing error: {unexpected_proc_err}"
+                result["processing_error"] = f"Unexpected error during processing call: {unexpected_proc_err}"
 
-        return result # Return dict with file_path and optional processed_file_path
+        return result # Return dict with file_path and optional processed_file_path/processing_error
 
     except Exception as download_err:
         # Catch errors during the initial download phase

@@ -414,9 +414,6 @@ async def process_document(file_path_str: str, output_format='txt') -> dict:
              return {"error": str(e)} # Propagate specific processing errors directly
         return {"error": f"An unexpected error occurred during document processing: {e}"}
 
-# --- Main Execution Logic ---
-
-
 def main():
     # Configure basic logging
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')

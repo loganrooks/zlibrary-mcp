@@ -1,72 +1,78 @@
 # RAG Document Processing Pipeline: Implementation Specification
 
-**Version:** 1.0
-**Date:** 2025-04-14
+**Version:** 2.0 (File Output)
+**Date:** 2025-04-23
 
 ## 1. Overview
 
-This document details the implementation specifics for the RAG (Retrieval-Augmented Generation) document processing pipeline within the `zlibrary-mcp` server. It covers the necessary changes to MCP tools, Node.js handlers, and the Python bridge to enable downloading and processing of EPUB and TXT files for RAG workflows.
+This document details the implementation specifics for the RAG (Retrieval-Augmented Generation) document processing pipeline within the `zlibrary-mcp` server. It covers the necessary changes to MCP tools, Node.js handlers, and the Python bridge to enable downloading and processing of EPUB, TXT, and PDF files for RAG workflows, **saving the processed output to a file and returning the file path.**
 
-Refer to the [RAG Pipeline Architecture](./architecture/rag-pipeline.md) document for the high-level design and data flow.
+**Reason for Update (v2):** Original design returned raw text, causing agent instability. This version modifies the pipeline to save processed text to `./processed_rag_output/` and return the `processed_file_path`.
+
+Refer to the [RAG Pipeline Architecture (v2)](./architecture/rag-pipeline.md) and [PDF Processing Integration Architecture (v2)](./architecture/pdf-processing-integration.md) documents for the high-level design and data flow.
 
 ## 2. MCP Tool Definitions
 
 ### 2.1. `download_book_to_file` (Updated)
 
-*   **Description:** Downloads a book file from Z-Library and optionally processes its content for RAG.
+*   **Description:** Downloads a book file from Z-Library and optionally processes its content for RAG, saving the result to a separate file.
 *   **Input Schema (Zod):**
     ```typescript
     import { z } from 'zod';
 
     const DownloadBookToFileInputSchema = z.object({
-      bookId: z.string().describe("The Z-Library book ID"),
-      outputDir: z.string().optional().describe("Directory to save the file (relative to project root or absolute)"),
-      outputFilename: z.string().optional().describe("Desired filename (extension will be added automatically)"),
-      process_for_rag: z.boolean().optional().default(false).describe("If true, process content for RAG and return text") // New field
+      id: z.string().describe("The Z-Library book ID"),
+      format: z.string().optional().describe("File format (e.g., \"pdf\", \"epub\")"), // Added format
+      outputDir: z.string().optional().default("./downloads").describe("Directory to save the original file (default: './downloads')"),
+      process_for_rag: z.boolean().optional().default(false).describe("If true, process content for RAG and save to processed output file"), // Updated description
+      processed_output_format: z.string().optional().default("txt").describe("Desired format for the processed output file (default: 'txt')") // New field
     });
     ```
 *   **Output Schema (Zod):**
     ```typescript
     // Output depends on the 'process_for_rag' flag
     const DownloadBookToFileOutputSchema = z.object({
-        file_path: z.string().describe("The absolute path to the downloaded file"),
-        processed_text: z.string().optional().describe("The extracted plain text content (only if process_for_rag was true)") // New optional field
+        file_path: z.string().describe("The absolute path to the original downloaded file"),
+        processed_file_path: z.string().optional().describe("The absolute path to the file containing processed text (only if process_for_rag was true)") // Updated field
     });
     ```
 
-### 2.2. `process_document_for_rag` (New)
+### 2.2. `process_document_for_rag` (Updated)
 
-*   **Description:** Processes an existing local document file (EPUB, TXT) to extract plain text content for RAG.
+*   **Description:** Processes an existing local document file (EPUB, TXT, PDF) to extract plain text content for RAG, saving the result to a file.
 *   **Input Schema (Zod):**
     ```typescript
     import { z } from 'zod';
 
     const ProcessDocumentForRagInputSchema = z.object({
-      file_path: z.string().describe("The absolute path to the document file to process")
+      file_path: z.string().describe("The absolute path to the document file to process"),
+      output_format: z.string().optional().default("txt").describe("Desired format for the processed output file (default: 'txt')") // New field
     });
     ```
 *   **Output Schema (Zod):**
     ```typescript
     const ProcessDocumentForRagOutputSchema = z.object({
-      processed_text: z.string().describe("The extracted plain text content")
+      processed_file_path: z.string().describe("The absolute path to the file containing extracted and processed plain text content") // Updated field
     });
     ```
 
-## 3. Tool Registration (`index.js`)
+## 3. Tool Registration (`index.ts`)
 
-The tools are registered within `index.js` using the MCP SDK v1.8.0 pattern. Handlers map tool names to implementation functions in `lib/zlibrary-api.js` and use the Zod schemas for validation.
+The tools are registered within `index.ts` using the MCP SDK v1.8.0 pattern. Handlers map tool names to implementation functions in `lib/zlibrary-api.ts` and use the Zod schemas for validation.
 
-```javascript
-// File: index.js (Conceptual Snippet)
+```typescript
+// File: src/index.ts (Conceptual Snippet)
 // ... imports (Server, StdioServerTransport, z, zlibraryApi, schemas) ...
 
 // Assume schemas are defined or imported from e.g., './lib/schemas'
-const {
+import {
   DownloadBookToFileInputSchema,
   DownloadBookToFileOutputSchema,
   ProcessDocumentForRagInputSchema,
-  ProcessDocumentForRagOutputSchema
-} = require('./lib/schemas'); // Example path
+  ProcessDocumentForRagOutputSchema,
+  // ... other schemas
+} from './lib/schemas'; // Example path
+import * as zlibraryApi from './lib/zlibrary-api'; // Assuming API functions are exported
 
 const server = new Server({
   // ... other server options
@@ -76,33 +82,34 @@ const server = new Server({
         // ... other tools
         {
           name: 'download_book_to_file',
-          description: 'Downloads a book file from Z-Library and optionally processes its content for RAG.',
-          inputSchema: DownloadBookToFileInputSchema,
-          outputSchema: DownloadBookToFileOutputSchema, // Updated
+          description: 'Downloads a book file from Z-Library and optionally processes its content for RAG, saving the result to a separate file.', // Updated description
+          inputSchema: DownloadBookToFileInputSchema, // Updated schema
+          outputSchema: DownloadBookToFileOutputSchema, // Updated schema
         },
         {
-          name: 'process_document_for_rag', // New
-          description: 'Processes an existing local document file (EPUB, TXT) to extract plain text content for RAG.',
-          inputSchema: ProcessDocumentForRagInputSchema,
-          outputSchema: ProcessDocumentForRagOutputSchema,
+          name: 'process_document_for_rag', // Updated description
+          description: 'Processes an existing local document file (EPUB, TXT, PDF) to extract plain text content for RAG, saving the result to a file.',
+          inputSchema: ProcessDocumentForRagInputSchema, // Updated schema
+          outputSchema: ProcessDocumentForRagOutputSchema, // Updated schema
         },
       ];
     },
     call: async (request) => {
       // ... generic validation ...
-      if (request.tool_name === 'download_book_to_file') {
+      if (request.name === 'download_book_to_file') { // Use 'name' based on recent fixes
         const validatedArgs = DownloadBookToFileInputSchema.parse(request.arguments);
         const result = await zlibraryApi.downloadBookToFile(validatedArgs);
         // Optional: DownloadBookToFileOutputSchema.parse(result);
         return result;
       }
-      if (request.tool_name === 'process_document_for_rag') { // New
+      if (request.name === 'process_document_for_rag') { // Use 'name'
         const validatedArgs = ProcessDocumentForRagInputSchema.parse(request.arguments);
         const result = await zlibraryApi.processDocumentForRag(validatedArgs);
         // Optional: ProcessDocumentForRagOutputSchema.parse(result);
         return result;
       }
-      throw new Error(`Tool not found: ${request.tool_name}`);
+      // ... handle other tools
+      throw new Error(`Tool not found: ${request.name}`);
     },
   },
 });
@@ -110,12 +117,12 @@ const server = new Server({
 // ... transport setup and server.connect() ...
 ```
 
-## 4. Node.js Handlers (`lib/zlibrary-api.js`)
+## 4. Node.js Handlers (`lib/zlibrary-api.ts`)
 
-This module contains the JavaScript functions that orchestrate calls to the Python bridge.
+This module contains the TypeScript functions that orchestrate calls to the Python bridge.
 
 ```pseudocode
-// File: lib/zlibrary-api.js
+// File: src/lib/zlibrary-api.ts
 // Dependencies: ./python-bridge, path
 
 IMPORT callPythonFunction FROM './python-bridge' // Assumes this handles calling Python and parsing JSON response/error
@@ -124,36 +131,39 @@ IMPORT path
 // --- Updated Function ---
 
 ASYNC FUNCTION downloadBookToFile(args):
-  // args = { bookId, outputDir, outputFilename, process_for_rag }
-  LOG `Downloading book ${args.bookId}, process_for_rag=${args.process_for_rag}`
+  // args = { id, format?, outputDir?, process_for_rag?, processed_output_format? }
+  LOG `Downloading book ${args.id}, process_for_rag=${args.process_for_rag}`
 
   // Prepare arguments for Python script
   pythonArgs = {
-    book_id: args.bookId,
+    book_id: args.id,
+    format: args.format, // Pass format if provided
     output_dir: args.outputDir,
-    output_filename: args.outputFilename,
-    process_for_rag: args.process_for_rag // Pass the flag
+    // output_filename: args.outputFilename, // Removed, Python handles naming
+    process_for_rag: args.process_for_rag,
+    processed_output_format: args.processed_output_format // Pass format
   }
 
   TRY
     // Call the Python bridge function
     resultJson = AWAIT callPythonFunction('download_book', pythonArgs)
 
-    // Basic validation of Python response (callPythonFunction might do more)
+    // Basic validation of Python response
     IF NOT resultJson OR NOT resultJson.file_path THEN
-      THROW Error("Invalid response from Python bridge during download.")
+      THROW Error("Invalid response from Python bridge during download: Missing original file_path.")
+    ENDIF
+    IF args.process_for_rag AND resultJson.processed_file_path IS NULL THEN
+       // If processing was requested but failed or yielded no path, it's an issue
+       THROW Error("Invalid response from Python bridge: Processing requested but processed_file_path missing.")
     ENDIF
 
     // Construct the response object based on the schema
     response = {
       file_path: resultJson.file_path
     }
-    // Include processed_text only if requested and successfully returned
-    IF args.process_for_rag AND resultJson.processed_text IS NOT NULL THEN
-      response.processed_text = resultJson.processed_text
-    ELSE IF args.process_for_rag AND resultJson.processed_text IS NULL THEN
-      // Log a warning if processing was requested but failed in Python
-      LOG `Warning: process_for_rag was true but Python bridge did not return processed_text for ${resultJson.file_path}`
+    // Include processed_file_path only if requested and successfully returned
+    IF args.process_for_rag AND resultJson.processed_file_path IS NOT NULL THEN
+      response.processed_file_path = resultJson.processed_file_path
     ENDIF
 
     RETURN response
@@ -161,35 +171,36 @@ ASYNC FUNCTION downloadBookToFile(args):
   CATCH error
     LOG `Error in downloadBookToFile: ${error.message}`
     // Propagate a user-friendly error
-    THROW Error(`Failed to download/process book ${args.bookId}: ${error.message}`)
+    THROW Error(`Failed to download/process book ${args.id}: ${error.message}`)
   ENDTRY
 END FUNCTION
 
-// --- New Function ---
+// --- Updated Function ---
 
 ASYNC FUNCTION processDocumentForRag(args):
-  // args = { file_path }
+  // args = { file_path, output_format? }
   LOG `Processing document for RAG: ${args.file_path}`
 
   // Resolve to absolute path before sending to Python
   absolutePath = path.resolve(args.file_path)
 
   pythonArgs = {
-    file_path: absolutePath
+    file_path: absolutePath,
+    output_format: args.output_format // Pass format
   }
 
   TRY
-    // Call the new Python bridge function
+    // Call the Python bridge function
     resultJson = AWAIT callPythonFunction('process_document', pythonArgs)
 
     // Basic validation of Python response
-    IF NOT resultJson OR resultJson.processed_text IS NULL THEN
-      THROW Error("Invalid response from Python bridge during processing. Missing processed_text.")
+    IF NOT resultJson OR resultJson.processed_file_path IS NULL THEN
+      THROW Error("Invalid response from Python bridge during processing. Missing processed_file_path.")
     ENDIF
 
     // Return the result object matching the schema
     RETURN {
-      processed_text: resultJson.processed_text
+      processed_file_path: resultJson.processed_file_path
     }
 
   CATCH error
@@ -203,19 +214,20 @@ END FUNCTION
 EXPORT { downloadBookToFile, processDocumentForRag /*, ... other functions */ }
 ```
 
-## 5. Python Bridge (`lib/python-bridge.py`)
+## 5. Python Bridge (`lib/python_bridge.py`)
 
-This script handles the core logic for downloading and processing files.
+This script handles the core logic for downloading, processing, and saving files.
 
 ```python
-# File: lib/python-bridge.py
-# Dependencies: zlibrary, ebooklib, beautifulsoup4, lxml
-# Standard Libs: json, sys, os, argparse, logging
+# File: lib/python_bridge.py
+# Dependencies: zlibrary, ebooklib, beautifulsoup4, lxml, PyMuPDF
+# Standard Libs: json, sys, os, argparse, logging, pathlib
 import json
 import sys
 import os
 import argparse
 import logging
+from pathlib import Path
 from zlibrary import ZLibrary # Assumed installed via venv
 
 # --- Attempt to import processing libraries ---
@@ -227,290 +239,396 @@ try:
 except ImportError:
     EBOOKLIB_AVAILABLE = False
 
+try:
+    import fitz # PyMuPDF
+    PYMUPDF_AVAILABLE = True
+except ImportError:
+    PYMUPDF_AVAILABLE = False
+
 # --- Setup ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-SUPPORTED_FORMATS = ['.epub', '.txt']
+SUPPORTED_FORMATS = ['.epub', '.txt', '.pdf'] # Added PDF
+PROCESSED_OUTPUT_DIR = Path("./processed_rag_output") # Relative to workspace root
+
+# --- Custom Exceptions ---
+class FileSaveError(Exception):
+    """Custom exception for errors during processed file saving."""
+    pass
 
 # --- Helper Functions for Processing ---
 
 def _html_to_text(html_content):
     """Extracts plain text from HTML using BeautifulSoup."""
-    # Use 'lxml' for potentially better performance and handling of malformed HTML
+    if not html_content: return ""
     soup = BeautifulSoup(html_content, 'lxml')
-    # Remove script and style elements
     for script_or_style in soup(["script", "style"]):
         script_or_style.decompose()
-    # Get text, strip whitespace, handle multiple lines/paragraphs
     lines = (line.strip() for line in soup.get_text().splitlines())
     chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
     text = '\n'.join(chunk for chunk in chunks if chunk)
     return text
 
-def _process_epub(file_path):
-    """Processes an EPUB file to extract plain text."""
+def _process_epub(file_path: Path) -> str:
+    """Processes an EPUB file to extract plain text. Returns text string."""
     if not EBOOKLIB_AVAILABLE:
-        raise ImportError("Required library 'ebooklib' is not installed. Cannot process EPUB files.")
-
+        raise ImportError("Required library 'ebooklib' is not installed.")
     logging.info(f"Processing EPUB file: {file_path}")
-    book = epub.read_epub(file_path)
+    book = epub.read_epub(str(file_path))
     all_text = []
-
-    # Iterate through EPUB document items
     items = book.get_items_of_type(ebooklib.ITEM_DOCUMENT)
     for item in items:
         content = item.get_content()
         if content:
             try:
-                # Decode content (UTF-8 is common)
                 html_content = content.decode('utf-8', errors='ignore')
                 text = _html_to_text(html_content)
-                if text:
-                    all_text.append(text)
+                if text: all_text.append(text)
             except Exception as e:
-                logging.warning(f"Could not decode or process content from item {item.get_name()} in {file_path}: {e}")
-
-    # Join text from all items with paragraph breaks
-    full_text = "\n\n".join(all_text)
-    logging.info(f"Finished processing EPUB: {file_path}. Extracted {len(full_text)} characters.")
+                logging.warning(f"Could not decode/process item {item.get_name()} in {file_path}: {e}")
+    full_text = "\n\n".join(all_text).strip()
+    logging.info(f"Finished EPUB: {file_path}. Length: {len(full_text)}")
     return full_text
 
-def _process_txt(file_path):
-    """Processes a TXT file, attempting UTF-8 then Latin-1 encoding."""
+def _process_txt(file_path: Path) -> str:
+    """Processes a TXT file. Returns text string."""
     logging.info(f"Processing TXT file: {file_path}")
     try:
-        # Try reading as UTF-8 first
-        with open(file_path, 'r', encoding='utf-8') as f:
-            text = f.read()
-        logging.info(f"Finished processing TXT (UTF-8): {file_path}. Extracted {len(text)} characters.")
+        with open(file_path, 'r', encoding='utf-8') as f: text = f.read()
+        logging.info(f"Finished TXT (UTF-8): {file_path}. Length: {len(text)}")
         return text
     except UnicodeDecodeError:
-        logging.warning(f"UTF-8 decoding failed for {file_path}. Trying 'latin-1'.")
+        logging.warning(f"UTF-8 failed for {file_path}. Trying 'latin-1'.")
         try:
-            # Fallback to Latin-1
-            with open(file_path, 'r', encoding='latin-1') as f:
-                text = f.read()
-            logging.info(f"Finished processing TXT (latin-1): {file_path}. Extracted {len(text)} characters.")
+            with open(file_path, 'r', encoding='latin-1') as f: text = f.read()
+            logging.info(f"Finished TXT (latin-1): {file_path}. Length: {len(text)}")
             return text
         except Exception as e:
-            logging.error(f"Failed to read TXT file {file_path} even with latin-1: {e}")
-            raise # Re-raise the exception after logging
+            logging.error(f"Failed to read TXT {file_path} even with latin-1: {e}")
+            raise RuntimeError(f"Failed to read TXT file {file_path}: {e}") from e
     except Exception as e:
         logging.error(f"Failed to read TXT file {file_path}: {e}")
-        raise # Re-raise other file reading errors
+        raise RuntimeError(f"Failed to read TXT file {file_path}: {e}") from e
 
-# --- Core Bridge Functions ---
+def _process_pdf(file_path: Path) -> str:
+    """Processes a PDF file using PyMuPDF. Returns text string."""
+    if not PYMUPDF_AVAILABLE:
+        raise ImportError("Required library 'PyMuPDF' is not installed.")
+    logging.info(f"Processing PDF: {file_path}")
+    doc = None
+    try:
+        doc = fitz.open(str(file_path))
+        if doc.is_encrypted:
+            logging.warning(f"PDF is encrypted: {file_path}")
+            raise ValueError("PDF is encrypted")
+        all_text = []
+        for page_num in range(len(doc)):
+            try:
+                page = doc.load_page(page_num)
+                text = page.get_text("text")
+                if text: all_text.append(text.strip())
+            except Exception as page_error:
+                logging.warning(f"Could not process page {page_num + 1} in {file_path}: {page_error}")
+        full_text = "\n\n".join(all_text).strip()
+        if not full_text:
+            logging.warning(f"No extractable text in PDF (image-based?): {file_path}")
+            # Return empty string instead of raising error for image PDFs
+            return ""
+            # raise ValueError("PDF contains no extractable text layer (possibly image-based)")
+        logging.info(f"Finished PDF: {file_path}. Length: {len(full_text)}")
+        return full_text
+    except fitz.fitz.FitzError as fitz_error:
+        logging.error(f"PyMuPDF error processing {file_path}: {fitz_error}")
+        raise RuntimeError(f"Error opening/processing PDF: {file_path} - {fitz_error}") from fitz_error
+    except Exception as e:
+        if isinstance(e, (ValueError, FileNotFoundError)): raise e
+        logging.error(f"Unexpected error processing PDF {file_path}: {e}")
+        raise RuntimeError(f"Error opening/processing PDF: {file_path} - {e}") from e
+    finally:
+        if doc:
+            try: doc.close()
+            except Exception as close_error: logging.error(f"Error closing PDF {file_path}: {close_error}")
 
-def process_document(file_path):
+# --- New Helper Function for Saving ---
+
+def _save_processed_text(original_file_path: Path, text_content: str, output_format: str = "txt") -> Path:
+    """Saves the processed text content to a file."""
+    if text_content is None:
+         raise ValueError("Cannot save None content.")
+
+    try:
+        # Ensure output directory exists
+        PROCESSED_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+        # Construct output filename
+        base_name = original_file_path.name
+        output_filename = f"{base_name}.processed.{output_format}"
+        output_file_path = PROCESSED_OUTPUT_DIR / output_filename
+
+        logging.info(f"Saving processed text to: {output_file_path}")
+
+        # Write content to file
+        with open(output_file_path, 'w', encoding='utf-8') as f:
+            f.write(text_content)
+
+        logging.info(f"Successfully saved processed text for {original_file_path.name}")
+        return output_file_path
+
+    except OSError as e:
+        logging.error(f"OS error saving processed file {output_file_path}: {e}")
+        raise FileSaveError(f"Failed to save processed file due to OS error: {e}") from e
+    except Exception as e:
+        logging.error(f"Unexpected error saving processed file {output_file_path}: {e}")
+        raise FileSaveError(f"An unexpected error occurred while saving processed file: {e}") from e
+
+# --- Core Bridge Functions (Updated) ---
+
+def process_document(file_path_str: str, output_format: str = "txt") -> dict:
     """
-    Detects file type and calls the appropriate processing function.
-    Returns the extracted plain text.
+    Detects file type, calls the appropriate processing function, saves the result,
+    and returns a dictionary containing the processed file path.
     """
-    if not os.path.exists(file_path):
-        raise FileNotFoundError(f"File not found: {file_path}")
+    file_path = Path(file_path_str)
+    if not file_path.exists():
+        raise FileNotFoundError(f"File not found: {file_path_str}")
 
-    _, ext = os.path.splitext(file_path)
-    ext = ext.lower()
+    _, ext = file_path.suffix.lower()
+    processed_text = None
 
-    if ext == '.epub':
-        return _process_epub(file_path)
-    elif ext == '.txt':
-        return _process_txt(file_path)
-    else:
-        # Raise error for unsupported formats
-        raise ValueError(f"Unsupported file format: {ext}. Supported formats: {SUPPORTED_FORMATS}")
+    try:
+        logging.info(f"Starting processing for: {file_path}")
+        if ext == '.epub':
+            processed_text = _process_epub(file_path)
+        elif ext == '.txt':
+            processed_text = _process_txt(file_path)
+        elif ext == '.pdf':
+            processed_text = _process_pdf(file_path)
+        else:
+            raise ValueError(f"Unsupported file format: {ext}. Supported: {SUPPORTED_FORMATS}")
 
-def download_book(book_id, output_dir=None, output_filename=None, process_for_rag=False):
+        # Save the result if text was extracted
+        if processed_text is not None and processed_text.strip(): # Check if non-empty
+            output_path = _save_processed_text(file_path, processed_text, output_format)
+            return {"processed_file_path": str(output_path)}
+        else:
+            # Handle cases where no text was extracted (e.g., image PDF)
+            logging.warning(f"No processable text extracted from {file_path}. No output file saved.")
+            # Return None or an empty path to indicate no file was saved
+            return {"processed_file_path": None}
+
+    except ImportError as imp_err:
+         logging.error(f"Missing dependency for processing {ext} file {file_path}: {imp_err}")
+         raise RuntimeError(f"Missing required library to process {ext} files.") from imp_err
+    except FileSaveError as save_err:
+        # Propagate file saving errors directly
+        logging.error(f"Failed to save processed output for {file_path}: {save_err}")
+        raise save_err # Re-raise FileSaveError
+    except Exception as e:
+        logging.exception(f"Failed to process document {file_path}")
+        if isinstance(e, (FileNotFoundError, ValueError)): raise e
+        raise RuntimeError(f"An unexpected error occurred processing {file_path}: {e}") from e
+
+
+def download_book(book_id, format=None, output_dir=None, process_for_rag=False, processed_output_format="txt"):
     """
-    Downloads a book using the zlibrary lib and optionally processes it.
-    Returns a dictionary containing file_path and optionally processed_text.
+    Downloads a book and optionally processes it, saving the processed text.
+    Returns a dictionary containing file_path and optionally processed_file_path.
     """
-    # Initialize ZLibrary client (adjust based on actual library usage)
-    zl = ZLibrary()
+    zl = ZLibrary() # Adjust initialization as needed
+    logging.info(f"Attempting download for book_id: {book_id}, format: {format}")
 
-    logging.info(f"Attempting download for book_id: {book_id}")
-    # Perform the download
-    download_result_path = zl.download_book(
+    # Use the library's download method
+    # Note: The original library might not support format selection directly in download.
+    # This might require getting download info first, then downloading a specific link.
+    # Assuming for now the library handles it or we adapt this call later.
+    download_result_path_str = zl.download_book(
         book_id=book_id,
+        # format=format, # Pass format if library supports it
         output_dir=output_dir,
-        output_filename=output_filename
+        # output_filename=output_filename # Let library handle naming based on metadata
     )
 
-    if not download_result_path or not os.path.exists(download_result_path):
+    if not download_result_path_str or not os.path.exists(download_result_path_str):
         raise RuntimeError(f"Download failed or file not found for book_id: {book_id}")
 
+    download_result_path = Path(download_result_path_str)
     logging.info(f"Book downloaded successfully to: {download_result_path}")
 
-    result = {"file_path": download_result_path}
+    result = {"file_path": str(download_result_path)}
+    processed_path = None
 
-    # Process immediately if requested
     if process_for_rag:
         logging.info(f"Processing downloaded file for RAG: {download_result_path}")
         try:
-            processed_text = process_document(download_result_path)
-            result["processed_text"] = processed_text
+            # Call the updated process_document which now saves the file
+            process_result = process_document(str(download_result_path), processed_output_format)
+            processed_path = process_result.get("processed_file_path")
+            if processed_path:
+                 result["processed_file_path"] = processed_path
+            else:
+                 # Log if processing happened but didn't yield a savable file
+                 logging.warning(f"Processing requested for {download_result_path}, but no output file was saved (e.g., image PDF).")
+                 result["processed_file_path"] = None # Explicitly set to None
+
         except Exception as e:
             # Log processing errors but don't fail the download result
             logging.error(f"Failed to process document after download for {download_result_path}: {e}")
-            result["processed_text"] = None # Indicate processing failure
+            result["processed_file_path"] = None # Indicate processing failure
 
     return result
 
 # --- Main Execution Block (Handles calls from Node.js) ---
 
 if __name__ == "__main__":
-    # Setup argument parser for command-line invocation
     parser = argparse.ArgumentParser(description='Z-Library MCP Python Bridge')
-    parser.add_argument('function_name', type=str, help='Name of the function to call (e.g., download_book, process_document)')
+    parser.add_argument('function_name', type=str, help='Name of the function to call')
     parser.add_argument('json_args', type=str, help='JSON string containing function arguments')
-
     cli_args = parser.parse_args()
 
     try:
-        # Parse JSON arguments passed from Node.js
         args_dict = json.loads(cli_args.json_args)
+        response = None # Initialize response
 
-        # Route to the appropriate function based on function_name
         if cli_args.function_name == 'download_book':
             book_id = args_dict.get('book_id')
-            if not book_id:
-                 raise ValueError("Missing required argument 'book_id' for download_book")
+            if not book_id: raise ValueError("Missing 'book_id'")
             response = download_book(
                 book_id,
+                args_dict.get('format'),
                 args_dict.get('output_dir'),
-                args_dict.get('output_filename'),
-                args_dict.get('process_for_rag', False) # Default to False
+                args_dict.get('process_for_rag', False),
+                args_dict.get('processed_output_format', "txt")
             )
         elif cli_args.function_name == 'process_document':
             file_path = args_dict.get('file_path')
-            if not file_path:
-                 raise ValueError("Missing required argument 'file_path' for process_document")
-            processed_text = process_document(file_path)
-            response = {"processed_text": processed_text}
+            if not file_path: raise ValueError("Missing 'file_path'")
+            response = process_document(
+                file_path,
+                args_dict.get('output_format', "txt")
+            )
         # Add handlers for other Python functions if needed
         # elif cli_args.function_name == 'search_books': ...
         else:
             raise ValueError(f"Unknown function name: {cli_args.function_name}")
 
-        # Print the successful JSON response to stdout for Node.js
+        # Print the successful JSON response to stdout
         print(json.dumps(response))
         sys.stdout.flush()
 
     except Exception as e:
-        # Log the full error traceback to stderr (for debugging)
+        # Log the full error traceback to stderr
         logging.exception("Python bridge encountered an error")
-```
-
-## 6. Python Dependency Management
-
-The RAG processing requires additional Python libraries. These must be managed within the project's virtual environment.
-
-1.  **Required Libraries:**
-    *   `ebooklib`: For parsing EPUB files.
-    *   `beautifulsoup4`: For cleaning HTML content extracted from EPUBs.
-    *   `lxml`: Recommended HTML parser for `beautifulsoup4`.
-
-2.  **Update `requirements.txt`:** Add these libraries to `requirements.txt` (create the file in the project root if it doesn't exist):
-    ```text
-    # requirements.txt
-    zlibrary # Or the specific version used
-    ebooklib
-    beautifulsoup4
-    lxml
-    ```
-
-3.  **Update `lib/venv-manager.js`:** The `installDependencies` function within the virtual environment manager needs to install packages from `requirements.txt`.
-
-    ```pseudocode
-    // File: lib/venv-manager.js (Conceptual Snippet for installDependencies)
-
-    FUNCTION installDependencies(venvDirPath):
-      pipPath = getPlatformPipPath(venvDirPath) // Get path to venv pip
-      // Resolve path to requirements.txt relative to project root
-      requirementsPath = path.resolve(__dirname, '..', 'requirements.txt')
-
-      IF NOT fs.existsSync(requirementsPath):
-          LOG `requirements.txt not found at ${requirementsPath}, skipping dependency installation.`
-          RETURN
-      ENDIF
-
-      LOG `Installing/updating dependencies from requirements.txt using: ${pipPath}`
-      // Use '-r' to install from file and '--upgrade' to update existing
-      command = `"${pipPath}" install --upgrade -r "${requirementsPath}"`
-      TRY
-        // Execute the pip command synchronously
-        EXECUTE command synchronously // e.g., using child_process.execSync
-        LOG "Dependencies installed/updated successfully."
-      CATCH error
-        // Throw a detailed error if installation fails
-        THROW Error(`Failed to install Python dependencies from requirements.txt: ${error.message}`)
-      ENDTRY
-    END FUNCTION
-    ```
-
-    Ensure the `ensureVenvReady` function (or equivalent setup logic) calls `installDependencies` to apply these changes when the server starts or the environment is checked.
-
-## 7. TDD Anchors
-
-This section outlines key areas for Test-Driven Development to ensure the robustness of the implementation.
-
-1.  **Tool Schemas (`index.js` / `lib/schemas.js`):**
-    *   Verify `DownloadBookToFileInputSchema` accepts `process_for_rag` (optional boolean).
-    *   Verify `DownloadBookToFileOutputSchema` includes optional `processed_text`.
-    *   Verify `ProcessDocumentForRagInputSchema` requires `file_path`.
-    *   Verify `ProcessDocumentForRagOutputSchema` requires `processed_text`.
-
-2.  **Tool Registration (`index.js`):**
-    *   Test that `tools/list` includes both `download_book_to_file` (updated description/schema) and `process_document_for_rag`.
-    *   Test that `tools/call` correctly routes requests for both tools to the respective `zlibrary-api.js` functions.
-    *   Test input validation using the Zod schemas within the `tools/call` handler.
-
-3.  **Node.js Handlers (`lib/zlibrary-api.js`):**
-    *   `downloadBookToFile`: Mock `callPythonFunction`. Test that `process_for_rag` flag is correctly passed in `pythonArgs`. Test handling of responses with and without `processed_text`. Test error handling.
-    *   `processDocumentForRag`: Mock `callPythonFunction`. Test that `file_path` is correctly passed. Test handling of successful response and error response from Python.
-
-4.  **Python Bridge - `download_book` (`lib/python-bridge.py`):**
-    *   Mock the `zlibrary.download_book` call.
-    *   Test case: `process_for_rag=False` -> Returns only `file_path`.
-    *   Test case: `process_for_rag=True` -> Calls `process_document` internally.
-    *   Test case: `process_for_rag=True` (Successful Processing) -> Returns `file_path` and `processed_text`.
-    *   Test case: `process_for_rag=True` (Processing Fails) -> Returns `file_path` and `processed_text: None` (or includes error info).
-    *   Test download failure handling.
-
-5.  **Python Bridge - `process_document` (`lib/python-bridge.py`):**
-    *   Test file type detection (EPUB, TXT, unsupported).
-    *   Test routing to `_process_epub` and `_process_txt`.
-    *   Test handling of `FileNotFoundError`.
-    *   Test handling of `ValueError` for unsupported formats.
-
-6.  **Python Bridge - `_process_epub` (`lib/python-bridge.py`):**
-    *   Test with a sample EPUB file. Verify text extraction.
-    *   Test HTML cleaning (`_html_to_text`).
-    *   Test handling of missing `ebooklib` library (`ImportError`).
-    *   Test handling of corrupted/malformed EPUBs (e.g., `epub.read_epub` error).
-    *   Test handling of item decoding errors.
-
-7.  **Python Bridge - `_process_txt` (`lib/python-bridge.py`):**
-    *   Test with a sample UTF-8 TXT file.
-    *   Test with a sample non-UTF-8 (e.g., latin-1) TXT file. Verify fallback works.
-    *   Test handling of file read errors (permissions, etc.).
-
-8.  **Python Bridge - Main Execution (`lib/python-bridge.py`):**
-    *   Test argument parsing (`argparse`).
-    *   Test routing to `download_book` and `process_document` based on `function_name`.
-    *   Test JSON argument parsing.
-    *   Test successful JSON output format.
-    *   Test error JSON output format on exceptions.
-
-9.  **Dependency Management (`lib/venv-manager.js`):**
-    *   Test that `installDependencies` correctly reads `requirements.txt`.
-    *   Test that `pip install -r requirements.txt` command is executed.
-    *   Test error handling during dependency installation.
-
-        # Print a JSON error structure to stdout for Node.js to handle gracefully
+        # Print a JSON error structure to stdout for Node.js
         error_response = {
-            "error": type(e).__name__, # e.g., "FileNotFoundError", "ValueError"
+            "error": type(e).__name__,
             "message": str(e)
         }
         print(json.dumps(error_response))
         sys.stdout.flush()
-        sys.exit(1) # Exit with a non-zero code to signal failure
+        sys.exit(1) # Exit with a non-zero code
+```
+
+## 6. Python Dependency Management
+
+The RAG processing requires additional Python libraries.
+
+1.  **Required Libraries:**
+    *   `ebooklib`: For parsing EPUB files.
+    *   `beautifulsoup4`: For cleaning HTML content.
+    *   `lxml`: Recommended HTML parser for `beautifulsoup4`.
+    *   `PyMuPDF`: For parsing PDF files.
+
+2.  **Update `requirements.txt`:**
+    ```text
+    # requirements.txt
+    zlibrary # Or the specific version/fork used
+    ebooklib
+    beautifulsoup4
+    lxml
+    PyMuPDF
+    ```
+
+3.  **Update `lib/venv-manager.ts`:** Ensure `installDependencies` uses `pip install -r requirements.txt`.
+
+    ```pseudocode
+    // File: src/lib/venv-manager.ts (Conceptual Snippet for installDependencies)
+
+    FUNCTION installDependencies(venvDirPath):
+      pipPath = getPlatformPipPath(venvDirPath)
+      requirementsPath = path.resolve(__dirname, '..', '..', 'requirements.txt') // Adjust path relative to dist/lib
+
+      IF NOT fs.existsSync(requirementsPath):
+          LOG `requirements.txt not found at ${requirementsPath}, skipping.`
+          RETURN
+      ENDIF
+
+      LOG `Installing/updating dependencies from ${requirementsPath} using: ${pipPath}`
+      // Use '-r' and '--upgrade'
+      // Add --no-cache-dir and --force-reinstall based on previous fixes
+      command = `"${pipPath}" install --no-cache-dir --force-reinstall --upgrade -r "${requirementsPath}"`
+      TRY
+        EXECUTE command synchronously
+        LOG "Dependencies installed/updated successfully."
+      CATCH error
+        THROW Error(`Failed to install Python dependencies: ${error.message}`)
+      ENDTRY
+    END FUNCTION
+    ```
+
+## 7. TDD Anchors (Updated)
+
+1.  **Tool Schemas (`src/lib/schemas.ts`):**
+    *   Verify `DownloadBookToFileInputSchema` accepts `process_for_rag`, `processed_output_format`.
+    *   Verify `DownloadBookToFileOutputSchema` includes optional `processed_file_path`.
+    *   Verify `ProcessDocumentForRagInputSchema` requires `file_path`, accepts optional `output_format`.
+    *   Verify `ProcessDocumentForRagOutputSchema` requires `processed_file_path`.
+
+2.  **Tool Registration (`src/index.ts`):**
+    *   Test `tools/list` includes updated descriptions/schemas.
+    *   Test `tools/call` routes correctly.
+    *   Test input validation using updated Zod schemas.
+
+3.  **Node.js Handlers (`src/lib/zlibrary-api.ts`):**
+    *   `downloadBookToFile`: Mock `callPythonFunction`. Test `process_for_rag` flag passed. Test handling of responses with/without `processed_file_path`. Test error handling (missing paths).
+    *   `processDocumentForRag`: Mock `callPythonFunction`. Test `file_path` and `output_format` passed. Test handling of successful response (`processed_file_path`) and error response.
+
+4.  **Python Bridge - `download_book` (`lib/python_bridge.py`):**
+    *   Mock `zlibrary.download_book`.
+    *   Test `process_for_rag=False` -> Returns only `file_path`.
+    *   Test `process_for_rag=True` -> Calls `process_document` internally.
+    *   Test `process_for_rag=True` (Successful Processing) -> Returns `file_path` and `processed_file_path`.
+    *   Test `process_for_rag=True` (Processing Fails/No Text) -> Returns `file_path` and `processed_file_path: None`.
+    *   Test download failure handling.
+
+5.  **Python Bridge - `process_document` (`lib/python_bridge.py`):**
+    *   Test file type detection (EPUB, TXT, PDF, unsupported).
+    *   Test routing to `_process_epub`, `_process_txt`, `_process_pdf`.
+    *   Test calls `_save_processed_text` on success.
+    *   Test returns `{"processed_file_path": path}` on success.
+    *   Test returns `{"processed_file_path": None}` if no text extracted (e.g., image PDF).
+    *   Test handling of `FileNotFoundError`.
+    *   Test handling of `ValueError` (unsupported format).
+    *   Test propagation of `FileSaveError`.
+    *   Test propagation of processing errors (ImportError, RuntimeError).
+
+6.  **Python Bridge - `_process_epub`, `_process_txt`, `_process_pdf` (`lib/python_bridge.py`):**
+    *   (Existing tests remain relevant)
+    *   Verify they return extracted text string or raise appropriate errors.
+    *   Verify `_process_pdf` returns empty string for image PDFs.
+
+7.  **Python Bridge - `_save_processed_text` (`lib/python_bridge.py`):**
+    *   Test successful save returns correct `Path` object.
+    *   Test directory creation (`./processed_rag_output/`).
+    *   Test correct filename generation (`<original>.processed.<format>`).
+    *   Test raises `FileSaveError` on OS errors (mock `open`/`write` to fail).
+    *   Test raises `ValueError` if `text_content` is None.
+
+8.  **Python Bridge - Main Execution (`lib/python_bridge.py`):**
+    *   Test routing to updated `download_book` and `process_document`.
+    *   Test passing of new format arguments.
+    *   Test successful JSON output format (including `processed_file_path`).
+    *   Test error JSON output format on exceptions (including `FileSaveError`).
+
+9.  **Dependency Management (`src/lib/venv-manager.ts`):**
+    *   Test `installDependencies` uses correct `requirements.txt` path.
+    *   Test `pip install` command includes `--no-cache-dir`, `--force-reinstall`, `--upgrade`, `-r`.
+    *   Test error handling.

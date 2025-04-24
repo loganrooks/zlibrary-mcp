@@ -1,8 +1,12 @@
-# RAG Document Processing Pipeline Architecture
+# RAG Document Processing Pipeline Architecture (v2 - File Output)
+
+**Date:** 2025-04-23 (Updated from 2025-04-14)
 
 ## 1. Overview
 
-This document outlines the architecture for the Retrieval-Augmented Generation (RAG) document processing pipeline within the `zlibrary-mcp` server. The goal is to enable AI agents to download documents (initially EPUB and TXT) from Z-Library, extract their text content, and use this content for RAG workflows.
+This document outlines the architecture for the Retrieval-Augmented Generation (RAG) document processing pipeline within the `zlibrary-mcp` server. The goal is to enable AI agents to download documents (initially EPUB, TXT, PDF) from Z-Library, extract their text content, save it to a file, and use the file path for RAG workflows.
+
+**Reason for Update (v2):** Original design returned raw text, causing agent instability with large documents. This version modifies the pipeline to save processed text to a file and return the file path instead.
 
 ## 2. Data Flow
 
@@ -11,42 +15,44 @@ Two primary workflows are supported:
 **Workflow 1: Combined Download & Process** (Efficient for immediate use)
 
 1.  **Agent:** Uses `search_books` / `get_book_by_id` (existing tools) to find a document.
-2.  **Agent:** Calls `download_book_to_file` (updated tool), specifying `book_id`, `download_path`, and setting `process_for_rag: true`.
+2.  **Agent:** Calls `download_book_to_file` (updated tool), specifying `book_id`, `outputDir` (optional), and setting `process_for_rag: true`. Can optionally specify `processed_output_format`.
 3.  **Server (`zlibrary-mcp`):** Receives the request.
     *   Node.js layer calls the Python bridge.
-    *   Python bridge downloads the file using `zlibrary`.
-    *   Python bridge immediately processes the downloaded file (EPUB/TXT) to extract text.
-    *   Python bridge returns both the `file_path` and `processed_text` to Node.js.
-4.  **Server (`zlibrary-mcp`):** Returns the `file_path` and `processed_text` to the agent.
-5.  **Agent:** Uses the received text for its RAG process.
+    *   Python bridge downloads the file using `zlibrary` to the specified `outputDir` (or default `./downloads`).
+    *   Python bridge immediately processes the downloaded file (EPUB/TXT/PDF) to extract text.
+    *   Python bridge saves the extracted text to a designated file in `./processed_rag_output/`.
+    *   Python bridge returns the original `file_path` and the new `processed_file_path` to Node.js.
+4.  **Server (`zlibrary-mcp`):** Returns the `file_path` and `processed_file_path` to the agent.
+5.  **Agent:** Uses the `processed_file_path` to access the text for its RAG process.
 
 **Workflow 2: Separate Download & Process** (Flexible for existing files)
 
 1.  **Agent:** Uses `search_books` / `get_book_by_id` (existing tools).
-2.  **Agent:** Calls `download_book_to_file` (updated tool), specifying `book_id` and `download_path` (leaving `process_for_rag` as `false` or omitting it).
+2.  **Agent:** Calls `download_book_to_file` (updated tool), specifying `book_id` and `outputDir` (optional) (leaving `process_for_rag` as `false` or omitting it).
 3.  **Server (`zlibrary-mcp`):** Downloads the file via the Python bridge and returns only the `file_path` to the agent.
-4.  **Agent:** (At a later time, or with an existing file) Calls `process_document_for_rag` (new tool), providing the `file_path`.
+4.  **Agent:** (At a later time, or with an existing file) Calls `process_document_for_rag` (updated tool), providing the `file_path`. Can optionally specify `output_format`.
 5.  **Server (`zlibrary-mcp`):** Receives the request.
     *   Node.js layer calls the Python bridge.
-    *   Python bridge processes the specified file (EPUB/TXT) to extract text.
-    *   Python bridge returns the `processed_text` to Node.js.
-6.  **Server (`zlibrary-mcp`):** Returns the `processed_text` to the agent.
-7.  **Agent:** Uses the received text for its RAG process.
+    *   Python bridge processes the specified file (EPUB/TXT/PDF) to extract text.
+    *   Python bridge saves the extracted text to a designated file in `./processed_rag_output/`.
+    *   Python bridge returns the `processed_file_path` to Node.js.
+6.  **Server (`zlibrary-mcp`):** Returns the `processed_file_path` to the agent.
+7.  **Agent:** Uses the `processed_file_path` to access the text for its RAG process.
 
-## 3. Architecture Diagram
+## 3. Architecture Diagram (Updated)
 
 ```mermaid
 graph TD
     subgraph Agent Workflow
         A[Agent: Search/Select Book] --> B1(Agent: Call download_book_to_file);
         B1 -- process_for_rag=true --> C{zlibrary-mcp Server};
-        C -- Result: Path & Text --> E[Agent: Use Text for RAG];
+        C -- Result: Orig Path & Processed Path --> E[Agent: Use Processed Path for RAG];
 
         A --> B2(Agent: Call download_book_to_file);
         B2 -- process_for_rag=false/omitted --> C;
-        C -- Result: File Path --> D[Agent: Call process_document_for_rag];
+        C -- Result: Orig File Path --> D[Agent: Call process_document_for_rag];
         D --> C;
-        C -- Result: Processed Text --> E;
+        C -- Result: Processed File Path --> E;
     end
 
     subgraph "zlibrary-mcp Server (Node.js)"
@@ -54,25 +60,32 @@ graph TD
         G --> H(Python Bridge Call);
         I[MCP Tool: process_document_for_rag] --> J[lib/zlibrary-api.js: processDocumentForRag];
         J --> H;
-        H -- Processed Text --> G; // Added path for combined flow
-        H -- Processed Text --> J; // Existing path for separate flow
+        H -- Orig Path & Processed Path --> G; // Updated path for combined flow
+        H -- Processed Path --> J; // Updated path for separate flow
     end
 
     subgraph "Python Bridge (python-bridge.py in Venv)"
         K[Handle download_book] --> L[zlibrary lib: Download];
-        L --> M[Save File to Disk];
+        L --> M[Save Orig File to Disk];
         M -- If process_for_rag=true --> N[Call Handle process_document internally];
-        N --> S[Return Processed Text];
+        N --> T[Save Processed Text to File];
+        T --> U[Return Orig Path & Processed Path];
+
         O[Handle process_document] --> P{Detect File Type};
         P -- EPUB --> Q[Use ebooklib];
         P -- TXT --> R[Read Text File];
-        Q --> S;
+        P -- PDF --> R_PDF[Use PyMuPDF];
+        Q --> S[Get Processed Text];
         R --> S;
+        R_PDF --> S;
+        S --> T;
+        T --> V[Return Processed Path];
     end
 
     H -- download args (incl. process_flag) --> K;
     H -- process args --> O; // For separate tool call
-    S -- processed text --> H;
+    U -- orig_path, processed_path --> H;
+    V -- processed_path --> H;
 
     style Agent Workflow fill:#f9f,stroke:#333,stroke-width:2px
     style "zlibrary-mcp Server (Node.js)" fill:#ccf,stroke:#333,stroke-width:2px
@@ -81,32 +94,39 @@ graph TD
 
 ## 4. Components
 
-*   **Node.js Layer (`index.js`, `lib/zlibrary-api.js`):** Handles MCP tool requests, orchestrates calls to the Python bridge, manages communication with the agent.
-*   **Python Bridge (`lib/python-bridge.py`):** Executes Python-specific tasks: interacting with the `zlibrary` library for downloads and performing document content extraction/processing using relevant Python libraries. Runs within a managed virtual environment.
+*   **Node.js Layer (`index.ts`, `lib/zlibrary-api.ts`):** Handles MCP tool requests, orchestrates calls to the Python bridge, manages communication with the agent.
+*   **Python Bridge (`lib/python_bridge.py`):** Executes Python-specific tasks: interacting with the `zlibrary` library for downloads, performing document content extraction/processing, **saving processed text to a file**, and returning file paths. Runs within a managed virtual environment.
 
-## 5. MCP Tools
+## 5. Processed File Handling
+
+*   **Save Location:** Processed text files are saved in a dedicated directory relative to the workspace root: `./processed_rag_output/`. The Python bridge is responsible for creating this directory if it doesn't exist.
+*   **Filename Convention:** The filename is derived from the original input file's name, with `.processed.<format_extension>` appended. Example: `my_book.epub` becomes `my_book.epub.processed.txt`.
+*   **Output Format:** The default output format is plain text (`.txt`). This can be potentially configured via the `output_format` (for `process_document_for_rag`) or `processed_output_format` (for `download_book_to_file`) parameters in the tool inputs, although initially only `.txt` is supported.
+*   **Error Handling:** If the Python bridge encounters an error while saving the processed file (e.g., permissions, disk space), it should raise a specific error (e.g., `FileSaveError`). The Node.js layer will catch this and return a structured error to the agent (e.g., `{ "error": "Failed to save processed RAG output", "details": "..." }`). The raw text content will *not* be returned in case of a save failure.
+
+## 6. MCP Tools (Updated)
 
 ### `download_book_to_file` (Updated)
 
-*   **Description:** Downloads a specific book file from Z-Library to a local path. Optionally processes the content for RAG simultaneously.
-*   **Input:** `{ "book_id": "string", "download_path": "string", "process_for_rag": "boolean (optional, default: false)" }`
+*   **Description:** Downloads a specific book file from Z-Library to a local path. Optionally processes the content for RAG simultaneously, saving the result to a separate file.
+*   **Input:** `{ "id": "string", "format": "string (optional)", "outputDir": "string (optional, default: './downloads')", "process_for_rag": "boolean (optional, default: false)", "processed_output_format": "string (optional, default: 'txt')" }`
 *   **Output:**
-    *   If `process_for_rag` is `false` or omitted: `{ "file_path": "string" }`
-    *   If `process_for_rag` is `true`: `{ "file_path": "string", "processed_text": "string" }`
+    *   If `process_for_rag` is `false` or omitted: `{ "file_path": "string" }` (Path to the original downloaded file)
+    *   If `process_for_rag` is `true`: `{ "file_path": "string", "processed_file_path": "string" }` (Paths to original download and the processed text file)
 
-### `process_document_for_rag` (New)
+### `process_document_for_rag` (Updated)
 
-*   **Description:** Extracts and processes text content from a previously downloaded document file (initially EPUB, TXT) for use in RAG workflows. Useful for processing existing files.
-*   **Input:** `{ "file_path": "string" }` (Absolute path to the document file)
-*   **Output:** `{ "processed_text": "string" }` (Extracted and processed plain text content)
+*   **Description:** Extracts and processes text content from a previously downloaded document file (EPUB, TXT, PDF), saving the result to a file for use in RAG workflows.
+*   **Input:** `{ "file_path": "string", "output_format": "string (optional, default: 'txt')" }` (Absolute path to the document file)
+*   **Output:** `{ "processed_file_path": "string" }` (Path to the file containing extracted and processed plain text content)
 
-## 6. Technology Choice
+## 7. Technology Choice
 
-*   **Python:** Used for content extraction and processing within the Python bridge.
-*   **Rationale:** Leverages the existing bridge infrastructure and Python's strong ecosystem of libraries for handling various document formats (e.g., `ebooklib` for EPUB). This promotes modularity and simplifies adding support for new formats (like PDF) in the future. The dual workflow approach provides both efficiency and flexibility.
+*   **Python:** Used for content extraction, processing, and **saving** within the Python bridge.
+*   **Rationale:** Leverages the existing bridge infrastructure and Python's strong ecosystem of libraries for handling various document formats (e.g., `ebooklib` for EPUB, `PyMuPDF` for PDF). Consolidates file I/O related to processing within the Python component.
 
-## 7. Extensibility
+## 8. Extensibility
 
-The architecture allows for future extension:
-*   **New Formats:** Add support for formats like PDF by installing necessary Python libraries (e.g., `pypdf`) and adding corresponding logic within the `process_document` function in `lib/python-bridge.py`.
-*   **Processing Options:** Optional parameters could be added to `process_document_for_rag` (or potentially the combined `download_book_to_file` call) to control output format (e.g., Markdown) or chunking strategies, implemented within the Python bridge.
+The architecture remains extensible:
+*   **New Formats:** Add support for new formats by installing necessary Python libraries and adding corresponding logic within the `process_document` function in `lib/python-bridge.py`.
+*   **Processing Options:** Optional parameters could be added to control output format (e.g., Markdown via `output_format`) or chunking strategies, implemented within the Python bridge.

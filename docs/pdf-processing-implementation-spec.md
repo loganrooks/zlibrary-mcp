@@ -1,98 +1,68 @@
-# Specification: PDF Processing Implementation for RAG Pipeline
+# PDF Processing Integration: Implementation Specification
 
-**Date:** 2025-04-14
-**Version:** 1.0
-**Related Architecture:** `docs/architecture/pdf-processing-integration.md`
+**Version:** 2.0 (File Output)
+**Date:** 2025-04-23
 
 ## 1. Overview
 
-This document provides the detailed specification and pseudocode for implementing PDF processing capabilities within the `zlibrary-mcp` server's RAG pipeline, based on the approved architecture. The implementation leverages the `PyMuPDF (fitz)` library within the existing Python bridge (`lib/python-bridge.py`).
+This document details the implementation specifics for integrating PDF document processing into the `zlibrary-mcp` server's RAG pipeline. It focuses on the Python bridge (`lib/python-bridge.py`) changes required to extract text from PDFs using `PyMuPDF (fitz)` and aligns with the v2 RAG architecture where processed text is saved to a file.
 
-## 2. Affected Components
+Refer to the [PDF Processing Integration Architecture (v2)](./architecture/pdf-processing-integration.md) document for the high-level design.
 
-*   **`lib/python-bridge.py`:** Requires modification to handle PDF files and addition of a new helper function.
-*   **`requirements.txt`:** Requires addition of the `PyMuPDF` dependency.
-*   **`lib/venv-manager.js`:** No changes required, but its functionality is relied upon.
+## 2. Python Bridge (`lib/python_bridge.py`) Modifications
 
-## 3. Specification Details
+### 2.1. Helper Function: `_process_pdf`
 
-### 3.1. `lib/python-bridge.py`
-
-*   **Import:** Add `import fitz` at the beginning of the file.
-*   **New Helper Function (`_process_pdf`):**
-    *   Implement a function `_process_pdf(file_path: str) -> str`.
-    *   This function will use `fitz.open()` to open the PDF specified by `file_path`.
-    *   **Error Handling:**
-        *   Immediately after opening, check `doc.is_encrypted`. If true, raise `ValueError("PDF is encrypted")`.
-        *   Wrap `fitz.open()` and page processing loops in `try...except` blocks to catch potential `fitz.Exception` or other exceptions indicating corruption or processing issues. Raise `RuntimeError("Error opening or processing PDF: [details]")` on failure.
-        *   Iterate through all pages using `doc.load_page(page_num)`.
-        *   Extract text from each page using `page.get_text("text")`.
-        *   Aggregate non-empty text extracted from all pages.
-        *   After processing all pages, check if the aggregated text is empty or whitespace-only. If so, raise `ValueError("PDF contains no extractable text layer (possibly image-based)")`.
-    *   **Return Value:** Return the concatenated, cleaned plain text content as a single string.
-    *   Ensure the `fitz` document object is closed (`doc.close()`) using a `finally` block or context manager if applicable.
-*   **`process_document` Function Modification:**
-    *   Locate the existing `if/elif` block checking file extensions (`ext`).
-    *   Add a new condition: `elif ext == '.pdf': processed_text = _process_pdf(file_path_str)`.
-    *   Ensure the `SUPPORTED_FORMATS` list (if used) is updated to include `.pdf`.
-
-### 3.2. `requirements.txt`
-
-*   Add the following line to the file:
-    ```
-    PyMuPDF
-    ```
-
-### 3.3. `lib/venv-manager.js`
-
-*   No functional changes are required. The existing logic in `installDependencies` which uses `pip install -r requirements.txt` will automatically pick up and install `PyMuPDF` when the virtual environment is created or updated.
-
-## 4. Pseudocode
-
-### 4.1. `lib/python-bridge.py` - New `_process_pdf` Function
+This function extracts text from a PDF file using `PyMuPDF`. **It returns the extracted text string.**
 
 ```python
-# File: lib/python-bridge.py (Addition)
-# Dependencies: fitz, os, logging
-
-import fitz  # PyMuPDF
+# File: lib/python_bridge.py (Helper Function)
+# Dependencies: fitz (PyMuPDF), os, logging, pathlib
+import fitz # PyMuPDF
 import os
 import logging
+from pathlib import Path
 
-# Assume logging is configured elsewhere
+# Assume logging is configured
 
-def _process_pdf(file_path: str) -> str:
+# Attempt to import fitz and set flag
+try:
+    import fitz # PyMuPDF
+    PYMUPDF_AVAILABLE = True
+except ImportError:
+    PYMUPDF_AVAILABLE = False
+
+def _process_pdf(file_path: Path) -> str:
     """
-    Extracts text content from a PDF file using PyMuPDF (fitz).
+    Processes a PDF file using PyMuPDF to extract plain text.
 
     Args:
-        file_path: The absolute path to the PDF file.
+        file_path: Path object for the PDF file.
 
     Returns:
-        The extracted plain text content.
+        The extracted plain text content as a string. Returns an empty string
+        if the PDF contains no extractable text (e.g., image-based).
 
     Raises:
+        ImportError: If PyMuPDF (fitz) is not installed.
         FileNotFoundError: If the file_path does not exist.
-        ValueError: If the PDF is encrypted or contains no extractable text.
+        ValueError: If the PDF is encrypted.
         RuntimeError: If there's an error opening or processing the PDF.
-        ImportError: If fitz (PyMuPDF) is not installed.
     """
-    logging.info(f"Processing PDF: {file_path}")
-    if not os.path.exists(file_path):
+    if not PYMUPDF_AVAILABLE:
+        raise ImportError("Required library 'PyMuPDF' is not installed.")
+    if not file_path.exists():
         raise FileNotFoundError(f"File not found: {file_path}")
 
-    doc = None  # Initialize doc to None for finally block
+    logging.info(f"Processing PDF: {file_path}")
+    doc = None
     try:
-        # Attempt to open the PDF
-        doc = fitz.open(file_path)
-
-        # Check for encryption
+        doc = fitz.open(str(file_path))
         if doc.is_encrypted:
             logging.warning(f"PDF is encrypted: {file_path}")
             raise ValueError("PDF is encrypted")
 
         all_text = []
-        # Iterate through pages
         for page_num in range(len(doc)):
             try:
                 page = doc.load_page(page_num)
@@ -101,31 +71,28 @@ def _process_pdf(file_path: str) -> str:
                     all_text.append(text.strip())
             except Exception as page_error:
                 logging.warning(f"Could not process page {page_num + 1} in {file_path}: {page_error}")
-                # Decide whether to continue or raise based on severity
 
-        # Combine extracted text
         full_text = "\n\n".join(all_text).strip()
 
-        # Check if any text was extracted
         if not full_text:
             logging.warning(f"No extractable text found in PDF (possibly image-based): {file_path}")
-            raise ValueError("PDF contains no extractable text layer (possibly image-based)")
+            # Return empty string for image-based or empty PDFs
+            return ""
+            # Previous version raised ValueError here, changed to return ""
 
         logging.info(f"Finished PDF: {file_path}. Extracted length: {len(full_text)}")
         return full_text
 
-    except fitz.fitz.FitzError as fitz_error: # Catch specific fitz errors if needed
+    except fitz.fitz.FitzError as fitz_error:
         logging.error(f"PyMuPDF error processing {file_path}: {fitz_error}")
-        raise RuntimeError(f"Error opening or processing PDF: {file_path} - {fitz_error}")
+        raise RuntimeError(f"Error opening or processing PDF: {file_path} - {fitz_error}") from fitz_error
     except Exception as e:
-        # Catch other potential errors during opening or processing
-        logging.error(f"Unexpected error processing PDF {file_path}: {e}")
-        # Re-raise specific errors if needed (like ValueError from checks)
-        if isinstance(e, (ValueError, FileNotFoundError)):
+        # Re-raise specific errors if needed
+        if isinstance(e, (ValueError, FileNotFoundError, ImportError)):
              raise e
-        raise RuntimeError(f"Error opening or processing PDF: {file_path} - {e}")
+        logging.error(f"Unexpected error processing PDF {file_path}: {e}")
+        raise RuntimeError(f"Error opening or processing PDF: {file_path} - {e}") from e
     finally:
-        # Ensure the document is closed
         if doc:
             try:
                 doc.close()
@@ -134,77 +101,178 @@ def _process_pdf(file_path: str) -> str:
 
 ```
 
-### 4.2. `lib/python-bridge.py` - `process_document` Modification
+### 2.2. Helper Function: `_save_processed_text` (New)
+
+This function handles saving the extracted text content to the designated output directory.
 
 ```python
-# File: lib/python-bridge.py (Modification)
+# File: lib/python_bridge.py (New Helper Function)
+# Dependencies: logging, pathlib
 
-# Update SUPPORTED_FORMATS if it exists
-SUPPORTED_FORMATS = ['.epub', '.txt', '.pdf'] # Added .pdf
+import logging
+from pathlib import Path
 
-# Inside the process_document function:
-def process_document(file_path_str: str) -> str:
-    """Processes a document file (EPUB, TXT, PDF) to extract text."""
-    if not os.path.exists(file_path_str):
+PROCESSED_OUTPUT_DIR = Path("./processed_rag_output") # Define output dir
+
+class FileSaveError(Exception):
+    """Custom exception for errors during processed file saving."""
+    pass
+
+def _save_processed_text(original_file_path: Path, text_content: str, output_format: str = "txt") -> Path:
+    """
+    Saves the processed text content to a file in the PROCESSED_OUTPUT_DIR.
+
+    Args:
+        original_file_path: Path object of the original input file.
+        text_content: The string content to save.
+        output_format: The desired file extension for the output file (default 'txt').
+
+    Returns:
+        The Path object of the successfully saved file.
+
+    Raises:
+        ValueError: If text_content is None.
+        FileSaveError: If any OS or unexpected error occurs during saving.
+    """
+    if text_content is None:
+         raise ValueError("Cannot save None content.")
+
+    try:
+        # Ensure output directory exists
+        PROCESSED_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+        # Construct output filename: <original_name>.processed.<format>
+        base_name = original_file_path.name
+        output_filename = f"{base_name}.processed.{output_format}"
+        output_file_path = PROCESSED_OUTPUT_DIR / output_filename
+
+        logging.info(f"Saving processed text to: {output_file_path}")
+
+        # Write content to file (UTF-8)
+        with open(output_file_path, 'w', encoding='utf-8') as f:
+            f.write(text_content)
+
+        logging.info(f"Successfully saved processed text for {original_file_path.name}")
+        return output_file_path
+
+    except OSError as e:
+        logging.error(f"OS error saving processed file {output_file_path}: {e}")
+        raise FileSaveError(f"Failed to save processed file due to OS error: {e}") from e
+    except Exception as e:
+        logging.error(f"Unexpected error saving processed file {output_file_path}: {e}")
+        raise FileSaveError(f"An unexpected error occurred while saving processed file: {e}") from e
+```
+
+### 2.3. Core Function: `process_document` (Updated)
+
+This function orchestrates the processing: it detects the file type, calls the appropriate helper (`_process_pdf`, `_process_epub`, `_process_txt`), receives the extracted text, calls `_save_processed_text`, and returns the path to the saved file.
+
+```python
+# File: lib/python_bridge.py (Updated Core Function)
+# Dependencies: os, logging, pathlib
+# Assumes _process_pdf, _process_epub, _process_txt, _save_processed_text are defined
+# Assumes SUPPORTED_FORMATS = ['.epub', '.txt', '.pdf']
+
+import os
+import logging
+from pathlib import Path
+
+# Assume other imports and helpers are present
+
+def process_document(file_path_str: str, output_format: str = "txt") -> dict:
+    """
+    Detects file type, calls the appropriate processing function, saves the result,
+    and returns a dictionary containing the processed file path.
+
+    Args:
+        file_path_str: Absolute path string to the document file.
+        output_format: Desired output file format extension (default 'txt').
+
+    Returns:
+        A dictionary: {"processed_file_path": "path/to/output.processed.txt"}
+        or {"processed_file_path": None} if no text was extracted/saved.
+
+    Raises:
+        FileNotFoundError: If input file not found.
+        ValueError: If format is unsupported or PDF is encrypted.
+        ImportError: If required processing library is missing.
+        FileSaveError: If saving the processed text fails.
+        RuntimeError: For other processing or unexpected errors.
+    """
+    file_path = Path(file_path_str)
+    if not file_path.exists():
         raise FileNotFoundError(f"File not found: {file_path_str}")
 
-    _, ext = os.path.splitext(file_path_str)
-    ext = ext.lower()
+    _, ext = file_path.suffix.lower()
     processed_text = None
 
     try:
+        logging.info(f"Starting processing for: {file_path}")
         if ext == '.epub':
-            # Ensure EBOOKLIB_AVAILABLE check happens here or in _process_epub
-            processed_text = _process_epub(file_path_str)
+            processed_text = _process_epub(file_path)
         elif ext == '.txt':
-            processed_text = _process_txt(file_path_str)
-        elif ext == '.pdf': # <-- New condition
-            # Ensure fitz import check happens here or in _process_pdf
-            processed_text = _process_pdf(file_path_str) # <-- Call new function
+            processed_text = _process_txt(file_path)
+        elif ext == '.pdf':
+            processed_text = _process_pdf(file_path) # Gets text string
         else:
-            # Use the updated SUPPORTED_FORMATS list in the error message
             raise ValueError(f"Unsupported file format: {ext}. Supported: {SUPPORTED_FORMATS}")
 
-        if processed_text is None:
-             # This case might occur if a processing function returns None instead of raising error
-             raise RuntimeError(f"Processing function returned None for {file_path_str}")
-
-        return processed_text
+        # Save the result if non-empty text was extracted
+        if processed_text: # Check if string is not None and not empty
+            output_path = _save_processed_text(file_path, processed_text, output_format)
+            return {"processed_file_path": str(output_path)}
+        else:
+            # Handle cases where no text was extracted (e.g., image PDF, empty file)
+            logging.warning(f"No processable text extracted from {file_path}. No output file saved.")
+            return {"processed_file_path": None} # Indicate no file saved
 
     except ImportError as imp_err:
-         logging.error(f"Missing dependency for processing {ext} file {file_path_str}: {imp_err}")
-         raise RuntimeError(f"Missing required library to process {ext} files. Please check installation.") from imp_err
-    # Keep existing specific error handling (FileNotFoundError, ValueError)
-    # Add or modify general exception handling if needed
+         logging.error(f"Missing dependency for processing {ext} file {file_path}: {imp_err}")
+         raise RuntimeError(f"Missing required library to process {ext} files.") from imp_err
+    except FileSaveError as save_err:
+        # Propagate file saving errors directly
+        logging.error(f"Failed to save processed output for {file_path}: {save_err}")
+        raise save_err # Re-raise FileSaveError
     except Exception as e:
-        logging.exception(f"Failed to process document {file_path_str}")
+        logging.exception(f"Failed to process document {file_path}")
         # Re-raise specific errors if they weren't caught earlier
         if isinstance(e, (FileNotFoundError, ValueError)):
             raise e
         # Wrap unexpected errors
-        raise RuntimeError(f"An unexpected error occurred during document processing: {e}") from e
+        raise RuntimeError(f"An unexpected error occurred processing {file_path}: {e}") from e
 
 ```
 
-## 5. TDD Anchors
+## 3. Python Dependency Management
 
-The following test cases should be implemented to ensure the functionality and robustness of the PDF processing integration:
+*   **Required Library:** `PyMuPDF`
+*   **`requirements.txt`:** Ensure `PyMuPDF` is listed.
+*   **`lib/venv-manager.ts`:** Ensure it installs from `requirements.txt`. (See main RAG spec for details).
 
-1.  **Successful Extraction:** Test `_process_pdf` with a standard, unencrypted PDF containing text. Verify the extracted text matches expected content.
-2.  **Encrypted PDF:** Test `_process_pdf` with an encrypted PDF. Verify it raises `ValueError("PDF is encrypted")`.
-3.  **Corrupted PDF:** Test `_process_pdf` with a corrupted/malformed PDF file. Verify it raises `RuntimeError` indicating processing failure.
-4.  **Image-Based PDF:** Test `_process_pdf` with a PDF containing only images (no text layer). Verify it raises `ValueError("PDF contains no extractable text layer...")`.
-5.  **Empty PDF:** Test `_process_pdf` with a valid but empty PDF. Verify it raises `ValueError("PDF contains no extractable text layer...")`.
-6.  **`process_document` Routing:** Test `process_document` with a `.pdf` file path. Verify it correctly calls `_process_pdf`.
-7.  **`process_document` Error Propagation:** Test `process_document` with a PDF that causes `_process_pdf` to raise an error (e.g., encrypted). Verify the error is correctly propagated or wrapped.
-8.  **Dependency Installation:** Test the `venv-manager.js` setup process. After setup, verify that `import fitz` succeeds within a test Python script executed using the managed venv's Python interpreter.
-9.  **File Not Found:** Test `_process_pdf` and `process_document` with a non-existent file path. Verify `FileNotFoundError` is raised.
-10. **Import Error:** Test `_process_pdf` in an environment where `fitz` is not installed (mocking might be needed). Verify `ImportError` or a `RuntimeError` wrapping it is raised appropriately.
+## 4. TDD Anchors (Updated)
 
-## 6. Modularity
+1.  **`_process_pdf` (`lib/python_bridge.py`):**
+    *   Test successful extraction returns text string.
+    *   Test raises `ValueError` for encrypted PDF.
+    *   Test raises `RuntimeError` for corrupted PDF.
+    *   Test returns empty string (`""`) for image-based PDF.
+    *   Test returns empty string (`""`) for empty PDF.
+    *   Test raises `FileNotFoundError` for non-existent path.
+    *   Test raises `ImportError` if `fitz` not available.
 
-The pseudocode maintains modularity:
-*   PDF-specific logic is encapsulated within `_process_pdf`.
-*   The `process_document` function acts as a router based on file type.
-*   Each function has a clear responsibility.
-*   The provided pseudocode for `_process_pdf` is well under the 500-line guideline.
+2.  **`_save_processed_text` (`lib/python_bridge.py`):**
+    *   Test successful save returns correct `Path` object.
+    *   Test directory creation (`./processed_rag_output/`).
+    *   Test correct filename generation (`<original>.processed.<format>`).
+    *   Test raises `FileSaveError` on OS errors (mock `open`/`write` to fail).
+    *   Test raises `ValueError` if `text_content` is None.
+
+3.  **`process_document` (`lib/python_bridge.py`):**
+    *   Test routes `.pdf` extension to `_process_pdf`.
+    *   Test calls `_save_processed_text` when `_process_pdf` returns non-empty text.
+    *   Test returns `{"processed_file_path": path}` on successful processing and saving.
+    *   Test does *not* call `_save_processed_text` if `_process_pdf` returns empty string.
+    *   Test returns `{"processed_file_path": None}` if `_process_pdf` returns empty string.
+    *   Test propagates errors from `_process_pdf` (e.g., `ValueError`, `RuntimeError`, `ImportError`).
+    *   Test propagates `FileSaveError` from `_save_processed_text`.
+    *   Test raises `FileNotFoundError` if input path doesn't exist.

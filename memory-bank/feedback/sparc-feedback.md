@@ -1,5 +1,13 @@
 # SPARC Orchestrator Feedback
 <!-- Entries below should be added reverse chronologically (newest first) -->
+### [2025-04-24 01:02:21] Intervention: User Feedback on Version Control Practices
+- **Trigger**: User denied `new_task` delegation for TDD Refactor phase.
+- **Context**: SPARC attempted to delegate refactoring immediately after Green phase completion without explicitly addressing version control (branching/committing), despite previous ambiguity noted by `code` mode.
+- **Action Taken**: Halted TDD Refactor delegation. Acknowledged oversight in not following version control best practices. Will query user about desired branching/commit strategy before proceeding.
+- **Rationale**: Ensure code changes are properly tracked in version control before refactoring begins, maintaining a clean history and facilitating collaboration.
+- **Outcome**: Refactor task halted. Will ask user about Git strategy.
+- **Follow-up**: Use `ask_followup_question` to confirm Git state/branching strategy.
+
 ### [2025-04-23 23:26:20] Intervention: User Identified Critical RAG Pipeline Design Flaw
 - **Trigger**: User denied `new_task` for Task 3 Integration Verification.
 - **Context**: SPARC delegated verification based on existing specs where RAG tools (`process_document_for_rag`, `download_book_to_file` combined workflow) return full processed text content.

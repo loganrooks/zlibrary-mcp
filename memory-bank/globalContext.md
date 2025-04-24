@@ -290,14 +290,9 @@
 
 # Progress
 <!-- Entries below should be added reverse chronologically (newest first) -->
-### Task: RAG Pipeline (EPUB/TXT) - [2025-04-23 23:31:58]
-- **Status**: Halted (Requires Redesign).
-- **Details**: Integration verification (Task 2) halted due to critical design flaw identified by user ([Ref: SPARC Feedback 2025-04-23 23:26:20]). RAG tools must be redesigned to save processed output to file and return path, instead of returning raw text. Architecture redesign completed ([Ref: Architect Completion 2025-04-23 23:30:58]). Awaiting specification update. Original TDD complete ([Ref: GlobalContext Progress 2025-04-14 12:58:00]).
-- **Related**: Decision-RAGOutputFile-01, Pattern-RAGPipeline-FileOutput-01, Intervention [2025-04-23 23:26:50]
-
-### Task: RAG Pipeline (PDF) - [2025-04-23 23:31:58]
-- **Status**: Halted (Requires Redesign).
-- **Details**: Integration verification (Task 3) halted due to critical design flaw identified by user ([Ref: SPARC Feedback 2025-04-23 23:26:20]). RAG tools must be redesigned to save processed output to file and return path. Architecture redesign completed ([Ref: Architect Completion 2025-04-23 23:30:58]). Awaiting specification update. Original TDD complete ([Ref: GlobalContext Progress 2025-04-14 14:35:51]).
+### Task: RAG Pipeline (EPUB/TXT/PDF) - File Output Redesign - [2025-04-24 00:57:19]
+- **Status**: Refinement (TDD Refactor Phase Pending).
+- **Details**: Integration verification (Tasks 2 & 3) halted due to critical design flaw ([Ref: SPARC Feedback 2025-04-23 23:26:20]). Architecture redesigned ([Ref: Architect Completion 2025-04-23 23:30:58]), specifications updated ([Ref: Spec/Pseudo Completion 2025-04-23 23:40:42]), TDD Red phase completed ([Ref: TDD Completion 2025-04-23 23:51:14]), and TDD Green phase implementation completed ([Ref: Code Completion 2025-04-24 00:57:19]). Awaiting Refactor phase.
 - **Related**: Decision-RAGOutputFile-01, Pattern-RAGPipeline-FileOutput-01, Intervention [2025-04-23 23:26:50]
 
 

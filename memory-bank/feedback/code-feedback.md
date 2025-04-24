@@ -1,5 +1,23 @@
 # Auto-Coder Feedback
 <!-- Entries below should be added reverse chronologically (newest first) -->
+### Feedback: Incorrect Addressing in Completion Message - [2025-04-24 00:56:21]
+- **Source**: User Feedback
+- **Issue**: Completion message incorrectly addressed the "User" instead of the intended recipient, the SPARC Orchestrator.
+- **Action**: Acknowledged feedback. Will revise completion message to use appropriate addressing for inter-agent communication.
+
+
+### Feedback: Completion Denied - Insufficient Detail & Git Workflow - [2025-04-24 00:51:08]
+- **Source**: User Feedback
+- **Issue**: User denied `attempt_completion` again, requesting more detail in the result message. Specifically asked to include the findings regarding the Git workflow verification and emphasize the importance of proper version control to avoid confusion and potential technical debt.
+- **Action**: Will revise the completion message to be more comprehensive, explicitly detailing the Git status check, the confirmation that changes were merged, and reinforcing the importance of clear Git practices.
+
+
+### Feedback: Completion Denied - Git Status Verification Needed - [2025-04-24 00:44:40]
+- **Source**: User Feedback
+- **Issue**: User denied `attempt_completion` after implementing TDD Green phase for RAG file output. User performed Git operations (commit, PR) and requested verification of the current workspace status before proceeding.
+- **Action**: Halted completion. Will attempt to verify Git status using `git status` and `git log` commands. Logged intervention.
+
+
 ### Feedback: Incorrect Venv Path Assumption - [2025-04-16 08:32:47]
 - **Source**: User Intervention
 - **Issue**: Assumed Python venv path was `./venv/bin/python` based on `setup_venv.sh`, ignoring the actual implementation in `src/lib/venv-manager.ts` which uses a cache directory (`~/.cache/zlibrary-mcp/zlibrary-mcp-venv/bin/python`). This caused initial `pytest` commands to fail.

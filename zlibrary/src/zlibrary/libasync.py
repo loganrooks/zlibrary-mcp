@@ -3,6 +3,7 @@ import httpx
 import aiofiles
 import os
 from pathlib import Path
+from bs4 import BeautifulSoup
 
 from typing import List, Union
 from typing import List, Union, Optional, Dict
@@ -325,27 +326,65 @@ class AsyncZlib:
         return paginator
 
     async def download_book(self, book_details: Dict, output_path: str) -> None:
-        """Downloads a book to the specified output path."""
+        """Downloads a book to the specified output path by scraping the book page."""
         if not self.profile:
             raise NoProfileError("Login required before downloading.")
 
-        # --- Determine Download URL ---
-        # Prioritize 'download_url' if available from get_download_info,
-        # otherwise try 'download' from general book details.
-        download_url = book_details.get('download_url') or book_details.get('download')
+        book_id = book_details.get('id', 'Unknown')
+        book_page_url = book_details.get('url')
 
-        if not download_url:
-            book_id = book_details.get('id', 'Unknown')
-            logger.error(f"No download URL found in book_details for book ID: {book_id}. Details: {book_details}")
-            raise DownloadError(f"Could not find a download URL for book ID: {book_id}")
+        if not book_page_url:
+            logger.error(f"No book page URL ('url') found in book_details for book ID: {book_id}. Details: {book_details}")
+            raise DownloadError(f"Could not find a book page URL for book ID: {book_id}")
 
-        # Ensure the URL includes the mirror if it's a relative path
-        if not download_url.startswith('http'):
+        # Ensure the book page URL includes the mirror if it's relative
+        if not book_page_url.startswith('http'):
             if not self.mirror:
-                 raise DownloadError("Cannot download: Z-Library mirror/domain is not set.")
-            download_url = f"{self.mirror.rstrip('/')}/{download_url.lstrip('/')}"
+                 raise DownloadError("Cannot construct book page URL: Z-Library mirror/domain is not set.")
+            book_page_url = f"{self.mirror.rstrip('/')}/{book_page_url.lstrip('/')}"
 
-        logger.info(f"Attempting download from URL: {download_url} to {output_path}")
+        logger.info(f"Fetching book page to find download link: {book_page_url}")
+
+        try:
+            # Use the internal request method _r to fetch the book page HTML
+            # _r implicitly handles GET requests
+            response = await self._r(book_page_url)
+            response.raise_for_status() # Raise HTTPError for bad responses (4xx or 5xx)
+            html_content = response.text
+            soup = BeautifulSoup(html_content, 'lxml') # Use lxml parser
+
+            # --- Find the actual download link ---
+            # Attempt to find the download button/link using a common selector pattern.
+            # *** This selector might need adjustment based on actual website structure ***
+            download_link_element = soup.select_one('a.btn.btn-primary.dlButton') # Example selector
+
+            if not download_link_element or not download_link_element.get('href'):
+                logger.error(f"Could not find download link element or href on book page: {book_page_url}. Selector 'a.btn.btn-primary.dlButton' failed.")
+                # Optionally log soup excerpt for debugging
+                # logger.debug(f"HTML excerpt: {soup.prettify()[:1000]}")
+                raise DownloadError(f"Could not extract download link from book page for ID: {book_id}")
+
+            download_url = download_link_element['href']
+            logger.info(f"Found download link: {download_url}")
+
+            # Ensure the extracted download URL includes the mirror if it's relative
+            if not download_url.startswith('http'):
+                if not self.mirror:
+                     raise DownloadError("Cannot construct download URL: Z-Library mirror/domain is not set.")
+                download_url = f"{self.mirror.rstrip('/')}/{download_url.lstrip('/')}"
+
+        except httpx.HTTPStatusError as e:
+             logger.error(f"HTTP error fetching book page {book_page_url}: {e.response.status_code} - {e.response.text[:200]}", exc_info=True)
+             raise DownloadError(f"Failed to fetch book page for ID {book_id} (HTTP {e.response.status_code})") from e
+        except httpx.RequestError as e:
+             logger.error(f"Network error fetching book page {book_page_url}: {e}", exc_info=True)
+             raise DownloadError(f"Failed to fetch book page for ID {book_id} (Network Error)") from e
+        except Exception as e:
+            logger.error(f"Error parsing book page or finding download link for {book_page_url}: {e}", exc_info=True)
+            raise DownloadError(f"Failed to process book page for ID {book_id}") from e
+
+
+        logger.info(f"Attempting download from extracted URL: {download_url} to {output_path}")
 
         # --- Ensure Output Directory Exists ---
         try:
@@ -356,52 +395,46 @@ class AsyncZlib:
             logger.error(f"Failed to create output directory {output_dir}: {e}", exc_info=True)
             raise DownloadError(f"Failed to create output directory {output_dir}: {e}") from e
 
-        # --- Perform Download ---
-        # Use proxy settings if configured for the AsyncZlib instance
-        proxies = None
-        if self.proxy_list:
-             # httpx expects a single proxy URL string or a dict mapping protocols
-             # Assuming the first proxy in the list is the one to use for HTTP/HTTPS
-             # Adjust if more complex proxy logic is needed
-             proxy_url = self.proxy_list[0]
-             proxies = {"http://": proxy_url, "https://": proxy_url}
-             logger.debug(f"Using proxy for download: {proxy_url}")
-
-
+        # --- Perform Download using httpx stream (using self._r for consistency) ---
         try:
-            async with httpx.AsyncClient(proxies=proxies, follow_redirects=True, cookies=self.cookies, timeout=60.0) as client:
-                async with client.stream("GET", download_url) as response:
-                    # Check for HTTP errors (4xx, 5xx)
-                    response.raise_for_status()
+            # Use self._r with stream=True
+            async with self._r("GET", download_url, stream=True, allow_redirects=True) as response:
+                response.raise_for_status() # Check for HTTP errors
 
-                    # Stream content to file
-                    async with aiofiles.open(output_path, "wb") as f:
-                        async for chunk in response.aiter_bytes():
-                            await f.write(chunk)
-                    logger.info(f"Successfully downloaded book to: {output_path}")
+                # Get total size for progress (optional)
+                total_size = int(response.headers.get('content-length', 0))
+                downloaded_size = 0
+                logger.info(f"Starting download ({total_size} bytes)...")
 
-        except httpx.RequestError as e:
-            logger.error(f"Network error during download from {download_url}: {e}", exc_info=True)
-            raise DownloadError(f"Network error downloading book: {e}") from e
+                async with aiofiles.open(output_path, 'wb') as f:
+                    async for chunk in response.aiter_bytes():
+                        await f.write(chunk)
+                        downloaded_size += len(chunk)
+                        # Optional: Add progress logging here if needed
+                        # logger.debug(f"Downloaded {downloaded_size}/{total_size} bytes")
+
+            logger.info(f"Successfully downloaded book ID {book_id} to {output_path}")
+            # Method returns None on success
+            return None # Explicitly return None
+
         except httpx.HTTPStatusError as e:
-            logger.error(f"HTTP error during download from {download_url}: Status {e.response.status_code}", exc_info=True)
-            raise DownloadError(f"HTTP error {e.response.status_code} downloading book: {e.response.text[:200]}") from e
-        except IOError as e:
-            logger.error(f"File I/O error writing to {output_path}: {e}", exc_info=True)
-            # Clean up potentially incomplete file
-            try:
-                os.remove(output_path)
-                logger.debug(f"Removed incomplete file: {output_path}")
-            except OSError:
-                logger.warning(f"Could not remove incomplete file: {output_path}")
-            raise DownloadError(f"File write error: {e}") from e
+             logger.error(f"HTTP error during download from {download_url}: {e.response.status_code} - {e.response.text[:200]}", exc_info=True)
+             # Clean up partial file
+             if os.path.exists(output_path): os.remove(output_path)
+             raise DownloadError(f"Download failed for book ID {book_id} (HTTP {e.response.status_code})") from e
+        except httpx.RequestError as e:
+             logger.error(f"Network error during download from {download_url}: {e}", exc_info=True)
+             if os.path.exists(output_path): os.remove(output_path)
+             raise DownloadError(f"Download failed for book ID {book_id} (Network Error)") from e
         except Exception as e:
-            logger.error(f"Unexpected error during download to {output_path}: {e}", exc_info=True)
-            # Clean up potentially incomplete file
+            logger.error(f"Unexpected error during download for book ID {book_id}: {e}", exc_info=True)
+            # Clean up partial file
             try:
-                os.remove(output_path)
-                logger.debug(f"Removed incomplete file after unexpected error: {output_path}")
+                if os.path.exists(output_path):
+                    os.remove(output_path)
+                    logger.debug(f"Removed incomplete file after unexpected error: {output_path}")
             except OSError:
                  logger.warning(f"Could not remove incomplete file after unexpected error: {output_path}")
-            raise DownloadError(f"An unexpected error occurred during download: {e}") from e
+            # Raise the final error
+            raise DownloadError(f"An unexpected error occurred during download for book ID {book_id}") from e
 

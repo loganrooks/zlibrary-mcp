@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 import sys
+import os
 import json
 import traceback
 import asyncio
 from zlibrary import AsyncZlib, Extension, Language
+from zlibrary.exception import DownloadError
 
 import httpx
 # import os # No longer needed after refactor
@@ -454,8 +456,22 @@ def main():
             response = asyncio.run(get_download_limits()) # Removed **args_dict as function takes no args
         elif function_name == 'process_document':
             response = asyncio.run(process_document(**args_dict))
-        elif function_name == 'download_book': # Add download_book handler
-            response = asyncio.run(download_book(**args_dict))
+        elif function_name == 'download_book': # Handler for download_book
+            # Expect 'book_details'
+            if 'book_details' not in args_dict:
+                 raise ValueError("Missing 'book_details' argument for download_book")
+            # Pass the whole dict, but extract other relevant args if needed
+            book_details_arg = args_dict['book_details']
+            output_dir_arg = args_dict.get('output_dir', './downloads') # Keep output_dir optional
+            process_for_rag_arg = args_dict.get('process_for_rag', False)
+            processed_output_format_arg = args_dict.get('processed_output_format', 'txt')
+
+            response = asyncio.run(download_book(
+                book_details=book_details_arg, # Pass the book_details dict
+                output_dir=output_dir_arg,
+                process_for_rag=process_for_rag_arg,
+                processed_output_format=processed_output_format_arg
+            ))
         else:
             print(json.dumps({"error": f"Unknown function: {function_name}"}))
             return 1
@@ -495,7 +511,7 @@ def main():
         return 1
 
 # --- New download_book function ---
-async def download_book(book_id: str, format=None, output_dir='./downloads', process_for_rag=False, processed_output_format='txt', domain: str = 'z-library.sk') -> dict:
+async def download_book(book_details: dict, output_dir='./downloads', process_for_rag=False, processed_output_format='txt') -> dict: # Expect book_details dict
     """
     Downloads a book and optionally processes it for RAG, saving the processed text.
     Returns a dictionary containing 'file_path' and optionally 'processed_file_path'
@@ -508,15 +524,32 @@ async def download_book(book_id: str, format=None, output_dir='./downloads', pro
     result = {}
 
     try:
-        # Step 1: Download the book
-        logging.info(f"Downloading book ID {book_id} to {output_dir}...")
-        original_file_path_str = await zlib_client.download_book(
-            book_id=book_id,
-            format=format,
-            output_dir=output_dir
+        # Step 1: Use provided book_details to construct filename and pass to library method
+        book_id = book_details.get('id', 'unknown_id') # Get ID for logging/filename
+        logging.info(f"Preparing download for book ID {book_id} using provided details...")
+
+        # Construct filename using details
+        file_format = book_details.get('extension', 'unknown')
+        # Sanitize filename components
+        safe_book_id = str(book_id).replace('/','_').replace('\\','_')
+        safe_format = str(file_format).replace('/','_').replace('\\','_')
+        filename = f"{safe_book_id}.{safe_format}"
+        output_path = os.path.join(output_dir, filename)
+
+        # Ensure output directory exists
+        os.makedirs(output_dir, exist_ok=True)
+
+        # Step 2: Call library download method with the full book_details dict
+        # The library method now handles scraping the page URL within book_details
+        logging.info(f"Calling library download for book ID {book_id} to {output_path}...")
+        await zlib_client.download_book(
+            book_details=book_details, # Pass the full dict
+            output_path=output_path
         )
+        # Assign the constructed path to the result
+        original_file_path_str = output_path
         result["file_path"] = original_file_path_str
-        logging.info(f"Book downloaded to: {original_file_path_str}")
+        logging.info(f"Book download initiated to: {original_file_path_str}") # Library method is async
 
         # Step 2: Process if requested by calling process_document
         if process_for_rag:
@@ -548,12 +581,13 @@ async def download_book(book_id: str, format=None, output_dir='./downloads', pro
         return result # Return dict with file_path and optional processed_file_path/processing_error
 
     except Exception as download_err:
-        # Catch errors during the initial download phase
-        logging.exception(f"Failed to download book ID {book_id}")
+        # Catch errors during the download process
+        current_book_id = book_details.get('id', 'unknown_id') # Get ID for logging
+        logging.exception(f"Failed during download process for book ID {current_book_id}")
         # Re-raise specific errors if needed, or wrap them
-        if isinstance(download_err, (ValueError, RuntimeError)): # Propagate known error types
+        if isinstance(download_err, (ValueError, RuntimeError, DownloadError)): # Propagate known error types
              raise download_err
-        raise RuntimeError(f"Failed to download book ID {book_id}: {download_err}") from download_err
+        raise RuntimeError(f"Failed during download process for book ID {current_book_id}: {download_err}") from download_err
 
 
 if __name__ == "__main__":

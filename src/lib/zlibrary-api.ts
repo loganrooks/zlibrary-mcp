@@ -105,11 +105,12 @@ interface GetRecentBooksArgs {
 }
 
 interface DownloadBookToFileArgs {
-    id: string;
-    format?: string | null;
+    // id: string; // Replaced by bookDetails
+    // format?: string | null; // Replaced by bookDetails
+    bookDetails: Record<string, any>; // Expect the full book details object
     outputDir?: string;
     process_for_rag?: boolean;
-    processed_output_format?: string; // Added for RAG output format
+    processed_output_format?: string;
 }
 
 interface ProcessDocumentForRagArgs {
@@ -227,18 +228,21 @@ export async function processDocumentForRag({ filePath, outputFormat = 'txt' }: 
  * Download a book directly to a file
  */
 export async function downloadBookToFile({
-    id,
-    format = null,
+    // id, // Replaced by bookDetails
+    // format = null, // Replaced by bookDetails
+    bookDetails, // Use bookDetails object
     outputDir = './downloads',
     process_for_rag = false,
-    processed_output_format = 'txt' // Add format for processed output
+    processed_output_format = 'txt'
 }: DownloadBookToFileArgs): Promise<{ file_path: string; processed_file_path?: string | null; processing_error?: string }> {
   try {
-    console.log(`[downloadBookToFile - ${id}] Calling Python bridge... process_for_rag=${process_for_rag}`);
-    // Call the updated Python function which handles download and optional processing/saving
+    const logId = bookDetails?.id || 'unknown_id'; // Use ID from details for logging
+    console.log(`[downloadBookToFile - ${logId}] Calling Python bridge... process_for_rag=${process_for_rag}`);
+    // Call the Python function, passing the bookDetails object
     const result = await callPythonFunction('download_book', {
-        book_id: id,
-        format: format,
+        book_details: bookDetails, // Pass the whole object
+        // book_id: id, // Removed
+        // format: format, // Removed
         output_dir: outputDir,
         process_for_rag: process_for_rag,
         processed_output_format: processed_output_format

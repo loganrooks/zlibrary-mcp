@@ -1,43 +1,55 @@
 # Z-Library MCP Server
 
-This Model Context Protocol (MCP) server provides access to Z-Library for AI coding assistants like RooCode and Cline for VSCode. It allows AI assistants to search for books, retrieve metadata, and provide download links through a standardized API.
+This Model Context Protocol (MCP) server provides access to Z-Library for AI coding assistants like RooCode and Cline for VSCode. It allows AI assistants to search for books, retrieve metadata, download files, and process document content for Retrieval-Augmented Generation (RAG) workflows.
+
+## Current Status (As of 2025-04-28)
+
+- **Development Focus:** Implementing the RAG document processing pipeline, specifically the download workflow.
+- **Branch:** `feature/rag-file-output`
+- **Progress:**
+    - Specification for the RAG download workflow updated (v2.1) to align with ADR-002 (see `docs/rag-pipeline-implementation-spec.md`).
+    - TDD Red Phase (writing failing tests) for the updated download workflow is complete.
+    - Next Step: TDD Green Phase (implementation).
+
+## Architecture Overview
+
+This project is primarily built using **Node.js/TypeScript** and acts as an MCP server. Key architectural features include:
+
+- **Python Bridge:** Utilizes a Python bridge (`lib/python_bridge.py`, `src/lib/python-bridge.ts`) to leverage Python libraries for specific tasks, notably interacting with the Z-Library website and processing document formats (EPUB, TXT, PDF).
+- **Managed Python Environment:** The server manages its own Python virtual environment (`.venv`) to ensure consistent dependency handling (see `setup_venv.sh`).
+- **Vendored `zlibrary` Fork:** Includes a modified fork of the `sertraline/zlibrary` Python library within the `zlibrary/` directory. This fork contains specific modifications, particularly for the book download logic which involves scraping the book's detail page to find the actual download link (see ADR-002).
+- **RAG Pipeline:** Implements workflows for downloading books and processing their content (EPUB, TXT, PDF) into plain text suitable for RAG. Processed text is saved to `./processed_rag_output/` and the file path is returned to the agent to avoid context overload (see `docs/architecture/rag-pipeline.md`).
 
 ## Features
 
 - 📚 Search for books by title, author, year, language, and format
-- 📖 Get detailed book information and metadata
-- 🔗 Get download links for books in various formats
+- 📖 Get detailed book information and metadata (Note: ID-based lookup is currently unreliable due to external website changes; search is recommended)
+- 🔗 Get download information (subject to the same ID lookup limitations)
 - 🔍 Full-text search within book contents
 - 📊 View download history and limits
-- 💾 Download books directly to local file system
+- 💾 Download books directly to local file system (`./downloads/` by default)
+- ✨ Process downloaded documents (EPUB, TXT, PDF) into plain text for RAG, saving output to `./processed_rag_output/`
 
 ## Prerequisites
 
-- Node.js 14 or newer
-- Python 3.7 or newer
+- Node.js 18 or newer (Updated based on recent dependencies/ESM)
+- Python 3.9 or newer (Updated based on recent dependencies)
 - Z-Library account (for authentication)
 
 ## Installation
-
-### Global Installation
-
-Install the package globally to use as a command-line tool:
-
-```bash
-npm install -g zlibrary-mcp
-```
-
-### Local Installation
 
 ```bash
 # Clone this repository
 git clone https://github.com/loganrooks/zlibrary-mcp.git
 cd zlibrary-mcp
 
-# Install dependencies
+# Install Node.js dependencies
 npm install
 
-# Run the setup script to create Python virtual environment
+# Build TypeScript code
+npm run build
+
+# Run the setup script to create Python virtual environment and install Python dependencies
 ./setup_venv.sh
 ```
 
@@ -48,114 +60,76 @@ The server requires Z-Library credentials to function. Set these as environment 
 ```bash
 export ZLIBRARY_EMAIL="your-email@example.com"
 export ZLIBRARY_PASSWORD="your-password"
+# Optional: Specify the Z-Library mirror domain if needed
+# export ZLIBRARY_MIRROR="https://your-mirror.example"
 ```
 
 ## Usage
 
 ### Starting the Server
 
-After installing globally:
+From the local repository root:
 
 ```bash
-zlibrary-mcp
+# Ensure you have built the code first (npm run build)
+node dist/index.js
 ```
 
-From local repository:
+The server will start, connect via Stdio, and register its tools.
 
-```bash
-npm start
-```
+### Integration with RooCode / Cline
 
-The server will start on port 3000 by default.
+Configure the server in your AI assistant's settings. Ensure the `command` points to the correct execution path (e.g., `node /path/to/zlibrary-mcp/dist/index.js`) and provide the necessary environment variables (`ZLIBRARY_EMAIL`, `ZLIBRARY_PASSWORD`).
 
-### Integration with RooCode
-
-Add it to your RooCode MCP configuration:
+**Example RooCode `mcp_settings.json`:**
 
 ```json
 {
   "mcpServers": {
-    "zlibrary": {
-      "command": "npx",
+    "zlibrary-local": { // Renamed for clarity
+      "command": "node",
       "args": [
-        "-y",
-        "zlibrary-mcp"
+        "/full/path/to/zlibrary-mcp/dist/index.js" // Use absolute path
       ],
       "env": {
         "ZLIBRARY_EMAIL": "your-email@example.com",
-        "ZLIBRARY_PASSWORD": "your-password",
-        "PYTHONPATH": "/path/to/your/venv/lib/python3.x/site-packages",
-        "OPENSSL_CONF": "/etc/ssl/openssl.cnf",
-        "NODE_EXTRA_CA_CERTS": "/etc/ssl/certs/ca-certificates.crt"
+        "ZLIBRARY_PASSWORD": "your-password"
+        // Add ZLIBRARY_MIRROR if needed
       },
-      "alwaysAllow": [
-        "search_books",
-        "get_book_by_id"
-      ]
+      "transport": "stdio", // Explicitly stdio
+      "enabled": true
+      // "alwaysAllow": [...] // Optional: Add tools to bypass confirmation
     }
   }
 }
 ```
 
-### Integration with Cline for VSCode
-
-Add the following to your Cline settings:
-
-```json
-{
-  "cline.modelContextProtocolServers": [
-    {
-      "name": "zlibrary",
-      "command": "zlibrary-mcp",
-      "env": {
-        "ZLIBRARY_EMAIL": "your-email@example.com",
-        "ZLIBRARY_PASSWORD": "your-password"
-      }
-    }
-  ]
-}
-```
+*(Note: Global installation (`npm install -g`) is not currently the primary recommended setup due to the complexities of managing the Python environment globally. Local development setup is preferred.)*
 
 ## Available Tools
 
-- `search_books` - Search for books by title, author, etc.
-- `get_book_by_id` - Get detailed information about a specific book
-- `get_download_info` - Get download information including URLs
-- `full_text_search` - Search for text within book contents
-- `get_download_history` - View user's download history
-- `get_download_limits` - Check current download limits
-- `get_recent_books` - Get recently added books
-- `download_book_to_file` - Download a book directly to a file
-
-## Python Environment Setup
-
-If you need to manually set up the Python environment:
-
-```bash
-# Create a virtual environment
-python3 -m venv .venv
-
-# Activate the environment
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-
-# Install Z-Library package
-pip install zlibrary
-
-# When you're done
-deactivate
-```
+- `search_books`: Search for books. **Recommended** for finding books and obtaining `bookDetails`.
+- `get_book_by_id`: Get details by ID. (Currently unreliable due to external site changes).
+- `get_download_info`: Get download info by ID. (Currently unreliable).
+- `full_text_search`: Search within book content.
+- `get_download_history`: View download history.
+- `get_download_limits`: Check download limits.
+- `get_recent_books`: Get recently added books.
+- `download_book_to_file`: Download a book using `bookDetails` from search. Can optionally process for RAG.
+- `process_document_for_rag`: Process an existing local file (EPUB, TXT, PDF) for RAG.
 
 ## Development
 
 ### Running Tests
 
 ```bash
+# Run all tests (Jest for Node.js, Pytest for Python bridge)
 npm test
 ```
 
 ### Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+Contributions are welcome! Please review the architecture documents (`docs/`) and ADRs (`docs/adr/`) before submitting a Pull Request. Ensure changes align with the project's direction and include relevant tests.
 
 ## License
 
@@ -163,4 +137,4 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ## Disclaimer
 
-This tool is provided for educational and research purposes only. Users are responsible for complying with all applicable laws and regulations regarding the downloading and use of copyrighted materials.
+This tool is provided for educational and research purposes only. Users are responsible for complying with all applicable laws and regulations regarding the downloading and use of copyrighted materials. Accessing Z-Library may be restricted in certain jurisdictions.

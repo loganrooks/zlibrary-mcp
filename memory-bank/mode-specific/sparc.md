@@ -431,6 +431,36 @@
 
 ## Delegations Log
 <!-- Append new delegation records here -->
+### [2025-04-28 13:24:57] Task: Re-run Regression Testing & Test Coverage (Post-Debug Fix)
+- Assigned to: tdd
+- Description: Re-run full test suites (`pytest` in `zlibrary/`, `npm test`) after debug fix (commit `26cd7c8`). Verify all tests pass. Review changes in `zlibrary/src/zlibrary/libasync.py` and `lib/python_bridge.py` (from commit `f3b5f96`) and ensure adequate test coverage exists or add/update tests as needed.
+- Expected deliverable: Test results confirmation (all passing). Confirmation of adequate test coverage or updated/new tests. Commit hash if changes are made.
+- Status: pending
+- Link to Progress Entry: [ActiveContext 2025-04-28 13:24:06]
+### [2025-04-28 13:13:27] Task: Debug Regression Test Failures (Post-Integration Fixes)
+- Assigned to: debug
+- Description: Investigate and fix the `pytest` failures reported by `tdd` mode ([SPARC MB 2025-04-28 13:13:06]) in `__tests__/python/test_python_bridge.py`. The regression occurred after integration fixes (commit `f3b5f96`) and is likely related to output path handling in `lib/python_bridge.py`.
+- Expected deliverable: Root cause analysis, fixed code/tests, confirmation of passing `pytest` suite, and commit hash.
+- Status: completed
+- Completion time: 2025-04-28 13:24:06
+- Outcome: Successfully fixed the 4 failing tests in `__tests__/python/test_python_bridge.py`. Root cause was outdated test assertions expecting directory path instead of full file path argument for `_scrape_and_download`. Updated assertions. Commit: `26cd7c8`.
+- Link to Progress Entry: [ActiveContext 2025-04-28 13:12:25]
+### [2025-04-28 13:05:25] Task: Regression Testing & Test Coverage (Post-Integration Fixes)
+- Assigned to: tdd
+- Description: Run full test suites (`pytest` in `zlibrary/`, `npm test`) to check for regressions after integration fixes (commit `f3b5f96`). Review changes in `zlibrary/src/zlibrary/libasync.py` and `lib/python_bridge.py` and ensure adequate test coverage exists or add/update tests as needed.
+- Expected deliverable: Test results confirmation (all passing). Confirmation of adequate test coverage or updated/new tests. Commit hash if changes are made.
+- Status: failed
+- Completion time: 2025-04-28 13:12:25 (Early Return)
+- Outcome: Returned early. `pytest` failed with 4 errors in `__tests__/python/test_python_bridge.py` after integration fixes (`f3b5f96`), indicating a regression likely related to output path handling in `lib/python_bridge.py`. See `memory-bank/mode-specific/tdd.md` for details.
+- Link to Progress Entry: [ActiveContext 2025-04-28 13:04:18]
+### [2025-04-28 12:20:55] Task: Verify RAG Download Workflow Integration
+- Assigned to: integration
+- Description: Perform integration testing on the RAG download workflow implemented up to commit `f2d1b9c`. Verify end-to-end functionality including `bookDetails` input, Python bridge call, `zlibrary` fork usage, scraping, download, and saving.
+- Expected deliverable: Integration test report.
+- Status: completed
+- Completion time: 2025-04-28 13:04:18
+- Outcome: Integration successful. Verified `download_book_to_file` works end-to-end. Fixed issues INT-RAG-DL-001 (scraping selector) and INT-RAG-FN-001 (filename extension) in `zlibrary/src/zlibrary/libasync.py` and `lib/python_bridge.py`. Commit: `f3b5f96`.
+- Link to Progress Entry: [ActiveContext 2025-04-28 13:04:18]
 ### [2025-04-28 10:44:50] Task: TDD Refactor Phase - RAG Download Workflow (Spec v2.1) - Retry 1
 - Assigned to: tdd
 - Description: Refactor the RAG download workflow implementation (`lib/python_bridge.py`, `src/lib/zlibrary-api.ts`) and associated tests (`__tests__/python/test_python_bridge.py`, `__tests__/zlibrary-api.test.js`) following the successful Green Phase fixes (commit `e58da14`). Improve code clarity and maintainability while keeping all tests passing. Previous attempt blocked by test failures now resolved.

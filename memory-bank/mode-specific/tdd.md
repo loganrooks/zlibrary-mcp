@@ -1,6 +1,17 @@
 # Tester (TDD) Specific Memory
 <!-- Entries below should be added reverse chronologically (newest first) -->
 ## Test Execution Results
+### Test Execution: Regression (pytest - Post-Integration Fix f3b5f96) - [2025-04-28 13:11:21]
+- **Trigger**: Manual (`/home/rookslog/.cache/zlibrary-mcp/zlibrary-mcp-venv/bin/python -m pytest zlibrary/src/test.py __tests__/python/test_python_bridge.py`) from root directory.
+- **Outcome**: FAIL
+- **Summary**: 4 failed, 22 passed, 4 xfailed, 17 xpassed, 5 warnings
+- **Failed Tests**:
+    - `__tests__/python/test_python_bridge.py::test_download_book_calls_scrape_helper`: AssertionError: Expected `_scrape_and_download` called with output dir `./test_dl`, but called with `test_dl/123.epub`.
+    - `__tests__/python/test_python_bridge.py::test_download_book_success_no_rag`: AssertionError: Expected `_scrape_and_download` called with output dir `./test_output`, but called with `test_output/123.unknown`.
+    - `__tests__/python/test_python_bridge.py::test_download_book_handles_scrape_download_error`: AssertionError: Expected `_scrape_and_download` called with output dir `./downloads`, but called with `downloads/123.unknown`.
+    - `__tests__/python/test_python_bridge.py::test_download_book_handles_scrape_unexpected_error`: AssertionError: Expected `_scrape_and_download` called with output dir `./downloads`, but called with `downloads/123.unknown`.
+- **Coverage Change**: N/A
+- **Notes**: Failures indicate a regression or change in `lib/python_bridge.py::download_book` related to output path handling before calling `_scrape_and_download`, likely due to integration fixes in commit `f3b5f96`. Task halted as per Early Return Clause.
 ### Test Execution: Unit (pytest) - [2025-04-28 11:15:37]
 - **Trigger**: Manual (`pytest`) after Python refactoring (commit f2d1b9c)
 - **Outcome**: PASS

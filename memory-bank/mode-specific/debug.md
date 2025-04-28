@@ -34,6 +34,22 @@
 # Debugger Specific Memory
 <!-- Entries below should be added reverse chronologically (newest first) -->
 ## Issue History
+### Issue: REG-PYTEST-001 - Pytest Regression Post-Integration (f3b5f96) - Status: Resolved - [2025-04-28 13:23:23]
+- **Reported**: [2025-04-28 13:12:25] (via SPARC Delegation) / **Severity**: High / **Symptoms**: 4 tests failed in `__tests__/python/test_python_bridge.py` after integration fixes (commit `f3b5f96`). Failures related to `_scrape_and_download` mock assertions.
+- **Investigation**:
+    1. Reviewed TDD report ([memory-bank/mode-specific/tdd.md @ 2025-04-28 13:11:21]). Identified failing tests and assertion errors.
+    2. Analyzed failing tests (`test_download_book_calls_scrape_helper`, `test_download_book_success_no_rag`, `test_download_book_handles_scrape_download_error`, `test_download_book_handles_scrape_unexpected_error`) in `__tests__/python/test_python_bridge.py`.
+    3. Analyzed `download_book` and `_scrape_and_download` functions in `lib/python_bridge.py`.
+    4. Confirmed implementation correctly passes full file path to `_scrape_and_download`.
+    5. Identified root cause as outdated test assertions expecting only directory path.
+    6. Attempted `apply_diff` to fix assertions; encountered tool errors due to line shifts.
+    7. Used `read_file` to get current content and successfully applied fixes using `apply_diff`.
+    8. Verified fixes with `pytest` command (`.venv/bin/python -m pytest __tests__/python/test_python_bridge.py`), encountered `No module named pytest`.
+    9. Installed dev dependencies (`.venv/bin/python -m pip install -r requirements-dev.txt`).
+    10. Retried `pytest`, encountered 1 remaining failure (`test_download_book_calls_scrape_helper`) due to incorrect keyword vs positional argument assertion.
+    11. Corrected final assertion using `apply_diff`.
+    12. Verified all tests pass with `pytest`.
+- **Root Cause**: Test assertions in `__tests__/python/test_python_bridge.py` were not updated after changes to `lib/python_bridge.py` in commit `f3b5f96`. The tests incorrectly expected the `_scrape_and_download` mock to be called with a directory
 ### Issue: REG-001 - Tool Call Regression ("Invalid tool name type" / Python TypeError) - Status: Resolved - [2025-04-23 22:12:51]
 - **Reported**: [2025-04-23 18:13:24] (via Task Description) / **Severity**: High / **Symptoms**: 1. `Error: Invalid tool name type.` when calling tools. 2. `TypeError: ... argument after ** must be a mapping, not list` in Python bridge when calling tools.
 - **Investigation**:

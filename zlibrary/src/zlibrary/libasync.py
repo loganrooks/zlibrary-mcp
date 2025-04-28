@@ -346,20 +346,20 @@ class AsyncZlib:
         logger.info(f"Fetching book page to find download link: {book_page_url}")
 
         try:
-            # Use the internal request method _r to fetch the book page HTML
-            # _r implicitly handles GET requests
-            response = await self._r(book_page_url)
-            response.raise_for_status() # Raise HTTPError for bad responses (4xx or 5xx)
-            html_content = response.text
-            soup = BeautifulSoup(html_content, 'lxml') # Use lxml parser
+            # Use httpx directly to fetch the book page HTML, ensuring we get the full response object
+            async with httpx.AsyncClient(proxy=self.proxy_list[0] if self.proxy_list else None, cookies=self.cookies, follow_redirects=True) as client:
+                 response = await client.get(book_page_url)
+                 response.raise_for_status() # Raise HTTPError for bad responses (4xx or 5xx)
+                 html_content = response.text
+                 soup = BeautifulSoup(html_content, 'lxml') # Use lxml parser
 
             # --- Find the actual download link ---
             # Attempt to find the download button/link using a common selector pattern.
             # *** This selector might need adjustment based on actual website structure ***
-            download_link_element = soup.select_one('a.btn.btn-primary.dlButton') # Example selector
+            download_link_element = soup.select_one('a.addDownloadedBook[href*="/dl/"]') # Updated selector based on user feedback
 
             if not download_link_element or not download_link_element.get('href'):
-                logger.error(f"Could not find download link element or href on book page: {book_page_url}. Selector 'a.btn.btn-primary.dlButton' failed.")
+                logger.error(f"Could not find download link element or href on book page: {book_page_url}. Selector 'a.addDownloadedBook[href*=\"/dl/\"]' failed.")
                 # Optionally log soup excerpt for debugging
                 # logger.debug(f"HTML excerpt: {soup.prettify()[:1000]}")
                 raise DownloadError(f"Could not extract download link from book page for ID: {book_id}")
@@ -395,23 +395,24 @@ class AsyncZlib:
             logger.error(f"Failed to create output directory {output_dir}: {e}", exc_info=True)
             raise DownloadError(f"Failed to create output directory {output_dir}: {e}") from e
 
-        # --- Perform Download using httpx stream (using self._r for consistency) ---
+        # --- Perform Download using httpx stream ---
         try:
-            # Use self._r with stream=True
-            async with self._r("GET", download_url, stream=True, allow_redirects=True) as response:
-                response.raise_for_status() # Check for HTTP errors
+            # Use httpx directly for streaming download
+            async with httpx.AsyncClient(proxy=self.proxy_list[0] if self.proxy_list else None, cookies=self.cookies, follow_redirects=True) as client:
+                 async with client.stream("GET", download_url) as response:
+                      response.raise_for_status() # Check for HTTP errors
 
-                # Get total size for progress (optional)
-                total_size = int(response.headers.get('content-length', 0))
-                downloaded_size = 0
-                logger.info(f"Starting download ({total_size} bytes)...")
+                      # Get total size for progress (optional)
+                      total_size = int(response.headers.get('content-length', 0))
+                      downloaded_size = 0
+                      logger.info(f"Starting download ({total_size} bytes)...")
 
-                async with aiofiles.open(output_path, 'wb') as f:
-                    async for chunk in response.aiter_bytes():
-                        await f.write(chunk)
-                        downloaded_size += len(chunk)
-                        # Optional: Add progress logging here if needed
-                        # logger.debug(f"Downloaded {downloaded_size}/{total_size} bytes")
+                      async with aiofiles.open(output_path, 'wb') as f:
+                          async for chunk in response.aiter_bytes():
+                              await f.write(chunk)
+                              downloaded_size += len(chunk)
+                              # Optional: Add progress logging here if needed
+                              # logger.debug(f"Downloaded {downloaded_size}/{total_size} bytes")
 
             logger.info(f"Successfully downloaded book ID {book_id} to {output_path}")
             # Method returns None on success

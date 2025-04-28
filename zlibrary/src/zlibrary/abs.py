@@ -420,7 +420,7 @@ class DownloadsPaginator:
 
     def parse_page(self, page):
         soup = bsoup(page, features="lxml")
-        box = soup.find("div", {"class": "dstats-content"})
+        box = soup.find("div", {"class": "dstats-table-content"}) # Updated class selector
         if not box or type(box) is not Tag:
             raise ParseError("Could not parse downloads list.")
 
@@ -431,7 +431,7 @@ class DownloadsPaginator:
             self.result = []
             return
 
-        book_list = box.findAll("tr", {"class": "dstats-row"})
+        book_list = box.find_all("tr", {"class": "dstats-row"}) # Use find_all instead of findAll
         if not book_list:
             raise ParseError("Could not find the book list.")
 
@@ -444,7 +444,12 @@ class DownloadsPaginator:
             date = book.find("td", {"class": "lg-w-120"})
 
             js["name"] = title.text.strip()
-            js["date"] = date.text.strip()
+            # Find the specific span for the full date
+            date_span = date.find("span", {"class": "hidden-xs"})
+            if date_span:
+                js["date"] = date_span.text.strip()
+            else: # Fallback or log warning if needed
+                js["date"] = date.text.strip() # Keep old behavior as fallback
 
             book_url = book.find("a")
             if book_url:

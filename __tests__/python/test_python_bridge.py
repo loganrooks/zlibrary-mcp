@@ -674,9 +674,11 @@ def test_download_book_missing_url_raises_error(): # Removed @pytest.mark.asynci
 async def test_download_book_calls_scrape_helper(mock_scrape_and_download):
     """Test download_book calls _scrape_and_download with correct args."""
     await download_book(book_details=MOCK_BOOK_DETAILS, output_dir="./test_dl") # Await the async function
+    # Assert that the mocked helper was called with the correct arguments
+    expected_output_path = str(Path('./test_dl') / '123.epub') # Construct expected full path
     mock_scrape_and_download.assert_awaited_once_with(
-        MOCK_BOOK_DETAILS['url'],
-        "./test_dl"
+        MOCK_BOOK_DETAILS['url'], # book_page_url
+        expected_output_path # Expect full path (positional)
     )
 
 @pytest.mark.asyncio # Mark test as async
@@ -785,7 +787,12 @@ async def test_download_book_success_no_rag(mocker): # Renamed, removed fixtures
 
     result = await download_book(book_details=test_book_details, output_dir=output_dir, process_for_rag=False)
 
-    mock_scrape_helper.assert_awaited_once_with(test_book_details['url'], output_dir)
+    # Assert _scrape_and_download was called correctly
+    expected_output_path = str(Path(output_dir) / '123.unknown') # Construct expected path based on test setup
+    mock_scrape_helper.assert_awaited_once_with(
+        test_book_details['url'],
+        expected_output_path # Assert full file path (positional)
+    )
     mock_process_doc.assert_not_called()
     assert result == {"file_path": expected_path, "processed_file_path": None, "processing_error": None}
 
@@ -803,7 +810,12 @@ async def test_download_book_handles_scrape_download_error(mocker): # Renamed, r
         # Call download_book, which should propagate the error from the mocked helper
         await download_book(book_details=test_book_details, output_dir="./downloads")
 
-    mock_scrape_helper.assert_awaited_once_with(test_book_details['url'], "./downloads")
+    # Assert _scrape_and_download was called correctly before raising error
+    expected_output_path = str(Path('./downloads') / '123.unknown') # Construct expected path
+    mock_scrape_helper.assert_awaited_once_with(
+        test_book_details['url'],
+        expected_output_path # Assert full file path (positional)
+    )
 
 
 @pytest.mark.asyncio
@@ -819,7 +831,12 @@ async def test_download_book_handles_scrape_unexpected_error(mocker): # Renamed,
         # Call download_book, which should propagate the error
         await download_book(book_details=test_book_details, output_dir="./downloads")
 
-    mock_scrape_helper.assert_awaited_once_with(test_book_details['url'], "./downloads")
+    # Assert _scrape_and_download was called correctly before raising error
+    expected_output_path = str(Path('./downloads') / '123.unknown') # Construct expected path
+    mock_scrape_helper.assert_awaited_once_with(
+        test_book_details['url'],
+        expected_output_path # Assert full file path (positional)
+    )
 
 
 # --- Tests for _scrape_and_download (Original Scraper Logic - Now Obsolete) ---

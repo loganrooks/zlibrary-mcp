@@ -188,22 +188,31 @@ async function createVenv(deps: VenvManagerDependencies, pythonExecutable: strin
  * @throws {Error} If installation fails.
  */
 async function installDependencies(deps: VenvManagerDependencies, venvPythonPath: string): Promise<void> {
-    // Use the ESM compatible __dirname replacement
-    // Resolve requirements.txt relative to the project root where npm test runs
-    const requirementsPath = path.resolve(process.cwd(), 'requirements.txt');
-    console.log(`Installing packages from ${requirementsPath} using ${venvPythonPath}...`);
-    try {
-        // Use '-r' flag to install from requirements.txt
-        const { stderr, code } = await runCommand(deps, venvPythonPath, ['-m', 'pip', 'install', '--no-cache-dir', '--force-reinstall', '--upgrade', '-r', requirementsPath]);
-        if (code === 0) {
-            console.log(`Packages from requirements.txt installed successfully.`);
-        } else {
-            throw new Error(`Failed to install packages from requirements.txt (exit code ${code}). Stderr: ${stderr}`);
+    const installFromFile = async (filePath: string) => {
+        const absolutePath = path.resolve(process.cwd(), filePath);
+        if (!deps.fs.existsSync(absolutePath)) {
+            console.log(`Requirements file not found at ${absolutePath}, skipping.`);
+            return;
         }
-    } catch (error: any) {
-        // Catch spawn errors or re-throw non-zero exit code errors
-        throw new Error(`Failed during pip installation: ${error.message}`);
-    }
+        console.log(`Installing packages from ${absolutePath} using ${venvPythonPath}...`);
+        try {
+            const { stderr, code } = await runCommand(deps, venvPythonPath, ['-m', 'pip', 'install', '--no-cache-dir', '--force-reinstall', '--upgrade', '-r', absolutePath]);
+            if (code === 0) {
+                console.log(`Packages from ${filePath} installed successfully.`);
+            } else {
+                throw new Error(`Failed to install packages from ${filePath} (exit code ${code}). Stderr: ${stderr}`);
+            }
+        } catch (error: any) {
+            // Catch spawn errors or re-throw non-zero exit code errors
+            throw new Error(`Failed during pip installation from ${filePath}: ${error.message}`);
+        }
+    };
+
+    // Install runtime dependencies
+    await installFromFile('requirements.txt');
+
+    // Install development dependencies
+    await installFromFile('requirements-dev.txt');
 }
 
 /**
@@ -255,20 +264,29 @@ async function readVenvPathConfig(deps: VenvManagerDependencies): Promise<string
  * @returns True if the package is installed, false otherwise.
  */
 async function checkPackageInstalled(deps: VenvManagerDependencies, venvPythonPath: string): Promise<boolean> {
-    // Check for a key package (e.g., zlibrary) as a proxy for successful installation
-    const keyPackage = 'zlibrary';
-    console.log(`Checking if key package '${keyPackage}' is installed in ${venvPythonPath} (proxy for requirements.txt)...`);
+    // Check for a key runtime package and a key dev package
+    const runtimePackage = 'zlibrary';
+    const devPackage = 'pytest';
+    console.log(`Checking if key packages '${runtimePackage}' and '${devPackage}' are installed in ${venvPythonPath}...`);
     try {
-        // Don't log output for this check unless debugging
-        const { code } = await runCommand(deps, venvPythonPath, ['-m', 'pip', 'show', keyPackage], {}, false); // Explicitly pass false for logOutput
-        // pip show returns 0 if found, 1 if not found
-        if (code === 0) {
-            console.log(`Key package '${keyPackage}' is installed.`);
-            return true;
-        } else {
-            console.log(`Key package '${keyPackage}' not found (pip show exit code ${code}). Assuming requirements need installation.`);
-            return false;
+        // Check runtime package
+        const { code: runtimeCode } = await runCommand(deps, venvPythonPath, ['-m', 'pip', 'show', runtimePackage], {}, false);
+        if (runtimeCode !== 0) {
+             console.log(`Key runtime package '${runtimePackage}' not found (pip show exit code ${runtimeCode}). Assuming requirements need installation.`);
+             return false;
         }
+         console.log(`Key runtime package '${runtimePackage}' is installed.`);
+
+        // Check dev package
+        const { code: devCode } = await runCommand(deps, venvPythonPath, ['-m', 'pip', 'show', devPackage], {}, false);
+         if (devCode !== 0) {
+             console.log(`Key dev package '${devPackage}' not found (pip show exit code ${devCode}). Assuming requirements need installation.`);
+             return false;
+         }
+         console.log(`Key dev package '${devPackage}' is installed.`);
+
+        // If both checks pass
+        return true;
     } catch (error: any) {
         console.error(`Failed to run pip show check: ${error.message}`);
         return false; // Assume not installed if check fails

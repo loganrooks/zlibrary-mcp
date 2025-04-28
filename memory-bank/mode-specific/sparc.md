@@ -431,11 +431,35 @@
 
 ## Delegations Log
 <!-- Append new delegation records here -->
+### [2025-04-28 02:43:46] Task: TDD Green Phase - RAG Download Workflow (Spec v2.1)
+- Assigned to: code
+- Description: Implement minimal code changes in `lib/python_bridge.py` and `src/lib/zlibrary-api.ts` to make the failing tests (established in Red Phase [GlobalContext Progress 2025-04-28 02:34:57]) pass, according to Spec v2.1.
+- Expected deliverable: Modified code files, confirmation of passing tests, and commit hash.
+- Status: pending
+- Link to Progress Entry: [GlobalContext Progress 2025-04-28 02:43:32]
+### [2025-04-28 02:39:25] Task: Update README.md
+- Assigned to: docs-writer
+- Description: User requested updating `README.md` to reflect current project status, including the RAG pipeline progress (Spec v2.1, TDD Red Phase complete), the inclusion of the `zlibrary` fork, and other key architectural decisions (e.g., ADR-002).
+- Expected deliverable: Updated `README.md` file content.
+- Status: completed
+- Completion time: 2025-04-28 02:42:35
+- Outcome: `README.md` updated to reflect current project status, RAG pipeline progress, `zlibrary` fork inclusion, and ADR-002 architecture.
+- Link to Progress Entry: [GlobalContext Progress 2025-04-28 02:39:11]
+### [2025-04-28 02:35:15] Task: TDD Red Phase - RAG Download Workflow (Spec v2.1)
+- Assigned to: tdd
+- Description: Write failing tests (Red phase) for the RAG download workflow implementation, specifically focusing on the changes introduced in spec v2.1 (using `bookDetails` from `search_books`, internal scraping via `_scrape_and_download` in Python bridge, calling `download_book` in `zlibrary` fork).
+- Expected deliverable: Failing/xfail test files and confirmation.
+- Status: completed (User confirmed completion 2025-04-28 02:38:09)
+- Completion time: 2025-04-28 02:38:09 (Assumed based on user confirmation)
+- Outcome: Failing tests established for RAG download workflow spec v2.1.
+- Link to Progress Entry: [GlobalContext Progress 2025-04-28 02:34:57]
 ### [2025-04-28 02:23:43] Task: Version Control Cleanup (Git Debt)
 - Assigned to: devops
 - Description: Analyze `git status`, group uncommitted changes logically, and commit each group following best practices. Prioritized by user intervention.
 - Expected deliverable: Analysis, proposed commit plan, and execution upon approval.
-- Status: pending
+- Status: completed
+- Completion time: 2025-04-28 02:33:43
+- Outcome: Analyzed status, added `processed_rag_output/` to `.gitignore`, committed changes in 5 logical commits (87c4791, 61d153e, 8eb4e3b, df840fa, 4f103f2) on `feature/rag-file-output`. Working directory clean.
 - Link to Progress Entry: [GlobalContext Progress 2025-04-28 02:23:30]
 ### [2025-04-24 17:53:18] Task: Version Control Cleanup and Commit
 - Assigned to: devops
@@ -576,11 +600,11 @@
 
 ### [2025-04-18 02:39:50] Task: Generate System Refinement Report
 # Workflow State (Current - Overwrite this section)
-- Current phase: Refinement (Version Control Cleanup)
-- Phase start: 2025-04-28 02:20:01
-- Current focus: Addressing uncommitted changes ('git debt') as requested by user.
-- Next actions: Delegate cleanup task to `devops`.
-- Last Updated: 2025-04-28 02:22:19
+- Current phase: Implementation (TDD Green Phase)
+- Phase start: 2025-04-28 02:43:02
+- Current focus: Implementing minimal code changes for RAG download workflow (Spec v2.1) to make failing tests pass.
+- Next actions: Delegate Green phase task to `code` mode.
+- Last Updated: 2025-04-28 02:43:02
 
 - Assigned to: system-refiner
 - Description: Analyze feedback, logs, and mode memories to propose improvements to Roo system rules (.clinerules-*), ensuring generalizability.

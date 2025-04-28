@@ -330,13 +330,29 @@
 - **Specification**: See SpecPseudo MB entry [2025-04-14 03:31:01]
 
 # Progress
+### Task: TDD Green Phase - RAG Download Workflow (Spec v2.1) - [2025-04-28 02:43:32]
+- **Status**: Pending Delegation.
+- **Details**: Implement minimal code changes in `lib/python_bridge.py` and `src/lib/zlibrary-api.ts` to make the failing tests (established in Red Phase [GlobalContext Progress 2025-04-28 02:34:57]) pass, according to Spec v2.1.
+- **Related**: ActiveContext [2025-04-28 02:43:32], `docs/rag-pipeline-implementation-spec.md` (latest), ADR-002, Decision-DownloadScrapingStrategy-01
+### Task: Update README.md - [2025-04-28 02:41:30]
+- **Status**: In Progress (DocsWriter).
+- **Details**: Updating main project README to reflect current status (RAG pipeline Spec v2.1, TDD Red complete), architecture (Python bridge, vendored `zlibrary` fork, ADR-002 download workflow), and setup instructions.
+- **Related**: `README.md`, ADR-002, `docs/architecture/rag-pipeline.md`, `docs/rag-pipeline-implementation-spec.md`
+### Task: Update README.md - [2025-04-28 02:39:11]
+- **Status**: Complete. [See Docs Completion 2025-04-28 02:42:35]
+- **Details**: User requested updating `README.md` to reflect current project status, including the RAG pipeline progress (Spec v2.1, TDD Red Phase complete), the inclusion of the `zlibrary` fork, and other key architectural decisions (e.g., ADR-002). This interrupts the TDD Green Phase delegation.
+- **Related**: ActiveContext [2025-04-28 02:39:11], `README.md`
+### Task: TDD Red Phase - RAG Download Workflow (Spec v2.1) - [2025-04-28 02:34:57]
+- **Status**: Complete. (User confirmed completion 2025-04-28 02:38:09)
+- **Details**: Write failing tests (Red phase) for the RAG download workflow implementation, specifically focusing on the changes introduced in spec v2.1 (using `bookDetails` from `search_books`, internal scraping via `_scrape_and_download` in Python bridge, calling `download_book` in `zlibrary` fork).
+- **Related**: ActiveContext [2025-04-28 02:34:57], `docs/rag-pipeline-implementation-spec.md` (latest), ADR-002, Decision-DownloadScrapingStrategy-01
 ### Task: Version Control Cleanup (Git Debt) - [2025-04-28 02:32:41]
 - **Status**: Complete.
 - **Details**: Committed uncommitted changes (RAG tests, venv updates, MB logs, zlibrary fork) in 4 logical commits (87c4791, 61d153e, 8eb4e3b, df840fa) on branch feature/rag-file-output. Added processed_rag_output/ to .gitignore.
 - **Related**: ActiveContext [2025-04-28 02:32:25], Decision-PrioritizeGitCleanup-01
 ### Task: Version Control Cleanup (Git Debt) - [2025-04-28 02:23:30]
-- **Status**: Pending Delegation.
-- **Details**: User intervention identified uncommitted changes ('git debt'). Delegate task to `devops` to analyze `git status`, group changes logically, and commit following best practices.
+- **Status**: Complete. [See DevOps Completion 2025-04-28 02:33:43]
+- **Details**: DevOps analyzed `git status`, added `processed_rag_output/` to `.gitignore`, and committed changes in 5 logical commits (87c4791, 61d153e, 8eb4e3b, df840fa, 4f103f2) on `feature/rag-file-output`. Working directory clean.
 - **Related**: ActiveContext [2025-04-28 02:20:01], Decision-PrioritizeGitCleanup-01
 ### Task: Implement `download_book` in Forked Library - [2025-04-24 03:49:26]
 - **Status**: Complete.

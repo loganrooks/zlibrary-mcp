@@ -425,15 +425,16 @@ def test_process_epub_success(tmp_path, mock_ebooklib):
     assert "<script>" not in result # Check script tags removed
     assert "css" not in result # Check style content removed (implicitly via get_text)
 
-# @pytest.mark.xfail(reason="Implementation does not exist yet") # Removed xfail - This test might fail if ebooklib *is* available, which is expected.
-def test_process_epub_ebooklib_not_available(tmp_path, mocker):
-    epub_path = tmp_path / "test.epub"
-    # epub_path.touch() # Don't create file
-    # Mock the flag used in the function
-    mocker.patch('python_bridge.EBOOKLIB_AVAILABLE', False)
-    with pytest.raises(ImportError, match="Required library 'ebooklib' is not installed or available."):
-         # Use dummy path
-        _process_epub(str(epub_path))
+# Test removed as EBOOKLIB_AVAILABLE flag logic was removed.
+# ImportError is handled by the import statement itself.
+# def test_process_epub_ebooklib_not_available(tmp_path, mocker):
+#     epub_path = tmp_path / "test.epub"
+#     # epub_path.touch() # Don't create file
+#     # Mock the flag used in the function
+#     mocker.patch('python_bridge.EBOOKLIB_AVAILABLE', False)
+#     with pytest.raises(ImportError, match="Required library 'ebooklib' is not installed or available."):
+#          # Use dummy path
+#         _process_epub(str(epub_path))
 
 # @pytest.mark.xfail(reason="Implementation does not exist yet") # Removed xfail
 def test_process_epub_read_error(tmp_path, mock_ebooklib):

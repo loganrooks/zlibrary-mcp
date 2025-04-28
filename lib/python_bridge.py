@@ -206,9 +206,10 @@ async def get_download_limits():
 
 def _process_epub(file_path):
     """Extracts text content from an EPUB file."""
-    # Check if ebooklib is available before proceeding using the global flag
-    if not EBOOKLIB_AVAILABLE:
-         raise ImportError("Required library 'ebooklib' is not installed or available.")
+    # The import itself will raise ImportError if ebooklib is not available.
+    # No need for the EBOOKLIB_AVAILABLE flag check here.
+    # if not EBOOKLIB_AVAILABLE:
+    #      raise ImportError("Required library 'ebooklib' is not installed or available.")
     try:
         # Assuming ebooklib is available if we pass the check above
         book = epub.read_epub(file_path)
@@ -420,26 +421,18 @@ def main():
             response = asyncio.run(search(**args_dict))
         elif function_name == 'get_by_id': # Renamed from get_book_details in spec example
             book_id = args_dict.get('book_id')
-            # Explicitly get domain from args, falling back to default in the function if not provided
-            domain_arg = args_dict.get('domain')
+            # domain_arg = args_dict.get('domain') # Removed - domain not used by get_by_id
             if not book_id: raise ValueError("Missing 'book_id'")
-            # Call the modified async function, passing domain if provided
-            if domain_arg:
-                response = asyncio.run(get_by_id(book_id, domain_arg))
-            else:
-                response = asyncio.run(get_by_id(book_id)) # Use default domain
+            # Call the async function
+            response = asyncio.run(get_by_id(book_id))
 
         elif function_name == 'get_download_info':
             book_id = args_dict.get('book_id')
             format_arg = args_dict.get('format') # Keep format if needed by caller
-            # Explicitly get domain from args, falling back to default in the function if not provided
-            domain_arg = args_dict.get('domain')
+            # domain_arg = args_dict.get('domain') # Removed - domain not used by get_download_info
             if not book_id: raise ValueError("Missing 'book_id'")
-            # Call the modified async function, passing domain if provided
-            if domain_arg:
-                 response = asyncio.run(get_download_info(book_id, format_arg, domain_arg))
-            else:
-                 response = asyncio.run(get_download_info(book_id, format_arg)) # Use default domain
+            # Call the async function
+            response = asyncio.run(get_download_info(book_id, format_arg))
 
         elif function_name == 'full_text_search':
             response = asyncio.run(full_text_search(**args_dict))
@@ -511,14 +504,14 @@ async def _scrape_and_download(book_page_url: str, output_dir_str: str) -> str:
     Note: This function now expects the *book_page_url*, not the full book_details dict,
     as the library's download_book method takes the URL.
     """
-    logging.debug(f"_scrape_and_download called with URL: {book_page_url}, Output Dir: {output_dir_str}") # ADDED
+    # logging.debug(f"_scrape_and_download called with URL: {book_page_url}, Output Dir: {output_dir_str}") # REMOVED
     global zlib_client
     if not zlib_client:
-        logging.debug("Initializing zlib_client inside _scrape_and_download") # ADDED
+        # logging.debug("Initializing zlib_client inside _scrape_and_download") # REMOVED
         await initialize_client()
 
     try:
-        logging.debug("Inside _scrape_and_download try block") # ADDED
+        # logging.debug("Inside _scrape_and_download try block") # REMOVED
         # Construct a minimal book_details dict required by the library's download_book
         # The library primarily needs the URL for scraping, but might use ID for logging.
         # We extract the ID from the URL if possible as a fallback.
@@ -540,22 +533,25 @@ async def _scrape_and_download(book_page_url: str, output_dir_str: str) -> str:
         # The library's download_book should ideally determine the correct extension.
         # We construct a temporary name; the library might overwrite it based on headers.
         filename = f"{safe_book_id}.{safe_format}"
-        output_path = os.path.join(output_dir_str, filename)
-        logging.debug(f"Constructed output path: {output_path}") # ADDED
+        # Use pathlib for path construction
+        output_dir_path = Path(output_dir_str)
+        output_path_obj = output_dir_path / filename
+        output_path = str(output_path_obj) # Convert back to string if needed by library
+        # logging.debug(f"Constructed output path: {output_path}") # REMOVED
 
         # Ensure output directory exists
-        logging.debug(f"Ensuring output directory exists: {output_dir_str}") # ADDED
-        os.makedirs(output_dir_str, exist_ok=True)
-        logging.debug(f"Output directory ensured.") # ADDED
+        # logging.debug(f"Ensuring output directory exists: {output_dir_str}") # REMOVED
+        output_dir_path.mkdir(parents=True, exist_ok=True) # Use pathlib's mkdir
+        # logging.debug(f"Output directory ensured.") # REMOVED
 
         # Call the library's download_book method
         logging.info(f"Calling zlib_client.download_book for URL: {book_page_url}, Output Path: {output_path}")
-        logging.debug(f"Calling await zlib_client.download_book with details: {minimal_book_details}, path: {output_path}") # ADDED
+        # logging.debug(f"Calling await zlib_client.download_book with details: {minimal_book_details}, path: {output_path}") # REMOVED
         await zlib_client.download_book(
             book_details=minimal_book_details, # Pass minimal details containing the URL
-            output_path=output_path
+            output_path=output_path # Pass string path
         )
-        logging.debug(f"Await zlib_client.download_book completed.") # ADDED
+        # logging.debug(f"Await zlib_client.download_book completed.") # REMOVED
         # IMPORTANT: The library's download_book returns None on success.
         # We need to return the *intended* output path. The library might save with a different name
         # based on Content-Disposition, but the tests expect the path passed to the helper.

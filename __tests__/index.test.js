@@ -315,35 +315,47 @@ describe('Tool Handlers (Direct)', () => {
     // z is imported at the top level
 
     describe('Tool Schemas', () => {
-      test('download_book_to_file schema should include process_for_rag and conditional output', () => {
+      test('download_book_to_file schema should reflect v2.1 changes', () => { // Updated test description
         // toolRegistry is imported at the top level
         const schema = toolRegistry.download_book_to_file.schema;
+        const outputSchema = toolRegistry.download_book_to_file.outputSchema; // Assuming outputSchema is directly available
 
-        // Check input schema properties
-        expect(schema.shape.id).toBeDefined();
-        expect(schema.shape.format).toBeDefined();
+        // Check input schema properties (v2.1)
+        expect(schema.shape.bookDetails).toBeDefined(); // Check for bookDetails
+        expect(schema.shape.bookDetails._def.typeName).toBe(z.ZodObject.name); // Check it's an object
+        expect(schema.shape.id).toBeUndefined(); // Ensure old 'id' is removed
+        expect(schema.shape.format).toBeUndefined(); // Ensure old 'format' is removed
         expect(schema.shape.outputDir).toBeDefined();
         expect(schema.shape.process_for_rag).toBeDefined();
         expect(schema.shape.process_for_rag._def.typeName).toBe(z.ZodOptional.name);
         expect(schema.shape.process_for_rag.unwrap()._def.typeName).toBe(z.ZodBoolean.name);
+        expect(schema.shape.processed_output_format).toBeDefined(); // Check new optional field
 
-        // Check output schema (This is harder to test directly without zod-to-json-schema mock update)
-        // For now, just assert the tool exists
-        expect(toolRegistry.download_book_to_file).toBeDefined();
-        // TODO: Add more detailed output schema validation if possible/needed later
+        // Check output schema (v2.1)
+        expect(outputSchema).toBeDefined();
+        expect(outputSchema.shape.file_path).toBeDefined();
+        expect(outputSchema.shape.processed_file_path).toBeDefined();
+        expect(outputSchema.shape.processed_file_path._def.typeName).toBe(z.ZodOptional.name);
+        expect(outputSchema.shape.processed_file_path.unwrap()._def.typeName).toBe(z.ZodNullable.name); // Check it's nullable
+        expect(outputSchema.shape.processed_file_path.unwrap().unwrap()._def.typeName).toBe(z.ZodString.name); // Check underlying type is string
       });
 
-      test('process_document_for_rag schema should define input and output', () => {
+      test('process_document_for_rag schema should define input and output (v2.1)', () => { // Updated test description
         // toolRegistry is imported at the top level
         const schema = toolRegistry.process_document_for_rag.schema;
+        const outputSchema = toolRegistry.process_document_for_rag.outputSchema; // Assuming outputSchema is directly available
 
         // Check input schema properties
         expect(schema.shape.file_path).toBeDefined();
         expect(schema.shape.file_path._def.typeName).toBe(z.ZodString.name);
+        expect(schema.shape.output_format).toBeDefined(); // Check new optional field
+        expect(schema.shape.output_format._def.typeName).toBe(z.ZodOptional.name); // Check it's optional
 
-        // Check output schema (Again, limited by mock)
-        expect(toolRegistry.process_document_for_rag).toBeDefined();
-        // TODO: Add more detailed output schema validation if possible/needed later
+        // Check output schema (v2.1)
+        expect(outputSchema).toBeDefined();
+        expect(outputSchema.shape.processed_file_path).toBeDefined();
+        expect(outputSchema.shape.processed_file_path._def.typeName).toBe(z.ZodNullable.name); // Check it's nullable
+        expect(outputSchema.shape.processed_file_path.unwrap()._def.typeName).toBe(z.ZodString.name); // Check underlying type is string
       });
     }); // End Tool Schemas describe
 
@@ -435,7 +447,7 @@ describe('Tool Handlers (Direct)', () => {
       expect(errorResponse).toEqual({ error: { message: 'Not Found' } }); // Match nested structure
     });
 
-    test('downloadBookToFile handler should call zlibApi.downloadBookToFile', async () => {
+    test('downloadBookToFile handler should call zlibApi.downloadBookToFile (v2.1)', async () => { // Updated test description
        // --- Setup Mocks for this test ---
        jest.resetModules();
        jest.clearAllMocks();
@@ -457,9 +469,11 @@ describe('Tool Handlers (Direct)', () => {
        const zlibApi = await import('../lib/zlibrary-api.js');
 
        const handler = toolRegistry.download_book_to_file.handler;
-       const mockArgs = { id: 'book456', outputDir: '/tmp/test' };
+       // Use bookDetails in mockArgs (v2.1)
+       const mockBookDetailsArg = { id: 'book456', url: 'http://example.com/book/456/slug', title: 'Test Download' };
+       const mockArgs = { bookDetails: mockBookDetailsArg, outputDir: '/tmp/test' };
        const validatedArgs = toolRegistry.download_book_to_file.schema.parse(mockArgs);
-       const mockResult = { path: '/tmp/test/book.epub' };
+       const mockResult = { file_path: '/tmp/test/book.epub', processed_file_path: null }; // Example result
        mockDownloadBookToFile.mockResolvedValueOnce(mockResult); // Use the specific mock function
 
        const response = await handler(validatedArgs);

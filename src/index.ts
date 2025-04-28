@@ -81,14 +81,14 @@ const GetRecentBooksParamsSchema = z.object({
 const DownloadBookToFileParamsSchema = z.object({
   // id: z.string().describe('Z-Library book ID'), // Replaced by bookDetails
   // format: z.string().optional().describe('File format (e.g., "pdf", "epub")'), // Replaced by bookDetails
-  bookDetails: z.record(z.any()).describe('The full book details object obtained from search_books or get_book_by_id'),
+  bookDetails: z.object({}).passthrough().describe('The full book details object obtained from search_books or get_book_by_id'), // Changed from z.record to z.object().passthrough()
   outputDir: z.string().optional().default('./downloads').describe('Directory to save the file to (default: "./downloads")'),
   process_for_rag: z.boolean().optional().describe('Whether to process the document content for RAG after download'),
 });
 
 const ProcessDocumentForRagParamsSchema = z.object({
   file_path: z.string().describe('Path to the downloaded file to process'),
-  output_format: z.string().optional().default('text').describe('Desired output format (e.g., "text", "markdown")') // Future use
+  output_format: z.string().optional().describe('Desired output format (e.g., "text", "markdown")') // Removed .default('text')
 });
 
 // Define a type for the handler map

@@ -1,5 +1,10 @@
+[2025-04-28 02:20:01] - SPARC - Intervention - User identified uncommitted changes ('git debt'). Pausing TDD delegation to prioritize version control cleanup via DevOps.
+[2025-04-28 01:46:49] - TDD - Red Phase - RAG Download Workflow (Spec v2.1) - Updated Node.js tests (`zlibrary-api.test.js`, `index.test.js`) for spec v2.1 (bookDetails, schemas). Final `npm test` run: `index.test.js` schema tests PASS, `zlibrary-api.test.js` relevant tests FAIL as expected. `venv-manager.test.js` has unrelated failures. Red phase confirmed.
+[2025-04-28 01:44:40] - TDD - Red Phase - RAG Download Workflow (Spec v2.1) - Completed Python test adjustments (`test_python_bridge.py`: added `@pytest.mark.asyncio`, fixed `xpassed` by removing dummies/adjusting `xfail`). Final `pytest` run: 1 passed, 49 xfailed, 1 xpassed.
 # Active Context
 <!-- Entries below should be added reverse chronologically (newest first) -->
+[2025-04-24 17:59:17] - SPARC - Git Cleanup Complete & Resuming TDD - Received completion from devops mode. Uncommitted changes successfully committed (fba6ff6, dac35d0, 4410f50) on feature/rag-file-output. Resuming TDD phase for RAG download workflow implementation based on spec v2.1. Delegating Red phase task to tdd mode. [See DevOps Completion 2025-04-24 17:59:17]
+
 [2025-04-24 17:52:23] - SPARC - Intervention (Version Control Priority) - User requested immediate focus on cleaning up uncommitted Git changes before proceeding with TDD. Halted TDD delegation. Delegating Git status analysis and commit task to devops mode. [See Feedback 2025-04-24 17:52:23]
 
 [2025-04-24 17:50:05] - SPARC - Spec Update Complete & TDD Delegation - Received completion from spec-pseudocode for RAG download workflow clarification (docs/rag-pipeline-implementation-spec.md v2.1). Proceeding to TDD phase for integration point testing. Delegating Red phase task to tdd mode. [See Spec Completion 2025-04-24 17:50:05]

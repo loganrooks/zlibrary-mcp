@@ -155,6 +155,12 @@
 - **Related**: Decision-PythonEnvStrategy-01, Issue-GlobalExecFail-01
 
 # Decision Log
+### Decision-PrioritizeGitCleanup-01 - [2025-04-28 02:20:01]
+- **Decision**: Prioritize cleaning up uncommitted changes ('git debt') before proceeding with the TDD cycle for RAG download workflow. Delegate task to `devops`.
+- **Rationale**: User intervention identified significant uncommitted changes, potentially impacting stability and future work. Maintaining clean version control is crucial.
+- **Alternatives Considered**: Proceeding with TDD (risks conflicts/lost work), manual cleanup (less efficient).
+- **Implementation**: Delegate task to `devops` to analyze `git status`, group changes logically, and commit.
+- **Related**: ActiveContext [2025-04-28 02:20:01]
 ### Decision-DownloadBookDeps-01 - [2025-04-24 03:18:12]
 - **Decision**: Use `httpx` for async HTTP requests (with `follow_redirects=True`) and `aiofiles` for async file writing in the `download_book` implementation within the forked `zlibrary` library (`zlibrary/src/zlibrary/libasync.py`). Add `httpx` and `aiofiles` as dependencies to the forked library's `zlibrary/pyproject.toml`.
 - **Rationale**: `httpx` is preferred for async requests and supports redirects. `aiofiles` is needed for non-blocking file I/O within the async method. Dependencies must be declared within the sub-project's configuration.
@@ -306,9 +312,15 @@
 - **Status**: Complete.
 - **Details**: Added logging to `zlibrary` logger, `libasync.py`, and `abs.py`. Used `fetcher` tool to check direct website response and analyzed logs from `use_mcp_tool` call after enabling logger. Confirmed root cause: Z-Library website search (e.g., `/s/id:3433851?exact=1`) returns a standard search page with 'nothing has been found'. This prevents the library from discovering the correct book page URL (which includes a slug, e.g., `/book/ID/slug`). The library correctly parses the 'not found' response and raises `BookNotFound`. The issue is external website behavior, invalidating the previous `search(id:...)` workaround.
 ### Task: Version Control Cleanup - [2025-04-24 17:52:23]
-- **Status**: Pending Delegation.
+- **Status**: Complete.
 - **Details**: User requested immediate focus on cleaning up uncommitted Git changes before proceeding with other tasks. Halted TDD delegation for RAG spec implementation. Preparing to delegate Git status analysis and commit task to devops mode.
 - **Related**: ActiveContext [2025-04-24 17:52:23]
+
+
+### Task: TDD Red Phase - RAG Download Workflow (Spec v2.1) - [2025-04-24 17:59:17]
+- **Status**: Pending Delegation.
+- **Details**: Write failing tests (Red phase) for the RAG download workflow implementation, specifically focusing on the changes introduced in spec v2.1 (using `bookDetails` from `search_books`, internal scraping via `_scrape_and_download`).
+- **Related**: ActiveContext [2025-04-24 17:59:17], `docs/rag-pipeline-implementation-spec.md` (v2.1)
 
 
 - **Related**: Issue-BookNotFound-IDLookup-02, ActiveContext [2025-04-16 07:27:22]
@@ -318,6 +330,10 @@
 - **Specification**: See SpecPseudo MB entry [2025-04-14 03:31:01]
 
 # Progress
+### Task: Version Control Cleanup (Git Debt) - [2025-04-28 02:23:30]
+- **Status**: Pending Delegation.
+- **Details**: User intervention identified uncommitted changes ('git debt'). Delegate task to `devops` to analyze `git status`, group changes logically, and commit following best practices.
+- **Related**: ActiveContext [2025-04-28 02:20:01], Decision-PrioritizeGitCleanup-01
 ### Task: Implement `download_book` in Forked Library - [2025-04-24 03:49:26]
 - **Status**: Complete.
 - **Details**: Implemented the missing `download_book` async method in `zlibrary/src/zlibrary/libasync.py` using `httpx` and `aiofiles`. Added `DownloadError` exception and updated dependencies (`httpx`, `aiofiles`) in `zlibrary/pyproject.toml`. Committed changes (8a30920) to `feature/rag-file-output`. Addresses INT-RAG-003.

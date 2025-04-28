@@ -1,6 +1,24 @@
 # Tester (TDD) Specific Memory
 <!-- Entries below should be added reverse chronologically (newest first) -->
 ## Test Execution Results
+### Test Execution: Node.js (Jest) - [2025-04-28 01:46:49]
+- **Trigger**: Manual run after test/schema updates for Spec v2.1
+- **Outcome**: FAIL
+- **Summary**: 9 failed, 11 todo, 44 passed, 64 total
+- **Failed Tests**:
+    - `__tests__/venv-manager.test.js`: 2 failures (unrelated, ignored for this task)
+    - `__tests__/zlibrary-api.test.js`: 5 failures (related to `downloadBookToFile` and `processDocumentForRag` implementation gaps vs spec v2.1 - Expected for Red Phase)
+    - `__tests__/index.test.js`: 2 failures (related to tool schema definitions vs spec v2.1 - Expected for Red Phase before schema fix)
+- **Notes**: Failures in `zlibrary-api.test.js` confirm Red phase for Node.js implementation. Schema failures in `index.test.js` were subsequently fixed.
+
+### Test Execution: Python (pytest) - [2025-04-28 01:44:40]
+- **Trigger**: Manual run after removing dummy functions
+- **Outcome**: PASS (with xfails/xpasses)
+- **Summary**: 1 passed, 49 xfailed, 1 xpassed, 7 warnings
+- **Failed Tests**: N/A (All failures are expected `xfail`)
+- **Xpassed Tests**:
+    - `__tests__/python/test_python_bridge.py::test_get_by_id_workaround_success`: Passes due to existing workaround logic. Acceptable `xpass`.
+- **Notes**: 49 tests correctly marked `xfail` for unimplemented features (Spec v2.1). Confirms Red phase for Python implementation. Warnings related to async mocks remain but don't block Red phase.
 ### Test Execution: Integration (Node.js - RAG Refactor 3) - [2025-04-24 02:20:10]
 - **Trigger**: Manual (`npm test`) after removing unused helper in `src/lib/zlibrary-api.ts`.
 - **Outcome**: PASS / **Summary**: 4 suites passed, 46 tests passed, 17 todo.

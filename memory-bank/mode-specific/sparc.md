@@ -431,11 +431,19 @@
 
 ## Delegations Log
 <!-- Append new delegation records here -->
+### [2025-04-28 16:51:22] Task: Update RAG Implementation Specification (Download Workflow)
+- Assigned to: spec-pseudocode
+- Description: Update `docs/rag-pipeline-implementation-spec.md` to align with the reaffirmed download workflow (ADR-002). Specifically, clarify that the `bookDetails` object required by `download_book_to_file` should be sourced from the results of the `search_books` tool, not `get_book_by_id`. Reference ADR-002.
+- Expected deliverable: Updated `docs/rag-pipeline-implementation-spec.md` file content.
+- Status: pending
+- Link to Progress Entry: [ActiveContext 2025-04-28 16:51:01]
 ### [2025-04-28 13:24:57] Task: Re-run Regression Testing & Test Coverage (Post-Debug Fix)
 - Assigned to: tdd
 - Description: Re-run full test suites (`pytest` in `zlibrary/`, `npm test`) after debug fix (commit `26cd7c8`). Verify all tests pass. Review changes in `zlibrary/src/zlibrary/libasync.py` and `lib/python_bridge.py` (from commit `f3b5f96`) and ensure adequate test coverage exists or add/update tests as needed.
 - Expected deliverable: Test results confirmation (all passing). Confirmation of adequate test coverage or updated/new tests. Commit hash if changes are made.
-- Status: pending
+- Status: completed
+- Completion time: 2025-04-28 14:43:14
+- Outcome: All tests (`pytest`, `npm test`) passed successfully. Coverage for integration changes (`f3b5f96`) deemed sufficient. Minor test cleanup committed (`f466479`).
 - Link to Progress Entry: [ActiveContext 2025-04-28 13:24:06]
 ### [2025-04-28 13:13:27] Task: Debug Regression Test Failures (Post-Integration Fixes)
 - Assigned to: debug

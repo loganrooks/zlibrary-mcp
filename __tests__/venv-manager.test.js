@@ -275,7 +275,9 @@ describe('VenvManager', () => {
       } catch (error) {
           expect(error).toBeInstanceOf(Error);
           // Update expected error message to match corrected stderr simulation
-          expect(error.message).toMatch(new RegExp(`^Failed to set up Python environment: Failed during pip installation: Failed to install packages from requirements\\.txt \\(exit code 1\\)\\. Stderr: ERROR: Could not open requirements file: \\[Errno 2\\] No such file or directory: '${path.resolve(process.cwd(), 'requirements.txt').replace(/\\/g, '\\\\')}'\\. Please ensure Python 3 and venv are correctly installed and try again\\.$`));
+          // Adjust regex to match the actual error structure ("from requirements.txt" part)
+          const expectedReqPath = path.resolve(process.cwd(), 'requirements.txt');
+          expect(error.message).toMatch(new RegExp(`^Failed to set up Python environment: Failed during pip installation from requirements\\.txt: Failed to install packages from requirements\\.txt \\(exit code 1\\)\\. Stderr: ERROR: Could not open requirements file: \\[Errno 2\\] No such file or directory: '${expectedReqPath.replace(/\\/g, '\\\\')}'\\. Please ensure Python 3 and venv are correctly installed and try again\\.$`));
       }
 
       // Verify mocks
@@ -327,10 +329,15 @@ describe('VenvManager', () => {
         const mockExecSync = jest.fn().mockReturnValue('Python 3.9.1');
 
         // --- Create Mock Dependencies ---
+        const expectedReqPath = path.resolve(process.cwd(), 'requirements.txt');
+        const expectedDevReqPath = path.resolve(process.cwd(), 'requirements-dev.txt');
         const mockFsExistsSync = jest.fn((p) => {
           if (p === '/tmp/jest-zlibrary-mcp-cache/.venv_config') return true;
           if (p === mockVenvPythonPath) return true;
           if (p === '/tmp/jest-zlibrary-mcp-cache/zlibrary-mcp-venv') return true;
+          // Explicitly handle requirements paths
+          if (p === expectedReqPath) return true;
+          if (p === expectedDevReqPath) return true; // Also handle dev requirements
           return false;
         });
         const mockFsReadFileSync = jest.fn((p, encoding) => {

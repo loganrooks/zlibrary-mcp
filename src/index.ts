@@ -84,11 +84,12 @@ const DownloadBookToFileParamsSchema = z.object({
   bookDetails: z.object({}).passthrough().describe('The full book details object obtained from search_books or get_book_by_id'), // Changed from z.record to z.object().passthrough()
   outputDir: z.string().optional().default('./downloads').describe('Directory to save the file to (default: "./downloads")'),
   process_for_rag: z.boolean().optional().describe('Whether to process the document content for RAG after download'),
+  processed_output_format: z.string().optional().describe('Desired output format for RAG processing (e.g., "text", "markdown")'), // Removed duplicate line
 });
 
 const ProcessDocumentForRagParamsSchema = z.object({
   file_path: z.string().describe('Path to the downloaded file to process'),
-  output_format: z.string().optional().describe('Desired output format (e.g., "text", "markdown")') // Removed .default('text')
+  output_format: z.string().optional().describe('Desired output format (e.g., "text", "markdown")') // Re-applying again: Ensure it's purely optional, no default
 });
 
 // Define a type for the handler map

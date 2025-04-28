@@ -1,9 +1,7 @@
 import { PythonShell, Options as PythonShellOptions } from 'python-shell';
-import * as fs from 'fs';
 import * as path from 'path';
 import { getManagedPythonPath } from './venv-manager.js'; // Import ESM style
-import * as https from 'https';
-import * as http from 'http';
+// Removed unused fs, https, http imports
 import { fileURLToPath } from 'url';
 
 // Recreate __dirname for ESM
@@ -214,10 +212,13 @@ export async function processDocumentForRag({ filePath, outputFormat = 'txt' }: 
       throw new Error(`Python processing failed: ${result.error}`);
   }
 
-  // Check for the expected processed_file_path key
-  if (!result?.processed_file_path) {
-      throw new Error(`Invalid response from Python bridge during processing. Missing processed_file_path.`);
-  }
+  // Check for the expected processed_file_path key's presence.
+  // Allow null value as valid (e.g., for image PDFs).
+  // Throw error only if the key is completely missing.
+  if (!result || !('processed_file_path' in result)) {
+       throw new Error(`Invalid response from Python bridge during processing. Missing processed_file_path key.`);
+   }
+  // No error thrown if key exists, even if value is null.
   // Return only the processed file path object
   return { processed_file_path: result.processed_file_path };
 }
@@ -277,72 +278,4 @@ export async function downloadBookToFile({
   }
 }
 
-/**
- * Helper function to download a file from URL
- */
-function downloadFile(url: string, outputPath: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    // Determine protocol (http or https)
-    const protocol = url.startsWith('https:') ? https : http;
-
-    // Create file stream
-    const fileStream = fs.createWriteStream(outputPath);
-
-    // Make request
-    const request = protocol.get(url, (response) => {
-      // Check for redirect
-      if (response.statusCode && response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
-        // Follow redirect
-        console.log(`Redirecting download to: ${response.headers.location}`);
-        return downloadFile(response.headers.location, outputPath)
-          .then(resolve)
-          .catch(reject);
-      }
-
-      // Check for error
-      if (response.statusCode !== 200) {
-        reject(new Error(`Failed to download file, status: ${response.statusCode}`));
-        response.resume(); // Consume response data to free up memory
-        return;
-      }
-
-      // Pipe response to file
-      response.pipe(fileStream);
-
-      // Handle events
-      fileStream.on('finish', () => {
-        fileStream.close((closeErr) => { // Pass potential close error to reject
-            if (closeErr) {
-                reject(closeErr);
-            } else {
-                resolve();
-            }
-        });
-      });
-    });
-
-    // Handle request errors
-    request.on('error', (err) => {
-      try {
-        if (fs.existsSync(outputPath)) {
-            fs.unlinkSync(outputPath); // Remove partial file
-        }
-      } catch (unlinkErr) {
-          console.error(`Error removing partial file ${outputPath}: ${unlinkErr}`);
-      }
-      reject(err);
-    });
-
-    // Handle file errors
-    fileStream.on('error', (err) => {
-       try {
-        if (fs.existsSync(outputPath)) {
-            fs.unlinkSync(outputPath); // Remove partial file
-        }
-      } catch (unlinkErr) {
-          console.error(`Error removing partial file ${outputPath}: ${unlinkErr}`);
-      }
-      reject(err);
-    });
-  });
-}
+// Removed unused downloadFile helper function

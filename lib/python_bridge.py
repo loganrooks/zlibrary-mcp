@@ -8,7 +8,7 @@ from zlibrary import AsyncZlib, Extension, Language
 from zlibrary.exception import DownloadError
 
 import httpx
-# import os # No longer needed after refactor
+# os import removed, using pathlib
 from pathlib import Path
 import ebooklib
 from ebooklib import epub
@@ -206,7 +206,11 @@ async def get_download_limits():
 
 def _process_epub(file_path):
     """Extracts text content from an EPUB file."""
+    # Check if ebooklib is available before proceeding using the global flag
+    if not EBOOKLIB_AVAILABLE:
+         raise ImportError("Required library 'ebooklib' is not installed or available.")
     try:
+        # Assuming ebooklib is available if we pass the check above
         book = epub.read_epub(file_path)
         content = []
         for item in book.get_items_of_type(ebooklib.ITEM_DOCUMENT):
@@ -311,22 +315,21 @@ def _process_pdf(file_path: str) -> str:
                 logging.error(f"Error closing PDF document {file_path}: {close_error}")
 
 
-def _save_processed_text(original_file_path_str: str, text_content: str, output_format: str = 'txt') -> Path:
+def _save_processed_text(file_path_str: str, text_content: str, output_format: str = 'txt') -> Path:
     """Saves the processed text content to a file."""
-    # Define output dir inside the function
     processed_output_dir = Path("./processed_rag_output")
 
     if text_content is None:
         raise ValueError("Cannot save None content.")
 
     try:
-        original_path = Path(original_file_path_str)
+        original_path = Path(file_path_str)
         # Ensure the output directory exists
-        processed_output_dir.mkdir(parents=True, exist_ok=True) # Use the local variable
+        processed_output_dir.mkdir(parents=True, exist_ok=True)
 
         # Generate filename: <original_name>.processed.<format>
         output_filename = f"{original_path.name}.processed.{output_format}"
-        output_path = processed_output_dir / output_filename # Use the local variable
+        output_path = processed_output_dir / output_filename
 
         logging.info(f"Saving processed text to: {output_path}")
         with open(output_path, 'w', encoding='utf-8') as f:
@@ -334,10 +337,10 @@ def _save_processed_text(original_file_path_str: str, text_content: str, output_
 
         return output_path
     except OSError as e:
-        logging.exception(f"OS error saving processed file for {original_file_path_str}")
+        logging.exception(f"OS error saving processed file for {file_path_str}")
         raise FileSaveError(f"Failed to save processed file due to OS error: {e}")
     except Exception as e:
-        logging.exception(f"Unexpected error saving processed file for {original_file_path_str}")
+        logging.exception(f"Unexpected error saving processed file for {file_path_str}")
         # Wrap unexpected errors
         raise FileSaveError(f"An unexpected error occurred during file saving: {e}")
 
@@ -350,34 +353,27 @@ async def process_document(file_path_str: str, output_format='txt') -> dict:
     saves it to a file, and returns the path.
     """
     try:
-        # Use pathlib.Path consistently
         file_path = Path(file_path_str)
         if not file_path.exists():
              raise FileNotFoundError(f"File not found: {file_path_str}")
 
-        ext = file_path.suffix.lower() # Use Path object's suffix attribute
+        ext = file_path.suffix.lower()
         processed_text = None
 
-        # Keep passing str if sub-functions expect it
         if ext == '.epub':
             processed_text = _process_epub(file_path_str)
         elif ext == '.txt':
-            processed_text = _process_txt(file_path_str) # Keep passing str if sub-functions expect it
+            processed_text = _process_txt(file_path_str)
         elif ext == '.pdf':
-             # Assuming fitz import check happens in _process_pdf
-            processed_text = _process_pdf(file_path_str) # Keep passing str if sub-functions expect it
+            processed_text = _process_pdf(file_path_str)
         else:
-            # Use the updated SUPPORTED_FORMATS list
             raise ValueError(f"Unsupported file format: {ext}. Supported: {SUPPORTED_FORMATS}")
 
-        # Handle cases where processing might yield no text (e.g., image PDF)
-        # _process_pdf now raises ValueError in this case, caught below.
-        # If other processors might return None, handle here or ensure they raise.
+        # _process_pdf raises ValueError if no text is extracted.
+        # Ensure other processors do too or handle None here if necessary.
         if processed_text is None:
-             # This case might occur if a processing function returns None instead of raising error
-             # Or if an image-only PDF was processed without raising ValueError (adjust _process_pdf if needed)
-             logging.warning(f"Processing yielded no text content for {file_path_str}")
-             # Decide how to handle - return error or specific indicator? Returning error for now.
+             # This case should ideally not be reached if processors raise errors appropriately.
+             logging.warning(f"Processing yielded None content for {file_path_str}, expected an exception.")
              raise ValueError(f"No text content could be extracted from {file_path_str}")
 
         # Save the processed text
@@ -388,18 +384,15 @@ async def process_document(file_path_str: str, output_format='txt') -> dict:
 
     except ImportError as imp_err:
          logging.error(f"Missing dependency for processing {ext} file {file_path_str}: {imp_err}")
-         # Return error in the expected format
          return {"error": f"Missing required library to process {ext} files. Please check installation."}
-    except (FileNotFoundError, ValueError, FileSaveError) as specific_err: # Catch specific processing/saving errors
+    except (FileNotFoundError, ValueError, FileSaveError) as specific_err:
         logging.error(f"Error processing document {file_path_str}: {specific_err}")
         return {"error": str(specific_err)}
     except Exception as e:
-        # Log full traceback for unexpected errors
         logging.exception(f"Failed to process document {file_path_str}")
-        # Wrap unexpected errors and return in expected format
-        # Check if it's a re-raised error from _process_pdf etc.
+        # Propagate specific processing errors directly if they are RuntimeErrors
         if isinstance(e, RuntimeError) and ("Error opening or processing PDF" in str(e)):
-             return {"error": str(e)} # Propagate specific processing errors directly
+             return {"error": str(e)}
         return {"error": f"An unexpected error occurred during document processing: {e}"}
 
 def main():
@@ -587,11 +580,9 @@ async def download_book(book_details: dict, output_dir='./downloads', process_fo
     Returns a dictionary containing 'file_path' and optionally 'processed_file_path'
     or 'processing_error'.
     """
-    # No need to initialize client here, _scrape_and_download handles it.
-    # if not zlib_client:
-    #     await initialize_client()
+    # Client initialization handled by _scrape_and_download
 
-    original_file_path_str = None
+    downloaded_file_path_str = None
     result = {"file_path": None, "processed_file_path": None, "processing_error": None}
 
     try:
@@ -600,23 +591,23 @@ async def download_book(book_details: dict, output_dir='./downloads', process_fo
         if not book_page_url:
              raise ValueError("Missing 'url' (book page URL) in book_details input.")
 
-        logging.info(f"Preparing download for book ID {book_id} via _scrape_and_download...")
+        logging.info(f"Starting download process for book ID {book_id}...")
 
         # Step 1: Call the internal scraping and download helper
-        original_file_path_str = await _scrape_and_download(book_page_url, output_dir)
-        result["file_path"] = original_file_path_str
-        logging.info(f"Download helper returned path: {original_file_path_str}")
+        downloaded_file_path_str = await _scrape_and_download(book_page_url, output_dir)
+        result["file_path"] = downloaded_file_path_str
+        logging.info(f"Download completed. File path: {downloaded_file_path_str}")
 
-        # Step 2: Process if requested by calling process_document
+        # Step 2: Process if requested
         if process_for_rag:
-            logging.info(f"Processing downloaded book for RAG: {original_file_path_str}")
+            logging.info(f"Processing downloaded book for RAG: {downloaded_file_path_str}")
             try:
                 # Use the existing process_document function
-                processing_result = await process_document(original_file_path_str, processed_output_format)
+                processing_result = await process_document(downloaded_file_path_str, processed_output_format)
 
                 if "error" in processing_result:
                     # Log processing errors but don't fail the whole download operation
-                    logging.error(f"Processing failed for {original_file_path_str}, but download succeeded: {processing_result['error']}")
+                    logging.error(f"Processing failed for {downloaded_file_path_str}, but download succeeded: {processing_result['error']}")
                     result["processed_file_path"] = None # Indicate processing failed
                     result["processing_error"] = processing_result['error'] # Include error info
                 elif "processed_file_path" in processing_result:
@@ -624,13 +615,13 @@ async def download_book(book_details: dict, output_dir='./downloads', process_fo
                     logging.info(f"Processed text saved to: {result['processed_file_path']}")
                 else:
                     # Should not happen if process_document returns correctly
-                    logging.error(f"Unexpected result from process_document for {original_file_path_str}: {processing_result}")
+                    logging.error(f"Unexpected result from process_document for {downloaded_file_path_str}: {processing_result}")
                     result["processed_file_path"] = None
                     result["processing_error"] = "Unexpected result from internal processing function."
 
             except Exception as unexpected_proc_err:
                 # Catch errors during the call to process_document itself
-                logging.exception(f"Unexpected error calling process_document for {original_file_path_str}")
+                logging.exception(f"Unexpected error calling process_document for {downloaded_file_path_str}")
                 result["processed_file_path"] = None
                 result["processing_error"] = f"Unexpected error during processing call: {unexpected_proc_err}"
 

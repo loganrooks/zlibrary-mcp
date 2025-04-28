@@ -51,6 +51,22 @@
 
 
 ## Integration Issues Log
+### Issue: INT-RAG-FN-001 - Downloaded File Has '.unknown' Extension - [Status: Resolved] - [2025-04-28 12:51:43]
+- **Identified**: [2025-04-28 12:51:43]
+- **Components**: [lib/python_bridge.py: download_book, _scrape_and_download]
+- **Symptoms**: `download_book_to_file` saves the downloaded file with a `.unknown` extension instead of the correct one (e.g., `.epub`).
+- **Root Cause**: The `_scrape_and_download` helper function incorrectly hardcoded the file format as 'unknown' and constructed the filename. The main `download_book` function received the correct extension in `book_details` but didn't use it for filename generation before calling the helper.
+- **Resolution**: Moved filename construction logic to the main `download_book` function, ensuring it uses the `extension` from `book_details`. Modified `_scrape_and_download` to accept the full output path instead of just the directory.
+- **Resolved Date**: [2025-04-28 12:55:02]
+
+### Issue: INT-RAG-DL-001 - Downloaded File is HTML, Not Book Format - [Status: Resolved] - [2025-04-28 12:41:53]
+- **Identified**: [2025-04-28 12:41:53]
+- **Components**: [zlibrary-mcp: download_book_to_file], [zlibrary/src/zlibrary/libasync.py: download_book]
+- **Symptoms**: `download_book_to_file` completes without error but saves the book page HTML content instead of the actual book file (e.g., EPUB). Observed during manual test RAG-DL-WF-01.
+- **Root Cause**: Incorrect CSS selector (`a.btn.btn-primary.dlButton`) used in `libasync.py`'s `download_book` function to find the download link on the book details page.
+- **Resolution**: Updated the CSS selector to `a.addDownloadedBook[href*="/dl/"]` based on user-provided HTML snippet. Verified correct file content download after fix.
+- **Resolved Date**: [2025-04-28 12:50:17]
+
 ### Issue: RAG-VERIFY-BLK-01 - RAG Verification Blocked by ID Lookup Failure - Status: Open - [2025-04-23 23:18:00]
 - **Identified**: [2025-04-23 23:17:00]
 - **Components**: [zlibrary-mcp: download_book_to_file], [lib/python_bridge.py: _internal_search]
@@ -71,6 +87,14 @@
 
 
 ## Integration Test Scenarios
+### Scenario: RAG Download Workflow - download_book_to_file (Basic) - [2025-04-28 12:55:24]
+- **ID**: RAG-DL-WF-01
+- **Components**: [zlibrary-mcp: download_book_to_file], [lib/python_bridge.py: download_book, _scrape_and_download], [zlibrary/src/zlibrary/libasync.py: download_book]
+- **Steps**: 1. Call `search_books` to get valid `bookDetails`. 2. Call `download_book_to_file` with `bookDetails` and `process_for_rag: false`. 3. Check if file exists at returned `file_path`. 4. Verify file content is correct format (e.g., EPUB, not HTML). 5. **Verify filename has correct extension.**
+- **Expected**: Tool returns `{"file_path": "downloads/BOOK_ID.epub", ...}`. File exists at path, contains the correct book data, and has the correct extension.
+- **Status**: Manual
+- **Last Run**: [2025-04-28 12:55:24] - **PASS** (After fixing scraping selector in `libasync.py` and filename logic in `python_bridge.py`. Issues INT-RAG-DL-001, INT-RAG-FN-001 resolved.)
+
 ### Scenario: RAG File Output - process_document_for_rag (TXT) - [2025-04-24 02:54:55]
 - **Components**: [zlibrary-mcp: process_document_for_rag], [lib/python_bridge.py: process_document, _process_txt, _save_processed_text]
 - **Steps**: 1. Call `process_document_for_rag` with `file_path: "test_files/sample.txt"`. 2. Read `processed_rag_output/sample.txt.processed.text`.
@@ -94,11 +118,10 @@
 
 ### Scenario: RAG File Output - download_book_to_file (Combined) - [2025-04-24 02:56:35]
 - **Components**: [zlibrary-mcp: download_book_to_file], [lib/python_bridge.py: download_book], [zlibrary: AsyncZlib (forked)]
-- **Steps**: 1. Call `download_book_to_file` with `process_for_rag: true` for EPUB/TXT/PDF IDs. 2. Verify original file exists. 3. Verify processed file exists in `./processed_rag_output/`. 4. Read processed file.
+- **Steps**: 1. Call `download_book_to_file` with `process_for_rag: true` for EPUB/TXT/PDF IDs. 2. Verify original file exists (with correct extension). 3. Verify processed file exists in `./processed_rag_output/`. 4. Read processed file.
 - **Expected**: Tool returns `{"file_path": "...", "processed_file_path": "..."}`. Both files exist and processed file contains text.
-  - Blocked by INT-RAG-DOWNLOAD-REPLAN.
-- **Status**: Blocked
-- **Last Run**: [2025-04-24 02:55:41] - FAIL (Blocked by INT-RAG-003: `AttributeError` due to missing `download_book` method in forked library)
+- **Status**: Manual (Unblocked by RAG-DL-WF-01 PASS)
+- **Last Run**: N/A
 
 
 <!-- Append test scenarios using the format below -->

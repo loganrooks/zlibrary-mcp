@@ -838,7 +838,6 @@ async def test_download_book_handles_scrape_unexpected_error(mocker): # Renamed,
         expected_output_path # Assert full file path (positional)
     )
 
-
 # --- Tests for _scrape_and_download (Original Scraper Logic - Now Obsolete) ---
 # These tests are likely outdated as the scraping logic is now inside the zlibrary fork.
 # Keeping them commented out for reference or potential future internal scraping needs.

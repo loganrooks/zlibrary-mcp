@@ -1,5 +1,12 @@
 # SPARC Orchestrator Feedback
 <!-- Entries below should be added reverse chronologically (newest first) -->
+### [2025-04-28 10:18:51] Intervention: User Corrected Tool Usage & Emphasized Git Hygiene
+- **Trigger**: User feedback following failed `execute_command` attempt and previous completion message from `debug`.
+- **Context**: SPARC attempted `git status` directly after `debug` reported committing fixes (`e58da14`). User pointed out tool restriction and reiterated the need to check for/address any remaining uncommitted changes ("git debt") and improve version control practices.
+- **Action Taken**: Acknowledged error and feedback. Halted direct command execution. Will delegate Git status check and potential cleanup to `devops` mode. Will reinforce version control guidelines in future delegations.
+- **Rationale**: Adhere to mode tool restrictions. Address user concerns about version control state. Follow SPARC methodology by delegating appropriate tasks.
+- **Outcome**: Task delegated to `devops`.
+- **Follow-up**: Await `devops` report on Git status and potential commit plan. Update Memory Bank with delegation details.
 ### [2025-04-24 17:52:23] Intervention: Prioritize Version Control Cleanup
 - **Trigger**: User input.
 - **Context**: SPARC was about to delegate TDD task after spec update.

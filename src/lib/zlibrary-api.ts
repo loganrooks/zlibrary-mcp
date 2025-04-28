@@ -144,14 +144,6 @@ export async function getBookById({ id }: GetBookByIdArgs): Promise<any> {
 }
 
 /**
- * Get download link for a book
- */
-export async function getDownloadInfo({ id, format = null }: GetDownloadInfoArgs): Promise<any> {
-  // Pass arguments as an object matching Python function signature
-  return await callPythonFunction('get_download_info', { book_id: id, format });
-}
-
-/**
  * Perform full text search
  */
 export async function fullTextSearch({

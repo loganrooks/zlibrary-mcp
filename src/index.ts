@@ -113,11 +113,6 @@ const handlers: HandlerMap = {
     catch (error: any) { return { error: { message: error.message || 'Failed to get book information' } }; }
   },
 
-  getDownloadInfo: async (args: z.infer<typeof GetDownloadInfoParamsSchema>) => {
-    try { return await zlibraryApi.getDownloadInfo(args); }
-    catch (error: any) { return { error: { message: error.message || 'Failed to get download information' } }; }
-  },
-
   fullTextSearch: async (args: z.infer<typeof FullTextSearchParamsSchema>) => {
     try {
       const results = await zlibraryApi.fullTextSearch(args);
@@ -190,11 +185,6 @@ const toolRegistry: Record<string, ToolRegistryEntry> = {
     description: 'Get detailed information about a book by its ID',
     schema: GetBookByIdParamsSchema,
     handler: handlers.getBookById,
-  },
-  get_download_info: {
-    description: 'Get download information for a book including its download URL',
-    schema: GetDownloadInfoParamsSchema,
-    handler: handlers.getDownloadInfo,
   },
   full_text_search: {
     description: 'Search for books containing specific text in their content',

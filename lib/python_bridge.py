@@ -129,36 +129,6 @@ async def get_by_id(book_id):
         logging.exception(f"Error in get_by_id for ID {book_id}")
         raise e # Re-raise the exception after logging
 
-async def get_download_info(book_id, format=None):
-    """
-    Get book info including download URL using search workaround.
-    """
-    if not zlib_client:
-        await initialize_client()
-
-    try:
-        book = await _find_book_by_id_via_search(book_id)
-        
-        # Safely extract details using .get()
-        title = book.get('name', f"book_{book_id}")
-        author = book.get('author', 'Unknown')
-        # Use provided format if available, otherwise fallback to book extension, then 'pdf'
-        file_format = format or book.get('extension', 'pdf')
-        filesize = book.get('size', 'Unknown')
-        download_url = book.get('download_url') # Can be None
-
-        return {
-            'title': title,
-            'author': author,
-            'format': file_format,
-            'filesize': filesize,
-            'download_url': download_url # Return None if not present
-        }
-
-    except Exception as e:
-        logging.exception(f"Error in get_download_info for ID {book_id}")
-        raise e # Re-raise the exception after logging
-
 async def full_text_search(query, exact=False, phrase=True, words=False, languages=None, extensions=None, count=10):
     """Search for text within book contents"""
     if not zlib_client:

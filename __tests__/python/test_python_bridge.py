@@ -24,7 +24,6 @@ from python_bridge import (
     _process_txt, # Import directly
     _process_pdf, # Import directly
     get_by_id,             # Import directly
-    get_download_info,     # Import directly
     process_document,
     download_book,
     _scrape_and_download,
@@ -319,91 +318,6 @@ def test_get_by_id_workaround_ambiguous(mocker): # Renamed test function
 
     with pytest.raises(ValueError, match=r"Ambiguous search result for Book ID 12345."): # Updated match string
         asyncio.run(get_by_id('12345')) # Use actual function name and asyncio.run
-    mock_client.search.assert_called_once_with(q='id:12345', exact=True, count=1)
-
-
-# get_download_info tests
-@pytest.mark.xfail(reason="Workaround using client.search not implemented yet") # Re-added xfail
-def test_get_download_info_workaround_success(mocker):
-    """Tests get_download_info successfully finding download URL via search."""
-    mock_client = MagicMock()
-    mock_paginator = MagicMock()
-    async def mock_next():
-        return [MOCK_BOOK_RESULT]
-    mock_paginator.next = mock_next
-    # Mock the async search method using AsyncMock
-    mock_client.search = AsyncMock(return_value=mock_paginator)
-    mocker.patch('python_bridge.zlib_client', mock_client)
-    mocker.patch('python_bridge.initialize_client', MagicMock(return_value=None))
-
-    download_info = asyncio.run(get_download_info('12345')) # Use asyncio.run
-
-    mock_client.search.assert_called_once_with(q='id:12345', exact=True, count=1)
-    # Assert the full dictionary returned by the implementation
-    expected_info = {
-        'title': 'The Great Test',
-        'author': 'Py Test',
-        'format': 'epub', # Default from MOCK_BOOK_RESULT extension
-        'filesize': '1 MB',
-        'download_url': 'http://example.com/download/12345.epub'
-    }
-    assert download_info == expected_info
-
-@pytest.mark.xfail(reason="Workaround using client.search not implemented yet") # Re-added xfail
-def test_get_download_info_workaround_no_url(mocker):
-    """Tests get_download_info returns None for download_url when not found."""
-    mock_book_no_url = MOCK_BOOK_RESULT.copy()
-    del mock_book_no_url['download_url'] # Remove download_url from mock data
-    mock_client = MagicMock()
-    mock_paginator = MagicMock()
-    async def mock_next():
-        return [mock_book_no_url]
-    mock_paginator.next = mock_next
-    # Mock the async search method using AsyncMock
-    mock_client.search = AsyncMock(return_value=mock_paginator)
-    mocker.patch('python_bridge.zlib_client', mock_client)
-    mocker.patch('python_bridge.initialize_client', MagicMock(return_value=None))
-
-    # Expect the function to return successfully with download_url as None
-    download_info = asyncio.run(get_download_info('12345')) # Use asyncio.run
-    mock_client.search.assert_called_once_with(q='id:12345', exact=True, count=1)
-    assert download_info['download_url'] is None
-    # Optionally check other fields
-    assert download_info['title'] == 'The Great Test'
-
-
-@pytest.mark.xfail(reason="Workaround using client.search not implemented yet") # Re-added xfail
-def test_get_download_info_workaround_not_found(mocker):
-    """Tests get_download_info raising error when search finds no book."""
-    mock_client = MagicMock()
-    mock_paginator = MagicMock()
-    async def mock_next():
-        return []
-    mock_paginator.next = mock_next
-    # Mock the async search method using AsyncMock
-    mock_client.search = AsyncMock(return_value=mock_paginator)
-    mocker.patch('python_bridge.zlib_client', mock_client)
-    mocker.patch('python_bridge.initialize_client', MagicMock(return_value=None))
-
-    with pytest.raises(ValueError, match=r"Book ID 12345 not found via search."): # Match helper error
-        asyncio.run(get_download_info('12345')) # Use asyncio.run
-    mock_client.search.assert_called_once_with(q='id:12345', exact=True, count=1)
-
-@pytest.mark.xfail(reason="Workaround using client.search not implemented yet") # Re-added xfail
-def test_get_download_info_workaround_ambiguous(mocker):
-    """Tests get_download_info raising error when search finds multiple books."""
-    mock_client = MagicMock()
-    mock_paginator = MagicMock()
-    async def mock_next():
-        return [MOCK_BOOK_RESULT, {'id': '67890'}]
-    mock_paginator.next = mock_next
-    # Mock the async search method using AsyncMock
-    mock_client.search = AsyncMock(return_value=mock_paginator)
-    mocker.patch('python_bridge.zlib_client', mock_client)
-    mocker.patch('python_bridge.initialize_client', MagicMock(return_value=None))
-
-    with pytest.raises(ValueError, match=r"Ambiguous search result for Book ID 12345."): # Match helper error
-        asyncio.run(get_download_info('12345')) # Use asyncio.run
     mock_client.search.assert_called_once_with(q='id:12345', exact=True, count=1)
 
 

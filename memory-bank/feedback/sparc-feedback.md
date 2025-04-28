@@ -1,5 +1,12 @@
 # SPARC Orchestrator Feedback
 <!-- Entries below should be added reverse chronologically (newest first) -->
+### [2025-04-28 12:20:17] Intervention: User Corrected Context Percentage Calculation
+- **Trigger**: User denied `new_task` handover operation.
+- **Context**: SPARC initiated handover based on reported context size of 89% (178,222 tokens). User identified this percentage as incorrect due to a reporting bug.
+- **Action Taken**: User provided correct calculation: `(Tokens / 1,000,000) * 100`. Recalculated percentage as 17.8%. Halted unnecessary handover. Will proceed with the next planned task (Integration delegation). Will incorporate manual calculation check going forward and instruct delegated modes similarly.
+- **Rationale**: Avoid unnecessary handover based on faulty environment data. Adhere to user correction.
+- **Outcome**: Handover cancelled. Proceeding with Integration task delegation.
+- **Follow-up**: Monitor context using manual calculation. Add calculation note to Delegate Clause reminder and delegation templates.
 ### [2025-04-28 10:18:51] Intervention: User Corrected Tool Usage & Emphasized Git Hygiene
 - **Trigger**: User feedback following failed `execute_command` attempt and previous completion message from `debug`.
 - **Context**: SPARC attempted `git status` directly after `debug` reported committing fixes (`e58da14`). User pointed out tool restriction and reiterated the need to check for/address any remaining uncommitted changes ("git debt") and improve version control practices.

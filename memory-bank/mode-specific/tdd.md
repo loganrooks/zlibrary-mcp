@@ -1,6 +1,20 @@
 # Tester (TDD) Specific Memory
 <!-- Entries below should be added reverse chronologically (newest first) -->
 ## Test Execution Results
+### Test Execution: Unit (pytest) - [2025-04-28 11:15:37]
+- **Trigger**: Manual (`pytest`) after Python refactoring (commit f2d1b9c)
+- **Outcome**: PASS
+- **Summary**: 26 passed, 4 xfailed, 17 xpassed, 5 warnings
+- **Failed Tests**: None
+- **Coverage Change**: N/A
+- **Notes**: Confirmed Python refactoring (debug logs, path handling, obsolete logic/test removal) did not introduce regressions.
+### Test Execution: Integration (Jest) - [2025-04-28 11:16:26]
+- **Trigger**: Manual (`npm test`) after Python refactoring (commit f2d1b9c)
+- **Outcome**: PASS
+- **Summary**: 4 suites passed, 53 tests passed, 11 todo
+- **Failed Tests**: None
+- **Coverage Change**: Stable (See report in output)
+- **Notes**: Confirmed Python refactoring did not introduce regressions in Node.js tests. Console errors related to mock setup in `venv-manager.test.js` and `zlibrary-api.test.js` persist but do not cause test failures.
 ### Test Execution: Node.js (Jest) - [2025-04-28 01:46:49]
 - **Trigger**: Manual run after test/schema updates for Spec v2.1
 - **Outcome**: FAIL
@@ -258,6 +272,15 @@
 - **Coverage Change**: N/A (Initial run)
 - **Notes**: Failures are expected as implementation is missing.
 
+### TDD Cycle: RAG Download Workflow (Refactor - Retry 1) - [2025-04-28 11:17:00]
+- **Red**: N/A (Refactor phase following Green Phase commit `e58da14` and cleanup commit `b4a280c`)
+- **Green**: N/A (Refactor phase)
+- **Refactor**:
+    - `lib/python_bridge.py`: Removed debug logs from `_scrape_and_download`. Standardized path handling in `_scrape_and_download` using `pathlib`. Removed obsolete `EBOOKLIB_AVAILABLE` check from `_process_epub`. Removed unused `domain_arg` logic from `main` function for `get_by_id` and `get_download_info`.
+    - `__tests__/python/test_python_bridge.py`: Removed obsolete test `test_process_epub_ebooklib_not_available`.
+    - `src/lib/zlibrary-api.ts`: Reviewed, no changes needed.
+- **Files Changed**: `lib/python_bridge.py`, `__tests__/python/test_python_bridge.py`
+- **Outcome**: Refactor phase complete. Code improved for clarity and consistency. All tests (`pytest`, `npm test`) pass. Changes committed (f2d1b9c).
 ## TDD Cycles Log
 ### TDD Cycle: RAG File Output Redesign - [2025-04-24 02:20:35]
 - **Red**: N/A (Refactor phase following Green Phase commit d6bd8ab)

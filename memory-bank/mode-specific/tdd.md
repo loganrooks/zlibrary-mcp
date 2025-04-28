@@ -1,6 +1,21 @@
 # Tester (TDD) Specific Memory
 <!-- Entries below should be added reverse chronologically (newest first) -->
 ## Test Execution Results
+### Test Execution: Integration (Jest - Regression Check) - [2025-04-28 14:38:53]
+- **Trigger**: Manual (`npm test`) after debug fix `26cd7c8`
+- **Outcome**: PASS
+- **Summary**: 4 suites passed, 53 tests passed, 11 todo
+- **Failed Tests**: None
+- **Coverage Change**: Stable (See report in output)
+- **Notes**: Confirmed no regressions in Node.js tests after debug fix. Console errors related to mocks persist but don't cause failures.
+
+### Test Execution: Unit (pytest - Regression Check) - [2025-04-28 14:38:53]
+- **Trigger**: Manual (`/home/rookslog/.cache/zlibrary-mcp/zlibrary-mcp-venv/bin/python -m pytest __tests__/python/`) after debug fix `26cd7c8`
+- **Outcome**: PASS
+- **Summary**: 26 passed, 4 xfailed, 17 xpassed, 5 warnings
+- **Failed Tests**: None
+- **Coverage Change**: N/A
+- **Notes**: Confirmed debug fix `26cd7c8` resolved Python regressions. xfail/xpass results consistent with previous runs.
 ### Test Execution: Regression (pytest - Post-Integration Fix f3b5f96) - [2025-04-28 13:11:21]
 - **Trigger**: Manual (`/home/rookslog/.cache/zlibrary-mcp/zlibrary-mcp-venv/bin/python -m pytest zlibrary/src/test.py __tests__/python/test_python_bridge.py`) from root directory.
 - **Outcome**: FAIL

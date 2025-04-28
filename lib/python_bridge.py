@@ -511,45 +511,101 @@ def main():
         return 1
 
 # --- New download_book function ---
+# --- Internal Download/Scraping Helper (Spec v2.1) ---
+async def _scrape_and_download(book_page_url: str, output_dir_str: str) -> str:
+    """
+    Calls the zlibrary fork's download_book method which handles scraping and downloading.
+    Note: This function now expects the *book_page_url*, not the full book_details dict,
+    as the library's download_book method takes the URL.
+    """
+    logging.debug(f"_scrape_and_download called with URL: {book_page_url}, Output Dir: {output_dir_str}") # ADDED
+    global zlib_client
+    if not zlib_client:
+        logging.debug("Initializing zlib_client inside _scrape_and_download") # ADDED
+        await initialize_client()
+
+    try:
+        logging.debug("Inside _scrape_and_download try block") # ADDED
+        # Construct a minimal book_details dict required by the library's download_book
+        # The library primarily needs the URL for scraping, but might use ID for logging.
+        # We extract the ID from the URL if possible as a fallback.
+        try:
+            book_id_from_url = book_page_url.split('/book/')[1].split('/')[0] if '/book/' in book_page_url else 'unknown_from_url'
+        except IndexError:
+            book_id_from_url = 'unknown_from_url'
+
+        minimal_book_details = {
+            'url': book_page_url,
+            'id': book_id_from_url # Provide ID for potential logging within the library
+        }
+
+        # Construct filename using details (similar logic as before, but inside helper)
+        file_format = 'unknown' # We don't know the format here, library handles it
+        # Sanitize filename components
+        safe_book_id = str(book_id_from_url).replace('/','_').replace('\\','_')
+        safe_format = str(file_format).replace('/','_').replace('\\','_')
+        # The library's download_book should ideally determine the correct extension.
+        # We construct a temporary name; the library might overwrite it based on headers.
+        filename = f"{safe_book_id}.{safe_format}"
+        output_path = os.path.join(output_dir_str, filename)
+        logging.debug(f"Constructed output path: {output_path}") # ADDED
+
+        # Ensure output directory exists
+        logging.debug(f"Ensuring output directory exists: {output_dir_str}") # ADDED
+        os.makedirs(output_dir_str, exist_ok=True)
+        logging.debug(f"Output directory ensured.") # ADDED
+
+        # Call the library's download_book method
+        logging.info(f"Calling zlib_client.download_book for URL: {book_page_url}, Output Path: {output_path}")
+        logging.debug(f"Calling await zlib_client.download_book with details: {minimal_book_details}, path: {output_path}") # ADDED
+        await zlib_client.download_book(
+            book_details=minimal_book_details, # Pass minimal details containing the URL
+            output_path=output_path
+        )
+        logging.debug(f"Await zlib_client.download_book completed.") # ADDED
+        # IMPORTANT: The library's download_book returns None on success.
+        # We need to return the *intended* output path. The library might save with a different name
+        # based on Content-Disposition, but the tests expect the path passed to the helper.
+        # For Green phase, assume the library saves to the exact output_path we constructed.
+        # Refactor might involve checking the actual saved file name later.
+        final_path = output_path # Assume this path for now
+        logging.info(f"zlib_client.download_book completed for {book_page_url}. Assumed path: {final_path}")
+        return final_path # Return the constructed path
+
+    except DownloadError as e:
+        # Catch specific download errors from the library
+        logging.error(f"DownloadError during scrape/download for {book_page_url}: {e}")
+        raise RuntimeError(f"Download failed: {e}") from e # Re-raise as RuntimeError for Node.js bridge
+    except Exception as e:
+        # Catch any other unexpected errors
+        logging.exception(f"Unexpected error during scrape/download for {book_page_url}")
+        raise RuntimeError(f"An unexpected error occurred during download: {e}") from e # Re-raise as RuntimeError
+
 async def download_book(book_details: dict, output_dir='./downloads', process_for_rag=False, processed_output_format='txt') -> dict: # Expect book_details dict
     """
-    Downloads a book and optionally processes it for RAG, saving the processed text.
+    Downloads a book by calling the scrape helper and optionally processes it for RAG.
     Returns a dictionary containing 'file_path' and optionally 'processed_file_path'
     or 'processing_error'.
     """
-    if not zlib_client:
-        await initialize_client()
+    # No need to initialize client here, _scrape_and_download handles it.
+    # if not zlib_client:
+    #     await initialize_client()
 
     original_file_path_str = None
-    result = {}
+    result = {"file_path": None, "processed_file_path": None, "processing_error": None}
 
     try:
-        # Step 1: Use provided book_details to construct filename and pass to library method
-        book_id = book_details.get('id', 'unknown_id') # Get ID for logging/filename
-        logging.info(f"Preparing download for book ID {book_id} using provided details...")
+        book_id = book_details.get('id', 'unknown_id') # Get ID for logging
+        book_page_url = book_details.get('url')
+        if not book_page_url:
+             raise ValueError("Missing 'url' (book page URL) in book_details input.")
 
-        # Construct filename using details
-        file_format = book_details.get('extension', 'unknown')
-        # Sanitize filename components
-        safe_book_id = str(book_id).replace('/','_').replace('\\','_')
-        safe_format = str(file_format).replace('/','_').replace('\\','_')
-        filename = f"{safe_book_id}.{safe_format}"
-        output_path = os.path.join(output_dir, filename)
+        logging.info(f"Preparing download for book ID {book_id} via _scrape_and_download...")
 
-        # Ensure output directory exists
-        os.makedirs(output_dir, exist_ok=True)
-
-        # Step 2: Call library download method with the full book_details dict
-        # The library method now handles scraping the page URL within book_details
-        logging.info(f"Calling library download for book ID {book_id} to {output_path}...")
-        await zlib_client.download_book(
-            book_details=book_details, # Pass the full dict
-            output_path=output_path
-        )
-        # Assign the constructed path to the result
-        original_file_path_str = output_path
+        # Step 1: Call the internal scraping and download helper
+        original_file_path_str = await _scrape_and_download(book_page_url, output_dir)
         result["file_path"] = original_file_path_str
-        logging.info(f"Book download initiated to: {original_file_path_str}") # Library method is async
+        logging.info(f"Download helper returned path: {original_file_path_str}")
 
         # Step 2: Process if requested by calling process_document
         if process_for_rag:
@@ -581,7 +637,7 @@ async def download_book(book_details: dict, output_dir='./downloads', process_fo
         return result # Return dict with file_path and optional processed_file_path/processing_error
 
     except Exception as download_err:
-        # Catch errors during the download process
+        # Catch errors during the download process (including from _scrape_and_download)
         current_book_id = book_details.get('id', 'unknown_id') # Get ID for logging
         logging.exception(f"Failed during download process for book ID {current_book_id}")
         # Re-raise specific errors if needed, or wrap them

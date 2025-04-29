@@ -1,5 +1,7 @@
 # Optimizer Specific Memory
 <!-- Entries below should be added reverse chronologically (newest first) -->
+### Optimization: [2025-04-29 17:05:11] - Remove Unused Zod Schema
+- **Target**: `src/index.ts` / **Type**: Code Hygiene / **Desc**: Removed unused `GetDownloadInfoParamsSchema` related to deprecated `get_download_info` tool. / **Metrics Before**: N/A / **Metrics After**: N/A / **Related Debt**: [Ref: holistic-reviewer completion 2025-04-29 16:57:57] / **Related Issue**: N/A
 ### Optimization: [2025-04-29 17:01:37] - Move Utility Script
 - **Target**: `get_venv_python_path.mjs` / **Type**: Modularity / **Desc**: Moved script from root to `scripts/` directory for better organization. / **Metrics Before**: N/A / **Metrics After**: N/A / **Related Debt**: [Ref: holistic-reviewer completion 2025-04-29 16:57:57] / **Related Issue**: N/A
 ### Optimization: [2025-04-29 15:52:56] - Refactor python_bridge.py (RAG Extraction)

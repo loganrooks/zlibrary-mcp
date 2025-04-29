@@ -1,3 +1,7 @@
+### [2025-04-29 17:17:35] User Feedback: Completion Message Detail
+- **Source:** User Input
+- **Issue:** Initial `attempt_completion` message summarizing post-refinement orchestration lacked sufficient detail.
+- **Action:** Revised `attempt_completion` message to include more specifics on delegated tasks, actions taken by modes, files affected, commit hashes, and verification steps. [Ref: SPARC MB Intervention Log 2025-04-29 17:17:35]
 ### [2025-04-29 09:17:15] Intervention: User Corrected Context Percentage Calculation Bug
 - **Trigger**: User message upon task resumption.
 - **Context**: Previous SPARC instance initiated handover based on reported context size > 100%. User clarified that the reported percentage in `environment_details` is often calculated incorrectly (assuming 200k max tokens instead of 1M).

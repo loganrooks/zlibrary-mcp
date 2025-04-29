@@ -329,7 +329,7 @@ async function start(opts: StartOptions = {}): Promise<{ server: Server; transpo
         // Return just the content array, as expected by the client Zod schema
         // Cast to 'any' to bypass TS error, assuming the structure is correct for runtime
         // Return result as stringified JSON within a "text" content block
-        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] } as any;
+        return { result: result } as any; // Return the actual result object directly, cast to any to bypass TS error
       } catch (error: any) {
         // Catch errors thrown by the handler
         console.error(`Error calling tool "${toolName}":`, error); // Use toolName in error

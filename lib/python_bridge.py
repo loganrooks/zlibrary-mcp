@@ -243,6 +243,25 @@ def _analyze_pdf_block(block: dict) -> dict:
                 spans.append(span)
                 text_content += span.get('text', '')
 
+        # Apply cleaning (null chars, headers/footers) *before* analysis
+        text_content = text_content.replace('\x00', '') # Remove null chars first
+        header_footer_patterns = [
+            # Existing patterns
+            re.compile(r"^(JSTOR.*|Downloaded from.*|Copyright ©.*)\n?", re.IGNORECASE | re.MULTILINE),
+            re.compile(r"^Page \d+\s*\n?", re.MULTILINE),
+            # Added: Pattern to catch lines containing 'Page X' variations, potentially with other text
+            re.compile(r"^(.*\bPage \d+\b.*)\n?", re.IGNORECASE | re.MULTILINE)
+        ]
+        for pattern in header_footer_patterns:
+            text_content = pattern.sub('', text_content)
+        text_content = re.sub(r'\n\s*\n', '\n\n', text_content).strip() # Consolidate blank lines
+
+        if not text_content: # If cleaning removed everything, return early
+             return {
+                'heading_level': 0, 'list_marker': None, 'is_list_item': False,
+                'list_type': None, 'list_indent': 0, 'text': '', 'spans': spans
+             }
+
         if spans:
             first_span = spans[0]
             font_size = first_span.get('size', 10)
@@ -262,20 +281,28 @@ def _analyze_pdf_block(block: dict) -> dict:
             # --- List Heuristic (Example based on starting characters) ---
             # This is basic and doesn't handle indentation/nesting reliably.
             trimmed_text = text_content.strip()
-            # Basic unordered list check (common bullet characters)
-            if trimmed_text.startswith(('•', '*', '-', '–')): # Added en-dash
+            list_marker = None # Store the detected marker/number
+
+            # Unordered list check (common bullet characters)
+            ul_match = re.match(r"^([\*•–-])\s+", trimmed_text) # Added en-dash
+            if ul_match:
                 is_list_item = True
                 list_type = 'ul'
+                list_marker = ul_match.group(1)
                 # Indentation could be inferred from block['bbox'][0] (x-coordinate)
-            # Basic ordered list check (e.g., "1. ", "2. ")
-            elif re.match(r"^\d+\.\s+", trimmed_text):
+
+            # Ordered list check (e.g., "1. ", "a) ", "i. ") - More robust
+            ol_match = re.match(r"^(\d+|[a-zA-Z]|[ivxlcdm]+)[\.\)]\s+", trimmed_text, re.IGNORECASE)
+            if not is_list_item and ol_match: # Check only if not already identified as UL
                 is_list_item = True
                 list_type = 'ol'
-            # TODO: Add more complex list detection (e.g., a), i.), Roman numerals).
+                list_marker = ol_match.group(1) # Capture number/letter/roman numeral
+
             # TODO: Use block['bbox'][0] (x-coordinate) to infer indentation/nesting.
 
     return {
         'heading_level': heading_level,
+        'list_marker': list_marker, # Add marker to return dict
         'is_list_item': is_list_item,
         'list_type': list_type,
         'list_indent': list_indent, # Placeholder for future nesting use
@@ -308,6 +335,7 @@ def _format_pdf_markdown(page: fitz.Page) -> str:
         text = analysis['text']
         spans = analysis['spans']
 
+        # Cleaning is now done in _analyze_pdf_block
         if not text: continue
 
         # Footnote Reference/Definition Detection (using superscript flag)
@@ -321,8 +349,8 @@ def _format_pdf_markdown(page: fitz.Page) -> str:
 
             if is_superscript and span_text.isdigit():
                 fn_id = span_text
-                # Definition heuristic: superscript number at start of block
-                if first_span_in_block:
+                # Definition heuristic: superscript number at start of block, possibly followed by '.' or ')'
+                if first_span_in_block and re.match(r"^\d+[\.\)]?\s*", text): # Use 'text' instead of 'text_content'
                     potential_def_id = fn_id
                     # Don't add the number itself to the text for definitions
                 else: # Reference
@@ -335,8 +363,15 @@ def _format_pdf_markdown(page: fitz.Page) -> str:
 
         # Store definition if found, otherwise format content
         if potential_def_id:
-            # The text following the superscript number is the definition
-            footnote_defs[potential_def_id] = processed_text
+            # Use regex to capture text *after* the marker and leading punctuation/space
+            match = re.match(r"^\d+[\.\)]?\s*(.*)", processed_text)
+            if match:
+                cleaned_def_text = match.group(1).strip() # Get captured group and strip ends
+            else:
+                 # Fallback if regex match fails unexpectedly (shouldn't happen if potential_def_id is set)
+                 cleaned_def_text = re.sub(r"^\d+[\.\)]?\s*", "", processed_text).strip()
+
+            footnote_defs[potential_def_id] = cleaned_def_text
             continue # Don't add definition block as regular content
 
         # Format based on analysis
@@ -346,13 +381,18 @@ def _format_pdf_markdown(page: fitz.Page) -> str:
         elif analysis['is_list_item']:
             # Basic list handling (needs refinement for nesting based on indent)
             # Remove original list marker from text if present
-            if analysis['list_type'] == 'ul':
-                clean_text = re.sub(r"^[\*•-]\s*", "", processed_text).strip()
+            list_marker = analysis.get('list_marker')
+            clean_text = processed_text # Start with original processed text
+
+            if analysis['list_type'] == 'ul' and list_marker:
+                # Use regex to remove the specific marker found
+                clean_text = re.sub(r"^" + re.escape(list_marker) + r"\s*", "", processed_text).strip()
                 markdown_lines.append(f"* {clean_text}")
-            elif analysis['list_type'] == 'ol':
-                clean_text = re.sub(r"^\d+\.\s*", "", processed_text).strip()
-                # NOTE: Using "1." for all ordered items. Correct numbering requires tracking list context.
-                markdown_lines.append(f"1. {clean_text}")
+            elif analysis['list_type'] == 'ol' and list_marker:
+                 # Use regex to remove the specific marker found (number/letter/roman + ./))
+                clean_text = re.sub(r"^" + re.escape(list_marker) + r"[\.\)]\s*", "", processed_text, flags=re.IGNORECASE).strip()
+                # Use the detected marker for the Markdown list item
+                markdown_lines.append(f"{list_marker}. {clean_text}")
             current_list_type = analysis['list_type']
         else: # Regular paragraph
             # Only add if it's not empty after processing (e.g., after footnote extraction)
@@ -404,6 +444,16 @@ def _epub_node_to_markdown(node: BeautifulSoup, footnote_defs: dict, list_level:
             item_text = _epub_node_to_markdown(child, footnote_defs, list_level + 1).strip()
             if item_text: markdown_parts.append(f"{indent}* {item_text}")
         return "\n".join(markdown_parts) # Return joined list items
+    elif node_name == 'nav' and node.get('epub:type') == 'toc': # Corrected indentation
+        # Handle Table of Contents (often uses nested <p><a>...</a></p> or similar)
+        # Treat descendant links as list items
+        for child in node.descendants:
+            if getattr(child, 'name', None) == 'a' and child.get_text(strip=True):
+                link_text = child.get_text(strip=True)
+                # Basic indentation/formatting for TOC items
+                markdown_parts.append(f"* {link_text}")
+        # Return immediately after processing TOC nav
+        return "\n".join(markdown_parts)
     elif node_name == 'ol':
         # Handle OL items recursively
         for i, child in enumerate(node.find_all('li', recursive=False)):
@@ -434,25 +484,34 @@ def _epub_node_to_markdown(node: BeautifulSoup, footnote_defs: dict, list_level:
     elif node_name == 'aside' and node.get('epub:type') == 'footnote':
         # Store footnote definition and return empty (handled separately)
         footnote_id_attribute = node.get('id', '')
-        # Try to extract trailing digits from the 'id' attribute as the footnote number.
-        # This assumes IDs like "fn1", "note2", etc.
-        fn_id_match = re.search(r'(\d+)$', footnote_id_attribute)
+        # Try to extract digits from the 'id' attribute (e.g., "fn1", "note_2", "ref-3")
+        fn_id_match = re.search(r'(\d+)', footnote_id_attribute) # More general digit search
         fn_id = fn_id_match.group(1) if fn_id_match else None
-        # Process the *content* of the aside tag, not the tag itself recursively
-        # This avoids including the footnote marker (like '[1]') within the definition text.
+
+        # Fallback: Check if the text content starts with a number (e.g., "1. Footnote text")
+        node_text_content = node.get_text(" ", strip=True)
+        if not fn_id:
+            text_id_match = re.match(r'^(\d+)[\.\)]?\s+', node_text_content)
+            if text_id_match:
+                fn_id = text_id_match.group(1)
+
+        # Process the *content* of the aside tag, avoiding recursive calls on the aside itself
         fn_content_parts = []
         for child in node.children:
             if isinstance(child, str):
                 cleaned_text = child.strip()
                 if cleaned_text: fn_content_parts.append(cleaned_text)
             elif getattr(child, 'name', None):
-                child_md = _epub_node_to_markdown(child, footnote_defs, list_level) # Process children
-                if child_md: fn_content_parts.append(child_md)
+                 # Avoid processing the footnote reference link if it's inside the definition
+                if not (child.name == 'a' and child.get('epub:type') == 'noteref'):
+                    child_md = _epub_node_to_markdown(child, footnote_defs, list_level) # Process children
+                    if child_md: fn_content_parts.append(child_md)
         fn_text = " ".join(fn_content_parts).strip()
 
         if fn_id and fn_text:
-            # Remove potential self-reference like '[^1]' if it's the start
+            # Clean the definition text (remove potential self-reference or starting number)
             fn_text = re.sub(r"^\[\^" + re.escape(fn_id) + r"\]\s*", "", fn_text).strip()
+            fn_text = re.sub(r"^" + re.escape(fn_id) + r"[\.\)]?\s*", "", fn_text).strip()
             footnote_defs[fn_id] = fn_text
         return "" # Don't include definition inline
     else:
@@ -504,10 +563,20 @@ def _process_epub(file_path_str: str, output_format: str = 'text') -> str:
                 item_md_parts = []
                 # Process body content, collecting footnote defs
                 if soup.body:
+                    # Check for dedicated TOC nav first
+                    toc_nav = soup.body.find('nav', attrs={'epub:type': 'toc'})
+                    if toc_nav:
+                        # If TOC nav found, process only that and skip other body children for this item
+                        toc_md = _epub_node_to_markdown(toc_nav, footnote_defs)
+                        if toc_md: all_content_parts.append(toc_md)
+                        continue # Move to the next item in the EPUB
+
+                    # If no TOC nav, process children normally
+                    item_md_parts = []
                     for element in soup.body.children: # Iterate direct children
                          md_part = _epub_node_to_markdown(element, footnote_defs)
                          if md_part: item_md_parts.append(md_part)
-                item_markdown = "\n\n".join(item_md_parts).strip() # Join parts with double newline
+                    item_markdown = "\n\n".join(item_md_parts).strip() # Join parts with double newline
                 if item_markdown: all_content_parts.append(item_markdown)
             else: # Plain text
                 # Basic text extraction, could be improved
@@ -564,16 +633,7 @@ def _process_pdf(file_path: str, output_format: str = 'text') -> str:
                     page_content = _format_pdf_markdown(page) # Use the helper
                 else: # Default to text processing
                     page_content = page.get_text("text")
-                    if page_content:
-                        # Apply text cleaning (null chars, headers/footers)
-                        page_content = page_content.replace('\x00', '')
-                        header_footer_patterns = [
-                            re.compile(r"^(JSTOR.*|Downloaded from.*|Copyright ©.*)\n?", re.IGNORECASE | re.MULTILINE),
-                            re.compile(r"^Page \d+\s*\n?", re.MULTILINE)
-                        ]
-                        for pattern in header_footer_patterns:
-                            page_content = pattern.sub('', page_content)
-                        page_content = re.sub(r'\n\s*\n', '\n\n', page_content).strip()
+                    # Cleaning will be applied after potential Markdown generation
 
                 if page_content:
                     all_content.append(page_content)
@@ -581,9 +641,11 @@ def _process_pdf(file_path: str, output_format: str = 'text') -> str:
             except Exception as page_error:
                 logging.warning(f"Could not process page {page_num + 1} in {file_path}: {page_error}")
 
-        full_content = "\n\n".join(all_content).strip()
+        # Cleaning is now done within _format_pdf_markdown
+
+        full_content = "\n\n".join(all_content).strip() # Join potentially already cleaned markdown/text
         if not full_content:
-            logging.warning(f"No extractable content found in PDF: {file_path}")
+            logging.warning(f"No extractable content found in PDF after cleaning: {file_path}")
             raise ValueError("PDF contains no extractable content layer (possibly image-based)")
 
         logging.info(f"Finished PDF: {file_path}. Extracted length: {len(full_content)}")

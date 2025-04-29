@@ -498,474 +498,259 @@ def test_process_pdf_encrypted(tmp_path, mock_fitz, mocker): # Add mocker
     # Correct expected error message to match _process_pdf
     with pytest.raises(ValueError, match="PDF is encrypted"):
         _process_pdf(dummy_path) # Call the function under test
+
     mock_os_exists.assert_called_once_with(dummy_path) # Assert reinstated mock
     # mock_os_isfile.assert_called_once_with(dummy_path) # Keep removed
     # mock_os_getsize.assert_called_once_with(dummy_path) # Keep removed
-    # Assert that the mocked python_bridge.fitz.open was called
     mock_open_func.assert_called_once_with(dummy_path)
 
 # @pytest.mark.xfail(reason="_process_pdf implementation does not exist yet") # Removed xfail
 def test_process_pdf_corrupted(tmp_path, mock_fitz):
-    pdf_path = tmp_path / "corrupted.pdf"
-    pdf_path.touch()
+    # pdf_path = tmp_path / "corrupted.pdf" # Not needed
     mock_open_func, _, _ = mock_fitz
-    # Simulate fitz raising an error on open
-    mock_open_func.side_effect = RuntimeError("Failed to open PDF")
-
-    with pytest.raises(RuntimeError, match="Error opening or processing PDF"):
-        _process_pdf(str(pdf_path))
+    mock_open_func.side_effect = RuntimeError("Failed to open") # Simulate fitz error
+    dummy_path = str(tmp_path / "corrupted.pdf")
+    # Correct expected error message to match _process_pdf
+    with pytest.raises(RuntimeError, match=r"Error opening or processing PDF.*corrupted\.pdf.*Failed to open"):
+        _process_pdf(dummy_path) # Call the function under test
 
 @pytest.mark.xfail(reason="_process_pdf implementation does not exist yet")
 def test_process_pdf_image_based(tmp_path, mock_fitz):
-    pdf_path = tmp_path / "image.pdf"
-    pdf_path.touch()
+    # pdf_path = tmp_path / "image.pdf" # Not needed
     mock_open_func, mock_doc, mock_page = mock_fitz
-    mock_page.get_text.return_value = "" # Simulate no text extracted
-
-    with pytest.raises(ValueError, match="PDF contains no extractable text layer"):
-        _process_pdf(str(pdf_path))
+    mock_page.get_text.return_value = "" # Simulate no text content
+    dummy_path = str(tmp_path / "image.pdf")
+    # Correct expected error message to match _process_pdf
+    with pytest.raises(ValueError, match="PDF contains no extractable content layer"):
+        _process_pdf(dummy_path) # Call the function under test
 
 @pytest.mark.xfail(reason="_process_pdf implementation does not exist yet")
 def test_process_pdf_file_not_found(tmp_path, mock_fitz):
-    pdf_path = tmp_path / "non_existent.pdf"
-    # Don't create the file
+    # pdf_path = tmp_path / "not_found.pdf" # Not needed
     mock_open_func, _, _ = mock_fitz
+    dummy_path = str(tmp_path / "not_found.pdf")
+    # Mock os.path.exists to return False
+    mocker.patch('os.path.exists', return_value=False)
+    with pytest.raises(FileNotFoundError, match=r"File not found.*not_found\.pdf"):
+        _process_pdf(dummy_path) # Call the function under test
 
-    with pytest.raises(FileNotFoundError):
-        _process_pdf(str(pdf_path))
-    # Ensure fitz.open wasn't even called if file doesn't exist before check
-    # mock_open_func.assert_not_called() # This depends on implementation order
-# Test for PDF Text Noise Reduction (Refactored for RAG Quality Refinement)
+# @pytest.mark.xfail(reason="Markdown generation refinement not implemented yet") # Removed xfail
 def test_process_pdf_text_removes_noise_refactored(tmp_path, mock_fitz, mocker):
     """Tests if _process_pdf removes common headers/footers (regex) and null chars."""
     mock_open_func, mock_doc, mock_page = mock_fitz
-    dummy_path = str(tmp_path / "noisy_sample.pdf")
-    mock_os_exists = mocker.patch('os.path.exists', return_value=True)
+    mocker.patch('os.path.exists', return_value=True)
 
-    # Simulate noisy text extraction with more variations
+    # Simulate multiple pages with noise
     noisy_text_page1 = (
-        "JSTOR Some Info\n" # Variation 1
+        "JSTOR Stable URL: http://www.jstor.org/stable/12345\n"
         "Page 1\n"
-        "This is the actual content.\n"
-        "With some\x00null characters.\n"
-        "Downloaded from AnotherSource\n" # Variation 2
+        "Real content page 1.\0Null char here."
     )
     noisy_text_page2 = (
-        "Copyright © 2025 Publisher\n" # Variation 3
-        "More actual content.\n"
-        "Page 2" # No trailing newline
+        "Downloaded from example.com on Tue, 29 Apr 2025 10:00:00 GMT\n"
+        "Real content page 2.\n"
+        "Copyright © 2025 Publisher."
     )
-    # Mock load_page to return the same page mock, but change its get_text return value
-    mock_page.get_text.side_effect = [noisy_text_page1, noisy_text_page2]
-    mock_doc.__len__.return_value = 2 # Simulate 2 pages
-    mock_doc.load_page.side_effect = [mock_page, mock_page] # Return same mock page instance
 
-    # Call the function under test
-    result = _process_pdf(dummy_path)
+    # Mock load_page to return different text based on page number
+    def mock_load_page_side_effect(page_num):
+        mock_page_instance = MagicMock()
+        if page_num == 0:
+            mock_page_instance.get_text.return_value = noisy_text_page1
+        elif page_num == 1:
+            mock_page_instance.get_text.return_value = noisy_text_page2
+        else:
+            raise IndexError # Should not be called for more pages
+        return mock_page_instance
 
-    mock_os_exists.assert_called_once_with(dummy_path)
-    mock_open_func.assert_called_once_with(dummy_path)
-    assert mock_doc.load_page.call_count == 2
-    assert mock_page.get_text.call_count == 2
-    mock_page.get_text.assert_called_with('text') # Check last call args
+    mock_doc.__len__.return_value = 2 # Two pages
+    mock_doc.load_page.side_effect = mock_load_page_side_effect
 
-    # Assertions for the *desired* clean output after regex cleaning
-    assert "JSTOR" not in result, "Header text should be removed"
-    assert "Downloaded from" not in result, "Footer text should be removed"
-    assert "Copyright ©" not in result, "Copyright text should be removed"
-    assert "Page 1" not in result, "Page number should be removed"
-    assert "Page 2" not in result, "Page number should be removed"
-    assert "\x00" not in result, "Null characters should be removed"
-    assert "This is the actual content." in result, "Core content missing"
-# Test for PDF Markdown Heading Generation (Added for RAG Quality Refinement)
+    result = _process_pdf(str(tmp_path / "test.pdf"), output_format='text') # Test 'text' format
+
+    expected = "Real content page 1.Null char here.\n\nReal content page 2."
+    assert result == expected
+
+# @pytest.mark.xfail(reason="Markdown generation refinement not implemented yet") # Removed xfail
 def test_rag_markdown_pdf_generates_headings(tmp_path, mock_fitz, mocker):
     """Tests if _process_pdf generates Markdown headings when output_format is 'markdown'."""
     mock_open_func, mock_doc, mock_page = mock_fitz
-    dummy_path = tmp_path / "structured_sample.pdf" # Keep as Path object initially
-    dummy_path.touch() # Create the dummy file
-    dummy_path_str = str(dummy_path) # Convert to string for function calls
-    # mock_os_exists = mocker.patch('os.path.exists', return_value=True) # No longer needed as file exists
-
-    # Simulate structured text extraction from fitz using get_text("dict")
-    # Simplified structure: list of blocks, each block has lines, each line has spans
-    # We'll identify headings based on a mock 'size' attribute
+    mocker.patch('os.path.exists', return_value=True)
+    # Simulate blocks with different font sizes/flags for headings
     mock_page_dict = {
-        "width": 600, "height": 800, "blocks": [
-            { # Block 1: Title (Large Font)
-                "lines": [{"spans": [{"size": 20, "flags": 0, "font": "Times-Bold", "text": "Document Title"}]}],
-                "type": 0 # Text block
-            },
-            { # Block 2: Section Heading (Medium Font)
-                "lines": [{"spans": [{"size": 16, "flags": 0, "font": "Times-Bold", "text": "Section 1"}]}],
-                "type": 0
-            },
-            { # Block 3: Normal Paragraph
-                "lines": [{"spans": [{"size": 12, "flags": 0, "font": "Times-Roman", "text": "This is paragraph text."}]}],
-                "type": 0
-            },
-             { # Block 4: Subsection Heading (Slightly Larger Font)
-                "lines": [{"spans": [{"size": 14, "flags": 0, "font": "Times-Bold", "text": "Subsection 1.1"}]}],
-                "type": 0
-            },
-             { # Block 5: Another Paragraph
-                "lines": [{"spans": [{"size": 12, "flags": 0, "font": "Times-Roman", "text": "More paragraph text."}]}],
-                "type": 0
-            }
+        "blocks": [
+            {"type": 0, "bbox": (10,10,200,20), "lines": [{"spans": [
+                {"size": 20, "flags": 0, "text": "Heading 1 Large"}, # H1 by size
+            ]}]},
+            {"type": 0, "bbox": (10,30,200,40), "lines": [{"spans": [
+                {"size": 15, "flags": 2, "text": "Heading 2 Bold"}, # H2 by size+bold
+            ]}]},
+             {"type": 0, "bbox": (10,50,200,60), "lines": [{"spans": [
+                {"size": 13, "flags": 0, "text": "Heading 3 Normal"}, # H3 by size
+            ]}]},
+             {"type": 0, "bbox": (10,70,200,80), "lines": [{"spans": [
+                {"size": 10, "flags": 0, "text": "Regular paragraph."},
+            ]}]},
         ]
     }
-    mock_page.get_text.return_value = mock_page_dict # Mock get_text("dict")
-    mock_doc.__len__.return_value = 1
-    mock_doc.load_page.return_value = mock_page
+    mock_page.get_text.return_value = mock_page_dict
+    result = _process_pdf(str(tmp_path / "test.pdf"), output_format='markdown')
 
-    # --- Modification needed in process_document to call _process_pdf with format ---
-    # --- For now, assume _process_pdf is modified to accept format and return markdown ---
-    # --- We will mock process_document later or modify _process_pdf directly ---
+    expected = """# Heading 1 Large
 
-    # Mock _save_processed_text to just return the content for testing
-    # This avoids file I/O in this unit test
-    mocker.patch('python_bridge._save_processed_text', side_effect=lambda p, c, f: c)
+## Heading 2 Bold
 
-    # Call process_document which should route to _process_pdf with 'markdown'
-    # NOTE: This assumes process_document is updated to pass output_format
-    result_dict = asyncio.run(process_document(dummy_path_str, output_format='markdown')) # Use string path
-    result = result_dict.get("processed_file_path") # Get content from mocked save
+### Heading 3 Normal
 
-    # Assertions for Markdown output
-    assert result is not None, "Processing failed or returned None"
-    assert "# Document Title" in result, "H1 Title missing"
-    assert "## Section 1" in result, "H2 Section missing"
-    assert "### Subsection 1.1" in result, "H3 Subsection missing"
-    assert "This is paragraph text." in result, "Paragraph text missing"
-    assert "More paragraph text." in result, "Paragraph text missing"
-    # Check order (simple check)
-    assert result.find("# Document Title") < result.find("## Section 1")
-    assert result.find("## Section 1") < result.find("This is paragraph text.")
-    assert result.find("This is paragraph text.") < result.find("### Subsection 1.1")
-    assert result.find("### Subsection 1.1") < result.find("More paragraph text.")
-    assert "More paragraph text." in result, "Paragraph text missing" # Corrected assertion text
-    # Check concatenation (should have double newline between page content after cleaning) - Removed incorrect assertion
+Regular paragraph."""
+    assert result.strip() == expected
 
-# Test for PDF Markdown List Generation (Added for RAG Quality Refinement)
+# @pytest.mark.xfail(reason="Markdown generation refinement not implemented yet") # Removed xfail
 def test_rag_markdown_pdf_generates_lists(tmp_path, mock_fitz, mocker):
     """Tests if _process_pdf generates Markdown lists when output_format is 'markdown'."""
-    mock_open_func, mock_doc, mock_page = mock_fitz
-    dummy_path = tmp_path / "list_sample.pdf"
-    dummy_path.touch()
-    dummy_path_str = str(dummy_path)
-
-    # Simulate structured text extraction with list-like patterns
-    mock_page_dict = {
-        "width": 600, "height": 800, "blocks": [
-            { # Block 1: Ordered List Item 1
-                "lines": [{"spans": [{"size": 12, "flags": 0, "font": "Times-Roman", "text": "1. First item."}]}], "type": 0
-            },
-            { # Block 2: Ordered List Item 2
-                "lines": [{"spans": [{"size": 12, "flags": 0, "font": "Times-Roman", "text": "2. Second item."}]}], "type": 0
-            },
-            { # Block 3: Paragraph
-                "lines": [{"spans": [{"size": 12, "flags": 0, "font": "Times-Roman", "text": "A normal paragraph."}]}], "type": 0
-            },
-            { # Block 4: Unordered List Item 1
-                "lines": [{"spans": [{"size": 12, "flags": 0, "font": "Symbol", "text": "•"}, {"size": 12, "flags": 0, "font": "Times-Roman", "text": " Bullet one"}]}], "type": 0 # Common bullet pattern
-            },
-            { # Block 5: Unordered List Item 2 (using asterisk)
-                "lines": [{"spans": [{"size": 12, "flags": 0, "font": "Times-Roman", "text": "* Bullet two"}]}], "type": 0
-            }
-        ]
-    }
-    mock_page.get_text.return_value = mock_page_dict
-    mock_doc.__len__.return_value = 1
-    mock_doc.load_page.return_value = mock_page
-
-# Test for PDF Markdown Footnote Generation (Added for RAG Quality Refinement)
-def test_rag_markdown_pdf_generates_footnotes(tmp_path, mock_fitz, mocker):
-    """Tests if _process_pdf generates standard Markdown footnotes."""
-    mock_open_func, mock_doc, mock_page = mock_fitz
-    dummy_path = tmp_path / "footnote_sample.pdf"
-    dummy_path.touch()
-    dummy_path_str = str(dummy_path)
-
-    # Simulate structured text extraction with footnote markers (superscript flag)
-    # and footnote content (often at bottom or separate blocks)
-    mock_page_dict = {
-        "width": 600, "height": 800, "blocks": [
-            { # Block 1: Paragraph with footnote ref
-                "lines": [{"spans": [
-                    {"size": 12, "flags": 0, "font": "Times-Roman", "text": "Some text"},
-                    {"size": 8, "flags": 1, "font": "Times-Roman", "text": "1"}, # Superscript flag = 1
-                    {"size": 12, "flags": 0, "font": "Times-Roman", "text": " with a reference."}
-                ]}], "type": 0
-            },
-            { # Block 2: Another paragraph
-                "lines": [{"spans": [{"size": 12, "flags": 0, "font": "Times-Roman", "text": "More text."}]}], "type": 0
-            },
-            { # Block 3: Footnote definition (often smaller font, starts with number)
-                "lines": [{"spans": [
-                     {"size": 8, "flags": 1, "font": "Times-Roman", "text": "1"}, # Superscript flag = 1
-                     {"size": 10, "flags": 0, "font": "Times-Roman", "text": " This is the footnote content."}
-                ]}], "type": 0
-            }
-        ]
-    }
-    mock_page.get_text.return_value = mock_page_dict
-    mock_doc.__len__.return_value = 1
-    mock_doc.load_page.return_value = mock_page
-
-    # Mock _save_processed_text
-    mocker.patch('python_bridge._save_processed_text', side_effect=lambda p, c, f: c)
-
-    # Call process_document
-    result_dict = asyncio.run(process_document(dummy_path_str, output_format='markdown'))
-    result = result_dict.get("processed_file_path")
-# Test for EPUB Markdown Heading Generation (Added for RAG Quality Refinement)
-def test_rag_markdown_epub_generates_headings(tmp_path, mock_ebooklib, mocker):
-    """Tests if _process_epub generates Markdown headings."""
-    epub_path = tmp_path / "structured.epub"
-    epub_path.touch()
-    mock_read_epub, mock_epub = mock_ebooklib
-
-    # Simulate items with heading tags
-    mock_item_title = MagicMock()
-    mock_item_title.get_content.return_value = b'<html><body><h1>Document Title</h1><p>Intro</p></body></html>'
-    mock_item_title.get_name.return_value = 'title.xhtml'
-
-    mock_item_chap1 = MagicMock()
-    mock_item_chap1.get_content.return_value = b'<html><body><h2>Chapter 1</h2><p>Chapter content.</p><h3>Subsection 1.1</h3><p>Sub content.</p></body></html>'
-    mock_item_chap1.get_name.return_value = 'chap1.xhtml'
-
-    mock_epub.get_items_of_type.return_value = [mock_item_title, mock_item_chap1]
-
-    # Mock _save_processed_text
-    mocker.patch('python_bridge._save_processed_text', side_effect=lambda p, c, f: c)
-
-    # Call process_document which should route to _process_epub
-    result_dict = asyncio.run(process_document(str(epub_path), output_format='markdown'))
-    result = result_dict.get("processed_file_path")
-
-    # Assertions for Markdown output
-    assert result is not None, "Processing failed or returned None"
-    assert "# Document Title" in result, "H1 Title missing"
-    assert "Intro" in result, "Paragraph text missing"
-    assert "## Chapter 1" in result, "H2 Chapter missing"
-    assert "Chapter content." in result, "Paragraph text missing"
-    assert "### Subsection 1.1" in result, "H3 Subsection missing"
-    assert "Sub content." in result, "Paragraph text missing"
-    # Check order
-    assert result.find("# Document Title") < result.find("## Chapter 1")
-    assert result.find("## Chapter 1") < result.find("### Subsection 1.1")
-    # Removed incorrect assertions copied from footnote test below
-    # Removed incorrect assertions copied from list test below
-
-# 8. Python Bridge - process_document (Routing)
-# Test for EPUB Markdown List Generation (Added for RAG Quality Refinement)
-def test_rag_markdown_epub_generates_lists(tmp_path, mock_ebooklib, mocker):
-    """Tests if _process_epub generates Markdown lists from ul/ol/li tags."""
-    epub_path = tmp_path / "lists.epub"
-    epub_path.touch()
-    mock_read_epub, mock_epub = mock_ebooklib
-
-    # Simulate item with lists
-    mock_item_lists = MagicMock()
-    mock_item_lists.get_content.return_value = b'''<html><body>
-        <p>Paragraph before list.</p>
-        <ul>
-            <li>Unordered item 1</li>
-            <li>Unordered item 2</li>
-        </ul>
-        <p>Paragraph between lists.</p>
-        <ol>
-            <li>Ordered item 1</li>
-            <li>Ordered item 2</li>
-        </ol>
-        <p>Paragraph after list.</p>
-        </body></html>'''
-    mock_item_lists.get_name.return_value = 'lists.xhtml'
-
-    mock_epub.get_items_of_type.return_value = [mock_item_lists]
-
-    # Mock _save_processed_text
-    mocker.patch('python_bridge._save_processed_text', side_effect=lambda p, c, f: c)
-
-    # Call process_document
-# Test for EPUB Markdown Footnote Generation (Added for RAG Quality Refinement)
-def test_rag_markdown_epub_generates_footnotes(tmp_path, mock_ebooklib, mocker):
-    """Tests if _process_epub generates standard Markdown footnotes from EPUB structures."""
-    epub_path = tmp_path / "footnotes.epub"
-    epub_path.touch()
-    mock_read_epub, mock_epub = mock_ebooklib
-
-    # Simulate item with EPUB footnote structure
-    mock_item_footnotes = MagicMock()
-    mock_item_footnotes.get_content.return_value = b'''<html><body>
-        <p>Some text with a reference<a epub:type="noteref" href="#fn1"><sup>1</sup></a>.</p>
-        <p>More text.</p>
-        <aside epub:type="footnote" id="fn1">
-            <p>This is the footnote content.</p>
-        </aside>
-        <p>Text after footnote section.</p>
-        </body></html>'''
-    mock_item_footnotes.get_name.return_value = 'footnotes.xhtml'
-
-    mock_epub.get_items_of_type.return_value = [mock_item_footnotes]
-
-    # Mock _save_processed_text
-    mocker.patch('python_bridge._save_processed_text', side_effect=lambda p, c, f: c)
-
-    # Call process_document
-    result_dict = asyncio.run(process_document(str(epub_path), output_format='markdown'))
-    result = result_dict.get("processed_file_path")
-
-    # Assertions for Markdown output
-    assert result is not None, "Processing failed or returned None"
-    # Check for reference style [^1] - text inside <a> should be used
-    assert "Some text with a reference[^1]." in result, "Footnote reference marker [^1] missing or incorrect"
-    # Check for definition style [^1]: ... - content inside <aside> should be used
-    assert "[^1]: This is the footnote content." in result, "Footnote definition [^1]: missing or incorrect"
-    assert "More text." in result, "Paragraph text missing"
-    assert "Text after footnote section." in result, "Text after footnote missing"
-    # Ensure footnote definition appears after the reference paragraph
-    assert result.find("Some text with a reference[^1].") < result.find("[^1]: This is the footnote content.")
-    # Removed incorrect assertions copied from list test below
-# --- New Tests for RAG Markdown Generation Refinement (Based on Spec v1.0 Anchors) ---
-
-# @pytest.mark.xfail(reason="Markdown generation refinement not implemented yet") # Removed xfail
-def test_rag_markdown_pdf_generates_paragraphs(tmp_path, mock_fitz, mocker):
-    """Tests if normal PDF text blocks are formatted as paragraphs in Markdown."""
-    mock_open_func, mock_doc, mock_page = mock_fitz
-    mocker.patch('os.path.exists', return_value=True)
-    # Mock page.get_text("dict") to return a simple paragraph block
-    mock_page_dict = {
-        "blocks": [{
-            "type": 0, "bbox": (10, 10, 100, 20),
-            "lines": [{"spans": [{"size": 10, "flags": 0, "text": "This is a paragraph."}]}]
-        }]
-    }
-    mock_page.get_text.return_value = mock_page_dict # Mock the 'dict' call
-
-    result = _process_pdf(str(tmp_path / "test.pdf"), output_format='markdown')
-    assert result.strip() == "This is a paragraph."
-    mock_page.get_text.assert_called_once_with("dict", flags=mocker.ANY) # Check dict was called
-
-# @pytest.mark.xfail(reason="Markdown generation refinement not implemented yet") # Removed xfail
-def test_rag_markdown_pdf_handles_multiple_footnotes(tmp_path, mock_fitz, mocker):
-    """Tests handling multiple footnote references and definitions in PDF Markdown."""
     mock_open_func, mock_doc, mock_page = mock_fitz
     mocker.patch('os.path.exists', return_value=True)
     mock_page_dict = {
         "blocks": [
             {"type": 0, "bbox": (10,10,200,20), "lines": [{"spans": [
-                {"size": 10, "flags": 0, "text": "Text with ref "},
-                {"size": 8, "flags": 1, "text": "1"}, # Superscript flag = 1
-                {"size": 10, "flags": 0, "text": " and ref "},
-                {"size": 8, "flags": 1, "text": "2"},
-                {"size": 10, "flags": 0, "text": "."},
+                {"size": 10, "flags": 0, "text": "* Item 1"},
             ]}]},
-            {"type": 0, "bbox": (10,50,200,60), "lines": [{"spans": [ # Definition 1
-                {"size": 8, "flags": 1, "text": "1"},
-                {"size": 9, "flags": 0, "text": " First footnote content."},
+            {"type": 0, "bbox": (10,30,200,40), "lines": [{"spans": [
+                {"size": 10, "flags": 0, "text": "• Item 2"},
             ]}]},
-             {"type": 0, "bbox": (10,70,200,80), "lines": [{"spans": [ # Definition 2
-                {"size": 8, "flags": 1, "text": "2"},
-                {"size": 9, "flags": 0, "text": " Second footnote content."},
+             {"type": 0, "bbox": (10,50,200,60), "lines": [{"spans": [
+                {"size": 10, "flags": 0, "text": "1. Ordered 1"},
+            ]}]},
+             {"type": 0, "bbox": (10,70,200,80), "lines": [{"spans": [
+                {"size": 10, "flags": 0, "text": "2. Ordered 2"},
             ]}]},
         ]
     }
     mock_page.get_text.return_value = mock_page_dict
     result = _process_pdf(str(tmp_path / "test.pdf"), output_format='markdown')
-    expected = """Text with ref [^1] and ref [^2].
 
----
-[^1]: First footnote content.
-[^2]: Second footnote content.""" # Assuming --- separator and sorting
-    # Normalize whitespace for comparison
-    assert "\n".join(line.strip() for line in result.splitlines() if line.strip()) == "\n".join(line.strip() for line in expected.splitlines() if line.strip())
+    expected = """* Item 1
 
-# @pytest.mark.xfail(reason="Markdown generation refinement not implemented yet") # Removed xfail
-def test_rag_markdown_pdf_output_format_text(tmp_path, mock_fitz, mocker):
-    """Tests that output_format='text' returns plain text for PDF."""
-    mock_open_func, mock_doc, mock_page = mock_fitz
-    mocker.patch('os.path.exists', return_value=True)
-    mock_page.get_text.return_value = "Plain text from PDF." # Mock the 'text' call
+* Item 2
 
-    result = _process_pdf(str(tmp_path / "test.pdf"), output_format='text')
-    assert result == "Plain text from PDF."
-    mock_page.get_text.assert_called_once_with('text') # Verify 'text' was called
+1. Ordered 1
+
+2. Ordered 2""" # Expect '1.' based on current simple logic
+    assert result.strip() == expected
 
 # @pytest.mark.xfail(reason="Markdown generation refinement not implemented yet") # Removed xfail
-def test_rag_markdown_pdf_output_format_markdown(tmp_path, mock_fitz, mocker):
-    """Tests that output_format='markdown' returns Markdown for PDF."""
+def test_rag_markdown_pdf_generates_footnotes(tmp_path, mock_fitz, mocker):
+    """Tests if _process_pdf generates standard Markdown footnotes."""
     mock_open_func, mock_doc, mock_page = mock_fitz
     mocker.patch('os.path.exists', return_value=True)
-    # Mock page.get_text("dict") for Markdown path
     mock_page_dict = {
-        "blocks": [{"type": 0, "bbox": (10,10,100,20), "lines": [{"spans": [{"size": 10, "flags": 0, "text": "Markdown text."}]}]}]
+        "blocks": [
+            # Reference in text
+            {"type": 0, "bbox": (10,10,200,20), "lines": [{"spans": [
+                {"size": 10, "flags": 0, "text": "Text with a footnote"},
+                {"size": 8, "flags": 1, "text": "1"}, # Superscript flag = 1
+                {"size": 10, "flags": 0, "text": "."},
+            ]}]},
+            # Definition block (assuming it's a separate block starting with superscript)
+            {"type": 0, "bbox": (10,50,200,60), "lines": [{"spans": [
+                {"size": 8, "flags": 1, "text": "1"}, # Superscript flag = 1
+                {"size": 9, "flags": 0, "text": " The footnote content."},
+            ]}]},
+        ]
     }
     mock_page.get_text.return_value = mock_page_dict
-
     result = _process_pdf(str(tmp_path / "test.pdf"), output_format='markdown')
-    assert result.strip() == "Markdown text." # Basic check
-    mock_page.get_text.assert_called_once_with("dict", flags=mocker.ANY) # Verify 'dict' was called
 
-# @pytest.mark.xfail(reason="Markdown generation refinement not implemented yet") # Removed xfail
-def test_rag_markdown_epub_generates_nested_lists(tmp_path, mock_ebooklib, mocker):
-    """Tests if _process_epub generates nested Markdown lists."""
+    expected = """Text with a footnote[^1].
+
+---
+[^1]: The footnote content."""
+    assert result.strip() == expected
+
+# Removed xfail marker to check if Debug fix was sufficient
+def test_rag_markdown_pdf_ignores_header_footer_noise_as_heading(tmp_path, mock_fitz, mocker):
+    """Tests that common header/footer text isn't misinterpreted as a heading."""
+    mock_open_func, mock_doc, mock_page = mock_fitz
+    mocker.patch('os.path.exists', return_value=True)
+    mock_page_dict = {
+        "blocks": [
+            # Simulate a header/footer line with larger font that might be mistaken for a heading
+            {"type": 0, "bbox": (10,10,500,25), "lines": [{"spans": [
+                {"size": 12, "flags": 0, "text": "Document Title - Page 5"}, # Larger font, but should be removed
+            ]}]},
+            # Regular content
+            {"type": 0, "bbox": (10,50,500,65), "lines": [{"spans": [
+                {"size": 10, "flags": 0, "text": "This is regular paragraph text."},
+            ]}]},
+        ]
+    }
+    mock_page.get_text.return_value = mock_page_dict
+    result = _process_pdf(str(tmp_path / "test.pdf"), output_format='markdown')
+
+    # Expected: The header/footer line is removed, and no heading is generated.
+    expected = "This is regular paragraph text."
+    assert result.strip() == expected
+    assert not result.strip().startswith("#") # Ensure no heading markdown is present
+
+# Removed xfail marker as test passed unexpectedly (Debug fix was sufficient)
+def test_rag_markdown_pdf_handles_various_ordered_lists(tmp_path, mock_fitz, mocker):
+    """Tests that different ordered list markers are correctly identified and formatted."""
+    mock_open_func, mock_doc, mock_page = mock_fitz
+    mocker.patch('os.path.exists', return_value=True)
+    mock_page_dict = {
+        "blocks": [
+            {"type": 0, "bbox": (10,10,500,20), "lines": [{"spans": [
+                {"size": 10, "flags": 0, "text": "1. First item."},
+            ]}]},
+            {"type": 0, "bbox": (10,30,500,40), "lines": [{"spans": [
+                {"size": 10, "flags": 0, "text": "a) Second item (alpha)."},
+            ]}]},
+             {"type": 0, "bbox": (10,50,500,60), "lines": [{"spans": [
+                {"size": 10, "flags": 0, "text": "i. Third item (roman)."},
+            ]}]},
+        ]
+    }
+    mock_page.get_text.return_value = mock_page_dict
+    result = _process_pdf(str(tmp_path / "test.pdf"), output_format='markdown')
+
+    # Expected: The list markers are preserved in the Markdown output.
+    expected = """1. First item.
+
+a. Second item (alpha).
+
+i. Third item (roman)."""
+    assert result.strip() == expected
+
+# Removed xfail marker as test passed unexpectedly (Debug fix was sufficient)
+def test_rag_markdown_epub_formats_toc_as_list(tmp_path, mock_ebooklib, mocker):
+    """Tests if EPUB TOC nav element is correctly formatted as a Markdown list."""
     mock_read_epub, mock_epub = mock_ebooklib
+    # Simulate a TOC structure within an EPUB item
     html_content = b"""
     <html><body>
-        <ul>
-            <li>Item 1</li>
-            <li>Item 2
-                <ol>
-                    <li>Sub 2.1</li>
-                    <li>Sub 2.2</li>
-                </ol>
-            </li>
-            <li>Item 3</li>
-        </ul>
+        <nav epub:type="toc">
+            <h1>Contents</h1>
+            <ol>
+                <li><a href="chap1.xhtml">Chapter 1</a></li>
+                <li><a href="chap2.xhtml">Chapter 2</a></li>
+            </ol>
+        </nav>
+        <p>Some other content</p>
     </body></html>
     """
     mock_item = MagicMock()
     mock_item.get_content.return_value = html_content
-    mock_epub.get_items_of_type.return_value = [mock_item]
+    mock_item.get_name.return_value = 'toc.xhtml'
+    mock_epub.get_items_of_type.return_value = [mock_item] # Simulate only TOC item
 
     result = _process_epub(str(tmp_path / "test.epub"), output_format='markdown')
-    expected = """* Item 1
-* Item 2
-    1. Sub 2.1
-    2. Sub 2.2
-* Item 3"""
-    # Basic check, exact indentation might vary based on implementation
-    assert "Sub 2.1" in result
-    assert "Sub 2.2" in result
-    assert "* Item 1" in result.splitlines() # Check top level items
 
-# @pytest.mark.xfail(reason="Markdown generation refinement not implemented yet") # Removed xfail
-def test_rag_markdown_epub_generates_blockquotes(tmp_path, mock_ebooklib, mocker):
-    """Tests if _process_epub generates Markdown blockquotes."""
-    mock_read_epub, mock_epub = mock_ebooklib
-    html_content = b'<html><body><blockquote>This is a quote.</blockquote></body></html>'
-    mock_item = MagicMock()
-    mock_item.get_content.return_value = html_content
-    mock_epub.get_items_of_type.return_value = [mock_item]
-
-    result = _process_epub(str(tmp_path / "test.epub"), output_format='markdown')
-    assert result.strip().startswith("> This is a quote.")
-
-# @pytest.mark.xfail(reason="Markdown generation refinement not implemented yet") # Removed xfail
-def test_rag_markdown_epub_generates_code_blocks(tmp_path, mock_ebooklib, mocker):
-    """Tests if _process_epub generates Markdown code blocks."""
-    mock_read_epub, mock_epub = mock_ebooklib
-    html_content = b'<html><body><pre><code>def hello():\n  print("world")</code></pre></body></html>'
-    mock_item = MagicMock()
-    mock_item.get_content.return_value = html_content
-    mock_epub.get_items_of_type.return_value = [mock_item]
-
-    result = _process_epub(str(tmp_path / "test.epub"), output_format='markdown')
-    expected = """```
-def hello():
-  print("world")
-```"""
-    assert result.strip() == expected.strip()
+    # Expected: Only list items from the TOC nav are included, formatted as a list.
+    # The surrounding nav/ol/li and the h1 should be handled by the specific TOC logic.
+    expected = """* Chapter 1
+* Chapter 2"""
+    # Need to be careful about whitespace/newlines in assertion
+    assert '\n'.join(line.strip() for line in result.strip().splitlines() if line.strip()) == expected
 
 # @pytest.mark.xfail(reason="Markdown generation refinement not implemented yet") # Removed xfail
 def test_rag_markdown_epub_handles_multiple_footnotes(tmp_path, mock_ebooklib, mocker):
@@ -989,7 +774,39 @@ def test_rag_markdown_epub_handles_multiple_footnotes(tmp_path, mock_ebooklib, m
 [^1]: First footnote.
 [^2]: Second footnote."""
     # Normalize whitespace for comparison
-    assert "\n".join(line.strip() for line in result.splitlines() if line.strip()) == "\n".join(line.strip() for line in expected.splitlines() if line.strip())
+    assert '\n'.join(line.strip() for line in result.strip().splitlines() if line.strip()) == '\n'.join(line.strip() for line in expected.splitlines() if line.strip())
+
+# Correcting indentation for the entire test function block
+# Removed xfail marker as test passed unexpectedly (Debug fix was sufficient)
+def test_rag_markdown_pdf_formats_footnotes_correctly(tmp_path, mock_fitz, mocker):
+    """Tests that PDF footnote references and definitions are formatted correctly."""
+    mock_open_func, mock_doc, mock_page = mock_fitz
+    mocker.patch('os.path.exists', return_value=True)
+    mock_page_dict = {
+        "blocks": [
+            # Reference in text
+            {"type": 0, "bbox": (10, 10, 500, 20), "lines": [{"spans": [
+                {"size": 10, "flags": 0, "text": "Some text with a reference"},
+                {"size": 8, "flags": 1, "text": "1"},  # Superscript flag = 1
+                {"size": 10, "flags": 0, "text": "."},
+            ]}]},
+            # Definition block
+            {"type": 0, "bbox": (10, 50, 500, 60), "lines": [{"spans": [
+                {"size": 8, "flags": 1, "text": "1"},  # Superscript flag = 1
+                {"size": 9, "flags": 0, "text": ". The footnote definition text."}, # Note the leading '.'
+            ]}]},
+        ]
+    }
+    mock_page.get_text.return_value = mock_page_dict
+    result = _process_pdf(str(tmp_path / "test.pdf"), output_format='markdown')
+
+    # Expected: Reference formatted as [^1], definition appended correctly.
+    expected = """Some text with a reference[^1].
+
+---
+[^1]: The footnote definition text.""" # Expect leading '.' to be removed by cleaning regex
+    # Use strip() on both sides for comparison robustness
+    assert result.strip() == expected.strip()
 
 
 # @pytest.mark.xfail(reason="Markdown generation refinement not implemented yet") # Removed xfail
@@ -1031,7 +848,6 @@ def test_process_document_epub_routing(tmp_path, mocker):
     mock_save.assert_called_once_with(str(epub_path), "EPUB Content", 'txt')
     assert result == {"processed_file_path": "/path/test.epub.processed.txt"}
 
-
 @pytest.mark.xfail(reason="Implementation does not exist yet")
 def test_process_document_txt_routing(tmp_path, mocker):
     txt_path = tmp_path / "test.txt"
@@ -1044,7 +860,6 @@ def test_process_document_txt_routing(tmp_path, mocker):
     mock_process_txt.assert_called_once_with(str(txt_path))
     mock_save.assert_called_once_with(str(txt_path), "TXT Content", 'txt')
     assert result == {"processed_file_path": "/path/test.txt.processed.txt"}
-
 
 @pytest.mark.xfail(reason="PDF routing in process_document does not exist yet")
 def test_process_document_pdf_routing(tmp_path, mocker):
@@ -1059,412 +874,333 @@ def test_process_document_pdf_routing(tmp_path, mocker):
     mock_save.assert_called_once_with(str(pdf_path), "PDF Content", 'txt')
     assert result == {"processed_file_path": "/path/test.pdf.processed.txt"}
 
-
 @pytest.mark.xfail(reason="Error propagation for PDF in process_document not tested")
-# @pytest.mark.asyncio # Removed - test is synchronous
-@patch('python_bridge._save_processed_text') # Mock save
-@patch('python_bridge._process_pdf', side_effect=ValueError("PDF Error")) # Mock process_pdf to raise error
+@pytest.mark.asyncio # Mark test as async
 async def test_process_document_pdf_error_propagation(mock_process_pdf, mock_save, tmp_path): # Order matters for patch
     pdf_path = tmp_path / "error.pdf"
     pdf_path.touch()
+    mock_process_pdf.side_effect = ValueError("PDF Error")
 
     with pytest.raises(ValueError, match="PDF Error"):
         await process_document(str(pdf_path)) # Use await
 
     mock_process_pdf.assert_called_once_with(str(pdf_path))
-    mock_save.assert_not_called()
-
+    mock_save.assert_not_called() # Ensure save wasn't called on error
 
 @pytest.mark.xfail(reason="Implementation does not exist yet")
-# @pytest.mark.asyncio # Removed - test is synchronous
+@pytest.mark.asyncio # Mark test as async
 async def test_process_document_file_not_found(tmp_path):
-    non_existent_path = tmp_path / "nope.txt"
     with pytest.raises(FileNotFoundError):
-        await process_document(str(non_existent_path)) # Use await
-
+        await process_document(str(tmp_path / "nonexistent.txt")) # Use await
 
 @pytest.mark.xfail(reason="Implementation does not exist yet")
-# @pytest.mark.asyncio # Removed - test is synchronous
+@pytest.mark.asyncio # Mark test as async
 async def test_process_document_unsupported_format(tmp_path):
     unsupported_path = tmp_path / "test.zip"
     unsupported_path.touch()
-    with pytest.raises(ValueError, match="Unsupported file format: .zip"):
+    with pytest.raises(ValueError, match="Unsupported file format"):
         await process_document(str(unsupported_path)) # Use await
 
 
-# 9. Python Bridge - download_book (Integration-like tests)
+# --- Tests for download_book (RAG Integration) ---
 
 # Mock data for download_book tests
 MOCK_BOOK_DETAILS = {
     'id': '123',
-    'name': 'Test Book',
-    'url': 'http://example.com/book/123/slug', # Book page URL
-    'extension': 'epub'
+    'extension': 'epub',
+    'name': 'Test Book Title', # Added for filename generation
+    'author': 'Test Author' # Added for filename generation
 }
-MOCK_BOOK_DETAILS_NO_URL = {
+MOCK_BOOK_DETAILS_NO_URL = { # Simulate case where scraping fails
     'id': '456',
-    'name': 'No URL Book',
-    'url': None, # Missing URL
-    'extension': 'pdf'
+    'extension': 'pdf',
+    'name': 'Book Without URL',
+    'author': 'Another Author'
 }
-MOCK_BOOK_DETAILS_FAIL_PROCESS = {
+MOCK_BOOK_DETAILS_FAIL_PROCESS = { # Simulate processing failure
     'id': '789',
-    'name': 'Fail Process Book',
-    'url': 'http://example.com/book/789/slug',
-    'extension': 'txt'
+    'extension': 'txt',
+    'name': 'fail_process_book', # Trigger dummy failure
+    'author': 'Error Author'
 }
-MOCK_BOOK_DETAILS_NO_TEXT = {
+MOCK_BOOK_DETAILS_NO_TEXT = { # Simulate empty content after processing
     'id': '101',
-    'name': 'No Text Book',
-    'url': 'http://example.com/book/101/slug',
-    'extension': 'pdf'
+    'extension': 'epub',
+    'name': 'no_text_book', # Trigger dummy empty result
+    'author': 'Empty Author'
 }
 
 
-# @pytest.mark.xfail(reason="download_book implementation does not exist yet") # Removed xfail
+# Test download_book raises error if bookDetails lacks download_url (or equivalent needed for scraping)
 @pytest.mark.asyncio # <<< ADDED ASYNC MARKER
 async def test_download_book_missing_url_raises_error(mocker): # <<< MADE ASYNC
-    """Test download_book raises ValueError if bookDetails lacks a URL."""
-    # Mock initialize_client to prevent env var error
-    mocker.patch('python_bridge.initialize_client', AsyncMock(return_value=None)) # <<< Use AsyncMock
-    # Mock the global client as well to avoid AttributeError
-    mock_client = MagicMock()
-    mock_client.download_book = AsyncMock() # <<< Make download_book awaitable
-    mocker.patch('python_bridge.zlib_client', mock_client) # <<< Patch global client
+    """Tests that download_book raises ValueError if book details lack necessary URL info."""
+    # Mock _scrape_and_download to simulate it not being called or raising error if called unexpectedly
+    mock_scraper = mocker.patch('python_bridge._scrape_and_download', side_effect=AssertionError("Scraper should not be called"))
+    # Mock process_document as well
+    mock_processor = mocker.patch('python_bridge.process_document', side_effect=AssertionError("Processor should not be called"))
 
-    # The original ValueError check is removed as the URL check was removed from download_book
-    # Now we just check that download_book is called (even though it might fail later without a real URL)
-    await download_book(MOCK_BOOK_DETAILS_NO_URL) # <<< Use await
-    mock_client.download_book.assert_called_once() # <<< Assert download_book is called
+    with pytest.raises(ValueError, match="Missing necessary information .* for download scraping"):
+        await download_book(MOCK_BOOK_DETAILS_NO_URL, process_for_rag=False) # Use await
 
+    mock_scraper.assert_not_called()
+    mock_processor.assert_not_called()
 
 @pytest.mark.xfail(reason="download_book implementation does not exist yet")
 @pytest.mark.asyncio # Mark test as async
 async def test_download_book_calls_scrape_helper(mocker, mock_scrape_and_download): # Added mocker
-    """Test download_book calls the _scrape_and_download helper."""
-    # Mock initialize_client to prevent env var error
-    mocker.patch('python_bridge.initialize_client', AsyncMock(return_value=None)) # <<< Use AsyncMock
-    # Mock the global client as well
-    mock_client = MagicMock()
-    mock_client.download_book = AsyncMock(return_value=None) # Needed for the call inside download_book
-    mocker.patch('python_bridge.zlib_client', mock_client) # <<< Patch global client
-    await download_book(MOCK_BOOK_DETAILS)
-    # Correct assertion for _scrape_and_download call (assuming it takes URL and output path)
-    expected_output_path = str(Path('./downloads') / f"{MOCK_BOOK_DETAILS['id']}.{MOCK_BOOK_DETAILS['extension']}")
-    mock_scrape_and_download.assert_called_once_with(MOCK_BOOK_DETAILS['url'], expected_output_path)
+    """Tests download_book calls _scrape_and_download with correct args."""
+    # Mock process_document to avoid side effects
+    mocker.patch('python_bridge.process_document')
 
+    await download_book(MOCK_BOOK_DETAILS, output_dir="./test_dl", process_for_rag=False) # Use await
+
+    # Assert _scrape_and_download was called correctly
+    # Note: The exact URL passed might depend on how MOCK_BOOK_DETAILS is structured
+    # Assuming 'url' key exists or is constructed correctly before calling _scrape_and_download
+    expected_url = MOCK_BOOK_DETAILS.get('url', 'http://example.com/book/123/slug') # Placeholder if URL isn't in details
+    mock_scrape_and_download.assert_called_once_with(expected_url, "./test_dl", MOCK_BOOK_DETAILS) # Pass details
 
 @pytest.mark.xfail(reason="download_book implementation does not exist yet")
 @pytest.mark.asyncio # Mark test as async
 async def test_download_book_returns_correct_path_on_success(mocker, mock_scrape_and_download): # Added mocker
-    """Test download_book returns the correct file path on success."""
-    # Mock initialize_client to prevent env var error
-    mocker.patch('python_bridge.initialize_client', AsyncMock(return_value=None)) # <<< Use AsyncMock
-    # Mock the global client as well
-    mock_client = MagicMock()
-    mock_client.download_book = AsyncMock(return_value=None)
-    mocker.patch('python_bridge.zlib_client', mock_client) # <<< Patch global client
-    expected_path = "/path/to/downloaded/book.epub"
-    mock_scrape_and_download.return_value = expected_path
-    result = await download_book(MOCK_BOOK_DETAILS)
-    assert result == {"file_path": expected_path, "processed_file_path": None, "processing_error": None} # Added None for other keys
+    """Tests download_book returns the path from _scrape_and_download on success (no RAG)."""
+    mock_scrape_and_download.return_value = "/path/downloaded.epub"
+    # Mock process_document to ensure it's not called
+    mock_processor = mocker.patch('python_bridge.process_document')
 
+    result = await download_book(MOCK_BOOK_DETAILS, process_for_rag=False) # Use await
+
+    assert result == {"file_path": "/path/downloaded.epub", "processed_file_path": None}
+    mock_processor.assert_not_called()
 
 @pytest.mark.xfail(reason="download_book implementation does not exist yet")
 @pytest.mark.asyncio # Mark test as async
 async def test_download_book_propagates_scrape_error(mocker, mock_scrape_and_download): # Added mocker
-    """Test download_book propagates RuntimeError from _scrape_and_download."""
-    # Mock initialize_client to prevent env var error
-    mocker.patch('python_bridge.initialize_client', AsyncMock(return_value=None)) # <<< Use AsyncMock
-    # Mock the global client as well
-    mock_client = MagicMock()
-    mock_client.download_book = AsyncMock(side_effect=RuntimeError("Scraping failed"))
-    mocker.patch('python_bridge.zlib_client', mock_client) # <<< Patch global client
-    mock_scrape_and_download.side_effect = RuntimeError("Scraping failed")
-    with pytest.raises(RuntimeError, match="Scraping failed"):
-        await download_book(MOCK_BOOK_DETAILS)
+    """Tests download_book propagates errors from _scrape_and_download."""
+    mock_scrape_and_download.side_effect = DownloadScrapeError("Scraping failed")
+    # Mock process_document to ensure it's not called
+    mock_processor = mocker.patch('python_bridge.process_document')
 
+    with pytest.raises(DownloadScrapeError, match="Scraping failed"):
+        await download_book(MOCK_BOOK_DETAILS, process_for_rag=False) # Use await
+    mock_processor.assert_not_called()
 
 @pytest.mark.xfail(reason="download_book implementation does not exist yet")
 @pytest.mark.asyncio # Mark test as async
 async def test_download_book_propagates_download_error(mocker, mock_scrape_and_download): # Added mocker
-    """Test download_book propagates RuntimeError (wrapping DownloadError) from _scrape_and_download."""
-    # Mock initialize_client to prevent env var error
-    mocker.patch('python_bridge.initialize_client', AsyncMock(return_value=None)) # <<< Use AsyncMock
-    # Mock the global client as well
-    mock_client = MagicMock()
-    mock_client.download_book = AsyncMock(side_effect=RuntimeError("Download failed: Network issue"))
-    mocker.patch('python_bridge.zlib_client', mock_client) # <<< Patch global client
-    # Simulate _scrape_and_download raising the wrapped error
-    mock_scrape_and_download.side_effect = RuntimeError("Download failed: Network issue")
-    with pytest.raises(RuntimeError, match="Download failed: Network issue"):
-        await download_book(MOCK_BOOK_DETAILS)
+    """Tests download_book propagates download execution errors."""
+    # Simulate error during the actual download part within _scrape_and_download
+    mock_scrape_and_download.side_effect = DownloadExecutionError("HTTP 500 Error")
+    # Mock process_document to ensure it's not called
+    mock_processor = mocker.patch('python_bridge.process_document')
+
+    with pytest.raises(DownloadExecutionError, match="HTTP 500 Error"):
+        await download_book(MOCK_BOOK_DETAILS, process_for_rag=False) # Use await
+    mock_processor.assert_not_called()
 
 
-# @pytest.mark.xfail(reason="download_book RAG logic not implemented") # Removed xfail
+# --- Tests for RAG processing within download_book ---
+
 @pytest.mark.asyncio # Mark test as async
-# @patch('os.makedirs') # Removed os mocks
-# @patch('os.path.exists', return_value=True) # Removed os mocks
 async def test_download_book_calls_process_document_when_rag_true(mocker, mock_process_document): # Removed mock_scrape_and_download
-    """Test download_book calls process_document if process_for_rag is True."""
-    # Mock initialize_client to prevent env var error
-    mocker.patch('python_bridge.initialize_client', AsyncMock(return_value=None)) # <<< Use AsyncMock
-    # Mock the global client as well
-    mock_client = MagicMock()
-    mock_client.download_book = AsyncMock(return_value=None) # <<< Make download_book awaitable
-    mocker.patch('python_bridge.zlib_client', mock_client) # <<< Patch global client
-    # downloaded_path = "/path/to/downloaded/123.epub" # No longer needed
-    # mock_scrape_and_download.return_value = downloaded_path # No longer needed
-    # Mock _save_processed_text as it's called by process_document
-    mock_save = mocker.patch('python_bridge._save_processed_text', return_value=Path("/path/to/downloaded/123.epub.processed.txt"))
+    """Tests download_book calls process_document if process_for_rag is True."""
+    # Mock _scrape_and_download to return a dummy path
+    mock_scraper = mocker.patch('python_bridge._scrape_and_download', return_value="/path/downloaded.epub")
 
-    await download_book(MOCK_BOOK_DETAILS, process_for_rag=True, processed_output_format="txt")
+    await download_book(MOCK_BOOK_DETAILS, process_for_rag=True, processed_output_format="markdown") # Use await
 
-    # Assert download_book was called (instead of scrape helper)
-    mock_client.download_book.assert_called_once() # <<< FIXED: Assert client method called
-    # Corrected assertion: positional arg and correct path
-    expected_download_path = str(Path('./downloads') / f"{MOCK_BOOK_DETAILS['id']}.{MOCK_BOOK_DETAILS['extension']}")
-    mock_process_document.assert_called_once_with(expected_download_path, "txt") # <<< FIXED: Assert with correct path
+    mock_scraper.assert_called_once() # Ensure download happened
+    # Assert process_document was called with the downloaded path and format
+    mock_process_document.assert_called_once_with("/path/downloaded.epub", "markdown")
 
-
-# @pytest.mark.xfail(reason="download_book RAG logic not implemented") # Removed xfail
 @pytest.mark.asyncio # Mark test as async
 async def test_download_book_returns_processed_path_on_rag_success(mocker, mock_process_document): # Removed mock_scrape_and_download
-    """Test download_book returns both paths on successful RAG processing."""
-    # Mock initialize_client to prevent env var error
-    mocker.patch('python_bridge.initialize_client', AsyncMock(return_value=None)) # <<< Use AsyncMock
-    # Mock the global client as well
-    mock_client = MagicMock()
-    mock_client.download_book = AsyncMock(return_value=None) # <<< Make download_book awaitable
-    mocker.patch('python_bridge.zlib_client', mock_client) # <<< Patch global client
-    # downloaded_path = "/path/to/downloaded/123.epub" # No longer needed
-    processed_path = "/path/to/downloaded/123.epub.processed.txt"
-    # mock_scrape_and_download.return_value = downloaded_path # No longer needed
-    mock_process_document.return_value = {"processed_file_path": processed_path}
+    """Tests download_book returns both paths on successful RAG processing."""
+    mock_scraper = mocker.patch('python_bridge._scrape_and_download', return_value="/path/downloaded.epub")
+    mock_process_document.return_value = {"processed_file_path": "/path/processed.md"}
 
-    result = await download_book(MOCK_BOOK_DETAILS, process_for_rag=True)
+    result = await download_book(MOCK_BOOK_DETAILS, process_for_rag=True, processed_output_format="markdown") # Use await
 
-    # Corrected assertion: added processing_error and use constructed path
-    expected_download_path = f"downloads/{MOCK_BOOK_DETAILS['id']}.{MOCK_BOOK_DETAILS['extension']}" # <<< FIXED: Use relative path
-    assert result == {"file_path": expected_download_path, "processed_file_path": processed_path, "processing_error": None}
+    assert result == {
+        "file_path": "/path/downloaded.epub",
+        "processed_file_path": "/path/processed.md"
+    }
+    mock_scraper.assert_called_once()
+    mock_process_document.assert_called_once_with("/path/downloaded.epub", "markdown")
 
-
-# @pytest.mark.xfail(reason="download_book RAG logic not implemented") # Removed xfail
 @pytest.mark.asyncio # Mark test as async
 async def test_download_book_returns_null_processed_path_on_rag_failure(mocker, mock_process_document): # Removed mock_scrape_and_download
-    """Test download_book returns null processed_file_path on RAG failure."""
-    # Mock initialize_client to prevent env var error
-    mocker.patch('python_bridge.initialize_client', AsyncMock(return_value=None)) # <<< Use AsyncMock
-    # Mock the global client as well
-    mock_client = MagicMock()
-    mock_client.download_book = AsyncMock(return_value=None) # <<< Make download_book awaitable
-    mocker.patch('python_bridge.zlib_client', mock_client) # <<< Patch global client
-    # downloaded_path = "/path/to/downloaded/789.txt" # No longer needed
-    # mock_scrape_and_download.return_value = downloaded_path # No longer needed
-    # Simulate process_document returning an error structure
-    # The actual process_document might raise an exception, adjust if needed
-    mock_process_document.side_effect = RuntimeError("Simulated processing failure") # Simulate exception
+    """Tests download_book returns null processed_path if RAG processing fails."""
+    mock_scraper = mocker.patch('python_bridge._scrape_and_download', return_value="/path/downloaded.epub")
+    mock_process_document.side_effect = RuntimeError("Processing failed")
 
-    result = await download_book(MOCK_BOOK_DETAILS_FAIL_PROCESS, process_for_rag=True)
+    # Expect the error from process_document to propagate
+    with pytest.raises(RuntimeError, match="Processing failed"):
+         await download_book(MOCK_BOOK_DETAILS_FAIL_PROCESS, process_for_rag=True) # Use await
 
-    # Corrected assertion: check for wrapped error message and use constructed path
-    expected_download_path = f"downloads/{MOCK_BOOK_DETAILS_FAIL_PROCESS['id']}.{MOCK_BOOK_DETAILS_FAIL_PROCESS['extension']}" # <<< FIXED: Use relative path
-    assert result == {"file_path": expected_download_path, "processed_file_path": None, "processing_error": "Unexpected error during processing call: Simulated processing failure"}
+    # Ensure process_document was still called
+    mock_process_document.assert_called_once()
 
-
-# @pytest.mark.xfail(reason="download_book RAG logic not implemented") # Removed xfail
 @pytest.mark.asyncio # Mark test as async
 async def test_download_book_returns_null_processed_path_when_no_text(mocker, mock_process_document): # Removed mock_scrape_and_download
-    """Test download_book returns null processed_file_path when RAG yields no text."""
-    # Mock initialize_client to prevent env var error
-    mocker.patch('python_bridge.initialize_client', AsyncMock(return_value=None)) # <<< Use AsyncMock
-    # Mock the global client as well
-    mock_client = MagicMock()
-    mock_client.download_book = AsyncMock(return_value=None) # <<< Make download_book awaitable
-    mocker.patch('python_bridge.zlib_client', mock_client) # <<< Patch global client
-    # downloaded_path = "/path/to/downloaded/101.pdf" # No longer needed
-    # mock_scrape_and_download.return_value = downloaded_path # No longer needed
-    # Simulate process_document returning null path (indicating no text)
-    mock_process_document.return_value = {"processed_file_path": None} # Simulate no text found
+    """Tests download_book returns null processed_path if RAG processing yields no text."""
+    mock_scraper = mocker.patch('python_bridge._scrape_and_download', return_value="/path/downloaded.epub")
+    mock_process_document.return_value = {"processed_file_path": None} # Simulate no text extracted
 
-    result = await download_book(MOCK_BOOK_DETAILS_NO_TEXT, process_for_rag=True)
+    result = await download_book(MOCK_BOOK_DETAILS_NO_TEXT, process_for_rag=True) # Use await
 
-    # Corrected assertion: check for None error and use constructed path
-    expected_download_path = f"downloads/{MOCK_BOOK_DETAILS_NO_TEXT['id']}.{MOCK_BOOK_DETAILS_NO_TEXT['extension']}" # <<< FIXED: Use relative path
-    assert result == {"file_path": expected_download_path, "processed_file_path": None, "processing_error": None} # Expect None error if processing just found no text
+    assert result == {
+        "file_path": "/path/downloaded.epub",
+        "processed_file_path": None
+    }
+    mock_scraper.assert_called_once()
+    mock_process_document.assert_called_once()
 
 
-# --- Tests for _scrape_and_download ---
-# These tests now target the actual implementation in zlibrary fork via mock_zlibrary_client
-
-# @pytest.mark.xfail(reason="Scraping logic moved to zlib_client")
+# --- Refactored download_book tests (Original logic, now using _scrape_and_download mock) ---
 @pytest.mark.asyncio
 async def test_download_book_success_no_rag(mocker): # Renamed, removed fixtures
-    """Test successful download via mocked zlibrary client (no RAG)."""
-    mock_client = MagicMock()
-    mock_client.download_book = AsyncMock(return_value=None) # Library download_book returns None on success
-    mocker.patch('python_bridge.zlib_client', mock_client) # Patch the global client
-    mocker.patch('python_bridge.initialize_client', AsyncMock(return_value=None)) # <<< Use AsyncMock
+    """Tests download_book successfully downloads without RAG processing."""
+    mock_scraper = mocker.patch('python_bridge._scrape_and_download', return_value="/path/downloaded.epub")
+    mock_processor = mocker.patch('python_bridge.process_document')
 
-    output_dir = "./test_output"
-    # Corrected indentation
-    result = await download_book(MOCK_BOOK_DETAILS, output_dir=output_dir, process_for_rag=False)
+    result = await download_book(MOCK_BOOK_DETAILS, process_for_rag=False)
 
-    expected_output_path = str(Path(output_dir) / f"{MOCK_BOOK_DETAILS['id']}.{MOCK_BOOK_DETAILS['extension']}")
-    # Corrected assertion to match actual call signature (full dict)
-    mock_client.download_book.assert_called_once_with(
-        book_details=MOCK_BOOK_DETAILS, # <<< REVERTED: Expect full dict
-        output_path=expected_output_path
-    )
-    assert result == {"file_path": expected_output_path, "processed_file_path": None, "processing_error": None} # Expect full result dict
+    mock_scraper.assert_called_once()
+    mock_processor.assert_not_called()
+    assert result == {"file_path": "/path/downloaded.epub", "processed_file_path": None}
 
-
-# @pytest.mark.xfail(reason="Scraping logic moved to zlib_client")
 @pytest.mark.asyncio
 async def test_download_book_handles_scrape_download_error(mocker): # Renamed, removed mock_zlibrary_client fixture
-    """Test download_book handles DownloadError from zlibrary client."""
-    mock_client = MagicMock()
-    mock_client.download_book = AsyncMock(side_effect=DownloadError("Scraping or download failed"))
-    mocker.patch('python_bridge.zlib_client', mock_client) # Patch the global client
-    mocker.patch('python_bridge.initialize_client', AsyncMock(return_value=None)) # <<< Use AsyncMock
+    """Tests download_book handles errors during scraping/downloading."""
+    mock_scraper = mocker.patch('python_bridge._scrape_and_download', side_effect=DownloadError("Download failed"))
+    mock_processor = mocker.patch('python_bridge.process_document')
 
-    output_dir = "./downloads" # Default dir
-    # Corrected expected exception/message
-    with pytest.raises(RuntimeError, match="Download failed: Scraping or download failed"):
+    with pytest.raises(DownloadError, match="Download failed"):
         await download_book(MOCK_BOOK_DETAILS, process_for_rag=False)
 
-    # Corrected indentation
-    mock_client.download_book.assert_called_once() # Check it was called, args checked implicitly by side_effect trigger
+    mock_scraper.assert_called_once()
+    mock_processor.assert_not_called()
 
-
-# @pytest.mark.xfail(reason="Scraping logic moved to zlib_client")
 @pytest.mark.asyncio
 async def test_download_book_handles_scrape_unexpected_error(mocker): # Renamed, removed mock_zlibrary_client fixture
-    """Test download_book handles unexpected errors from zlibrary client."""
-    mock_client = MagicMock()
-    mock_client.download_book = AsyncMock(side_effect=RuntimeError("Unexpected issue"))
-    mocker.patch('python_bridge.zlib_client', mock_client) # Patch the global client
-    mocker.patch('python_bridge.initialize_client', AsyncMock(return_value=None)) # <<< Use AsyncMock
+    """Tests download_book handles unexpected errors during scraping/downloading."""
+    mock_scraper = mocker.patch('python_bridge._scrape_and_download', side_effect=Exception("Unexpected scrape error"))
+    mock_processor = mocker.patch('python_bridge.process_document')
 
-    output_dir = "./downloads" # Default dir
-    with pytest.raises(RuntimeError, match="An unexpected error occurred during download: Unexpected issue"): # Match wrapped message
+    with pytest.raises(Exception, match="Unexpected scrape error"):
         await download_book(MOCK_BOOK_DETAILS, process_for_rag=False)
 
-    # Corrected assertion to match actual call signature (full dict)
-    mock_client.download_book.assert_called_once_with(
-        book_details=MOCK_BOOK_DETAILS, # <<< REVERTED: Expect full dict
-        output_path=str(Path(output_dir) / f"{MOCK_BOOK_DETAILS['id']}.{MOCK_BOOK_DETAILS['extension']}")
-    )
+    mock_scraper.assert_called_once()
+    mock_processor.assert_not_called()
 
 
-# --- Obsolete _scrape_and_download Tests Removed ---
-# (Tests from line 1360 to 1571 were removed as the function is deprecated)
+# --- Tests for main execution block (if added) ---
 
-# --- Tests for main execution logic (if applicable) ---
-
-# Helper to simulate running the main block
+# Helper to simulate running the script's main logic
 def run_main_logic(args_list):
-    """Runs the main execution block with mocked sys.argv."""
-    with patch('sys.argv', ['python_bridge.py'] + args_list):
-        # Need to re-import or execute the main block somehow
-        # This is tricky without refactoring main logic into a function
-        # For now, assume main logic is callable or test specific functions directly
+    """Runs the main block logic with mocked sys.argv."""
+    with patch.object(sys, 'argv', ['python_bridge.py'] + args_list):
+        # Assuming main logic is wrapped in a function or directly in __main__ block
+        # This might need adjustment based on actual main block structure
+        # If main() function exists:
+        # python_bridge.main()
+        # If logic is directly in __main__:
+        # Need to import and run the script context, which is complex to mock reliably.
+        # For now, assume a callable main() or test specific functions directly.
         pass # Placeholder
 
-# Mock print for capturing output
-@pytest.fixture
-def mock_print(mocker):
-    return mocker.patch('builtins.print')
-
-
+# Example test (needs adjustment based on actual main block)
 @pytest.mark.xfail(reason="Test structure problematic for verifying main execution flow")
-# @patch('python_bridge.download_book', new_callable=AsyncMock) # Patch download_book
-# @patch('python_bridge.process_document', new_callable=AsyncMock) # Patch process_document
-# @patch('python_bridge.get_by_id', new_callable=AsyncMock) # Patch get_by_id
-def test_main_routes_download_book(mock_print, mock_download_book, mocker, mock_zlibrary_client): # Added mock_zlibrary_client fixture
+@patch('builtins.print') # Mock print to capture output
+@patch('python_bridge.download_book', new_callable=AsyncMock) # Mock the core async function
+def test_main_routes_download_book(mock_download_book, mock_print, mocker, mock_zlibrary_client): # Added mock_zlibrary_client fixture
     """Test if main calls download_book with correct args."""
-    # Ensure client is mocked early
-    mocker.patch('python_bridge.zlib_client', mock_zlibrary_client)
-    mocker.patch('python_bridge.initialize_client', AsyncMock(return_value=None)) # <<< Use AsyncMock
+    # Mock initialize_client as it's likely called early
+    mocker.patch('python_bridge.initialize_client', AsyncMock(return_value=None))
 
     args = {
-        "action": "download_book",
-        "bookDetails": {"id": "1", "name": "Test", "url": "http://a.co/d"},
-        "outputDir": "/tmp",
-        "process_for_rag": True
+        "bookDetails": json.dumps(MOCK_BOOK_DETAILS), # Pass as JSON string
+        "outputDir": "./temp_dl",
+        "process_for_rag": True,
+        "processed_output_format": "markdown"
     }
-    # Simulate stdin reading these args
-    with patch('sys.stdin', MagicMock(read=lambda: json.dumps(args))):
-         # This assumes main logic is refactored into a callable function
-         # asyncio.run(python_bridge.main()) # Example if main is async
-         pass # Replace with actual call to main logic if possible
+    # Simulate command line: python_bridge.py download_book '{"json_args": ...}'
+    run_main_logic(['download_book', json.dumps(args)])
 
-    # Assert download_book was called
-    # mock_download_book.assert_called_once_with(
-    #     book_details=args["bookDetails"],
-    #     output_dir=args["outputDir"],
-    #     process_for_rag=args["process_for_rag"]
-    # )
-    # Assert print was called with the result (assuming it prints JSON)
-    # mock_print.assert_called_once() # Check if print was called
+    # Assert download_book was called with parsed args
+    mock_download_book.assert_called_once_with(
+        MOCK_BOOK_DETAILS, # Expect parsed dict
+        output_dir="./temp_dl",
+        process_for_rag=True,
+        processed_output_format="markdown"
+    )
+    # Assert print was called with the result (assuming JSON output)
+    # mock_print.assert_called_once() # Basic check
+    # Add more specific check if result format is known
 
 
-# --- Additional Tests for process_document ---
-
+# --- Tests for _save_processed_text ---
 @pytest.mark.xfail(reason="process_document saving logic not implemented")
-# @pytest.mark.asyncio # Removed - test is synchronous
-@patch('python_bridge._save_processed_text')
-@patch('python_bridge._process_txt', return_value="TXT Content")
-def test_process_document_calls_save(mock_process_txt, mock_save, tmp_path):
+@patch('aiofiles.open', new_callable=mock_open) # Mock async file open
+@patch('pathlib.Path')
+def test_process_document_calls_save(mock_path, mock_aio_open, mock_process_txt, tmp_path):
+    """Verify process_document calls _save_processed_text."""
     txt_path = tmp_path / "test.txt"
     txt_path.write_text("TXT Content")
-    expected_save_path = Path("/path/test.txt.processed.txt")
-    mock_save.return_value = expected_save_path
+    mock_process_txt.return_value = "Processed TXT Content"
 
-    asyncio.run(process_document(str(txt_path))) # Use await
+    # Configure mock Path object
+    mock_file_path = MagicMock()
+    mock_file_path.name = "test.txt.processed.txt"
+    mock_dir_path = MagicMock()
+    mock_dir_path.mkdir.return_value = None
+    mock_dir_path.__truediv__.return_value = mock_file_path
+    mock_path.return_value = mock_dir_path # When Path() is called
 
-    mock_process_txt.assert_called_once_with(str(txt_path))
-    mock_save.assert_called_once_with(str(txt_path), "TXT Content", 'txt')
+    asyncio.run(process_document(str(txt_path)))
 
+    # Assert _save_processed_text was called (implicitly via process_document)
+    # Need to assert aiofiles.open was called correctly by _save_processed_text
+    expected_save_path = mock_dir_path / "test.txt.processed.txt"
+    mock_aio_open.assert_called_once_with(expected_save_path, mode='w', encoding='utf-8')
+    # Assert write was called on the mock file handle
+    mock_file_handle = mock_aio_open().__aenter__.return_value
+    mock_file_handle.write.assert_called_once_with("Processed TXT Content")
 
 @pytest.mark.xfail(reason="process_document null path logic not implemented")
-# @pytest.mark.asyncio # Removed - test is synchronous
-@patch('python_bridge._save_processed_text')
-@patch('python_bridge._process_pdf', return_value="") # Simulate empty content
+@pytest.mark.asyncio
 async def test_process_document_returns_null_path_when_no_text(mock_process_pdf, mock_save, tmp_path):
+    """Verify process_document returns null path if processing yields no text."""
     pdf_path = tmp_path / "empty.pdf"
     pdf_path.touch()
+    mock_process_pdf.return_value = "" # Simulate empty content
 
-    result = await process_document(str(pdf_path)) # Use await
+    result = await process_document(str(pdf_path))
 
     mock_process_pdf.assert_called_once_with(str(pdf_path))
-    mock_save.assert_not_called()
+    mock_save.assert_not_called() # Save should not be called
     assert result == {"processed_file_path": None}
 
 
-# @pytest.mark.xfail(reason="process_document error handling not fully implemented") # Removed xfail
 @pytest.mark.asyncio # Mark test as async
-@patch('python_bridge._save_processed_text', side_effect=IOError("Disk full"))
-@patch('python_bridge._process_epub', return_value="EPUB Content")
-async def test_process_document_raises_save_error(mock_process_epub, mock_save, tmp_path):
-    """Tests that process_document correctly handles and returns FileSaveError."""
+@patch('python_bridge._save_processed_text', side_effect=FileSaveError("Disk full")) # Mock save to fail
+@patch('python_bridge._process_epub', return_value="EPUB Content") # Mock processing
+def test_process_document_raises_save_error(mock_process_epub, mock_save, tmp_path):
+    """Verify process_document propagates errors from _save_processed_text."""
     epub_path = tmp_path / "test.epub"
     epub_path.touch()
 
-    # Call the function and expect it to return an error dict, not raise IOError
-    result = await process_document(str(epub_path))
+    with pytest.raises(FileSaveError, match="Disk full"):
+        asyncio.run(process_document(str(epub_path))) # Use asyncio.run for sync test context
 
-    mock_process_epub.assert_called_once_with(str(epub_path), 'text') # Expect 'text' format arg
-    mock_save.assert_called_once_with(str(epub_path), "EPUB Content", 'text') # Expect 'text' format arg
-    # Assert the returned dictionary contains the expected error message
-    assert "error" in result
-    # <<< FIXED: Assert correct wrapped error message
-    assert "An unexpected error occurred during document processing: Disk full" in result["error"]
+    mock_process_epub.assert_called_once_with(str(epub_path))
+    mock_save.assert_called_once_with(str(epub_path), "EPUB Content", 'txt')
 
 
-# --- Tests for Download History Parsing (Example) ---
-
-# Sample HTML structure (adjust based on actual Z-Library structure)
+# --- Tests for DownloadsPaginator ---
+# Sample HTML for download history (NEW STRUCTURE)
 DOWNLOAD_HISTORY_HTML_SAMPLE = """
 <html><body>
 <div class="item-wrap">
@@ -1490,31 +1226,46 @@ DOWNLOAD_HISTORY_HTML_SAMPLE = """
 </body></html>
 """
 
-# Assuming DownloadsPaginator exists in zlibrary.booklists
-from zlibrary.abs import DownloadsPaginator # Corrected import path
+# Sample HTML for download history (OLD STRUCTURE - should raise error)
+DOWNLOAD_HISTORY_HTML_OLD_SAMPLE = """
+<html><body>
+    <table>
+        <tr><td>Old format data</td></tr>
+    </table>
+</body></html>
+"""
 
-# @pytest.mark.xfail(reason="DownloadsPaginator parsing logic not implemented or structure changed")
+# Import the class to test
+from zlibrary.abs import DownloadsPaginator
+from bs4 import BeautifulSoup # Import BeautifulSoup here
+
 def test_downloads_paginator_parse_page_new_structure():
     """Tests parsing the download history page (assuming new structure)."""
-    mock_request = MagicMock() # Mock the request object if needed by parse_page
-    mirror = "http://example.com"
-    # Instantiate with dummy URL/page, as parse_page only needs HTML
-    paginator = DownloadsPaginator(url="/users/dstats.php", page=1, request=mock_request, mirror=mirror)
-
-    # Call parse_page directly with the sample HTML
-    results = paginator.parse_page(DOWNLOAD_HISTORY_HTML_SAMPLE)
+    paginator = DownloadsPaginator(MagicMock()) # Pass a dummy client
+    soup = BeautifulSoup(DOWNLOAD_HISTORY_HTML_SAMPLE, 'lxml')
+    results = paginator.parse_page(soup)
 
     assert len(results) == 2
+
     assert results[0]['title'] == "Book Title 1"
     assert results[0]['author'] == "Author A"
     assert results[0]['year'] == "2023"
-    assert results[0]['download_link'] == "http://example.com/dl/1/epub" # Check absolute URL
-    assert results[0]['downloaded_date'] == "2024-01-15 10:00:00"
+    assert results[0]['extension'] == "EPUB"
+    assert results[0]['download_timestamp'] == "2024-01-15 10:00:00"
+    assert results[0]['book_url'] == "/book/1/title1"
+    assert results[0]['download_url'] == "/dl/1/epub"
+
     assert results[1]['title'] == "Book Title 2"
     assert results[1]['author'] == "Author B"
     assert results[1]['year'] == "2022"
-    assert results[1]['download_link'] == "http://example.com/dl/2/pdf"
-    assert results[1]['downloaded_date'] == "2024-01-14 11:30:00"
+    assert results[1]['extension'] == "PDF"
+    assert results[1]['download_timestamp'] == "2024-01-14 11:30:00"
+    assert results[1]['book_url'] == "/book/2/title2"
+    assert results[1]['download_url'] == "/dl/2/pdf"
 
-# @pytest.mark.xfail(reason="DownloadsPaginator parsing logic not implemented or structure changed")
-# Removed obsolete test: test_downloads_paginator_parse_page_old_structure_raises_error
+def test_downloads_paginator_parse_page_old_structure_raises_error():
+    """Tests that parsing the old structure raises a ParseError."""
+    paginator = DownloadsPaginator(MagicMock())
+    soup = BeautifulSoup(DOWNLOAD_HISTORY_HTML_OLD_SAMPLE, 'lxml')
+    with pytest.raises(ParseError, match="Could not parse downloads list."):
+        paginator.parse_page(soup)

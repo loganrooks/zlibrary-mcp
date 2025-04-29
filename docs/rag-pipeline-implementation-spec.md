@@ -37,6 +37,7 @@ Refer to the [RAG Pipeline Architecture (v2)](./architecture/rag-pipeline.md), [
     const DownloadBookToFileOutputSchema = z.object({
         file_path: z.string().describe("The absolute path to the original downloaded file"),
         processed_file_path: z.string().optional().nullable().describe("The absolute path to the file containing processed text (if process_for_rag was true and text was extracted), or null otherwise.") // Updated field, allow null
+processed_output_format: z.string().optional().default("txt").describe("Desired format for the processed output file ('txt' or 'markdown', default: 'txt')")
     });
     ```
 
@@ -58,6 +59,7 @@ Refer to the [RAG Pipeline Architecture (v2)](./architecture/rag-pipeline.md), [
       // Allow null if processing yields no text (e.g., image PDF)
       processed_file_path: z.string().nullable().describe("The absolute path to the file containing extracted and processed plain text content, or null if no text was extracted.")
     });
+output_format: z.string().optional().default("txt").describe("Desired format for the processed output file ('txt' or 'markdown', default: 'txt')")
     ```
 
 ## 3. Tool Registration (`index.ts`)
@@ -291,6 +293,7 @@ def _html_to_text(html_content):
 
 def _process_epub(file_path: Path) -> str:
     """Processes an EPUB file to extract plain text. Returns text string."""
+*   **Markdown Generation:** When `output_format='markdown'`, this function uses `BeautifulSoup` to parse the EPUB's HTML content. It maps relevant HTML tags (`h1-h6`, lists, etc.) and EPUB-specific footnote elements (`epub:type="noteref/footnote"`) to their Markdown equivalents. See the [RAG Markdown Generation Specification](./rag-markdown-generation-spec.md) for detailed logic.
     if not EBOOKLIB_AVAILABLE:
         raise ImportError("Required library 'ebooklib' is not installed.")
     logging.info(f"Processing EPUB file: {file_path}")
@@ -335,6 +338,7 @@ def _process_pdf(file_path: Path) -> str:
     if not PYMUPDF_AVAILABLE:
         raise ImportError("Required library 'PyMuPDF' is not installed.")
     logging.info(f"Processing PDF: {file_path}")
+*   **Markdown Generation:** When `output_format='markdown'`, this function uses `PyMuPDF`'s dictionary output (`page.get_text("dict")`) and heuristic analysis (font size, flags, position) to detect and format structural elements like headings, lists, and footnotes into Markdown. See the [RAG Markdown Generation Specification](./rag-markdown-generation-spec.md) for detailed logic.
     doc = None
     try:
         doc = fitz.open(str(file_path))

@@ -1,3 +1,15 @@
+## XFail Test Reviews
+<!-- Entries below should be added reverse chronologically (newest first) -->
+
+### XFail Review: Pytest Bridge Tests - [2025-04-29 15:26:30]
+- **Scope**: `__tests__/python/test_python_bridge.py`
+- **Trigger**: Task 2025-04-29 15:24:22
+- **Tests Reviewed**:
+    - `test_main_routes_download_book` (Line 1049): Reason: "Test structure problematic for verifying main execution flow". Status: Still XFAIL. Reason Valid.
+    - `test_downloads_paginator_parse_page_new_structure` (Line 1253): Reason: "DownloadsPaginator constructor likely changed in vendored lib, out of scope.". Status: Still XFAIL. Reason Valid.
+    - `test_downloads_paginator_parse_page_old_structure_raises_error` (Line 1271): Reason: "DownloadsPaginator constructor likely changed in vendored lib, out of scope.". Status: Still XFAIL. Reason Valid.
+- **Outcome**: No changes required. All reviewed xfail tests remain xfailed for valid reasons.
+- **Related**: [Test Execution Results 2025-04-29 15:26:02]
 ## Verification Reviews
 <!-- Entries below should be added reverse chronologically (newest first) -->
 
@@ -188,6 +200,47 @@
 - **Coverage Change**: N/A
 - **Notes**: Confirmed `test_downloads_paginator_parse_page_old_structure_raises_error` passes (correctly raises error) and `test_downloads_paginator_parse_page_new_structure` xfails as expected before implementation fix.
 ## Test Execution Results
+### Test Execution: Unit (pytest - XFail Investigation) - [2025-04-29 15:26:02]
+- **Trigger**: Manual (`.../python -m pytest __tests__/python/test_python_bridge.py`) for Task 2025-04-29 15:24:22.
+- **Outcome**: PASS / **Summary**: 44 passed, 3 xfailed
+- **Failed Tests**: None (Xfails are expected)
+- **Coverage Change**: N/A
+- **Notes**: Confirmed the 3 tests marked with `@pytest.mark.xfail` (`test_main_routes_download_book`, `test_downloads_paginator_parse_page_new_structure`, `test_downloads_paginator_parse_page_old_structure_raises_error`) are still failing as expected.
+### Test Execution: Regression (Python - PDF Footnote Fix) - [2025-04-29 11:19:14]
+### Test Execution: Regression (Full Suite - Post Debug Fix 079a182) - [2025-04-29 15:22:06]
+- **Trigger**: Post-Code Change (Debug fix `079a182` for pytest failures)
+- **Outcome**: PASS / **Summary**: 59 Jest tests passed, Pytest suite passed (via `npm test` exit code 0)
+- **Failed Tests**: None
+- **Coverage Change**: Stable (See Jest coverage report in output)
+- **Notes**: Confirmed fixes for pytest failures did not introduce regressions in the full test suite.
+- **Trigger**: Post-Code Change (Debug Fix for PDF Footnotes)
+- **Outcome**: FAIL / **Summary**: 19 passed, 16 failed, 15 xfailed
+- **Failed Tests**:
+    - `__tests__/python/test_python_bridge.py::test_process_pdf_corrupted`: FileNotFoundError (Likely test setup)
+    - `__tests__/python/test_python_bridge.py::test_process_pdf_text_removes_noise_refactored`: AssertionError (Cleaning ineffective)
+    - `__tests__/python/test_python_bridge.py::test_rag_markdown_pdf_generates_headings`: AssertionError (Incorrect heading level)
+    - `__tests__/python/test_python_bridge.py::test_rag_markdown_pdf_generates_footnotes`: AssertionError (Incorrect formatting - extra newline)
+    - `__tests__/python/test_python_bridge.py::test_rag_markdown_pdf_formats_footnotes_correctly`: AssertionError (Incorrect formatting - extra newline)
+    - `__tests__/python/test_python_bridge.py::test_download_book_missing_url_raises_error`: Exception (Missing credentials)
+    - `__tests__/python/test_python_bridge.py::test_download_book_calls_process_document_when_rag_true`: Exception (Missing credentials)
+    - `__tests__/python/test_python_bridge.py::test_download_book_returns_processed_path_on_rag_success`: Exception (Missing credentials)
+    - `__tests__/python/test_python_bridge.py::test_download_book_returns_null_processed_path_on_rag_failure`: Exception (Missing credentials)
+    - `__tests__/python/test_python_bridge.py::test_download_book_returns_null_processed_path_when_no_text`: Exception (Missing credentials)
+    - `__tests__/python/test_python_bridge.py::test_download_book_success_no_rag`: Exception (Missing credentials)
+    - `__tests__/python/test_python_bridge.py::test_download_book_handles_scrape_download_error`: Exception (Missing credentials)
+    - `__tests__/python/test_python_bridge.py::test_download_book_handles_scrape_unexpected_error`: AssertionError (Regex pattern did not match)
+    - `__tests__/python/test_python_bridge.py::test_process_document_raises_save_error`: Failed: DID NOT RAISE FileSaveError
+    - `__tests__/python/test_python_bridge.py::test_downloads_paginator_parse_page_new_structure`: TypeError (Missing arguments)
+    - `__tests__/python/test_python_bridge.py::test_downloads_paginator_parse_page_old_structure_raises_error`: TypeError (Missing arguments)
+- **Coverage Change**: N/A
+- **Notes**: Target test `test_rag_markdown_pdf_formats_footnotes_correctly` failed due to formatting. Multiple regressions identified in PDF processing tests. Several unrelated failures due to missing credentials or test setup. Fix not verified.
+
+### Test Execution: Regression (Node.js - PDF Footnote Fix) - [2025-04-29 11:18:43]
+- **Trigger**: Post-Code Change (Debug Fix for PDF Footnotes)
+- **Outcome**: PASS / **Summary**: 59 tests passed
+- **Failed Tests**: None
+- **Coverage Change**: Stable (See coverage report in test output)
+- **Notes**: Confirmed no regressions in Node.js tests after debug fix. Console errors related to mocks persist but don't cause failures.
 ### Test Execution: Unit (pytest - RAG Markdown Red Phase) - [2025-04-29 02:48:41]
 - **Trigger**: Manual (`.../python -m pytest __tests__/python/test_python_bridge.py`) after adding failing tests.
 ### Test Execution: Final Verification (npm test - RAG Markdown) - [2025-04-29 09:42:55]

@@ -34,6 +34,40 @@
 # Debugger Specific Memory
 <!-- Entries below should be added reverse chronologically (newest first) -->
 ## Issue History
+### Issue: PYTEST-FAILURES-POST-8CE158F - Pytest failures after ImportError fix - Status: Resolved - [2025-04-29 15:19:11]
+- **Reported**: [2025-04-29 15:08:43] (via SPARC Handover) / **Severity**: High / **Symptoms**: 10 pytest failures (`NameError`, `AttributeError`, `AssertionError`, `Failed: DID NOT RAISE`) in `__tests__/python/test_python_bridge.py` after commit `8ce158f` fixed collection errors. `tdd` mode encountered tool errors trying to fix them.
+- **Investigation**:
+    1. Read `tdd` feedback confirming tool errors and failure types. [See TDD Feedback 2025-04-29 15:08:08]
+    2. Read `__tests__/python/test_python_bridge.py` and `lib/python_bridge.py`.
+    3. Confirmed `_scrape_and_download` helper was removed in `lib/python_bridge.py` (replaced by `zlib_client.download_book`).
+    4. Confirmed error handling in `download_book` now returns dict or re-raises, not wrapping in `RuntimeError`.
+    5. Identified incorrect mock targets, assertions, and error handling expectations in tests.
+    6. Applied fixes in batches using `apply_diff`, re-reading file sections after partial failures.
+    7. Verified fixes using `pytest`. [See Pytest Result 2025-04-29 15:19:11]
+- **Root Cause**: Tests in `__tests__/python/test_python_bridge.py` were not updated to reflect changes made to `lib/python_bridge.py` in commit `8ce158f`, specifically the removal of `_scrape_and_download` and changes to error handling/return values in `download_book`.
+- **Fix Applied**:
+    - Removed obsolete `mock_scrape_and_download` fixture.
+    - Updated `download_book` tests to call/mock `zlib_client.download_book`.
+    - Corrected mock call assertions (positional vs keyword args).
+    - Updated error handling tests to expect original exceptions (`DownloadError`, `Exception`) or `RuntimeError` from `process_document`, not wrapped errors from `download_book`.
+    - Corrected assertion key (`file_path` vs `downloaded_file_path`).
+    - Fixed issues in file saving tests (`mock_aiofiles` usage, incorrect assertions).
+- **Verification**: `pytest __tests__/python/test_python_bridge.py` passed (44 passed, 3 xfailed).
+- **Related Issues**: [Ref: Task 2025-04-29 15:11:37], [Ref: ActiveContext 2025-04-29 15:08:43], [Ref: ActiveContext 2025-04-29 14:13:37]
+### Issue: PYTEST-COLLECT-IMPORT-01 - Pytest collection failed due to ImportError/NameError - Status: Resolved - [2025-04-29 14:12:00]
+- **Reported**: [2025-04-29 14:02:41] (via SPARC Handover) / **Severity**: High / **Symptoms**: `pytest --collect-only` failed with `ImportError: cannot import name 'process_document' from 'python_bridge'`, later changed to `NameError: name 'python_bridge' is not defined` after initial fix attempt.
+- **Investigation**:
+    1. Reviewed `tdd` feedback: Error occurred after refactoring tests to use `process_document`. [See TDD Feedback 2025-04-29 14:01:57]
+    2. Read `__tests__/python/test_python_bridge.py`: Confirmed import attempt `from python_bridge import process_document`.
+    3. Read `lib/python_bridge.py`: Confirmed `process_document` function was missing.
+    4. Re-implemented `process_document` and helper functions (`_process_epub`, `_process_txt`, `_process_pdf`, `_save_processed_text`) in `lib/python_bridge.py` based on spec `docs/rag-pipeline-implementation-spec.md`. Fixed indentation errors using `write_to_file`. [See Debug Log 2025-04-29 14:11:22]
+    5. Ran `pytest --collect-only`: Encountered `NameError` on line `python_bridge.EBOOKLIB_AVAILABLE = True` in test file. [See Debug Log 2025-04-29 14:11:38]
+    6. Added `import python_bridge` to `__tests__/python/test_python_bridge.py`. [See Debug Log 2025-04-29 14:11:54]
+    7. Ran `pytest --collect-only`: Collection succeeded. [See Debug Log 2025-04-29 14:12:07]
+- **Root Cause**: 1. The `process_document` function was missing from `lib/python_bridge.py`, likely due to incomplete refactoring by `tdd` mode. 2. The test file `__tests__/python/test_python_bridge.py` attempted to access the module via the name `python_bridge` without importing it first.
+- **Fix Applied**: 1. Re-implemented `process_document` and its helper functions in `lib/python_bridge.py`. 2. Added `import python_bridge` to `__tests__/python/test_python_bridge.py`.
+- **Verification**: `pytest --collect-only __tests__/python/test_python_bridge.py` completed successfully (exit code 0).
+- **Related Issues**: [Ref: Task 2025-04-29 14:03:23], [Ref: ActiveContext 2025-04-29 14:02:41]
 ### Issue: RAG-PDF-FN-01-REGRESSION - Pytest regressions after RAG footnote fix - Status: Resolved - [2025-04-29 12:03:44]
 - **Reported**: [2025-04-29 11:21:01] (via TDD Report) / **Severity**: High / **Symptoms**: 10 pytest failures in `__tests__/python/test_python_bridge.py` after RAG footnote fix (commit unknown, applied in previous session).
 - **Investigation**:

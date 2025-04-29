@@ -1,3 +1,27 @@
+### [2025-04-29 15:08:08] - Early Return: Pytest Verification Task
+
+*   **Source:** Task: Verify Pytest Suite After Debug Fixes (ImportError Resolution)
+*   **Issue:** Encountered repeated failures using `apply_diff` and `write_to_file` to correct test files (`__tests__/python/test_python_bridge.py`) and source file (`lib/python_bridge.py`). Errors included low similarity matches, missing `line_count` parameter, and persistent test failures (`NameError`, `AttributeError`, `AssertionError`) even after applying intended fixes. Context window size is also high (84%). User feedback confirmed tool usage difficulties and advised early return.
+*   **Attempted Steps:**
+    *   Analyzed `pytest` output to identify failures (`NameError: _scrape_and_download`, `AttributeError` in mock assertion, `AssertionError` in mock call, `Failed: DID NOT RAISE`).
+    *   Attempted fixes using `apply_diff` (failed due to low similarity).
+    *   Attempted fixes using `write_to_file` (failed due to missing `line_count`, then failed again).
+    *   Read files (`lib/python_bridge.py`, `__tests__/python/test_python_bridge.py`) to ensure correct content before rewrite attempts.
+*   **Action:** Returning early as per user feedback and Early Return Clause due to intractable tool issues and high context. Recommend further debugging or alternative approach.
+### [2025-04-29 14:01:57] - TDD - Early Return: Pytest Xfail Investigation
+
+**Source:** User Task (Investigate and Address Xfailed Pytest Tests)
+**Issue:** Encountered `ImportError: cannot import name 'process_document' from 'python_bridge'` during `pytest` collection after refactoring tests in `__tests__/python/test_python_bridge.py`. The refactoring aimed to replace calls to private helper functions with calls to the public `process_document` function. Multiple `apply_diff` attempts were made due to line number shifts.
+**Attempted Steps:**
+1.  Ran `pytest` initially (confirmed 18 xfailed).
+2.  Read `__tests__/python/test_python_bridge.py`.
+3.  Used `search_and_replace` to remove `python_bridge.` prefixes.
+4.  Used `apply_diff` multiple times (with `read_file` checks) to refactor tests calling private helpers (`_process_epub`, `_process_txt`, `_process_pdf`, `_save_processed_text`) to use `process_document`.
+5.  Executed `pytest __tests__/python/test_python_bridge.py`.
+6.  Observed `ImportError` during test collection.
+**Action:** Invoking EARLY RETURN CLAUSE. Returning control to SPARC. Potential causes include issues with the final refactoring state or Python path/environment problems affecting `pytest` collection.
+
+---
 ## [2025-04-28 09:20:13] - TDD Refactor Phase - RAG Download Workflow (Spec v2.1) - Early Return
 
 **Source:** TDD Mode (Self-triggered by User Invocation)

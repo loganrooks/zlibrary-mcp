@@ -54,22 +54,20 @@ htmlcov/
 .roomodes
 
 # Keep these if needed for your project
-# __mocks__
-# __tests__
-# requirements.txt
-package-lock.json
+# package-lock.json # Decide whether to commit this based on project type
 requirements.txt
 __mocks__/env-paths.js
 __mocks__/@modelcontextprotocol/sdk.js
 __mocks__/@modelcontextprotocol/server.js
 __tests__/index.test.d.ts
-# __tests__/index.test.js
 __tests__/python-bridge.test.d.ts
-# __tests__/python-bridge.test.js
 __tests__/venv-manager.test.d.ts
-# __tests__/venv-manager.test.js
 __tests__/zlibrary-api.test.d.ts
-# __tests__/zlibrary-api.test.js
 
 # Ignore generated RAG output
 processed_rag_output/
+
+# Ignore temporary test/download outputs
+test_dl/
+test_out/
+test_output/

@@ -12,7 +12,7 @@ This Model Context Protocol (MCP) server provides access to Z-Library for AI cod
     - Resolved test suite issues (Commit `3e732b3`).
     - Deprecated and removed `get_download_info` tool (Commit `8bef4c2`).
     - RAG download workflow follows ADR-002 (Commit `f466479` or later).
-- **Branch:** `main` (or primary development branch)
+- **Branch:** `feature/rag-eval-cleanup` (Current development branch)
 
 ## Architecture Overview
 

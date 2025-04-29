@@ -233,6 +233,18 @@
 - **Implementation**: Remove the tool definition from `src/index.ts`, the handler from `src/lib/zlibrary-api.ts`, the corresponding function from `lib/python_bridge.py`, and associated tests.
 - **Related**: ADR-002, [Debug Report 2025-04-28 17:31:01]
 # Decision Log
+### Decision-DeprecateGetBookByID-01 - [2025-04-29 15:37:14]
+- **Decision**: Deprecate the `get_book_by_id` MCP tool.
+- **Rationale**: External Z-Library website changes prevent reliable book lookup using only an ID. Both direct `/book/ID` fetches (missing slug) and `search(id:...)` workarounds fail externally. Continuing to support the tool implies functionality that cannot be delivered and adds maintenance overhead for brittle scraping code. ADR-002 workflow already relies on `search_books`.
+- **Alternatives Considered**: Refining internal scrapers (pointless if external source is broken), finding alternative library methods (unlikely), keeping tool marked as unreliable (less clear than deprecation).
+- **Implementation**: Log decision in ADR-003. Subsequent tasks should remove the tool definition, handlers, Python bridge function, and associated tests. Update documentation.
+- **Related**: ADR-003, ActiveContext [2025-04-29 15:37:14], ActiveContext [2025-04-16 07:27:22], Decision-DeprecateGetDownloadInfo-01
+### Decision-DeprecateGetBookByID-01 - [2025-04-29 15:37:14]
+- **Decision**: Deprecate the `get_book_by_id` MCP tool.
+- **Rationale**: External Z-Library website changes prevent reliable book lookup using only an ID. Both direct `/book/ID` fetches (missing slug) and `search(id:...)` workarounds fail externally. Continuing to support the tool implies functionality that cannot be delivered and adds maintenance overhead for brittle scraping code. ADR-002 workflow already relies on `search_books`.
+- **Alternatives Considered**: Refining internal scrapers (pointless if external source is broken), finding alternative library methods (unlikely), keeping tool marked as unreliable (less clear than deprecation).
+- **Implementation**: Log decision in ADR-003. Subsequent tasks should remove the tool definition, handlers, Python bridge function, and associated tests. Update documentation.
+- **Related**: ADR-003, ActiveContext [2025-04-29 15:37:14], ActiveContext [2025-04-16 07:27:22], Decision-DeprecateGetDownloadInfo-01
 ### Decision-DeferXfailedTests-01 - [2025-04-29 15:29:34]
 - **Decision**: Defer addressing the 3 remaining xfailed tests in `__tests__/python/test_python_bridge.py` (`test_main_routes_download_book`, `test_downloads_paginator_parse_page_new_structure`, `test_downloads_paginator_parse_page_old_structure_raises_error`).
 - **Rationale**: `tdd` mode confirmed these tests fail for valid, documented reasons (problematic structure, vendored library changes) [Ref: ActiveContext 2025-04-29 15:27:08]. Fixing them may require significant effort and could delay the completion of the current refinement cycle focused on the previously critical 10 failures. The rest of the test suite passes. These can be logged as technical debt.

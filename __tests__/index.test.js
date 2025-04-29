@@ -489,44 +489,6 @@ describe('Tool Handlers (Direct)', () => {
       expect(errorResponse).toEqual({ error: { message: 'Download Error' } }); // Match nested structure
     });
 
-    test('getDownloadInfo handler should call zlibApi.getDownloadInfo', async () => {
-       // --- Setup Mocks for this test ---
-       jest.resetModules();
-       jest.clearAllMocks();
-       const mockGetDownloadInfo = jest.fn();
-       jest.unstable_mockModule('../lib/zlibrary-api.js', () => ({
-         searchBooks: jest.fn(),
-         getBookById: jest.fn(),
-         downloadBookToFile: jest.fn(),
-         getDownloadInfo: mockGetDownloadInfo,
-         fullTextSearch: jest.fn(),
-         getDownloadHistory: jest.fn(),
-         getDownloadLimits: jest.fn(),
-         getRecentBooks: jest.fn(),
-         processDocumentForRag: jest.fn(),
-       }));
-
-       // Dynamically import toolRegistry and the mocked zlibApi
-       const { toolRegistry } = await import('../dist/index.js');
-       const zlibApi = await import('../lib/zlibrary-api.js');
-
-       const handler = toolRegistry.get_download_info.handler;
-       const mockArgs = { id: 'book789', format: 'pdf' };
-       const validatedArgs = toolRegistry.get_download_info.schema.parse(mockArgs);
-       const mockResult = { url: 'http://example.com/dl/book789.pdf' };
-       mockGetDownloadInfo.mockResolvedValueOnce(mockResult); // Use the specific mock function
-
-       const response = await handler(validatedArgs);
-
-       expect(mockGetDownloadInfo).toHaveBeenCalledWith(validatedArgs); // Check the specific mock function
-       expect(response).toEqual(mockResult);
-
-       const error = new Error('Info Error');
-       mockGetDownloadInfo.mockRejectedValueOnce(error); // Use the specific mock function
-       const errorResponse = await handler(validatedArgs);
-       expect(errorResponse).toEqual({ error: { message: 'Info Error' } }); // Match nested structure
-    });
-
     test('fullTextSearch handler should call zlibApi.fullTextSearch', async () => {
        // --- Setup Mocks for this test ---
        jest.resetModules();

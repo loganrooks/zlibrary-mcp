@@ -420,43 +420,95 @@ class DownloadsPaginator:
 
     def parse_page(self, page):
         soup = bsoup(page, features="lxml")
-        box = soup.find("div", {"class": "dstats-table-content"}) # Updated class selector
+        # Use body as the main container, or adjust if a better parent exists
+        box = soup.find("body")
         if not box or type(box) is not Tag:
-            raise ParseError("Could not parse downloads list.")
+             # Check for the old structure as a fallback or raise error
+            box_old = soup.find("div", {"class": "dstats-table-content"})
+            if box_old and type(box_old) is Tag:
+                box = box_old # Use old structure if found
+                logger.warning("Using fallback parser for old download history structure.")
+            else:
+                raise ParseError("Could not find main content area (body or dstats-table-content) for downloads list.")
 
-        check_notfound = box.find("p")
+        # Check for "not found" message (might need adjustment for new structure)
+        # Assuming a simple paragraph might indicate empty results in the new structure too
+        check_notfound = box.find("p") # Or a more specific selector if known
         if check_notfound and DLNOTFOUND in check_notfound.text.strip():
-            logger.debug("This page is empty.")
+            logger.debug("This page appears empty (downloads not found message).")
             self.storage[self.page] = []
             self.result = []
             return
 
-        book_list = box.find_all("tr", {"class": "dstats-row"}) # Use find_all instead of findAll
+        # Find items based on the NEW structure first
+        book_list = box.find_all("div", {"class": "item-wrap"})
         if not book_list:
-            raise ParseError("Could not find the book list.")
+             # If new structure fails, try the OLD structure
+             book_list = box.find_all("tr", {"class": "dstats-row"})
+             if not book_list:
+                 # If neither structure yields results, check for the explicit "not found" text again more broadly
+                 if DLNOTFOUND in soup.text:
+                     logger.debug("Found 'Downloads not found' text, treating as empty page.")
+                     self.storage[self.page] = []
+                     self.result = []
+                     return
+                 else:
+                    logger.error("Could not find book items using new ('item-wrap') or old ('dstats-row') selectors.")
+                    raise ParseError("Could not find the book list items.")
 
         self.storage[self.page] = []
 
-        for _, book in enumerate(book_list, start=1):
+        for _, item in enumerate(book_list, start=1):
             js = BookItem(self.__r, self.mirror)
+            is_new_structure = item.name == 'div' and 'item-wrap' in item.get('class', [])
 
-            title = book.find("div", {"class": "book-title"})
-            date = book.find("td", {"class": "lg-w-120"})
+            if is_new_structure:
+                info_div = item.find("div", {"class": "item-info"})
+                if not info_div: continue
 
-            js["name"] = title.text.strip()
-            # Find the specific span for the full date
-            date_span = date.find("span", {"class": "hidden-xs"})
-            if date_span:
-                js["date"] = date_span.text.strip()
-            else: # Fallback or log warning if needed
-                js["date"] = date.text.strip() # Keep old behavior as fallback
+                title_tag = info_div.find("h5")
+                if title_tag and title_tag.find("a"):
+                    js["title"] = title_tag.find("a").text.strip() # Use 'title' key to match test expectation
+                    js["url"] = f"{self.mirror}{title_tag.find('a').get('href')}"
 
-            book_url = book.find("a")
-            if book_url:
-                js["url"] = f"{self.mirror}{book_url.get('href')}"
-            self.storage[self.page].append(js)
+                # Extract other details based on text content
+                divs = info_div.find_all("div", recursive=False) # Direct children divs
+                for div in divs:
+                    text = div.text.strip()
+                    if text.startswith("Author:"):
+                        js["author"] = text.replace("Author:", "").strip()
+                    elif text.startswith("Year:"):
+                        js["year"] = text.replace("Year:", "").strip()
+                    elif text.startswith("Downloaded:"):
+                        # Extract the date part after "Downloaded:"
+                        js["downloaded_date"] = text.replace("Downloaded:", "").strip() # Store as 'downloaded_date'
+                    else:
+                        # Check for download link within this div
+                        dl_link = div.find("a", href=re.compile(r"^/dl/"))
+                        if dl_link:
+                            js["download_link"] = f"{self.mirror}{dl_link.get('href')}" # Store as 'download_link'
+
+                # Add the extracted item if it has essential info
+                if js.get("name") or js.get("url"):
+                    self.storage[self.page].append(js)
+            else: # Assume old structure (tr.dstats-row)
+                title_div = item.find("div", {"class": "book-title"})
+                date_td = item.find("td", {"class": "lg-w-120"})
+                link_a = item.find("a") # Link is usually the first 'a' in the old structure
+
+                if title_div:
+                    js["name"] = title_div.text.strip()
+                if date_td:
+                    date_span = date_td.find("span", {"class": "hidden-xs"})
+                    js["downloaded_date"] = date_span.text.strip() if date_span else date_td.text.strip() # Store as 'downloaded_date'
+                if link_a:
+                    js["url"] = f"{self.mirror}{link_a.get('href')}"
+                # Note: Old structure didn't easily provide author, year, download_link separately
+
+
         self.result = self.storage[self.page]
 
+        return self.result # Explicitly return the parsed result list
     async def init(self):
         page = await self.fetch_page()
         self.parse_page(page)

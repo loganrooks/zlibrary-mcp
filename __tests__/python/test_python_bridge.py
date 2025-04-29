@@ -1220,13 +1220,7 @@ DOWNLOAD_HISTORY_HTML_SAMPLE = """
 """
 
 # Assuming DownloadsPaginator exists in zlibrary.booklists
-try:
-    from zlibrary.booklists import DownloadsPaginator
-except ImportError:
-    # Create a dummy class if the real one isn't available (e.g., during early dev)
-    class DownloadsPaginator:
-        def __init__(self, url, page, request, mirror): pass
-        def parse_page(self, html): return [] # Dummy implementation
+from zlibrary.abs import DownloadsPaginator # Corrected import path
 
 # @pytest.mark.xfail(reason="DownloadsPaginator parsing logic not implemented or structure changed")
 def test_downloads_paginator_parse_page_new_structure():
@@ -1252,15 +1246,4 @@ def test_downloads_paginator_parse_page_new_structure():
     assert results[1]['downloaded_date'] == "2024-01-14 11:30:00"
 
 # @pytest.mark.xfail(reason="DownloadsPaginator parsing logic not implemented or structure changed")
-def test_downloads_paginator_parse_page_old_structure_raises_error():
-    """Tests that DownloadsPaginator.parse_page raises ParseError with the new HTML."""
-    mock_request = MagicMock()
-    mirror = "http://example.com"
-    paginator = DownloadsPaginator(url="/users/dstats.php", page=1, request=mock_request, mirror=mirror)
-
-    with pytest.raises(ParseError, match="Could not parse downloads list."):
-        # Simulate calling parse_page with HTML that *doesn't* match its expected structure
-        # For this test, we assume the SAMPLE HTML *is* the new structure,
-        # and the paginator expects an OLD structure, thus raising ParseError.
-        # If the paginator *is* updated, this test should fail or be removed.
-        paginator.parse_page(DOWNLOAD_HISTORY_HTML_SAMPLE) # Using the sample which should cause failure if parser expects old format
+# Removed obsolete test: test_downloads_paginator_parse_page_old_structure_raises_error

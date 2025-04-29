@@ -1,4 +1,138 @@
+## XFail Test Reviews
+<!-- Entries below should be added reverse chronologically (newest first) -->
+
+### XFail Review: Pytest Bridge Tests - [2025-04-29 15:26:30]
+- **Scope**: `__tests__/python/test_python_bridge.py`
+- **Trigger**: Task 2025-04-29 15:24:22
+- **Tests Reviewed**:
+    - `test_main_routes_download_book` (Line 1049): Reason: "Test structure problematic for verifying main execution flow". Status: Still XFAIL. Reason Valid.
+    - `test_downloads_paginator_parse_page_new_structure` (Line 1253): Reason: "DownloadsPaginator constructor likely changed in vendored lib, out of scope.". Status: Still XFAIL. Reason Valid.
+    - `test_downloads_paginator_parse_page_old_structure_raises_error` (Line 1271): Reason: "DownloadsPaginator constructor likely changed in vendored lib, out of scope.". Status: Still XFAIL. Reason Valid.
+- **Outcome**: No changes required. All reviewed xfail tests remain xfailed for valid reasons.
+- **Related**: [Test Execution Results 2025-04-29 15:26:02]
+## Verification Reviews
+<!-- Entries below should be added reverse chronologically (newest first) -->
+
+### Verification: RAG Markdown Generation - [2025-04-29 09:43:13]
+- **Scope**: RAG Markdown generation feature (commit `e943016`)
+- **Trigger**: Final TDD Verification Pass request from SPARC.
+- **Actions**:
+    - Reviewed implementation (`lib/python_bridge.py`) and tests (`__tests__/python/test_python_bridge.py`) against spec (`docs/rag-markdown-generation-spec.md`).
+    - Ran full test suite (`npm test`).
+- **Outcome**: PASS
+- **Findings**:
+    - Implementation aligns with spec.
+    - Test coverage for specified Markdown features (headings, lists, footnotes, etc.) is adequate.
+    - Tests are clear and follow TDD principles.
+    - Full test suite passed successfully (59/59 tests).
+- **Next Steps**: Mark feature verification complete.
+- **Related**: `docs/rag-markdown-generation-spec.md`, Commit `e943016`, [activeContext.md 2025-04-29 09:42:55]
+### Test Execution: Node.js Suite - [2025-04-29 02:15:00]
+- **Trigger**: Post-Code Change (RAG Quality Refinement)
+- **Outcome**: PASS / **Summary**: 59 tests passed
+- **Notes**: No failures observed.
+
+### Test Execution: Python Suite - [2025-04-29 02:14:54]
+- **Trigger**: Post-Code Change (RAG Quality Refinement)
+- **Outcome**: PASS (with skips/xfails/xpasses) / **Summary**: 27 passed, 12 skipped, 5 xfailed, 9 xpassed
+- **Notes**: No unexpected failures. Tests related to implemented features passed.
+
+### TDD Cycle: EPUB Footnotes - [2025-04-29 02:14:31]
+- **Red**: Added `test_process_epub_markdown_generates_footnotes` / Test File: `__tests__/python/test_python_bridge.py`
+- **Green**: Implemented footnote detection (epub:type) and formatting in `_process_epub` / Code File: `lib/python_bridge.py`
+- **Refactor**: Added comments to footnote logic / Files Changed: `lib/python_bridge.py`
+- **Outcome**: Cycle completed, test passing.
+
+### TDD Cycle: EPUB Lists - [2025-04-29 02:08:59]
+- **Red**: Added `test_process_epub_markdown_generates_lists` / Test File: `__tests__/python/test_python_bridge.py`
+- **Green**: Implemented ul/ol/li handling in `_process_epub` / Code File: `lib/python_bridge.py`
+- **Refactor**: Added comments to list logic / Files Changed: `lib/python_bridge.py`
+- **Outcome**: Cycle completed, test passing.
+
+### TDD Cycle: EPUB Headings - [2025-04-29 02:06:46]
+- **Red**: Added `test_process_epub_markdown_generates_headings` / Test File: `__tests__/python/test_python_bridge.py`
+- **Green**: Implemented h1-h6 handling in `_process_epub` / Code File: `lib/python_bridge.py`
+- **Refactor**: Improved heading logic, added comments / Files Changed: `lib/python_bridge.py`
+- **Outcome**: Cycle completed, test passing (after fixing test assertion errors).
+
+### TDD Cycle: PDF Footnotes - [2025-04-29 02:00:08]
+- **Red**: Added `test_process_pdf_markdown_generates_footnotes` / Test File: `__tests__/python/test_python_bridge.py`
+- **Green**: Implemented footnote detection (superscript flag) and formatting in `_process_pdf` / Code File: `lib/python_bridge.py`
+- **Refactor**: Added comments to footnote logic / Files Changed: `lib/python_bridge.py`
+- **Outcome**: Cycle completed, test passing (after fixing test assertion errors).
+
+### TDD Cycle: PDF Lists - [2025-04-29 01:56:52]
+- **Red**: Added `test_process_pdf_markdown_generates_lists` / Test File: `__tests__/python/test_python_bridge.py`
+- **Green**: Implemented list detection (regex) in `_process_pdf` / Code File: `lib/python_bridge.py`
+- **Refactor**: Refined regex, added comments / Files Changed: `lib/python_bridge.py`
+- **Outcome**: Cycle completed, test passing.
+
+### TDD Cycle: PDF Headings - [2025-04-29 01:54:23]
+- **Red**: Added `test_process_pdf_markdown_generates_headings` / Test File: `__tests__/python/test_python_bridge.py`
+- **Green**: Implemented heading detection (font size) in `_process_pdf` / Code File: `lib/python_bridge.py`
+- **Refactor**: Improved heading logic, added comments / Files Changed: `lib/python_bridge.py`
+- **Outcome**: Cycle completed, test passing (after fixing test assertion errors).
+
+### TDD Cycle: PDF Null Chars - [2025-04-29 01:49:08]
+- **Red**: Added `test_process_pdf_removes_null_chars` / Test File: `__tests__/python/test_python_bridge.py`
+- **Green**: Implemented null char removal in `_process_pdf` / Code File: `lib/python_bridge.py`
+- **Refactor**: Used regex for removal / Files Changed: `lib/python_bridge.py`
+- **Outcome**: Cycle completed, test passing.
+
+### Test Plan: RAG Output Quality Refinement - [2025-04-29 01:46:40]
+- **Objective**: Improve Markdown generation from PDF and EPUB for RAG quality, based on `docs/rag-output-qa-report.md` and `docs/rag-output-quality-spec.md`.
+- **Scope**: `_process_pdf` and `_process_epub` in `lib/python_bridge.py`.
+- **Test Cases**:
+    - PDF Null Chars: `test_process_pdf_removes_null_chars` / Status: Green
+    - PDF Headings: `test_process_pdf_markdown_generates_headings` / Status: Green
+    - PDF Lists: `test_process_pdf_markdown_generates_lists` / Status: Green
+    - PDF Footnotes: `test_process_pdf_markdown_generates_footnotes` / Status: Green
+    - EPUB Headings: `test_process_epub_markdown_generates_headings` / Status: Green
+    - EPUB Lists: `test_process_epub_markdown_generates_lists` / Status: Green
+    - EPUB Footnotes: `test_process_epub_markdown_generates_footnotes` / Status: Green
+- **Related Requirements**: `docs/rag-output-qa-report.md`, `docs/rag-output-quality-spec.md`
 # Tester (TDD) Specific Memory
+### Test Execution: Regression (npm test - Post RAG Markdown Refactor) - [2025-04-29 09:35:04]
+- **Trigger**: Post-Refactor (`lib/python_bridge.py`, `__tests__/python/test_python_bridge.py`)
+- **Outcome**: PASS / **Summary**: 59 tests passed
+- **Failed Tests**: None
+- **Coverage Change**: Not measured.
+- **Notes**: Confirmed refactoring did not introduce regressions in Node.js tests.
+
+### Test Execution: Unit (pytest - Post RAG Markdown Refactor) - [2025-04-29 09:33:13]
+- **Trigger**: Post-Refactor (`lib/python_bridge.py`, `__tests__/python/test_python_bridge.py`)
+- **Outcome**: PASS / **Summary**: 40 passed, 4 skipped, 8 xfailed, 3 xpassed
+- **Failed Tests**: None
+- **Coverage Change**: Not measured.
+- **Notes**: Confirmed refactoring passed relevant Python tests. xfail/xpass count consistent with expectations.
+
+### TDD Cycle: RAG Markdown Generation (Refactor) - [2025-04-29 09:35:19]
+- **Red**: N/A (Refactor phase following Green Phase commit `215ec6d`)
+- **Green**: N/A (Refactor phase)
+- **Refactor**:
+    - `lib/python_bridge.py`: Added comments to clarify heuristics (`_analyze_pdf_block`, `_format_pdf_markdown`, `_epub_node_to_markdown`). Added type hints and improved docstrings (`_analyze_pdf_block`, `_format_pdf_markdown`, `_epub_node_to_markdown`, `_save_processed_text`). Fixed indentation errors introduced during refactoring. Renamed `fn_id_attr` to `footnote_id_attribute`. Ensured basic PEP 8 compliance.
+    - `__tests__/python/test_python_bridge.py`: Removed `@pytest.mark.xfail` from implemented RAG Markdown tests. Removed obsolete tests for deprecated `_scrape_and_download` function. Renamed RAG Markdown tests for clarity (e.g., `test_rag_markdown_pdf_generates_headings`). Removed `xfail` markers from ID lookup workaround tests (`test_get_by_id_workaround_*`).
+- **Files Changed**: `lib/python_bridge.py`, `__tests__/python/test_python_bridge.py`
+- **Outcome**: Refactor phase complete. Code improved for clarity, maintainability, and standards adherence. All tests (`pytest`, `npm test`) pass. Commit: `e943016`.
+- **Related**: `docs/rag-markdown-generation-spec.md`, Commit `215ec6d` (Green Phase)
+### TDD Cycle: RAG Markdown EPUB List Formatting (TOC) - [2025-04-29 10:15:06]
+- **Red**: Added `test_rag_markdown_epub_formats_toc_as_list` to `__tests__/python/test_python_bridge.py` (marked xfail).
+- **Green**: Modified `_process_epub` loop to prioritize and exclusively process `nav[epub:type="toc"]` if found. Test `xpassed` initially, failed after removing `xfail`, then passed after fix. / Code File: `lib/python_bridge.py`
+- **Refactor**: Minimal refactoring needed.
+- **Outcome**: Cycle completed, test passing. Addresses QA feedback on EPUB TOC list formatting.
+- **Related**: QA Feedback [2025-04-29 09:52:00], ActiveContext [2025-04-29 10:15:06]
+### TDD Cycle: RAG Markdown PDF List Formatting - [2025-04-29 10:11:42]
+- **Red**: Added `test_rag_markdown_pdf_handles_various_ordered_lists` to `__tests__/python/test_python_bridge.py` (marked xfail).
+- **Green**: No code change needed. Test `xpassed` then passed after removing `xfail`, confirming Debug fix ([See Diff 2025-04-29 10:01:09]) was sufficient.
+- **Refactor**: Minimal refactoring needed.
+- **Outcome**: Cycle completed, test passing. Addresses QA feedback on PDF list formatting.
+- **Related**: QA Feedback [2025-04-29 09:52:00], ActiveContext [2025-04-29 10:11:42]
+### TDD Cycle: RAG Markdown PDF Heading Noise - [2025-04-29 10:09:59]
+- **Red**: Added `test_rag_markdown_pdf_ignores_header_footer_noise_as_heading` to `__tests__/python/test_python_bridge.py` (marked xfail).
+- **Green**: Refactored cleaning logic to run *before* analysis in `_analyze_pdf_block`. Enhanced `header_footer_patterns` regex in `_analyze_pdf_block` to catch more noise patterns. / Code File: `lib/python_bridge.py`
+- **Refactor**: Minimal refactoring needed.
+- **Outcome**: Cycle completed, test passing. Addresses QA feedback on PDF heading noise.
+- **Related**: QA Feedback [2025-04-29 09:52:00], ActiveContext [2025-04-29 10:09:59]
 <!-- Entries below should be added reverse chronologically (newest first) -->
 ### Test Execution: Regression (pytest - Post DownloadsPaginator Fix) - [2025-04-28 21:57:20]
 - **Trigger**: Manual (`pytest`) after fixing `DownloadsPaginator` parser and tests.
@@ -66,6 +200,65 @@
 - **Coverage Change**: N/A
 - **Notes**: Confirmed `test_downloads_paginator_parse_page_old_structure_raises_error` passes (correctly raises error) and `test_downloads_paginator_parse_page_new_structure` xfails as expected before implementation fix.
 ## Test Execution Results
+### Test Execution: Regression (Full Suite - Post-Cleanup Verification) - [2025-04-29 17:08:41]
+- **Trigger**: Manual (Final Verification Pass)
+- **Outcome**: PASS / **Summary**: 56 tests passed (Jest) + Pytest suite passed (via npm test exit code 0, excluding 3 known xfails)
+- **Failed Tests**: None (excluding known xfails)
+- **Coverage Change**: Stable (Expected for cleanup changes)
+- **Notes**: Final verification pass after cleanup commits `e3b8709` and `70687dc`. Confirmed no regressions.
+### Test Execution: Unit (pytest - XFail Investigation) - [2025-04-29 15:26:02]
+- **Trigger**: Manual (`.../python -m pytest __tests__/python/test_python_bridge.py`) for Task 2025-04-29 15:24:22.
+- **Outcome**: PASS / **Summary**: 44 passed, 3 xfailed
+- **Failed Tests**: None (Xfails are expected)
+- **Coverage Change**: N/A
+- **Notes**: Confirmed the 3 tests marked with `@pytest.mark.xfail` (`test_main_routes_download_book`, `test_downloads_paginator_parse_page_new_structure`, `test_downloads_paginator_parse_page_old_structure_raises_error`) are still failing as expected.
+### Test Execution: Regression (Python - PDF Footnote Fix) - [2025-04-29 11:19:14]
+### Test Execution: Regression (Full Suite - Post Debug Fix 079a182) - [2025-04-29 15:22:06]
+- **Trigger**: Post-Code Change (Debug fix `079a182` for pytest failures)
+- **Outcome**: PASS / **Summary**: 59 Jest tests passed, Pytest suite passed (via `npm test` exit code 0)
+- **Failed Tests**: None
+- **Coverage Change**: Stable (See Jest coverage report in output)
+- **Notes**: Confirmed fixes for pytest failures did not introduce regressions in the full test suite.
+- **Trigger**: Post-Code Change (Debug Fix for PDF Footnotes)
+- **Outcome**: FAIL / **Summary**: 19 passed, 16 failed, 15 xfailed
+- **Failed Tests**:
+    - `__tests__/python/test_python_bridge.py::test_process_pdf_corrupted`: FileNotFoundError (Likely test setup)
+    - `__tests__/python/test_python_bridge.py::test_process_pdf_text_removes_noise_refactored`: AssertionError (Cleaning ineffective)
+    - `__tests__/python/test_python_bridge.py::test_rag_markdown_pdf_generates_headings`: AssertionError (Incorrect heading level)
+    - `__tests__/python/test_python_bridge.py::test_rag_markdown_pdf_generates_footnotes`: AssertionError (Incorrect formatting - extra newline)
+    - `__tests__/python/test_python_bridge.py::test_rag_markdown_pdf_formats_footnotes_correctly`: AssertionError (Incorrect formatting - extra newline)
+    - `__tests__/python/test_python_bridge.py::test_download_book_missing_url_raises_error`: Exception (Missing credentials)
+    - `__tests__/python/test_python_bridge.py::test_download_book_calls_process_document_when_rag_true`: Exception (Missing credentials)
+    - `__tests__/python/test_python_bridge.py::test_download_book_returns_processed_path_on_rag_success`: Exception (Missing credentials)
+    - `__tests__/python/test_python_bridge.py::test_download_book_returns_null_processed_path_on_rag_failure`: Exception (Missing credentials)
+    - `__tests__/python/test_python_bridge.py::test_download_book_returns_null_processed_path_when_no_text`: Exception (Missing credentials)
+    - `__tests__/python/test_python_bridge.py::test_download_book_success_no_rag`: Exception (Missing credentials)
+    - `__tests__/python/test_python_bridge.py::test_download_book_handles_scrape_download_error`: Exception (Missing credentials)
+    - `__tests__/python/test_python_bridge.py::test_download_book_handles_scrape_unexpected_error`: AssertionError (Regex pattern did not match)
+    - `__tests__/python/test_python_bridge.py::test_process_document_raises_save_error`: Failed: DID NOT RAISE FileSaveError
+    - `__tests__/python/test_python_bridge.py::test_downloads_paginator_parse_page_new_structure`: TypeError (Missing arguments)
+    - `__tests__/python/test_python_bridge.py::test_downloads_paginator_parse_page_old_structure_raises_error`: TypeError (Missing arguments)
+- **Coverage Change**: N/A
+- **Notes**: Target test `test_rag_markdown_pdf_formats_footnotes_correctly` failed due to formatting. Multiple regressions identified in PDF processing tests. Several unrelated failures due to missing credentials or test setup. Fix not verified.
+
+### Test Execution: Regression (Node.js - PDF Footnote Fix) - [2025-04-29 11:18:43]
+- **Trigger**: Post-Code Change (Debug Fix for PDF Footnotes)
+- **Outcome**: PASS / **Summary**: 59 tests passed
+- **Failed Tests**: None
+- **Coverage Change**: Stable (See coverage report in test output)
+- **Notes**: Confirmed no regressions in Node.js tests after debug fix. Console errors related to mocks persist but don't cause failures.
+### Test Execution: Unit (pytest - RAG Markdown Red Phase) - [2025-04-29 02:48:41]
+- **Trigger**: Manual (`.../python -m pytest __tests__/python/test_python_bridge.py`) after adding failing tests.
+### Test Execution: Final Verification (npm test - RAG Markdown) - [2025-04-29 09:42:55]
+- **Trigger**: Manual (`npm test`) as part of final TDD verification pass.
+- **Outcome**: PASS / **Summary**: 59 tests passed
+- **Failed Tests**: None
+- **Coverage Change**: Not measured.
+- **Notes**: Confirmed all tests pass on commit `e943016`. Console errors observed during test run are related to mocks in other suites (`venv-manager`, `zlibrary-api`) and do not affect this feature's verification.
+- **Outcome**: PASS (with xfails/xpasses) / **Summary**: 27 passed, 12 skipped, 12 xfailed, 12 xpassed
+- **Failed Tests**: None (All relevant new tests are xfailed as expected).
+- **Coverage Change**: N/A
+- **Notes**: Confirmed new tests for refined Markdown generation (PDF/EPUB) are collected and marked xfailed. Red phase established.
 ### Test Execution: Regression (pytest - Post `get_download_info` Removal) - [2025-04-28 18:49:16]
 - **Trigger**: Manual (`/home/rookslog/.cache/zlibrary-mcp/zlibrary-mcp-venv/bin/python -m pytest __tests__/python/`) after removing `get_download_info` code and tests.
 - **Outcome**: PASS
@@ -382,6 +575,11 @@
 - **Red**: N/A (Refactor phase following Green Phase commit `e58da14` and cleanup commit `b4a280c`)
 - **Green**: N/A (Refactor phase)
 - **Refactor**:
+### TDD Cycle: RAG Markdown Generation Refinement - [2025-04-29 02:48:54]
+- **Red**: Added 10 failing tests (`@pytest.mark.xfail`) to `__tests__/python/test_python_bridge.py` covering PDF/EPUB paragraphs, nested lists, blockquotes, code blocks, multiple footnotes, and output format routing. / Test File: `__tests__/python/test_python_bridge.py`
+- **Green**: N/A
+- **Refactor**: N/A
+- **Outcome**: Red phase complete. Tests confirmed xfailing. Commit: 05985b2.
     - `lib/python_bridge.py`: Removed debug logs from `_scrape_and_download`. Standardized path handling in `_scrape_and_download` using `pathlib`. Removed obsolete `EBOOKLIB_AVAILABLE` check from `_process_epub`. Removed unused `domain_arg` logic from `main` function for `get_by_id` and `get_download_info`.
     - `__tests__/python/test_python_bridge.py`: Removed obsolete test `test_process_epub_ebooklib_not_available`.
     - `src/lib/zlibrary-api.ts`: Reviewed, no changes needed.
@@ -647,6 +845,21 @@
 
 ### Test Plan: Global Execution Fix (Venv & Import) - 2025-04-14 03:35:59
 ### Test Plan: RAG Document Processing Pipeline - 2025-04-14 12:24:17
+### Test Plan: RAG Markdown Generation Refinement - [2025-04-29 02:48:54]
+- **Objective**: Implement refined Markdown generation for PDF/EPUB based on `docs/rag-markdown-generation-spec.md` v1.0.
+- **Scope**: `_process_pdf`, `_process_epub`, and new helpers in `lib/python_bridge.py`.
+- **Test Cases**:
+    - `test_pdf_paragraph`: Verify normal text block -> paragraph / Status: Red (xfail)
+    - `test_pdf_multiple_footnotes`: Verify multiple refs/defs -> correct Markdown / Status: Red (xfail)
+    - `test_pdf_output_format_text`: Verify `output_format='text'` -> plain text / Status: Red (xfail)
+    - `test_pdf_output_format_markdown`: Verify `output_format='markdown'` -> Markdown / Status: Red (xfail)
+    - `test_epub_nested_lists`: Verify nested `ul`/`ol` -> nested Markdown lists / Status: Red (xfail)
+    - `test_epub_blockquote`: Verify `<blockquote>` -> `> Quote` / Status: Red (xfail)
+    - `test_epub_code_block`: Verify `<pre><code>` -> fenced code block / Status: Red (xfail)
+    - `test_epub_multiple_footnotes`: Verify multiple refs/defs -> correct Markdown / Status: Red (xfail)
+    - `test_epub_output_format_text`: Verify `output_format='text'` -> plain text / Status: Red (xfail)
+    - `test_epub_output_format_markdown`: Verify `output_format='markdown'` -> Markdown / Status: Red (xfail)
+- **Related Requirements**: `docs/rag-markdown-generation-spec.md`, `memory-bank/mode-specific/spec-pseudocode.md` [2025-04-29 02:40:07]
 - **Objective**: Drive implementation of RAG pipeline features (tool updates, new tool, Node handlers, Python processing, dependency management).
 - **Scope**: `index.js`, `lib/zlibrary-api.js`, `lib/python-bridge.py`, `lib/venv-manager.js`, `__tests__/python/test_python_bridge.py`.
 - **Test Cases**:

@@ -170,6 +170,13 @@ graph TD
 <!-- Append new data models using the format below -->
 
 ## Interface Definitions
+### Interface Definition: MCP Tool - get_book_by_id - [2025-04-29 15:37:14] (DEPRECATED)
+- **Purpose**: ~~Retrieves detailed book information using only a Z-Library book ID.~~
+- **Status**: Deprecated due to external website changes making ID-only lookups impossible.
+- **Input**: `{ "id": "string" }`
+- **Output**: `{ ...book details... }` (No longer reliably functional)
+- **Behavior**: ~~Attempts to fetch book details via internal scraping or library calls.~~ Fails due to external limitations.
+- **Related**: ADR-003, Decision-DeprecateGetBookByID-01
 ### Interface Definition: MCP Tool - download_book_to_file - [2025-04-23 23:29:31] (Updated v2)
 - **Purpose**: Downloads a specific book file from Z-Library to a local path. Optionally processes the content for RAG simultaneously, saving the result to a separate file.
 - **Input**: `{ "id": "string", "format": "string (optional)", "outputDir": "string (optional, default: './downloads')", "process_for_rag": "boolean (optional, default: false)", "processed_output_format": "string (optional, default: 'txt')" }`

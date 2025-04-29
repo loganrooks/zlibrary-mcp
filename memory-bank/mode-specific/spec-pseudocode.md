@@ -1,6 +1,330 @@
 # Specification Writer Specific Memory
 <!-- Entries below should be added reverse chronologically (newest first) -->
+
 ## Functional Requirements
+### Feature: RAG Markdown Structure Generation
+- Added: 2025-04-29 02:40:07
+- Description: Enhance `_process_pdf` and `_process_epub` in `lib/python_bridge.py` to generate structured Markdown (headings, lists, footnotes) when `output_format='markdown'`, meeting criteria in `docs/rag-output-quality-spec.md`. Strategy uses refined `PyMuPDF` heuristics and enhanced `BeautifulSoup` logic.
+- Acceptance criteria: 1. `_process_pdf` generates correct Markdown headings based on font size/style. 2. `_process_pdf` generates correct Markdown lists based on text patterns/indentation. 3. `_process_pdf` generates correct Markdown footnotes based on superscript flags. 4. `_process_epub` generates correct Markdown headings based on `h1-h6` tags. 5. `_process_epub` generates correct Markdown lists (ordered/unordered, nested) based on `ul/ol/li` tags. 6. `_process_epub` generates correct Markdown footnotes based on `epub:type` attributes. 7. Output passes QA against `docs/rag-output-quality-spec.md`.
+- Dependencies: Python (`PyMuPDF`, `ebooklib`, `beautifulsoup4`, `lxml`).
+- Status: Draft (Specification Complete)
+- Related: `docs/rag-markdown-generation-spec.md`, `docs/rag-output-quality-spec.md`, `docs/rag-output-qa-report-rerun-20250429.md`
+
+## Pseudocode Library
+### Pseudocode: Python Bridge (`lib/python_bridge.py`) - RAG Markdown Generation Refactor
+- Created: 2025-04-29 02:40:07
+- Updated: 2025-04-29 02:40:07
+```pseudocode
+# File: lib/python_bridge.py (Refactored Functions)
+# Dependencies: fitz, ebooklib, bs4, logging, re, pathlib
+
+# --- PDF Processing Refactor ---
+
+FUNCTION _analyze_pdf_block(block):
+  """Analyzes a PyMuPDF text block to infer structure (heading level, list type)."""
+  # Heuristic logic based on font size, flags, position, text patterns
+  # Example:
+  heading_level = 0
+  is_list_item = False
+  list_type = None # 'ul' or 'ol'
+  list_indent = 0
+  text_content = ""
+  spans = []
+
+  IF block['type'] == 0: # Text block
+    # Aggregate text and span info
+    for line in block.get('lines', []):
+      for span in line.get('spans', []):
+        spans.append(span)
+        text_content += span.get('text', '')
+
+    IF spans:
+      first_span = spans[0]
+      font_size = first_span.get('size', 10)
+      flags = first_span.get('flags', 0)
+      is_bold = flags & 2
+
+      # Heading heuristic (example)
+      IF font_size > 18 OR (font_size > 14 AND is_bold): heading_level = 1
+      ELIF font_size > 14 OR (font_size > 12 AND is_bold): heading_level = 2
+      ELIF font_size > 12 OR (font_size > 11 AND is_bold): heading_level = 3
+      # ... more levels
+
+      # List heuristic (example)
+      trimmed_text = text_content.strip()
+      IF trimmed_text.startswith(('•', '*', '-')):
+        is_list_item = True
+        list_type = 'ul'
+        # Indentation could be inferred from block['bbox'][0] (x-coordinate)
+      ELIF re.match(r"^\d+\.\s+", trimmed_text):
+        is_list_item = True
+        list_type = 'ol'
+      # ... more complex list detection (e.g., a), i.)
+
+  RETURN {
+    'heading_level': heading_level,
+    'is_list_item': is_list_item,
+    'list_type': list_type,
+    'list_indent': list_indent, # Placeholder for future use
+    'text': text_content.strip(),
+    'spans': spans # Pass spans for potential footnote detection
+  }
+END FUNCTION
+
+FUNCTION _format_pdf_markdown(page):
+  """Generates Markdown string from a PyMuPDF page object."""
+  blocks = page.get_text("dict", flags=fitz.TEXTFLAGS_DICT)["blocks"]
+  markdown_lines = []
+  footnote_defs = {} # Store footnote definitions [^id]: content
+  current_list_type = None
+  list_level = 0 # Basic nesting tracker
+
+  FOR block in blocks:
+    analysis = _analyze_pdf_block(block)
+    text = analysis['text']
+    spans = analysis['spans']
+
+    IF NOT text: CONTINUE
+
+    # Footnote Reference/Definition Detection (using superscript flag)
+    processed_text_parts = []
+    potential_def_id = None
+    first_span_in_block = True
+    for span in spans:
+        span_text = span.get('text', '')
+        flags = span.get('flags', 0)
+        is_superscript = flags & 1
+
+        IF is_superscript AND span_text.isdigit():
+            fn_id = span_text
+            # Definition heuristic: superscript at start of block
+            IF first_span_in_block:
+                potential_def_id = fn_id
+            ELSE: # Reference
+                processed_text_parts.append(f"[^{fn_id}]")
+        ELSE:
+            processed_text_parts.append(span_text)
+        first_span_in_block = False
+
+    processed_text = "".join(processed_text_parts).strip()
+
+    # Store definition if found
+    IF potential_def_id:
+        footnote_defs[potential_def_id] = processed_text # Text after the superscript number
+        CONTINUE # Don't add definition block as regular content
+
+    # Format based on analysis
+    IF analysis['heading_level'] > 0:
+      markdown_lines.append(f"{'#' * analysis['heading_level']} {processed_text}")
+      current_list_type = None # Reset list context after heading
+    ELIF analysis['is_list_item']:
+      # Basic list handling (needs refinement for nesting based on indent)
+      IF analysis['list_type'] == 'ul':
+        markdown_lines.append(f"* {processed_text}")
+      ELIF analysis['list_type'] == 'ol':
+        markdown_lines.append(f"1. {processed_text}") # Simple numbering, needs context for correct sequence
+      current_list_type = analysis['list_type']
+    ELSE: # Regular paragraph
+      markdown_lines.append(processed_text)
+      current_list_type = None # Reset list context
+
+  # Append footnote definitions
+  FOR fn_id, fn_text in sorted(footnote_defs.items()):
+      markdown_lines.append(f"\n[^{fn_id}]: {fn_text}")
+
+  RETURN "\n\n".join(markdown_lines)
+END FUNCTION
+
+FUNCTION _process_pdf(file_path_str: str, output_format: str = 'text') -> str:
+    # ... (initial checks: file exists, import fitz) ...
+    doc = None
+    TRY
+        doc = fitz.open(file_path_str)
+        IF doc.is_encrypted: RAISE ValueError("PDF is encrypted")
+
+        all_content = []
+        FOR page_num in range(len(doc)):
+            page = doc.load_page(page_num)
+            IF output_format == 'markdown':
+                page_content = _format_pdf_markdown(page)
+            ELSE: # Default to text
+                page_content = page.get_text("text")
+                # Apply text cleaning (null chars, headers/footers - reuse existing logic)
+                page_content = page_content.replace('\x00', '')
+                # ... other cleaning regex ...
+                page_content = page_content.strip()
+
+            IF page_content:
+                all_content.append(page_content)
+
+        full_content = "\n\n".join(all_content).strip()
+        IF NOT full_content: RAISE ValueError("PDF contains no extractable content")
+        RETURN full_content
+    # ... (exception handling: FitzError, generic) ...
+    FINALLY
+        IF doc: doc.close()
+    ENDTRY
+END FUNCTION
+
+
+# --- EPUB Processing Refactor ---
+
+FUNCTION _epub_node_to_markdown(node, footnote_defs):
+  """Recursively converts BeautifulSoup node to Markdown string."""
+  markdown_parts = []
+  IF node.name == 'h1': prefix = '# '
+  ELIF node.name == 'h2': prefix = '## '
+  # ... h3-h6 ...
+  ELIF node.name == 'p': prefix = ''
+  ELIF node.name == 'ul':
+      # Handle UL items recursively
+      for child in node.find_all('li', recursive=False):
+          item_text = _epub_node_to_markdown(child, footnote_defs).strip()
+          if item_text: markdown_parts.append(f"* {item_text}")
+      return "\n".join(markdown_parts) # Return joined list items
+  ELIF node.name == 'ol':
+      # Handle OL items recursively
+      for i, child in enumerate(node.find_all('li', recursive=False)):
+          item_text = _epub_node_to_markdown(child, footnote_defs).strip()
+          if item_text: markdown_parts.append(f"{i+1}. {item_text}")
+      return "\n".join(markdown_parts) # Return joined list items
+  ELIF node.name == 'li':
+      # Process content within LI, ignore prefix
+      prefix = ''
+  ELIF node.name == 'blockquote': prefix = '> '
+  ELIF node.name == 'pre':
+      # Handle code blocks
+      code_content = node.get_text()
+      return f"```\n{code_content}\n```"
+  ELIF node.name == 'a' AND node.get('epub:type') == 'noteref':
+      # Handle footnote reference
+      ref_id = node.get_text(strip=True) or re.search(r'\d+', node.get('href', '')).group(0)
+      if ref_id: return f"[^{ref_id}]"
+      else: return "" # Ignore if ID not found
+  ELIF node.name == 'aside' AND node.get('epub:type') == 'footnote':
+      # Store footnote definition and return empty (handled separately)
+      fn_id = re.search(r'\d+', node.get('id', '')).group(0)
+      fn_text = node.get_text(strip=True)
+      if fn_id and fn_text: footnote_defs[fn_id] = fn_text
+      return "" # Don't include definition inline
+  ELSE:
+      # Default: process children or get text
+      prefix = ''
+
+  # Process children recursively or get text content
+  content_parts = []
+  for child in node.children:
+      if isinstance(child, str):
+          cleaned_text = child.strip()
+          if cleaned_text: content_parts.append(cleaned_text)
+      else: # It's another tag
+          child_md = _epub_node_to_markdown(child, footnote_defs)
+          if child_md: content_parts.append(child_md)
+
+  full_content = " ".join(content_parts).strip() # Join parts with space
+
+  # Apply prefix if content exists
+  if full_content:
+      # Handle blockquotes needing prefix on each line
+      if prefix == '> ':
+          return '> ' + full_content.replace('\n', '\n> ')
+      else:
+          return prefix + full_content
+  else:
+      return ""
+
+END FUNCTION
+
+FUNCTION _process_epub(file_path_str: str, output_format: str = 'text') -> str:
+    # ... (initial checks: file exists, import ebooklib/bs4) ...
+    book = epub.read_epub(file_path_str)
+    all_content = []
+    footnote_defs = {} # Collect across all items
+
+    items = book.get_items_of_type(ebooklib.ITEM_DOCUMENT)
+    FOR item in items:
+        html_content = item.get_content().decode('utf-8', errors='ignore')
+        soup = BeautifulSoup(html_content, 'lxml')
+
+        IF output_format == 'markdown':
+            item_md_parts = []
+            # Process body content, collecting footnote defs
+            if soup.body:
+                for element in soup.body.children: # Iterate direct children
+                     md_part = _epub_node_to_markdown(element, footnote_defs)
+                     if md_part: item_md_parts.append(md_part)
+            item_markdown = "\n\n".join(item_md_parts)
+            if item_markdown: all_content.append(item_markdown)
+        ELSE: # Plain text
+            text = soup.get_text(strip=True)
+            if text: all_content.append(text)
+
+    # Append collected footnote definitions for Markdown
+    if output_format == 'markdown' and footnote_defs:
+        fn_section = ["\n\n---"] # Separator
+        for fn_id, fn_text in sorted(footnote_defs.items()):
+            fn_section.append(f"[^{fn_id}]: {fn_text}")
+        all_content.append("\n".join(fn_section))
+
+    full_content = "\n\n".join(all_content).strip()
+    IF NOT full_content: RAISE ValueError("EPUB contains no extractable content")
+    RETURN full_content
+    # ... (exception handling) ...
+END FUNCTION
+
+# --- Main Function Update ---
+# Ensure the `main` function passes `output_format` (defaulting to 'text' if not provided by Node.js)
+# to `process_document`. The `process_document` function already passes it to `_process_pdf`.
+# The `_process_epub` function also needs the `output_format` parameter added.
+
+# Example modification in main():
+# elif function_name == 'process_document':
+#     file_path = args_dict.get('file_path')
+#     output_format = args_dict.get('output_format', 'text') # Get format or default
+#     if not file_path: raise ValueError("Missing 'file_path'")
+#     response = await process_document(file_path, output_format) # Pass format
+```
+#### TDD Anchors:
+**PDF (`_process_pdf` / `_format_pdf_markdown`):**
+- `test_pdf_heading_level_1`: Verify large font size maps to `# Heading`.
+- `test_pdf_heading_level_2`: Verify medium-large font size maps to `## Heading`.
+- `test_pdf_heading_level_3`: Verify medium font size maps to `### Heading`.
+- `test_pdf_paragraph`: Verify normal font size maps to plain paragraph text.
+- `test_pdf_unordered_list`: Verify blocks starting with `*`/`•`/`-` map to `* List item`.
+- `test_pdf_ordered_list`: Verify blocks starting with `1.` map to `1. List item`.
+- `test_pdf_footnote_reference`: Verify inline superscript number maps to `[^1]`.
+- `test_pdf_footnote_definition`: Verify block starting with superscript number stores definition `[^1]: Footnote text`.
+- `test_pdf_multiple_footnotes`: Verify multiple references and definitions are handled correctly and appended.
+- `test_pdf_no_text`: Verify `ValueError` raised if no text extracted.
+- `test_pdf_encrypted`: Verify `ValueError` raised for encrypted PDF.
+- `test_pdf_output_format_text`: Verify plain text output when `output_format='text'`.
+- `test_pdf_output_format_markdown`: Verify Markdown output when `output_format='markdown'`.
+
+**EPUB (`_process_epub` / `_epub_node_to_markdown`):**
+- `test_epub_heading_tags`: Verify `<h1>` to `<h6>` map to `#` to `######`.
+- `test_epub_paragraph_tag`: Verify `<p>` maps to plain paragraph text.
+- `test_epub_unordered_list`: Verify `<ul><li>Item</li></ul>` maps to `* Item`.
+- `test_epub_ordered_list`: Verify `<ol><li>Item</li></ol>` maps to `1. Item`.
+- `test_epub_nested_lists`: Verify nested `ul`/`ol` are formatted correctly with indentation (Note: pseudocode needs refinement for indent).
+- `test_epub_blockquote`: Verify `<blockquote>` maps to `> Quote`.
+- `test_epub_code_block`: Verify `<pre><code>` maps to fenced code block.
+- `test_epub_footnote_reference`: Verify `<a epub:type="noteref">` maps to `[^1]`.
+- `test_epub_footnote_definition`: Verify `<aside epub:type="footnote">` stores definition and is appended correctly.
+- `test_epub_multiple_footnotes`: Verify multiple references and definitions are handled.
+- `test_epub_no_content`: Verify `ValueError` raised if no content extracted.
+- `test_epub_output_format_text`: Verify plain text output when `output_format='text'`.
+- `test_epub_output_format_markdown`: Verify Markdown output when `output_format='markdown'`.
+
+# Specification Writer Specific Memory
+<!-- Entries below should be added reverse chronologically (newest first) -->
+## Functional Requirements
+### Feature: RAG Output Quality Evaluation Criteria
+- Added: 2025-04-29 01:34:12
+- Description: Defined measurable quality criteria for evaluating Markdown and Text output from the `process_document_for_rag` tool (EPUB/PDF sources) to ensure suitability for RAG ingestion. Covers structure preservation, content fidelity, reference handling, and RAG-specific suitability (chunking, metadata, images). Includes TDD anchors for future automated testing.
+- Acceptance criteria: 1. Specification document `docs/rag-output-quality-spec.md` exists. 2. Document covers criteria for both Markdown and Text outputs. 3. Document includes TDD anchors. 4. Criteria are clear and measurable for QA testing.
+- Dependencies: `process_document_for_rag` tool implementation (`lib/python_bridge.py` using `ebooklib`, `PyMuPDF`).
+- Status: Draft (Specification Complete)
+- Related: `docs/rag-output-quality-spec.md`
 ### Feature: RAG Document Processing Pipeline (v2 - File Output)
 - Added: 2025-04-23 23:37:09
 - Description: Update the RAG pipeline to save processed text (EPUB, TXT, PDF) to `./processed_rag_output/` and return the `processed_file_path` instead of raw text. **Clarifies the `download_book_to_file` workflow per ADR-002 (input `bookDetails` from search, internal scraping).** Involves updating `download_book_to_file` and `process_document_for_rag` tools (schemas, Node handlers), and Python bridge (`download_book` handles scraping, `process_document` orchestrates extraction and saving via `_save_processed_text` helper).

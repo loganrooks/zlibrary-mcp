@@ -34,6 +34,88 @@
 # Debugger Specific Memory
 <!-- Entries below should be added reverse chronologically (newest first) -->
 ## Issue History
+### Issue: PYTEST-FAILURES-POST-8CE158F - Pytest failures after ImportError fix - Status: Resolved - [2025-04-29 15:19:11]
+- **Reported**: [2025-04-29 15:08:43] (via SPARC Handover) / **Severity**: High / **Symptoms**: 10 pytest failures (`NameError`, `AttributeError`, `AssertionError`, `Failed: DID NOT RAISE`) in `__tests__/python/test_python_bridge.py` after commit `8ce158f` fixed collection errors. `tdd` mode encountered tool errors trying to fix them.
+- **Investigation**:
+    1. Read `tdd` feedback confirming tool errors and failure types. [See TDD Feedback 2025-04-29 15:08:08]
+    2. Read `__tests__/python/test_python_bridge.py` and `lib/python_bridge.py`.
+    3. Confirmed `_scrape_and_download` helper was removed in `lib/python_bridge.py` (replaced by `zlib_client.download_book`).
+    4. Confirmed error handling in `download_book` now returns dict or re-raises, not wrapping in `RuntimeError`.
+    5. Identified incorrect mock targets, assertions, and error handling expectations in tests.
+    6. Applied fixes in batches using `apply_diff`, re-reading file sections after partial failures.
+    7. Verified fixes using `pytest`. [See Pytest Result 2025-04-29 15:19:11]
+- **Root Cause**: Tests in `__tests__/python/test_python_bridge.py` were not updated to reflect changes made to `lib/python_bridge.py` in commit `8ce158f`, specifically the removal of `_scrape_and_download` and changes to error handling/return values in `download_book`.
+- **Fix Applied**:
+    - Removed obsolete `mock_scrape_and_download` fixture.
+    - Updated `download_book` tests to call/mock `zlib_client.download_book`.
+    - Corrected mock call assertions (positional vs keyword args).
+    - Updated error handling tests to expect original exceptions (`DownloadError`, `Exception`) or `RuntimeError` from `process_document`, not wrapped errors from `download_book`.
+    - Corrected assertion key (`file_path` vs `downloaded_file_path`).
+    - Fixed issues in file saving tests (`mock_aiofiles` usage, incorrect assertions).
+- **Verification**: `pytest __tests__/python/test_python_bridge.py` passed (44 passed, 3 xfailed).
+- **Related Issues**: [Ref: Task 2025-04-29 15:11:37], [Ref: ActiveContext 2025-04-29 15:08:43], [Ref: ActiveContext 2025-04-29 14:13:37]
+### Issue: PYTEST-COLLECT-IMPORT-01 - Pytest collection failed due to ImportError/NameError - Status: Resolved - [2025-04-29 14:12:00]
+- **Reported**: [2025-04-29 14:02:41] (via SPARC Handover) / **Severity**: High / **Symptoms**: `pytest --collect-only` failed with `ImportError: cannot import name 'process_document' from 'python_bridge'`, later changed to `NameError: name 'python_bridge' is not defined` after initial fix attempt.
+- **Investigation**:
+    1. Reviewed `tdd` feedback: Error occurred after refactoring tests to use `process_document`. [See TDD Feedback 2025-04-29 14:01:57]
+    2. Read `__tests__/python/test_python_bridge.py`: Confirmed import attempt `from python_bridge import process_document`.
+    3. Read `lib/python_bridge.py`: Confirmed `process_document` function was missing.
+    4. Re-implemented `process_document` and helper functions (`_process_epub`, `_process_txt`, `_process_pdf`, `_save_processed_text`) in `lib/python_bridge.py` based on spec `docs/rag-pipeline-implementation-spec.md`. Fixed indentation errors using `write_to_file`. [See Debug Log 2025-04-29 14:11:22]
+    5. Ran `pytest --collect-only`: Encountered `NameError` on line `python_bridge.EBOOKLIB_AVAILABLE = True` in test file. [See Debug Log 2025-04-29 14:11:38]
+    6. Added `import python_bridge` to `__tests__/python/test_python_bridge.py`. [See Debug Log 2025-04-29 14:11:54]
+    7. Ran `pytest --collect-only`: Collection succeeded. [See Debug Log 2025-04-29 14:12:07]
+- **Root Cause**: 1. The `process_document` function was missing from `lib/python_bridge.py`, likely due to incomplete refactoring by `tdd` mode. 2. The test file `__tests__/python/test_python_bridge.py` attempted to access the module via the name `python_bridge` without importing it first.
+- **Fix Applied**: 1. Re-implemented `process_document` and its helper functions in `lib/python_bridge.py`. 2. Added `import python_bridge` to `__tests__/python/test_python_bridge.py`.
+- **Verification**: `pytest --collect-only __tests__/python/test_python_bridge.py` completed successfully (exit code 0).
+- **Related Issues**: [Ref: Task 2025-04-29 14:03:23], [Ref: ActiveContext 2025-04-29 14:02:41]
+### Issue: RAG-PDF-FN-01-REGRESSION - Pytest regressions after RAG footnote fix - Status: Resolved - [2025-04-29 12:03:44]
+- **Reported**: [2025-04-29 11:21:01] (via TDD Report) / **Severity**: High / **Symptoms**: 10 pytest failures in `__tests__/python/test_python_bridge.py` after RAG footnote fix (commit unknown, applied in previous session).
+- **Investigation**:
+    1. Ran pytest, confirmed 10 failures related to `download_book` and `process_document` tests. [2025-04-29 11:23:00]
+    2. Analyzed failures: Outdated assertions (expecting old `_scrape_and_download` logic/paths), incorrect error handling checks (`pytest.raises` vs error dict), `UnboundLocalError` in PDF markdown formatting (`_format_pdf_markdown`), async call issues, incorrect mock assertions.
+    3. Applied fixes iteratively to `lib/python_bridge.py` and `__tests__/python/test_python_bridge.py`. [See Debug Logs 2025-04-29 11:23:00 - 12:03:44]
+- **Root Cause**: Multiple issues introduced by previous fixes or revealed by refactoring:
+    - Tests assumed old `_scrape_and_download` logic instead of new `zlib_client.download_book`.
+    - Tests incorrectly expected exceptions instead of error dictionaries for RAG processing failures in `download_book`.
+    - `UnboundLocalError` in `_format_pdf_markdown` due to uninitialized variables (`fn_id`, `cleaned_fn_text`).
+    - Test `test_process_document_raises_save_error` called async function `process_document` synchronously.
+    - Incorrect mock assertions (wrong format string in `test_process_document_raises_save_error`, missing variable assignment in `test_download_book_success_no_rag`).
+- **Fix Applied**:
+    - Updated `download_book` tests to mock `zlib_client.download_book` and assert correct return structure/paths.
+    - Corrected error handling assertions in `download_book` tests.
+    - Initialized `fn_id` and `cleaned_fn_text` in `_format_pdf_markdown`.
+    - Used `asyncio.run()` in `test_process_document_raises_save_error`.
+    - Corrected mock assertions in `test_download_book_success_no_rag` and `test_process_document_raises_save_error`.
+- **Verification**: `pytest` passed with 32 passed, 18 xfailed. [2025-04-29 12:03:44]
+- **Related Issues**: [Ref: ActiveContext 2025-04-29 11:11:06, Debug Issue RAG-PDF-FN-01], [Ref: ActiveContext 2025-04-29 11:21:01, TDD Task 2025-04-29 11:16:35]
+### Issue: RAG-PDF-FN-01 - RAG PDF Footnote Formatting Bug - Status: Resolved - [2025-04-29 11:11:06]
+- **Reported**: [2025-04-29 10:56:55] (via SPARC Handover) / **Severity**: Medium / **Symptoms**: `test_rag_markdown_pdf_formats_footnotes_correctly` failed with `AssertionError`, indicating footnote section was missing or incorrectly formatted. Initial investigation focused incorrectly on string cleaning methods.
+- **Investigation**:
+    1. Verified leading character was standard period (`ord=46`) using debug prints. [See Debug Log 2025-04-29 11:00:17]
+    2. Added debug prints to track `footnote_defs` and `markdown_lines`. Confirmed definition was stored correctly but final string was missing footnote section. [See Debug Log 2025-04-29 11:01:44]
+    3. Identified erroneous `continue` statement (line 380) in `elif analysis['is_list_item']:` block, likely copy-paste error. Removed it. [See Diff 2025-04-29 11:03:37]
+    4. Identified duplicated logic block (lines 373-381 vs 383-401). Removed redundant block. [See Diff 2025-04-29 11:05:19]
+    5. Identified extra newline `\n` prepended to footnote separator `---` (line 410). Removed it. [See Diff 2025-04-29 11:10:40]
+- **Root Cause**: Combination of: 1) Erroneous `continue` statement preventing the main text line of the footnote definition from being added to `markdown_lines`. 2) Duplicated logic block. 3) Extra newline in the footnote separator (`\n---`) causing incorrect final string formatting. The initial focus on string cleaning was a red herring.
+- **Fix Applied**: Removed erroneous `continue` (line 380), removed duplicated logic block (lines 373-381), and removed leading `\n` from separator (line 410) in `lib/python_bridge.py`.
+- **Verification**: `test_rag_markdown_pdf_formats_footnotes_correctly` passed successfully. [See Test Result 2025-04-29 11:11:06]
+- **Related Issues**: [ActiveContext 2025-04-29 10:56:55] (Initial Report)
+### Issue: RAG-MD-QA-FAIL-01 - RAG Markdown Generation QA Failures - Status: Fixes Applied - [2025-04-29 10:02:50]
+- **Reported**: [2025-04-29 09:55:59] (via SPARC Handover) / **Severity**: High / **Symptoms**: QA testing (commit `e943016`) failed against spec `docs/rag-markdown-generation-spec.md`. Issues: PDF heading noise, PDF/EPUB list formatting, PDF/EPUB footnote formatting, PDF null characters. [See QA Feedback 2025-04-29 09:52:00]
+- **Investigation**:
+    1. Read QA feedback (`memory-bank/feedback/qa-tester-feedback.md` [2025-04-29 09:52:00]).
+    2. Read specification (`docs/rag-markdown-generation-spec.md`).
+    3. Read implementation (`lib/python_bridge.py`).
+    4. Hypothesized root causes: PDF cleaning applied only to text output; basic list heuristics; strict EPUB footnote attribute matching; insufficient PDF footnote heuristics.
+- **Root Cause**: Confirmed hypotheses: PDF cleaning logic bypassed Markdown path; list heuristics were too simple; EPUB footnote logic relied on specific attributes/ID formats not present in sample.
+- **Fix Applied**:
+    1. Modified `_process_pdf` to apply null char removal and header/footer cleaning to content *before* joining pages, regardless of `output_format`. [See Diff 2025-04-29 10:00:51]
+    2. Enhanced PDF list detection in `_analyze_pdf_block` (regex for ordered lists) and formatting in `_format_pdf_markdown` (use detected marker). [See Diff 2025-04-29 10:01:09]
+    3. Added specific handling for `nav[epub:type="toc"]` in `_epub_node_to_markdown` to format TOC links as lists. [See Diff 2025-04-29 10:01:25, 2025-04-29 10:01:51, 2025-04-29 10:02:18]
+    4. Refined PDF footnote definition heuristic in `_format_pdf_markdown`. [See Diff 2025-04-29 10:02:50]
+    5. Broadened EPUB footnote ID detection regex and improved definition cleaning in `_epub_node_to_markdown`. [See Diff 2025-04-29 10:02:50]
+- **Verification**: Fixes applied. Next step: Delegate to TDD mode to add specific regression tests.
+- **Related Issues**: [GlobalContext Progress 2025-04-29 09:55:10] (QA Failure Report)
 ### Issue: Investigate-GetDownloadInfo-01 - Investigate `get_download_info` Errors and Necessity - Status: Resolved (Recommendation: Deprecate) - [2025-04-28 17:31:01]
 - **Reported**: [2025-04-28 17:21:43] (via Task Description) / **Severity**: Low / **Symptoms**: Handover context mentioned errors; user intervention questioned value due to ID lookup instability.
 - **Investigation**:

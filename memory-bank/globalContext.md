@@ -4,7 +4,69 @@
 [2025-04-28 12:30:11] - Integration - RAG Download Workflow Verified (Premature) - Successfully tested `download_book_to_file` end-to-end on branch `feature/rag-file-output` (commit `f2d1b9c`). Fixed `AttributeError` and `TypeError` in `zlibrary/src/zlibrary/libasync.py`. Download confirmed working. [Ref: Integration Test Scenario RAG-DL-WF-01]
 [2025-04-28 13:22:47] - Debug - Resolved Pytest Regression (Post-Integration) - Fixed 4 failing tests in `__tests__/python/test_python_bridge.py` by correcting outdated assertions expecting directory paths instead of full file paths. Tests verified passing. Commit: 26cd7c8. [See Issue REG-PYTEST-001]
 - **[2025-04-28 22:04:00] - DocsWriter - Completed Documentation Update** - Updated `README.md` to reflect current project status, recent fixes (`get_download_history`, `get_recent_books`), tool deprecation (`get_download_info`), passing test suites, and ADR-002 alignment. Verified consistency with related architecture/spec documents.
+- **[2025-04-29 09:35:19] - TDD - Refactor Completed (RAG Markdown Generation)** - Refactored `lib/python_bridge.py` and `__tests__/python/test_python_bridge.py` for clarity and standards. All tests pass. Commit: `e943016`. [Ref: ActiveContext 2025-04-29 09:35:19]
+- **[2025-04-29 09:55:59] - Feature: RAG Markdown Generation - QA Testing FAILED**
+  - Status: Failed QA
+  - Mode: `qa-tester`
+  - Details: QA testing revealed significant issues with Markdown output quality and correctness, particularly with heading levels and list formatting. See feedback for details. Feature requires refinement/debugging.
+  - Commit: `e943016` (tested)
+  - Related Context: [activeContext.md 2025-04-29 09:55:59], [qa-tester-feedback.md QA Findings 2025-04-29 09:55:59]
+- **[2025-04-29 09:48:39] - Feature: RAG Markdown Generation - Documentation Complete**
+  - Status: Completed
+  - Mode: `docs-writer`
+  - Details: Updated `docs/rag-pipeline-implementation-spec.md` to reflect the new Markdown output option and logic.
+  - Commit: `e943016` (documented)
+  - Related Context: [activeContext.md 2025-04-29 09:48:39], [docs-writer.md Documentation Plan Update 2025-04-29 09:48:39]
+- **[2025-04-29 09:43:58] - Feature: RAG Markdown Generation - Final TDD Verification Complete**
+  - Status: Completed
+  - Mode: `tdd`
+  - Details: Final verification pass completed for commit `e943016`. Test coverage and clarity deemed adequate. All tests pass. Feature ready for Completion phase.
+  - Commit: `e943016` (verified)
+  - Related Context: [activeContext.md 2025-04-29 09:43:58], [tdd.md Verification Summary 2025-04-29 09:43:58]
+- **[2025-04-29 09:39:34] - Feature: RAG Markdown Generation - Integration Verified**
+- **[2025-04-29 09:48:39] - Pattern: Configurable Output Format (RAG)**
+  - Description: The RAG processing pipeline now supports configurable output formats (`txt`, `markdown`) via the `output_format` parameter in relevant functions (`process_document_for_rag`). Markdown output includes basic structural elements derived from the source document.
+  - Implementation: `lib/python_bridge.py` (commit `e943016`)
+  - Specification: `docs/rag-markdown-generation-spec.md`
+  - Documentation: `docs/rag-pipeline-implementation-spec.md`
+  - Status: Completed
+  - Mode: `integration`
+  - Details: Verified integration of commit `e943016`. Full test suite (`npm test`) passed. No regressions detected.
+  - Commit: `e943016` (verified)
+  - Related Context: [activeContext.md 2025-04-29 09:39:34], [integration.md Test Scenario RAG-MD-INT-VERIFY-01]
+- **[2025-04-29 09:36:33] - Feature: RAG Markdown Generation - TDD Refactor Complete**
+  - Status: Completed
+  - Mode: `tdd`
+  - Details: Refactored implementation (`lib/python_bridge.py`) and tests (`__tests__/python/test_python_bridge.py`) for clarity and maintainability. All tests pass.
+  - Commit: `e943016`
+  - Related Context: [activeContext.md 2025-04-29 09:36:33], [tdd.md TDD Cycle Log 2025-04-29 09:36:33]
+- **[2025-04-29 11:11:06] - Debug - Resolved RAG PDF Footnote Test Failure** - Debug mode successfully identified and fixed the root cause of the `test_rag_markdown_pdf_formats_footnotes_correctly` failure. The issue was logic errors (erroneous `continue`, duplicated block, extra newline) in `lib/python_bridge.py`, not a string cleaning problem. Fixes applied. [Ref: ActiveContext 2025-04-29 11:11:06, Debug Issue RAG-PDF-FN-01]
+- **[2025-04-29 10:56:55] - Debug - RAG Markdown Fix BLOCKED (Early Return)** - Debug mode returned early while attempting to fix QA failures for RAG Markdown generation (commit `e943016`). A persistent issue prevents cleaning the leading period (`.`) from footnote text during PDF processing (`lib/python_bridge.py`, `test_rag_markdown_pdf_formats_footnotes_correctly`), despite trying standard string methods (`lstrip`, `re.sub`, slicing). Requires deeper investigation. [Ref: ActiveContext 2025-04-29 10:56:55]
+- **[2025-04-29 11:11:06] - Debug - Resolved RAG PDF Footnote Formatting Bug** - Fixed `test_rag_markdown_pdf_formats_footnotes_correctly` failure in `lib/python_bridge.py`. Root cause was a combination of an erroneous `continue` statement and an extra newline in the footnote separator. Test now passes. [Ref: ActiveContext 2025-04-29 11:11:06, Debug Issue RAG-PDF-FN-01]
+- **[2025-04-29 16:36:11] - Fix: MCP Result Format** - Modified `src/index.ts` `tools/call` handler to return standard `{ result: value }` format. Tests passed. Commit: `47edb7a`. [Ref: ActiveContext 2025-04-29 16:36:11]
+- **[2025-04-29 17:00:00] - HolisticReview - Post-Refinement Assessment Complete** - Reviewed workspace after recent refactoring/fixes. Test suite passes. Integration points verified (RAG refactor, MCP result format). Documentation updated (README, ADRs, Specs). Obsolete `get_book_by_id` references removed from tests/code. Debug logs removed, error logging improved. Minor findings: `lib/rag_processing.py` slightly over line limit, `zlibrary/src/zlibrary/abs.py` significantly over (deferred), utility script `get_venv_python_path.mjs` at root, unused Zod schema remains. Project deemed ready for final checks/deployment prep.
 ## Progress
+- **[2025-04-29 17:13:04] - Integration - Final Integration Check Completed** - Verified workspace state (commit 70687dc), sanity checked core components, reviewed documentation. Confirmed readiness post-refinement/cleanup.
+- **[2025-04-29 17:05:11] - Remove Unused Zod Schema - Completed** - Removed `GetDownloadInfoParamsSchema` from `src/index.ts`. Tests passed. Commit: 70687dc. [Ref: Task 2025-04-29 17:02:59]
+- **[2025-04-29 17:01:20] - Cleanup Root Utility Script - Completed** - Moved `get_venv_python_path.mjs` to `scripts/`. Verified no references and tests pass. [Ref: Task 2025-04-29 16:58:50]
+- **[2025-04-29 16:31:39] - DocsWriter - Documentation Update (Deprecate `get_book_by_id`)** - Removed references to the deprecated `get_book_by_id` tool from `docs/internal-id-lookup-spec.md`, `docs/search-first-id-lookup-spec.md`, and `docs/architecture/rag-pipeline.md`. This aligns documentation with ADR-003 and code removal (commit `454c92e`).
+- **[2025-04-29 16:27:00] - Code - Deprecated `get_book_by_id` Tool** - Removed tool definition, Node.js handler, Python function, and associated tests. Verified test suites pass. Commit: `454c92e`. [Ref: Task 2025-04-29 16:13:50, Decision-DeprecateGetBookByID-01]
+- **[2025-04-29 15:52:56] - Refactor Python Bridge - Completed** - Extracted RAG processing logic from `lib/python_bridge.py` to `lib/rag_processing.py`. Verified with tests. Awaiting commit confirmation.
+- **[2025-04-29 15:27:08] - TDD - Xfailed Test Investigation Complete** - Investigated 3 xfailed tests in `__tests__/python/test_python_bridge.py`. Confirmed they remain `XFAIL` for valid reasons. No code changes made. [Ref: ActiveContext 2025-04-29 15:27:08]
+- **[2025-04-29 15:22:52] - TDD - Full Regression Test Suite Verification** - Completed full regression test (`npm test`) after debug fixes (commit `079a182`). All tests passed. No regressions found. [Ref: ActiveContext 2025-04-29 15:22:52]
+- **[2025-04-29 15:19:52] - Debug - Resolved Pytest Failures (Post-ImportError Fix)** - Fixed 10 pytest failures in `__tests__/python/test_python_bridge.py` that emerged after commit `8ce158f`. Failures were due to removed helper functions, incorrect mock assertions, and outdated error handling expectations. Tests now pass (44 passed, 3 xfailed). Commit: `079a182`. [Ref: ActiveContext 2025-04-29 15:19:11, Debug Issue PYTEST-FAILURES-POST-8CE158F]
+- **[2025-04-29 14:12:00] - Debug - Resolved Pytest Collection Errors** - Fixed `ImportError` (missing `process_document` function in `lib/python_bridge.py`) and subsequent `NameError` (missing `import python_bridge` in `__tests__/python/test_python_bridge.py`) that occurred during `pytest --collect-only` after `tdd` refactoring. Collection now successful. Commit: `8ce158f`. [Ref: ActiveContext 2025-04-29 14:12:00]
+- **[2025-04-29 12:03:44] - Debug - Resolved Pytest Regressions (RAG Footnote Fix)** - Fixed 10 pytest failures in `__tests__/python/test_python_bridge.py` introduced after the RAG footnote fix. Failures were due to: outdated test logic assuming old download methods, incorrect error handling expectations, `UnboundLocalError` in PDF markdown formatting, and incorrect test assertions/setup. Pytest suite now passes. [Ref: ActiveContext 2025-04-29 12:03:44, Debug Issue RAG-PDF-FN-01-REGRESSION]
+- **[2025-04-29 10:02:50] - Debug - Applied Fixes for RAG Markdown QA Failures** - Modified `lib/python_bridge.py` to address QA issues: applied cleaning (null chars, headers/footers) to Markdown output for PDFs, improved list detection/formatting heuristics for PDFs, added specific TOC handling for EPUB lists, and refined footnote detection/formatting for both PDF and EPUB. [Ref: ActiveContext 2025-04-29 10:02:50]
+- **[2025-04-29 09:55:10] - QA - RAG Markdown Generation FAILED** - QA testing for the RAG Markdown generation feature (commit `e943016`) completed. The feature failed due to significant deviations from the specification (`docs/rag-markdown-generation-spec.md`), particularly in list and footnote generation for both PDF and EPUB, and heading detection/cleaning for PDF. See `memory-bank/feedback/qa-tester-feedback.md` [2025-04-29 09:52:00] for details.
+- **[2025-04-29 09:47:33] - DocsWriter - Documented RAG Markdown Generation** - Updated `docs/rag-pipeline-implementation-spec.md` to reflect the implementation and verification of the RAG Markdown generation feature (commit `e943016`), clarifying `output_format` and linking to the relevant spec (`docs/rag-markdown-generation-spec.md`).
+- **[2025-04-29 09:38:41] - Integration - Verified RAG Markdown Generation Integration** - Confirmed successful integration of the RAG Markdown structure generation feature (commit `e943016`). Full test suite (`npm test`) passed. [Ref: ActiveContext 2025-04-29 09:38:41]
+- **[2025-04-29 03:01:59] - Code - TDD Green Completed (RAG Markdown Generation)** - Implemented Markdown generation logic in `lib/python_bridge.py` based on spec `docs/rag-markdown-generation-spec.md`. Pytest confirms target tests now pass (16 xpassed). Commit: `215ec6d`. [Ref: ActiveContext 2025-04-29 03:01:59]
+- **[2025-04-29 03:01:59] - Code - TDD Green Completed (RAG Markdown Generation)** - Implemented Markdown generation logic in `lib/python_bridge.py` based on spec `docs/rag-markdown-generation-spec.md`. Pytest confirms target tests now pass (16 xpassed). [Ref: ActiveContext 2025-04-29 03:01:59]
+- **[2025-04-29 02:51:06] - SPARC - Delegate Clause Triggered (Context 134%)** - Handing over orchestration before TDD Green phase due to high context. [Ref: ActiveContext 2025-04-29 02:51:06]
+- **[2025-04-29 02:48:54] - TDD - Red Phase Completed (RAG Markdown Generation)** - Added failing tests (`@pytest.mark.xfail`) to `__tests__/python/test_python_bridge.py` for refined Markdown structure generation (PDF/EPUB). Tests confirmed xfailing. Commit: 05985b2. [Ref: ActiveContext 2025-04-29 02:48:54]
+- **[2025-04-29 02:42:55] - SpecPseudo - Completed RAG Markdown Generation Specification** - Defined strategy using refined `PyMuPDF` heuristics and `BeautifulSoup` logic. Created spec `docs/rag-markdown-generation-spec.md`. [Ref: ActiveContext 2025-04-29 02:42:55]
+- **[2025-04-29 02:33:00] - QA - RAG Output Re-evaluation (Commit `60c0764`)** - Re-tested `process_document_for_rag` against `docs/rag-output-quality-spec.md`. PDF processing significantly improved (noise reduced, Text PASS, MD PARTIAL/FAIL). EPUB processing unchanged (Text PASS, MD FAIL). TDD refinements did not fix Markdown structure issues. [Ref: QA Test Execution 2025-04-29 02:33:00]
 - **[2025-04-28 20:49:00] - TDD - Completed `get_recent_books` Implementation** - Implemented `get_recent_books` in `lib/python_bridge.py` and added tests. Fixed regressions in `download_book` tests. All relevant tests pass. Commit: 75b6f11.
 - **[2025-04-28 17:31:01] - Debug - Completed `get_download_info` Investigation** - Analyzed tool errors, dependency on ID lookup, and redundancy with ADR-002 workflow. Recommended deprecation. [See Debug Report 2025-04-28 17:31:01]
 - **[2025-04-28 17:03:01] - SpecPseudo - Verified RAG Spec Alignment** - Confirmed `docs/rag-pipeline-implementation-spec.md` (v2.1) aligns with ADR-002 regarding the `download_book_to_file` workflow (using `bookDetails` from `search_books`). No changes required.
@@ -28,6 +90,23 @@
 - **Related**: `docs/search-first-id-lookup-spec.md`, Decision-SearchFirstIDLookup-01
 
 
+### Pattern: RAG Markdown Generation - [2025-04-29 09:47:33]
+- **Context**: Enhancing the RAG pipeline to produce structured Markdown output.
+- **Problem**: Plain text output from RAG processing lacks structure (headings, lists, footnotes), limiting its usefulness for certain downstream tasks.
+- **Solution**: Refined the Python bridge (`lib/python_bridge.py`) functions (`_process_pdf`, `_process_epub`) to optionally generate Markdown. Uses `PyMuPDF` heuristics (font size, flags) for PDFs and `BeautifulSoup` DOM traversal for EPUBs to map structural elements to Markdown syntax. Controlled by the `output_format` parameter ('text' or 'markdown') in `process_document` and `download_book_to_file`.
+- **Components**: `lib/python_bridge.py` (updated `_process_pdf`, `_process_epub`, added `_format_pdf_markdown`, `_analyze_pdf_block`, `_epub_node_to_markdown`), `src/lib/zlibrary-api.ts` (passes `output_format`), `src/index.ts` (updated tool schemas).
+- **Related**: `docs/rag-markdown-generation-spec.md`, `docs/rag-pipeline-implementation-spec.md` (updated), ActiveContext [2025-04-29 09:47:33]
+### Pattern Update: Python Bridge RAG Processing - [2025-04-29 15:52:56]
+#### [2025-04-29 17:14:10] Completion Phase Finalized
+- **Summary:** All post-refinement cleanup tasks identified by `holistic-reviewer` [Ref: GlobalContext Progress 2025-04-29 16:57:57] have been completed (`optimizer` commits `e3b8709`, `70687dc`). Final TDD verification passed [Ref: SPARC MB Delegation Log 2025-04-29 17:07:00]. Final integration checks passed [Ref: SPARC MB Delegation Log 2025-04-29 17:10:29].
+- **Status:** Workspace is stable, verified, and ready for the next stage.
+- **Links:** [ActiveContext 2025-04-29 17:14:10]
+- **Context**: Refactoring `lib/python_bridge.py` for modularity.
+- **Problem**: `lib/python_bridge.py` exceeded line limits due to inclusion of extensive RAG document processing logic (PDF/EPUB/TXT parsing, Markdown generation, file saving).
+- **Solution**: Extracted all RAG-specific functions (`process_epub`, `process_txt`, `process_pdf`, `save_processed_text`, and associated helpers like `_analyze_pdf_block`, `_format_pdf_markdown`, `_epub_node_to_markdown`, `_html_to_text`) into a new dedicated module: `lib/rag_processing.py`. The main `python_bridge.py` now imports and calls functions from this module.
+- **Components**: `lib/python_bridge.py` (modified), `lib/rag_processing.py` (new).
+- **Impact**: Improved modularity and maintainability. Reduced `lib/python_bridge.py` line count significantly.
+- **Related**: Task [Refactor Python Bridge (`lib/python_bridge.py`) 2025-04-29 15:43:24]
 # System Patterns
 ### Pattern: RAG Pipeline File Output - [2025-04-23 23:30:58]
 - **Context**: Processing documents (EPUB, TXT, PDF) for RAG workflows.
@@ -173,6 +252,24 @@
 - **Implementation**: Remove the tool definition from `src/index.ts`, the handler from `src/lib/zlibrary-api.ts`, the corresponding function from `lib/python_bridge.py`, and associated tests.
 - **Related**: ADR-002, [Debug Report 2025-04-28 17:31:01]
 # Decision Log
+### Decision-DeprecateGetBookByID-01 - [2025-04-29 15:37:14]
+- **Decision**: Deprecate the `get_book_by_id` MCP tool.
+- **Rationale**: External Z-Library website changes prevent reliable book lookup using only an ID. Both direct `/book/ID` fetches (missing slug) and `search(id:...)` workarounds fail externally. Continuing to support the tool implies functionality that cannot be delivered and adds maintenance overhead for brittle scraping code. ADR-002 workflow already relies on `search_books`.
+- **Alternatives Considered**: Refining internal scrapers (pointless if external source is broken), finding alternative library methods (unlikely), keeping tool marked as unreliable (less clear than deprecation).
+- **Implementation**: Log decision in ADR-003. Subsequent tasks should remove the tool definition, handlers, Python bridge function, and associated tests. Update documentation.
+- **Related**: ADR-003, ActiveContext [2025-04-29 15:37:14], ActiveContext [2025-04-16 07:27:22], Decision-DeprecateGetDownloadInfo-01
+### Decision-DeprecateGetBookByID-01 - [2025-04-29 15:37:14]
+- **Decision**: Deprecate the `get_book_by_id` MCP tool.
+- **Rationale**: External Z-Library website changes prevent reliable book lookup using only an ID. Both direct `/book/ID` fetches (missing slug) and `search(id:...)` workarounds fail externally. Continuing to support the tool implies functionality that cannot be delivered and adds maintenance overhead for brittle scraping code. ADR-002 workflow already relies on `search_books`.
+- **Alternatives Considered**: Refining internal scrapers (pointless if external source is broken), finding alternative library methods (unlikely), keeping tool marked as unreliable (less clear than deprecation).
+- **Implementation**: Log decision in ADR-003. Subsequent tasks should remove the tool definition, handlers, Python bridge function, and associated tests. Update documentation.
+- **Related**: ADR-003, ActiveContext [2025-04-29 15:37:14], ActiveContext [2025-04-16 07:27:22], Decision-DeprecateGetDownloadInfo-01
+### Decision-DeferXfailedTests-01 - [2025-04-29 15:29:34]
+- **Decision**: Defer addressing the 3 remaining xfailed tests in `__tests__/python/test_python_bridge.py` (`test_main_routes_download_book`, `test_downloads_paginator_parse_page_new_structure`, `test_downloads_paginator_parse_page_old_structure_raises_error`).
+- **Rationale**: `tdd` mode confirmed these tests fail for valid, documented reasons (problematic structure, vendored library changes) [Ref: ActiveContext 2025-04-29 15:27:08]. Fixing them may require significant effort and could delay the completion of the current refinement cycle focused on the previously critical 10 failures. The rest of the test suite passes. These can be logged as technical debt.
+- **Alternatives Considered**: Addressing xfails now (Option A - high effort/delay risk).
+- **Implementation**: Log decision. Proceed with other refinement/completion tasks (e.g., holistic review).
+- **Related**: ActiveContext [2025-04-29 15:27:08] (TDD xfail investigation)
 ### Decision-PrioritizeGitCleanup-01 - [2025-04-28 02:20:01]
 - **Decision**: Prioritize cleaning up uncommitted changes ('git debt') before proceeding with the TDD cycle for RAG download workflow. Delegate task to `devops`.
 - **Rationale**: User intervention identified significant uncommitted changes, potentially impacting stability and future work. Maintaining clean version control is crucial.

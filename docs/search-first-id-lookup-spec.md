@@ -1,8 +1,11 @@
+**Note:** This specification describes an internal "Search-First" strategy that was ultimately deemed unworkable due to external website limitations (ID search is non-functional). The `get_book_by_id` tool has been deprecated. See **[ADR-003: Handle Failure of `get_book_by_id` Tool](./adr/ADR-003-Handle-ID-Lookup-Failure.md)** for the final decision.
+
+---
 # Specification: Search-First Internal ID Lookup
 
 ## 1. Overview
 
-**Context:** Existing ID-based lookups (`get_book_by_id`, `get_download_info`) are failing due to issues with the external `zlibrary` library and direct fetching (`/book/ID` results in 404).
+**Context:** Existing ID-based lookups (`get_download_info`) are failing due to issues with the external `zlibrary` library and direct fetching (`/book/ID` results in 404).
 
 **Strategy:** Implement a "Search-First" internal lookup mechanism within `lib/python_bridge.py`. This involves:
 1.  Performing an internal general search using the book ID as the query string via `httpx`.

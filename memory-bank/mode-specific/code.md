@@ -1,6 +1,22 @@
 # Auto-Coder Specific Memory
 <!-- Entries below should be added reverse chronologically (newest first) -->
 ### Implementation: `download_book` in Forked Library - [2025-04-24 03:49:26]
+## API/Handler Modifications
+
+### [2025-04-29 16:36:11] Fix MCP Result Format (`tools/call`)
+- **Purpose**: Ensure the `tools/call` handler returns results in the standard MCP format `{ result: value }`.
+- **Files**: `src/index.ts` (modified line 332).
+- **Status**: Implemented.
+- **Details**: Changed the return statement in the handler to `return { result: result } as any;`. Cast to `any` to bypass inaccurate SDK TypeScript type for `ServerResult`. Verified with `npm test`.
+- **Related**: Task [2025-04-29 16:33:52], Commit `47edb7a`, Holistic Review Finding [Ref: holistic-reviewer completion 2025-04-29 15:41:26].
+### [2025-04-29 03:01:59] RAG Markdown Generation (PDF/EPUB)
+- **Purpose**: Enhance PDF and EPUB processing to generate structured Markdown output (headings, lists, footnotes).
+- **Files**: `lib/python_bridge.py` (modified `_process_pdf`, `_process_epub`, `process_document`, `main`; added `_analyze_pdf_block`, `_format_pdf_markdown`, `_epub_node_to_markdown`).
+- **Status**: Implemented (TDD Green Phase Complete).
+- **Dependencies**: `fitz` (PyMuPDF), `ebooklib`, `beautifulsoup4`, `lxml`.
+- **API Surface**: Modified `process_document` function in Python bridge to accept `output_format` ('text' or 'markdown').
+- **Tests**: `__tests__/python/test_python_bridge.py` (relevant xfail tests now xpass).
+- **Related**: `docs/rag-markdown-generation-spec.md`, ActiveContext [2025-04-29 03:01:59]
 - **Approach**: Implemented the missing `download_book` async method in the `AsyncZlib` class (`zlibrary/src/zlibrary/libasync.py`) using `httpx` for downloading (with redirect following) and `aiofiles` for asynchronous file writing. Added a custom `DownloadError` exception (`zlibrary/src/zlibrary/exception.py`) and updated the forked library's dependencies (`zlibrary/pyproject.toml`).
 - **Key Files Modified/Created**:
   - `zlibrary/src/zlibrary/libasync.py`: Added imports (`httpx`, `aiofiles`, `os`, `pathlib`, `Dict`, `DownloadError`), added `download_book` method.

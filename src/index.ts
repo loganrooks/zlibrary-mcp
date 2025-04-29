@@ -48,15 +48,6 @@ const SearchBooksParamsSchema = z.object({
   count: z.number().int().optional().default(10).describe('Number of results to return per page'),
 });
 
-const GetBookByIdParamsSchema = z.object({
-  id: z.string().describe('Z-Library book ID'),
-});
-
-const GetDownloadInfoParamsSchema = z.object({
-  id: z.string().describe('Z-Library book ID'),
-  format: z.string().optional().describe('File format (e.g., "pdf", "epub")'),
-});
-
 const FullTextSearchParamsSchema = z.object({
   query: z.string().describe('Text to search for in book content'),
   exact: z.boolean().optional().default(false).describe('Whether to perform an exact match search'),
@@ -81,7 +72,7 @@ const GetRecentBooksParamsSchema = z.object({
 const DownloadBookToFileParamsSchema = z.object({
   // id: z.string().describe('Z-Library book ID'), // Replaced by bookDetails
   // format: z.string().optional().describe('File format (e.g., "pdf", "epub")'), // Replaced by bookDetails
-  bookDetails: z.object({}).passthrough().describe('The full book details object obtained from search_books or get_book_by_id'), // Changed from z.record to z.object().passthrough()
+  bookDetails: z.object({}).passthrough().describe('The full book details object obtained from search_books'), // Changed from z.record to z.object().passthrough()
   outputDir: z.string().optional().default('./downloads').describe('Directory to save the file to (default: "./downloads")'),
   process_for_rag: z.boolean().optional().describe('Whether to process the document content for RAG after download'),
   processed_output_format: z.string().optional().describe('Desired output format for RAG processing (e.g., "text", "markdown")'), // Removed duplicate line
@@ -106,11 +97,6 @@ const handlers: HandlerMap = {
       // Assuming searchBooks returns the array directly
       return { content: results, total: results.length, query: args.query };
     } catch (error: any) { return { error: { message: error.message || 'Failed to search books' } }; }
-  },
-
-  getBookById: async (args: z.infer<typeof GetBookByIdParamsSchema>) => {
-    try { return await zlibraryApi.getBookById(args); }
-    catch (error: any) { return { error: { message: error.message || 'Failed to get book information' } }; }
   },
 
   fullTextSearch: async (args: z.infer<typeof FullTextSearchParamsSchema>) => {
@@ -180,11 +166,6 @@ const toolRegistry: Record<string, ToolRegistryEntry> = {
     description: 'Search for books in Z-Library',
     schema: SearchBooksParamsSchema,
     handler: handlers.searchBooks,
-  },
-  get_book_by_id: {
-    description: 'Get detailed information about a book by its ID',
-    schema: GetBookByIdParamsSchema,
-    handler: handlers.getBookById,
   },
   full_text_search: {
     description: 'Search for books containing specific text in their content',
@@ -343,7 +324,7 @@ async function start(opts: StartOptions = {}): Promise<{ server: Server; transpo
         // Return just the content array, as expected by the client Zod schema
         // Cast to 'any' to bypass TS error, assuming the structure is correct for runtime
         // Return result as stringified JSON within a "text" content block
-        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] } as any;
+        return { result: result } as any; // Return the actual result object directly, cast to any to bypass TS error
       } catch (error: any) {
         // Catch errors thrown by the handler
         console.error(`Error calling tool "${toolName}":`, error); // Use toolName in error

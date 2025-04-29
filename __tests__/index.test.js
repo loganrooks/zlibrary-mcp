@@ -372,7 +372,7 @@ describe('Tool Handlers (Direct)', () => {
      jest.unstable_mockModule('../lib/zlibrary-api.js', () => ({
        searchBooks: mockSearchBooks,
        // Add other functions if needed by index.js, otherwise Jest mocks them as undefined
-       getBookById: jest.fn(),
+       // getBookById: jest.fn(), // Removed deprecated tool mock
        downloadBookToFile: jest.fn(),
        getDownloadInfo: jest.fn(),
        fullTextSearch: jest.fn(),
@@ -409,44 +409,7 @@ describe('Tool Handlers (Direct)', () => {
      expect(errorResponse).toEqual({ error: { message: 'API Failed' } }); // Match nested structure
    });
 
-    test('getBookById handler should call zlibApi.getBookById', async () => {
-      // --- Setup Mocks for this test ---
-      jest.resetModules();
-      jest.clearAllMocks();
-      const mockGetBookById = jest.fn();
-      jest.unstable_mockModule('../lib/zlibrary-api.js', () => ({
-        searchBooks: jest.fn(),
-        getBookById: mockGetBookById,
-        downloadBookToFile: jest.fn(),
-        getDownloadInfo: jest.fn(),
-        fullTextSearch: jest.fn(),
-        getDownloadHistory: jest.fn(),
-        getDownloadLimits: jest.fn(),
-        getRecentBooks: jest.fn(),
-        processDocumentForRag: jest.fn(),
-      }));
-
-      // Dynamically import toolRegistry and the mocked zlibApi
-      const { toolRegistry } = await import('../dist/index.js');
-      const zlibApi = await import('../lib/zlibrary-api.js');
-
-      const handler = toolRegistry.get_book_by_id.handler;
-      const mockArgs = { id: 'book123' };
-      const validatedArgs = toolRegistry.get_book_by_id.schema.parse(mockArgs);
-      const mockResult = { title: 'Specific Book' };
-      mockGetBookById.mockResolvedValueOnce(mockResult); // Use the specific mock function
-
-      const response = await handler(validatedArgs);
-
-      expect(mockGetBookById).toHaveBeenCalledWith(validatedArgs); // Check the specific mock function
-      expect(response).toEqual(mockResult);
-
-      // Error case
-      const error = new Error('Not Found');
-      mockGetBookById.mockRejectedValueOnce(error); // Use the specific mock function
-      const errorResponse = await handler(validatedArgs);
-      expect(errorResponse).toEqual({ error: { message: 'Not Found' } }); // Match nested structure
-    });
+    // Removed test for deprecated getBookById handler
 
     test('downloadBookToFile handler should call zlibApi.downloadBookToFile (v2.1)', async () => { // Updated test description
        // --- Setup Mocks for this test ---
@@ -455,7 +418,7 @@ describe('Tool Handlers (Direct)', () => {
        const mockDownloadBookToFile = jest.fn();
        jest.unstable_mockModule('../lib/zlibrary-api.js', () => ({
          searchBooks: jest.fn(),
-         getBookById: jest.fn(),
+         // getBookById: jest.fn(), // Already removed
          downloadBookToFile: mockDownloadBookToFile,
          getDownloadInfo: jest.fn(),
          fullTextSearch: jest.fn(),
@@ -496,7 +459,7 @@ describe('Tool Handlers (Direct)', () => {
        const mockFullTextSearch = jest.fn();
        jest.unstable_mockModule('../lib/zlibrary-api.js', () => ({
          searchBooks: jest.fn(),
-         getBookById: jest.fn(),
+         // getBookById: jest.fn(), // Already removed
          downloadBookToFile: jest.fn(),
          getDownloadInfo: jest.fn(),
          fullTextSearch: mockFullTextSearch,
@@ -537,7 +500,7 @@ describe('Tool Handlers (Direct)', () => {
        const mockGetDownloadHistory = jest.fn();
        jest.unstable_mockModule('../lib/zlibrary-api.js', () => ({
          searchBooks: jest.fn(),
-         getBookById: jest.fn(),
+         // getBookById: jest.fn(), // Already removed
          downloadBookToFile: jest.fn(),
          getDownloadInfo: jest.fn(),
          fullTextSearch: jest.fn(),
@@ -576,7 +539,7 @@ describe('Tool Handlers (Direct)', () => {
        const mockGetDownloadLimits = jest.fn();
        jest.unstable_mockModule('../lib/zlibrary-api.js', () => ({
          searchBooks: jest.fn(),
-         getBookById: jest.fn(),
+         // getBookById: jest.fn(), // Already removed
          downloadBookToFile: jest.fn(),
          getDownloadInfo: jest.fn(),
          fullTextSearch: jest.fn(),
@@ -614,7 +577,7 @@ describe('Tool Handlers (Direct)', () => {
        const mockGetRecentBooks = jest.fn();
        jest.unstable_mockModule('../lib/zlibrary-api.js', () => ({
          searchBooks: jest.fn(),
-         getBookById: jest.fn(),
+         // getBookById: jest.fn(), // Already removed
          downloadBookToFile: jest.fn(),
          getDownloadInfo: jest.fn(),
          fullTextSearch: jest.fn(),

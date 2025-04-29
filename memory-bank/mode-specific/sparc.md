@@ -1,5 +1,73 @@
 # SPARC Orchestrator Specific Memory
 <!-- Entries below should be added reverse chronologically (newest first) -->
+### [2025-04-29 11:14:22] Intervention: Delegate Clause Triggered (Context 106%)
+- **Trigger**: Context window size reached 106%.
+- **Context**: Received successful completion from `debug` mode for RAG PDF footnote logic fix. Memory Bank updated. Preparing handover before regression testing.
+- **Action Taken**: Halted task planning. Initiating handover process as per Delegate Clause.
+- **Rationale**: Proactively manage context window limitations to prevent performance degradation or failure.
+- **Outcome**: Handover to new SPARC instance to be initiated via `new_task`.
+- **Follow-up**: New SPARC instance to take over orchestration, starting with regression testing for the debug fix.
+### [2025-04-29 02:42:55] Intervention: Delegate Clause Invoked (Context > 50%)
+- **Trigger**: Context window size reached 52%.
+- **Context**: Received RAG Markdown generation specification from `spec-pseudocode`. Preparing handover before TDD phase.
+### [2025-04-29 14:14:09] Task: Verify Pytest Suite After Debug Fixes (ImportError Resolution)
+- Assigned to: tdd
+- Description: Run full `pytest` suite to verify fixes in commit `8ce158f` and check for regressions. [Ref: ActiveContext 2025-04-29 14:13:37]
+- Expected deliverable: Pytest summary, details of any new failures.
+- Status: failed
+- Completion time: [2025-04-29 15:08:43]
+- Outcome: FAILED (Early Return, High Context). `tdd` mode encountered persistent tool errors (`apply_diff`, `write_to_file`) and remaining test failures (10 reported) after multiple correction attempts. High context (89%) cited as potential cause. Issue logged in `tdd-feedback.md`. [Ref: ActiveContext 2025-04-29 15:08:43]
+- Link to Progress Entry: [Progress 2025-04-29 11:11:06]
+### [2025-04-29 14:03:08] Task: Debug Pytest ImportError in Test Collection
+- Assigned to: debug
+- Description: Investigate and fix `ImportError` during pytest collection reported by `tdd` [Ref: ActiveContext 2025-04-29 14:02:41].
+- Expected deliverable: Root cause analysis, applied fix, confirmation of successful pytest collection, commit hash.
+- Status: completed
+- Completion time: [2025-04-29 14:13:37]
+- Outcome: SUCCESS. `debug` re-implemented missing functions in `lib/python_bridge.py` and fixed import in `__tests__/python/test_python_bridge.py`. Pytest collection now succeeds. Changes committed (`8ce158f`). [Ref: ActiveContext 2025-04-29 14:13:37, Debug Issue PYTEST-COLLECT-IMPORT-01]
+- Link to Progress Entry: [Progress 2025-04-29 11:11:06]
+### [2025-04-29 13:28:47] Task: Investigate and Address Xfailed Pytest Tests
+- Assigned to: tdd
+- Description: Analyze 18 xfailed tests in `__tests__/python/test_python_bridge.py` after regression fixes [Ref: ActiveContext 2025-04-29 13:28:16]. Remove xfail markers if tests now pass, update reasons otherwise.
+- Expected deliverable: Report on removed/remaining xfails, confirmation of no xpasses, commit hash if applicable.
+- Status: failed
+- Completion time: [2025-04-29 14:02:41]
+- Outcome: FAILED (Early Return). `tdd` mode encountered `ImportError: cannot import name 'process_document' from 'python_bridge'` during pytest collection after refactoring tests. Issue logged in `tdd-feedback.md`. [Ref: ActiveContext 2025-04-29 14:02:41]
+- Link to Progress Entry: [Progress 2025-04-29 11:11:06]
+### [2025-04-29 11:21:50] Task: Debug Failed Pytest Suite After RAG Footnote Fix
+- Assigned to: debug
+- Description: Investigate and fix `pytest` failures reported by `tdd` [Ref: ActiveContext 2025-04-29 11:21:01] after previous footnote fix [Ref: ActiveContext 2025-04-29 11:11:06].
+- Expected deliverable: Root cause analysis, applied fix, confirmation of passing `pytest` suite.
+- Status: completed
+- Completion time: [2025-04-29 13:28:16] (Post-Interruption)
+- Outcome: SUCCESS. `debug` identified and fixed regressions in `lib/python_bridge.py` and `__tests__/python/test_python_bridge.py`. Pytest suite now passes (32 passed, 18 xfailed). Changes committed (`1dcbe37`, `24e7fc8`). [Ref: ActiveContext 2025-04-29 13:28:16, Debug Issue RAG-PDF-FN-01-REGRESSION]
+- Link to Progress Entry: [Progress 2025-04-29 11:11:06]
+### [2025-04-29 11:16:35] Task: Regression Testing for RAG PDF Footnote Fix
+- Assigned to: tdd
+- Description: Verify fix applied by `debug` [Ref: ActiveContext 2025-04-29 11:11:06] and check for regressions by running `npm test` and `pytest`. Commit if successful.
+- Expected deliverable: Test results confirmation (pass/fail), regression report, commit hash if applicable.
+- Status: completed
+- Completion time: [2025-04-29 11:21:01]
+- Outcome: FAILED. `tdd` mode reported `pytest` suite failed. Changes not committed. [Ref: ActiveContext 2025-04-29 11:21:01]
+- Link to Progress Entry: [Progress 2025-04-29 11:11:06]
+- **Action Taken**: Halted task planning. Initiated handover process as per Delegate Clause. Updated Memory Bank.
+- **Rationale**: Proactively manage context window limitations to prevent performance degradation or failure.
+- **Outcome**: Handover to new SPARC instance initiated via `new_task`.
+- **Follow-up**: New SPARC instance to take over orchestration, starting with TDD Red phase for Markdown generation.
+### [2025-04-29 02:34:51] Intervention: Delegate Clause Invoked (Context > 50%)
+- **Trigger**: Context window size reached 105%.
+- **Context**: Received QA re-evaluation results. Preparing next steps for RAG Markdown structure refinement.
+- **Action Taken**: Halted task planning. Initiated handover process as per Delegate Clause. Updated Memory Bank.
+- **Rationale**: Proactively manage context window limitations to prevent performance degradation or failure.
+- **Outcome**: Handover to new SPARC instance initiated via `new_task`.
+- **Follow-up**: New SPARC instance to take over orchestration, focusing on RAG Markdown structure.
+### [2025-04-28 23:51:39] Intervention: New Objectives Post-Completion Feedback
+- **Trigger**: User feedback after `attempt_completion`.
+- **Context**: User confirmed previous work merged to `master`. Requested workspace cleanup and RAG output quality evaluation.
+- **Action Taken**: Acknowledged feedback. Planned new sequence: 1. Create branch. 2. Delegate cleanup (`holistic-reviewer`). 3. Delegate RAG eval (`spec-pseudocode`, `qa-tester`). 4. Analyze & potentially update architecture/specs. 5. Delegate PR (`devops`).
+- **Rationale**: Address user's request for cleanup and further RAG refinement.
+- **Outcome**: New multi-step plan initiated. Previous completion attempt superseded.
+- **Follow-up**: Update Workflow State. Create new branch. Delegate cleanup task.
 ### [2025-04-28 17:10:28] Intervention: Re-evaluation of ID Lookup Necessity
 - **Trigger**: User feedback denying `architect` task delegation for ID lookup failure strategy. User questioned the value of maintaining the problematic `get_book_by_id` functionality.
 - **Context**: Attempting to delegate task to design fallbacks for the fragile internal "Search-First" ID lookup mechanism.
@@ -428,7 +496,42 @@
 - Outcome: Recommended 'Managed Virtual Environment' approach. Node.js app will auto-create/manage a dedicated venv for `zlibrary` and use its specific Python path.
 - Link to Progress Entry: N/A
 ### [2025-04-14 03:26:52] Task: Diagnose Global MCP Server Execution Failure
+### [2025-04-29 18:12:50] Intervention: Context Calculation Correction / Handover Aborted
+- **Trigger**: User feedback correcting context percentage calculation [Ref: User Message 2025-04-29 18:12:50].
+- **Context**: Previous assessment incorrectly triggered Delegate Clause based on faulty percentage (93%).
+- **Action Taken**: Recalculated context percentage as 15.19% (151,852 / 1,000,000). Aborted unnecessary handover initiated at [Ref: SPARC MB Intervention Log 2025-04-29 18:11:20]. Updated `activeContext.md`.
+- **Rationale**: Correct calculation shows context is well below Delegate Clause threshold.
+- **Outcome**: Handover cancelled. Proceeding with determining next steps post-refinement.
+- **Follow-up**: Log feedback in `sparc-feedback.md`. Ask user for next project phase direction.
+### [2025-04-29 18:11:20] Intervention: Delegate Clause Triggered (Handover)
+- **Trigger**: High Context Size (93%).
+- **Context**: Refinement phase orchestration completed. User provided final detailed summary report [Ref: User Message 2025-04-29 18:11:20].
+- **Action Taken**: Initiating handover to a new SPARC instance via `new_task`.
+- **Rationale**: Adherence to Delegate Clause to prevent context window issues and maintain performance.
+- **Outcome**: Pending handover task creation.
+- **Follow-up**: New SPARC instance to take over.
+### [2025-04-29 17:17:35] Intervention: User Feedback on Completion Message
+- **Trigger**: User feedback ("more detail") on `attempt_completion` message [Ref: 2025-04-29 17:17:09].
+### [2025-04-29 18:05:07] Intervention: User Correction on Completion Report
+- **Trigger**: User Feedback [Ref: Feedback 2025-04-29 18:03:22, 2025-04-29 18:05:07]
+- **Context**: Previous `attempt_completion` message lacked the required detail summarizing orchestrated tasks and did not include the instruction to propagate the reporting requirement up the delegation chain.
+- **Action Taken**: Logged feedback [Ref: sparc-feedback.md 2025-04-29 18:03:22] and this intervention. Preparing revised, detailed `attempt_completion` message including propagation instruction.
+- **Rationale**: Adherence to user instructions and SPARC reporting protocols across delegation levels.
+- **Outcome**: Revised completion report will be generated.
+- **Follow-up**: Ensure future completion reports adhere to this standard.
+- **Context**: User requested more detail in the final summary of the orchestrated post-refinement tasks.
+- **Action Taken**: Acknowledged feedback. Will revise `attempt_completion` message to include more specific details about each delegated task and outcome.
+- **Rationale**: Improve clarity and provide a more thorough record of work completed.
+- **Outcome**: Pending revised `attempt_completion`.
+- **Follow-up**: Log feedback in `sparc-feedback.md`.
 - Assigned to: debug
+### [2025-04-29 15:41:44] Intervention: Delegate Clause Handover
+- **Trigger**: High Context Size (124% / 248,653 tokens) exceeding 40-50% threshold.
+- **Context**: Occurred after receiving completion report from `holistic-reviewer` [Ref: holistic-reviewer completion 2025-04-29 15:41:26].
+- **Action Taken**: Logged intervention in `activeContext.md` [Ref: 2025-04-29 15:41:26] and `sparc.md`. Preparing handover message for `new_task`.
+- **Rationale**: Adherence to Delegate Clause for proactive context management and performance stability.
+- **Outcome**: Handover initiated.
+- **Follow-up**: New SPARC instance to take over orchestration.
 - Description: Analyze root cause of global execution failure (ERR_PACKAGE_PATH_NOT_EXPORTED, MODULE_NOT_FOUND).
 - Expected deliverable: Detailed analysis report.
 - Status: completed
@@ -437,7 +540,182 @@
 - Link to Progress Entry: N/A
 
 ## Delegations Log
+### [2025-04-29 17:10:29] Task: Final Integration Check & Completion Summary
+- Assigned to: integration
+- Description: Perform final integration checks, documentation review, and prepare completion summary after refinement/cleanup/verification. [Ref: GlobalContext Progress 2025-04-29 16:57:57, SPARC MB Delegation Log 2025-04-29 17:07:00, SPARC MB Workflow State 2025-04-29 17:07:00]
+- Expected deliverable: Completion summary report.
+- Status: completed
+- Completion time: 2025-04-29 17:13:52
+- Outcome: SUCCESS. Integration checks passed, documentation adequate, tests confirmed passing. Workspace stable and ready for next stage.
+- Link to Progress Entry: [GlobalContext Progress 2025-04-29 16:57:57] (Holistic Review Findings Completion)
+### [2025-04-29 17:07:00] Task: Final TDD Verification Pass (Post-Cleanup)
+- Assigned to: tdd
+- Description: Perform final TDD verification after cleanup commits `e3b8709` & `70687dc`. Run `npm test`, assess coverage. [Ref: Optimizer Completions 2025-04-29 17:02:22, 17:06:24; SPARC MB Workflow State 2025-04-29 17:07:00]
+- Expected deliverable: Confirmation of passing tests (excl. xfails), coverage assessment.
+- Status: completed
+- Completion time: 2025-04-29 17:10:09
+- Outcome: SUCCESS. `npm test` passed (excluding 3 known xfails). Existing coverage deemed adequate for recent minor changes.
+- Link to Progress Entry: [GlobalContext Progress 2025-04-29 16:57:57] (Holistic Review Findings Completion)
+### [2025-04-29 17:02:37] Task: Remove Unused Zod Schema
+- Assigned to: refinement-optimization-mode
+- Description: Remove unused `GetDownloadInfoParamsSchema` from `src/index.ts`. Ensure tests pass. Commit change. [Ref: holistic-reviewer completion 2025-04-29 16:57:57, SPARC MB Delegation Log 2025-04-28 18:39:17]
+- Expected deliverable: Confirmation of removal, passing tests, commit hash.
+- Status: completed
+- Completion time: 2025-04-29 17:06:24
+- Outcome: SUCCESS. Schema removed from `src/index.ts`. Tests passed. Commit: `70687dc`.
+- Link to Progress Entry: [GlobalContext Progress 2025-04-29 16:57:57] (Holistic Review Findings)
+### [2025-04-29 16:58:35] Task: Cleanup Root Utility Script
+- Assigned to: refinement-optimization-mode
+- Description: Move `get_venv_python_path.mjs` from root to `scripts/` directory. Update references. Ensure tests pass. Commit changes. [Ref: holistic-reviewer completion 2025-04-29 16:57:57]
+- Expected deliverable: Confirmation of move, reference updates, passing tests, commit hash.
+- Status: completed
+- Completion time: 2025-04-29 17:02:22
+- Outcome: SUCCESS. Script moved to `scripts/`. No references found. Tests passed. Commit: `e3b8709`.
+- Link to Progress Entry: [GlobalContext Progress 2025-04-29 16:57:57] (Holistic Review Findings)
+### [2025-04-29 16:45:07] Task: Post-Refinement Workspace Assessment
+- Assigned to: holistic-reviewer
+- Description: Perform a comprehensive review of the workspace following recent refinement tasks. Assess readiness for completion phase. [Ref: SPARC MB Workflow State 2025-04-29 16:45:00]
+- Expected deliverable: Report summarizing findings and recommending next steps.
+- Status: completed
+- Completion time: 2025-04-29 16:57:57
+- Outcome: Workspace assessed as ready for completion phase. Minor cleanup tasks identified: move root script (`get_venv_python_path.mjs`), remove unused Zod schema (`GetDownloadInfoParamsSchema`). See `holistic-reviewer.md` [2025-04-29 16:57:57] for full report.
+- Link to Progress Entry: [GlobalContext Progress 2025-04-29 16:57:57]
+### [2025-04-29 16:41:00] Task: Fix Logging Key Inconsistency
+- Assigned to: code
+- Description: Standardize logging keys across the codebase to use snake_case. [Ref: holistic-reviewer completion 2025-04-29 15:41:26]
+- Expected deliverable: Modified files with consistent logging keys, confirmation of passing tests, commit hash.
+- Status: completed
+- Completion time: [2025-04-29 16:41:44]
+- Outcome: SUCCESS. No inconsistencies found. Tests passed. No commit needed.
+- Link to Progress Entry: [Progress 2025-04-29 15:41:26] (Holistic Review Task List)
+
+### [2025-04-29 16:37:00] Task: Fix Non-Standard MCP Result Format (`tools/call` handler)
+- Assigned to: code
+- Description: Modify `src/index.ts` `tools/call` handler to return standard `{ result: <value> }` format. [Ref: holistic-reviewer completion 2025-04-29 15:41:26]
+- Expected deliverable: Modified `src/index.ts`, confirmation of passing `npm test`, commit hash.
+- Status: completed
+- Completion time: [2025-04-29 16:37:18]
+- Outcome: SUCCESS. Modified `src/index.ts` to return standard `{ result: <value> }`. Tests passed. Commit: `47edb7a`.
+- Link to Progress Entry: [Progress 2025-04-29 15:41:26] (Holistic Review Task List)
+### [2025-04-29 16:33:00] Task: Deprecate `get_book_by_id` (Docs Update)
+- Assigned to: docs-writer
+- Description: Remove references to the deprecated `get_book_by_id` tool from the `docs/` directory. [Ref: holistic-reviewer completion 2025-04-29 15:41:26, Decision-DeprecateGetBookByID-01, ActiveContext 2025-04-29 16:28:00]
+- Expected deliverable: Confirmation of search/removal, list of modified files, commit hash.
+- Status: completed
+- Completion time: [2025-04-29 16:32:44]
+- Outcome: SUCCESS. Removed references from `docs/internal-id-lookup-spec.md`, `docs/search-first-id-lookup-spec.md`, `docs/architecture/rag-pipeline.md`. Commit hash not provided by docs-writer.
+- Link to Progress Entry: [Progress 2025-04-29 15:41:26] (Holistic Review Task List)
+### [2025-04-29 16:12:00] Task: Refactor Python Bridge (`lib/python_bridge.py`)
+- Assigned to: refinement-optimization-mode
+- Description: Refactor `lib/python_bridge.py` (> 500 lines) into smaller, modular components. [Ref: holistic-reviewer completion 2025-04-29 15:41:26]
+- Expected deliverable: Refactored code committed, confirmation of passing tests, commit hash.
+- Status: completed
+- Completion time: [2025-04-29 16:11:42]
+- Outcome: SUCCESS. Extracted RAG logic to `lib/rag_processing.py`. Tests pass. Commit: `cf8ee5c`.
+- Link to Progress Entry: [Progress 2025-04-29 15:41:26] (Holistic Review Task List)
+
+### [2025-04-29 16:13:00] Task: Deprecate `get_book_by_id` (Code Removal)
+- Assigned to: code
+- Description: Remove the `get_book_by_id` tool, its handler, Python function, and related tests. [Ref: holistic-reviewer completion 2025-04-29 15:41:26, Decision-DeprecateGetBookByID-01]
+- Expected deliverable: Confirmation of removal, passing tests, commit hash.
+- Status: completed
+- Completion time: [2025-04-29 16:28:07]
+- Outcome: SUCCESS. Removed tool definition, handler, Python function, and related tests. Tests pass. Commit: `454c92e`.
+- Link to Progress Entry: [Progress 2025-04-29 15:41:26] (Holistic Review Task List)
+### [2025-04-29 15:30:13] Task: Holistic Workspace Review (Post-Refinement)
+- Assigned to: holistic-reviewer
+- Description: Perform a comprehensive review of the workspace after recent refinement cycles (commits `079a182`, `8ce158f`, etc.). Check for integration issues, documentation gaps, code hygiene improvements, and overall project organization. Note the deferred xfailed tests [Ref: Decision-DeferXfailedTests-01 2025-04-29 15:29:34].
+- Expected deliverable: A report summarizing findings and recommendations for improvement or finalization.
+- Status: pending
+- Link to Progress Entry: [Progress 2025-04-29 15:27:08]
+### [2025-04-29 09:58:08] Task: Debug and Fix RAG Markdown Generation QA Failures
+### [2025-04-29 15:27:08] Intervention: Delegate Clause Triggered (Context 104%)
+- **Trigger**: Context window size reached 104%.
+- **Context**: Received successful completion from `tdd` mode for xfailed test investigation. Memory Bank updated. Preparing handover.
+- **Action Taken**: Halted task planning. Initiating handover process as per Delegate Clause.
+- **Rationale**: Proactively manage context window limitations to prevent performance degradation or failure.
+- **Outcome**: Handover to new SPARC instance to be initiated via `new_task`.
+- **Follow-up**: New SPARC instance to take over orchestration. Next logical step is to decide whether to address the xfailed tests or proceed with other refinement tasks.
+- Assigned to: debug
+- Description: Analyze QA feedback, debug `lib/python_bridge.py` (commit `e943016`), implement fixes for Markdown generation (headings, lists, footnotes) per spec `docs/rag-markdown-generation-spec.md`, add TDD tests, ensure tests pass.
+- Expected deliverable: Fixed code, new tests, confirmation, commit hash.
+- Status: completed
+- Completion time: [2025-04-29 11:11:06]
+- Outcome: Successfully resolved the `test_rag_markdown_pdf_formats_footnotes_correctly` failure. Root cause was logic errors in `lib/python_bridge.py` (erroneous `continue`, duplicated block, extra newline), not string cleaning. Fixes applied. [Ref: Debug Issue RAG-PDF-FN-01]
+- Link to Progress Entry: [GlobalContext Progress 2025-04-29 10:56:55]
 <!-- Append new delegation records here -->
+### [2025-04-29 02:53:01] Task: TDD Green Phase - Implement RAG Markdown Structure Generation
+- Assigned to: code
+### [2025-04-29 09:18:13] Task: TDD Refactor Phase - RAG Markdown Structure Generation
+- Assigned to: tdd
+- Description: Refactor implementation (`lib/python_bridge.py`, commit `215ec6d`) and tests (`__tests__/python/test_python_bridge.py`) for RAG Markdown generation.
+- Expected deliverable: Refactored code/tests, confirmation of passing tests, commit hash.
+- Status: completed
+- Completion time: [2025-04-29 09:36:33]
+- Outcome: Successfully refactored code and tests. All tests pass. Commit: `e943016`.
+- Link to Progress Entry: [GlobalContext Progress 2025-04-29 09:36:33]
+- Description: Implement minimal code changes in `lib/python_bridge.py` to make failing tests pass for RAG Markdown structure generation.
+- Expected deliverable: Modified `lib/python_bridge.py`, confirmation of passing tests, commit hash.
+- Status: completed
+### [2025-04-29 09:37:34] Task: Integration & Verification - RAG Markdown Structure Generation
+- Assigned to: integration
+- Description: Verify integration of RAG Markdown generation feature (commit `e943016`).
+- Expected deliverable: Confirmation of successful integration or report of issues.
+- Status: completed
+- Completion time: [2025-04-29 09:39:34]
+- Outcome: Successfully verified integration. Full test suite (`npm test`) passed. Recommended final TDD verification pass.
+- Link to Progress Entry: [GlobalContext Progress 2025-04-29 09:39:34]
+- Completion time: [2025-04-29 03:01:59]
+- Outcome: Successfully implemented Markdown generation logic in `lib/python_bridge.py`. Relevant tests in `__tests__/python/test_python_bridge.py` now pass (`xpassed`). Commit: `215ec6d`.
+- Link to Progress Entry: [GlobalContext Progress 2025-04-29 03:01:59]
+### [2025-04-29 09:40:42] Task: Final TDD Verification Pass - RAG Markdown Structure Generation
+- Assigned to: tdd
+- Description: Perform final TDD verification pass for RAG Markdown generation feature (commit `e943016`).
+- Expected deliverable: Confirmation of successful verification or report of issues.
+- Status: completed
+- Completion time: [2025-04-29 09:43:58]
+- Outcome: Successfully verified feature. Test coverage/clarity adequate. All tests pass. Commit `e943016` verified.
+- Link to Progress Entry: [GlobalContext Progress 2025-04-29 09:43:58]
+### [2025-04-29 02:51:06] Task: TDD Red Phase - RAG Markdown Structure Generation
+- Assigned to: tdd
+- Description: Implement failing tests (Red phase) for RAG Markdown structure generation based on spec `docs/rag-markdown-generation-spec.md`.
+### [2025-04-29 09:45:07] Task: Document RAG Markdown Structure Generation Feature
+- Assigned to: docs-writer
+- Description: Update documentation for RAG Markdown generation feature (commit `e943016`).
+- Expected deliverable: Updated documentation file(s).
+- Status: completed
+- Completion time: [2025-04-29 09:48:39]
+- Outcome: Successfully updated `docs/rag-pipeline-implementation-spec.md` with feature details and `output_format` parameter clarification.
+- Link to Progress Entry: [GlobalContext Progress 2025-04-29 09:48:39]
+- Expected deliverable: Failing/xfail tests in `__tests__/python/test_python_bridge.py`, confirmation, commit hash.
+- Status: completed
+- Completion time: 2025-04-29 02:51:06
+### [2025-04-29 09:49:59] Task: QA Testing - RAG Markdown Structure Generation Output
+- Assigned to: qa-tester
+- Description: Perform QA testing on RAG Markdown generation output (commit `e943016`).
+- Expected deliverable: QA findings summary and detailed feedback.
+- Status: completed
+- Completion time: [2025-04-29 09:55:59]
+- Outcome: QA FAILED. Significant issues found with heading levels and list formatting. See feedback file for details. Handover occurred during task due to context limits.
+- Link to Progress Entry: [GlobalContext Progress 2025-04-29 09:55:59]
+- Outcome: Added 10 xfail tests covering PDF/EPUB Markdown structure. Tests confirmed failing. Commit: `05985b2`.
+- Link to Progress Entry: [activeContext.md entry 2025-04-29 02:51:06]
+### [2025-04-29 02:40:07] Task: Define RAG Markdown Structure Generation Strategy
+- Assigned to: spec-pseudocode
+- Description: Define implementation strategy, pseudocode, and TDD anchors for adding Markdown structure (headings, lists, etc.) to PDF/EPUB processing in `lib/python_bridge.py`.
+- Expected deliverable: Specification document (`docs/rag-markdown-generation-spec.md`), pseudocode, TDD anchors.
+- Status: completed
+- Completion time: 2025-04-29 02:42:55
+- Outcome: Strategy defined using refined `PyMuPDF` heuristics and `BeautifulSoup` logic. Spec created: `docs/rag-markdown-generation-spec.md`.
+- Link to Progress Entry: [GlobalContext Progress 2025-04-29 02:42:55]
+### [2025-04-29 02:21:31] Task: Re-evaluate RAG Output Quality (Post-Refinement)
+- Assigned to: qa-tester
+- Description: Re-run QA evaluation for `process_document_for_rag` on commit `60c0764` against `docs/rag-output-quality-spec.md`.
+- Expected deliverable: Updated or new QA report (`docs/rag-output-qa-report-rerun-20250429.md`).
+- Status: completed
+- Completion time: 2025-04-29 02:34:51
+- Outcome: Partial success. PDF noise fixed. Markdown structure generation (PDF/EPUB) still fails spec. Report created: `docs/rag-output-qa-report-rerun-20250429.md`. Recommendations: Prioritize Markdown structure implementation, update TDD suite.
+- Link to Progress Entry: [activeContext.md entry 2025-04-29 02:34:51]
 ### [2025-04-28 22:00:24] Task: Update Project Documentation
 - Assigned to: docs-writer
 - Description: Update the project documentation to reflect the current status, recent changes, and ensure accuracy.
@@ -767,11 +1045,11 @@
 
 ### [2025-04-18 02:39:50] Task: Generate System Refinement Report
 # Workflow State (Current - Overwrite this section)
-- Current phase: Completion
-- Phase start: 2025-04-28 22:21:03
-- Current focus: All recent delegated tasks (debug, TDD, docs) completed successfully. Test suites passing. Documentation updated. Performing final pre-completion checks.
-- Next actions: Call `attempt_completion`.
-- Last Updated: 2025-04-28 22:21:03
+- Current phase: Completion (Ready)
+- Phase start: 2025-04-29 17:06:24 (Cleanup Tasks Complete)
+- Current focus: All post-refinement cleanup tasks are complete [Ref: SPARC MB Delegation Logs 2025-04-29 16:58:35, 2025-04-29 17:02:37]. Workspace is ready for final verification and completion steps.
+- Next actions: Delegate final TDD verification pass as recommended by `optimizer`. Then, prepare for final project completion.
+- Last Updated: 2025-04-29 17:07:00
 
 - Assigned to: system-refiner
 - Description: Analyze feedback, logs, and mode memories to propose improvements to Roo system rules (.clinerules-*), ensuring generalizability.
@@ -784,12 +1062,11 @@
 
 
 # Workflow State (Current - Overwrite this section)
-- Current phase: Refinement (Version Control Cleanup)
-- Phase start: 2025-04-24 17:52:23
-- Current focus: Addressing user request to clean up uncommitted Git changes before proceeding with RAG implementation.
-- Next actions: Delegate Git status analysis and commit task to `devops` mode.
-- Last Updated: 2025-04-24 17:52:51
-
+- Current phase: Specification (Completed) -> Handover
+- Phase start: 2025-04-29 02:40:07
+- Current focus: RAG Markdown structure generation specification complete (`docs/rag-markdown-generation-spec.md`). Preparing handover due to Delegate Clause (Context 52%).
+- Next actions: Initiate handover to new SPARC instance for TDD Red phase.
+- Last Updated: 2025-04-29 02:44:13
 ## Workflow State (Current - Overwrite this section)
 - Current phase: Integration
 ## Workflow State (Current - Overwrite this section)
@@ -839,6 +1116,13 @@
 - **Rationale**: Ensure code changes are properly tracked in version control before refactoring begins.
 - **Outcome**: Refactor task halted. Querying user via `ask_followup_question`.
 - **Follow-up**: Await user response on Git strategy. [See Feedback 2025-04-24 01:02:21]
+### [2025-04-29 02:51:06] Intervention: Delegate Clause Invoked (Context > 50%)
+- **Trigger**: Context window size reported as 134%.
+- **Context**: Received TDD Red phase completion from `tdd` mode. Preparing for TDD Green phase delegation.
+- **Action Taken**: Halted task planning. Initiating handover process as per Delegate Clause. Updating Memory Bank.
+- **Rationale**: Proactively manage context window limitations to prevent performance degradation or failure.
+- **Outcome**: Handover to new SPARC instance to be initiated via `new_task`.
+- **Follow-up**: New SPARC instance to take over orchestration, starting with TDD Green phase for RAG Markdown generation. [See activeContext.md entry 2025-04-29 02:51:06]
 
 - **Context**: SPARC delegated verification based on existing specs where RAG tools return full processed text content.
 - **Action Taken**: Halted Task 2 & 3 integration verification. Acknowledged user feedback that returning full text content overloads agent context. Confirmed RAG tools must be redesigned to save processed text to a file and return the file path.
@@ -847,11 +1131,42 @@
 - **Follow-up**: Delegate redesign task to `architect`. [See Feedback 2025-04-23 23:26:20]
 
 ## Intervention Log
+### [2025-04-29 16:41:00] Intervention: Delegate Clause Triggered (Context 72%)
+- **Trigger**: Context window size reached 72% (calculated manually: 143,227 / 1,000,000 * 100). Exceeds 40-50% threshold.
+- **Context**: Occurred after receiving completion report from `code` mode for logging key consistency check [Ref: ActiveContext 2025-04-29 16:41:00].
+- **Action Taken**: Logged intervention in `activeContext.md` and `sparc.md`. Preparing handover message for `new_task`.
+- **Rationale**: Adherence to Delegate Clause for proactive context management and performance stability.
+- **Outcome**: Handover to be initiated.
+- **Follow-up**: New SPARC instance to take over orchestration, starting with task "Clean Up Documentation Files".
+
 ### [2025-04-24 17:52:23] Intervention: Prioritize Version Control Cleanup
 - **Trigger**: User input.
+### [2025-04-29 03:04:10] Intervention: Delegate Clause Invoked (Context > 50%)
+- **Trigger**: Context window size reported as 134%.
+- **Context**: Received TDD Green phase completion (commit `215ec6d`). Preparing for TDD Refactor phase delegation.
+- **Action Taken**: Halted task planning. Initiating handover process as per Delegate Clause. Updating Memory Bank.
+- **Rationale**: Proactively manage context window limitations to prevent performance degradation or failure.
+- **Outcome**: Handover to new SPARC instance to be initiated via `new_task`.
+- **Follow-up**: New SPARC instance to take over orchestration, starting with TDD Refactor phase for RAG Markdown generation. [See activeContext.md entry 2025-04-29 03:04:10]
 - **Context**: SPARC was about to delegate TDD task after spec update.
 - **Action Taken**: Halted TDD delegation. Acknowledged user request to prioritize cleaning up uncommitted Git changes.
 - **Rationale**: Ensure proper version control hygiene before proceeding with new implementation phases.
+### [2025-04-29 15:21:40] Task: Full Regression Test Suite Verification
+- Assigned to: tdd
+### [2025-04-29 15:24:17] Task: Investigate Remaining Xfailed Pytest Tests (`test_python_bridge.py`)
+- Assigned to: tdd
+- Description: Identify and analyze the 3 remaining xfailed tests in `__tests__/python/test_python_bridge.py` after debug fixes (commit `079a182`). Remove markers if passing, update reasons if still xfailing, report regressions if failing differently. [Ref: ActiveContext 2025-04-29 15:22:52, Task 2025-04-29 13:28:47]
+- Expected deliverable: Pytest confirmation, summary of actions per xfailed test, commit hash if changed.
+- Status: completed
+- Completion time: [2025-04-29 15:27:08]
+- Outcome: SUCCESS. `tdd` confirmed the 3 tests (`test_main_routes_download_book`, `test_downloads_paginator_parse_page_new_structure`, `test_downloads_paginator_parse_page_old_structure_raises_error`) remain `XFAIL` for valid reasons. No code changes made.
+- Link to Progress Entry: [Progress 2025-04-29 15:27:08]
+- Description: Run the full test suite (`npm test`) to check for regressions after the debug fixes (commit `079a182`). [Ref: SPARC MB Delegation Log 2025-04-29 15:11:08 (approx), Debug Completion 2025-04-29 15:20:56 (approx)]
+- Expected deliverable: Test suite results (pass/fail), details of any new failures.
+- Status: completed
+- Completion time: [2025-04-29 15:22:52]
+- Outcome: SUCCESS. Full test suite (`npm test`) passed. No regressions found.
+- Link to Progress Entry: [Progress 2025-04-29 15:22:52]
 - **Outcome**: Task delegated to `devops` mode to analyze Git status and propose/execute commits.
 - **Follow-up**: Await `devops` analysis and commit plan. [See Feedback 2025-04-24 17:52:23]
 

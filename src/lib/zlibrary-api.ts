@@ -58,7 +58,7 @@ async function callPythonFunction(functionName: string, args: Record<string, any
     return resultData;
   } catch (err: any) {
     // Log the full error object from python-shell
-    console.error(`[callPythonFunction Error - ${functionName}] Full error object:`, JSON.stringify(err, null, 2));
+    console.error(`[callPythonFunction Error - ${functionName}] Raw error object:`, err);
     // Capture stderr if available
     const stderrOutput = err.stderr ? ` Stderr: ${err.stderr}` : '';
     // Explicitly create the wrapped message and throw a new error
@@ -82,10 +82,6 @@ interface SearchBooksArgs {
 interface FullTextSearchArgs extends SearchBooksArgs {
     phrase?: boolean;
     words?: boolean;
-}
-
-interface GetBookByIdArgs {
-    id: string;
 }
 
 interface GetDownloadInfoArgs {
@@ -133,14 +129,6 @@ export async function searchBooks({
   return await callPythonFunction('search', {
     query, exact, from_year: fromYear, to_year: toYear, languages, extensions, count
   });
-}
-
-/**
- * Get book details by ID
- */
-export async function getBookById({ id }: GetBookByIdArgs): Promise<any> {
-  // Pass arguments as an object matching Python function signature
-  return await callPythonFunction('get_by_id', { book_id: id });
 }
 
 /**
@@ -230,7 +218,7 @@ export async function downloadBookToFile({
 }: DownloadBookToFileArgs): Promise<{ file_path: string; processed_file_path?: string | null; processing_error?: string }> {
   try {
     const logId = bookDetails?.id || 'unknown_id'; // Use ID from details for logging
-    console.log(`[downloadBookToFile - ${logId}] Calling Python bridge... process_for_rag=${process_for_rag}`);
+    // console.log(`[downloadBookToFile - ${logId}] Calling Python bridge... process_for_rag=${process_for_rag}`); // Removed debug log
     // Call the Python function, passing the bookDetails object
     const result = await callPythonFunction('download_book', {
         book_details: bookDetails, // Pass the whole object

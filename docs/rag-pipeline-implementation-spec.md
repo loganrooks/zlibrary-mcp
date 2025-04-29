@@ -37,6 +37,7 @@ Refer to the [RAG Pipeline Architecture (v2)](./architecture/rag-pipeline.md), [
     const DownloadBookToFileOutputSchema = z.object({
         file_path: z.string().describe("The absolute path to the original downloaded file"),
         processed_file_path: z.string().optional().nullable().describe("The absolute path to the file containing processed text (if process_for_rag was true and text was extracted), or null otherwise.") // Updated field, allow null
+processed_output_format: z.string().optional().default("txt").describe("Desired format for the processed output file ('txt' or 'markdown', default: 'txt')")
     });
     ```
 
@@ -58,6 +59,7 @@ Refer to the [RAG Pipeline Architecture (v2)](./architecture/rag-pipeline.md), [
       // Allow null if processing yields no text (e.g., image PDF)
       processed_file_path: z.string().nullable().describe("The absolute path to the file containing extracted and processed plain text content, or null if no text was extracted.")
     });
+output_format: z.string().optional().default("txt").describe("Desired format for the processed output file ('txt' or 'markdown', default: 'txt')")
     ```
 
 ## 3. Tool Registration (`index.ts`)
@@ -214,12 +216,17 @@ END FUNCTION
 EXPORT { downloadBookToFile, processDocumentForRag /*, ... other functions */ }
 ```
 
-## 5. Python Bridge (`lib/python_bridge.py`)
+## 5. Python Bridge (`lib/python_bridge.py` & `lib/rag_processing.py`)
 
-This script handles the core logic for downloading, processing, and saving files.
+The Python bridge consists of two main files:
+- `lib/python_bridge.py`: Handles the main interface, argument parsing, calling the `zlibrary` library, and orchestrating calls to the RAG processing module.
+- `lib/rag_processing.py`: Contains the specific logic for processing document content (EPUB, TXT, PDF) and saving the results.
+
+This section details the relevant functions within `lib/rag_processing.py` and how they are called by `lib/python_bridge.py`.
 
 ```python
-# File: lib/python_bridge.py
+# File: lib/rag_processing.py (Contains processing logic)
+# File: lib/python_bridge.py (Calls functions below)
 # Dependencies: zlibrary, ebooklib, beautifulsoup4, lxml, PyMuPDF, httpx, aiofiles
 # Standard Libs: json, sys, os, argparse, logging, pathlib, asyncio, urllib.parse
 import json
@@ -276,7 +283,7 @@ class DownloadExecutionError(Exception):
     pass
 
 
-# --- Helper Functions for Processing ---
+# --- Helper Functions for Processing (in lib/rag_processing.py) ---
 
 def _html_to_text(html_content):
     """Extracts plain text from HTML using BeautifulSoup."""
@@ -291,6 +298,7 @@ def _html_to_text(html_content):
 
 def _process_epub(file_path: Path) -> str:
     """Processes an EPUB file to extract plain text. Returns text string."""
+*   **Markdown Generation:** When `output_format='markdown'`, this function uses `BeautifulSoup` to parse the EPUB's HTML content. It maps relevant HTML tags (`h1-h6`, lists, etc.) and EPUB-specific footnote elements (`epub:type="noteref/footnote"`) to their Markdown equivalents. See the [RAG Markdown Generation Specification](./rag-markdown-generation-spec.md) for detailed logic.
     if not EBOOKLIB_AVAILABLE:
         raise ImportError("Required library 'ebooklib' is not installed.")
     logging.info(f"Processing EPUB file: {file_path}")
@@ -335,6 +343,7 @@ def _process_pdf(file_path: Path) -> str:
     if not PYMUPDF_AVAILABLE:
         raise ImportError("Required library 'PyMuPDF' is not installed.")
     logging.info(f"Processing PDF: {file_path}")
+*   **Markdown Generation:** When `output_format='markdown'`, this function uses `PyMuPDF`'s dictionary output (`page.get_text("dict")`) and heuristic analysis (font size, flags, position) to detect and format structural elements like headings, lists, and footnotes into Markdown. See the [RAG Markdown Generation Specification](./rag-markdown-generation-spec.md) for detailed logic.
     doc = None
     try:
         doc = fitz.open(str(file_path))
@@ -367,7 +376,7 @@ def _process_pdf(file_path: Path) -> str:
             try: doc.close()
             except Exception as close_error: logging.error(f"Error closing PDF {file_path}: {close_error}")
 
-# --- New Helper Function for Saving ---
+# --- Helper Function for Saving (in lib/rag_processing.py) ---
 
 def _save_processed_text(original_file_path: Path, text_content: str, output_format: str = "txt") -> Path:
     """Saves the processed text content to a file."""
@@ -391,7 +400,7 @@ def _save_processed_text(original_file_path: Path, text_content: str, output_for
         logging.error(f"Unexpected error saving processed file {output_file_path}: {e}")
         raise FileSaveError(f"An unexpected error occurred while saving processed file: {e}") from e
 
-# --- Helper for Scraping and Downloading (async) ---
+# --- Helper for Scraping and Downloading (async, in lib/python_bridge.py) ---
 
 async def _scrape_and_download(book_page_url: str, output_dir_str: str) -> str:
     """Fetches book page, scrapes download link, and downloads the file."""
@@ -476,7 +485,7 @@ async def _scrape_and_download(book_page_url: str, output_dir_str: str) -> str:
             raise DownloadExecutionError(f"Unexpected error during download: {exc}") from exc
 
 
-# --- Core Bridge Functions (Updated) ---
+# --- Core Bridge Functions (in lib/python_bridge.py, calling rag_processing.py) ---
 
 def process_document(file_path_str: str, output_format: str = "txt") -> dict:
     """

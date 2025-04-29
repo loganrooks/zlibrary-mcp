@@ -34,6 +34,38 @@
 # Debugger Specific Memory
 <!-- Entries below should be added reverse chronologically (newest first) -->
 ## Issue History
+### Issue: RAG-PDF-FN-01-REGRESSION - Pytest regressions after RAG footnote fix - Status: Resolved - [2025-04-29 12:03:44]
+- **Reported**: [2025-04-29 11:21:01] (via TDD Report) / **Severity**: High / **Symptoms**: 10 pytest failures in `__tests__/python/test_python_bridge.py` after RAG footnote fix (commit unknown, applied in previous session).
+- **Investigation**:
+    1. Ran pytest, confirmed 10 failures related to `download_book` and `process_document` tests. [2025-04-29 11:23:00]
+    2. Analyzed failures: Outdated assertions (expecting old `_scrape_and_download` logic/paths), incorrect error handling checks (`pytest.raises` vs error dict), `UnboundLocalError` in PDF markdown formatting (`_format_pdf_markdown`), async call issues, incorrect mock assertions.
+    3. Applied fixes iteratively to `lib/python_bridge.py` and `__tests__/python/test_python_bridge.py`. [See Debug Logs 2025-04-29 11:23:00 - 12:03:44]
+- **Root Cause**: Multiple issues introduced by previous fixes or revealed by refactoring:
+    - Tests assumed old `_scrape_and_download` logic instead of new `zlib_client.download_book`.
+    - Tests incorrectly expected exceptions instead of error dictionaries for RAG processing failures in `download_book`.
+    - `UnboundLocalError` in `_format_pdf_markdown` due to uninitialized variables (`fn_id`, `cleaned_fn_text`).
+    - Test `test_process_document_raises_save_error` called async function `process_document` synchronously.
+    - Incorrect mock assertions (wrong format string in `test_process_document_raises_save_error`, missing variable assignment in `test_download_book_success_no_rag`).
+- **Fix Applied**:
+    - Updated `download_book` tests to mock `zlib_client.download_book` and assert correct return structure/paths.
+    - Corrected error handling assertions in `download_book` tests.
+    - Initialized `fn_id` and `cleaned_fn_text` in `_format_pdf_markdown`.
+    - Used `asyncio.run()` in `test_process_document_raises_save_error`.
+    - Corrected mock assertions in `test_download_book_success_no_rag` and `test_process_document_raises_save_error`.
+- **Verification**: `pytest` passed with 32 passed, 18 xfailed. [2025-04-29 12:03:44]
+- **Related Issues**: [Ref: ActiveContext 2025-04-29 11:11:06, Debug Issue RAG-PDF-FN-01], [Ref: ActiveContext 2025-04-29 11:21:01, TDD Task 2025-04-29 11:16:35]
+### Issue: RAG-PDF-FN-01 - RAG PDF Footnote Formatting Bug - Status: Resolved - [2025-04-29 11:11:06]
+- **Reported**: [2025-04-29 10:56:55] (via SPARC Handover) / **Severity**: Medium / **Symptoms**: `test_rag_markdown_pdf_formats_footnotes_correctly` failed with `AssertionError`, indicating footnote section was missing or incorrectly formatted. Initial investigation focused incorrectly on string cleaning methods.
+- **Investigation**:
+    1. Verified leading character was standard period (`ord=46`) using debug prints. [See Debug Log 2025-04-29 11:00:17]
+    2. Added debug prints to track `footnote_defs` and `markdown_lines`. Confirmed definition was stored correctly but final string was missing footnote section. [See Debug Log 2025-04-29 11:01:44]
+    3. Identified erroneous `continue` statement (line 380) in `elif analysis['is_list_item']:` block, likely copy-paste error. Removed it. [See Diff 2025-04-29 11:03:37]
+    4. Identified duplicated logic block (lines 373-381 vs 383-401). Removed redundant block. [See Diff 2025-04-29 11:05:19]
+    5. Identified extra newline `\n` prepended to footnote separator `---` (line 410). Removed it. [See Diff 2025-04-29 11:10:40]
+- **Root Cause**: Combination of: 1) Erroneous `continue` statement preventing the main text line of the footnote definition from being added to `markdown_lines`. 2) Duplicated logic block. 3) Extra newline in the footnote separator (`\n---`) causing incorrect final string formatting. The initial focus on string cleaning was a red herring.
+- **Fix Applied**: Removed erroneous `continue` (line 380), removed duplicated logic block (lines 373-381), and removed leading `\n` from separator (line 410) in `lib/python_bridge.py`.
+- **Verification**: `test_rag_markdown_pdf_formats_footnotes_correctly` passed successfully. [See Test Result 2025-04-29 11:11:06]
+- **Related Issues**: [ActiveContext 2025-04-29 10:56:55] (Initial Report)
 ### Issue: RAG-MD-QA-FAIL-01 - RAG Markdown Generation QA Failures - Status: Fixes Applied - [2025-04-29 10:02:50]
 - **Reported**: [2025-04-29 09:55:59] (via SPARC Handover) / **Severity**: High / **Symptoms**: QA testing (commit `e943016`) failed against spec `docs/rag-markdown-generation-spec.md`. Issues: PDF heading noise, PDF/EPUB list formatting, PDF/EPUB footnote formatting, PDF null characters. [See QA Feedback 2025-04-29 09:52:00]
 - **Investigation**:

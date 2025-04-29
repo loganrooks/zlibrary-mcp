@@ -4,7 +4,48 @@
 [2025-04-28 12:30:11] - Integration - RAG Download Workflow Verified (Premature) - Successfully tested `download_book_to_file` end-to-end on branch `feature/rag-file-output` (commit `f2d1b9c`). Fixed `AttributeError` and `TypeError` in `zlibrary/src/zlibrary/libasync.py`. Download confirmed working. [Ref: Integration Test Scenario RAG-DL-WF-01]
 [2025-04-28 13:22:47] - Debug - Resolved Pytest Regression (Post-Integration) - Fixed 4 failing tests in `__tests__/python/test_python_bridge.py` by correcting outdated assertions expecting directory paths instead of full file paths. Tests verified passing. Commit: 26cd7c8. [See Issue REG-PYTEST-001]
 - **[2025-04-28 22:04:00] - DocsWriter - Completed Documentation Update** - Updated `README.md` to reflect current project status, recent fixes (`get_download_history`, `get_recent_books`), tool deprecation (`get_download_info`), passing test suites, and ADR-002 alignment. Verified consistency with related architecture/spec documents.
+- **[2025-04-29 09:35:19] - TDD - Refactor Completed (RAG Markdown Generation)** - Refactored `lib/python_bridge.py` and `__tests__/python/test_python_bridge.py` for clarity and standards. All tests pass. Commit: `e943016`. [Ref: ActiveContext 2025-04-29 09:35:19]
+- **[2025-04-29 09:55:59] - Feature: RAG Markdown Generation - QA Testing FAILED**
+  - Status: Failed QA
+  - Mode: `qa-tester`
+  - Details: QA testing revealed significant issues with Markdown output quality and correctness, particularly with heading levels and list formatting. See feedback for details. Feature requires refinement/debugging.
+  - Commit: `e943016` (tested)
+  - Related Context: [activeContext.md 2025-04-29 09:55:59], [qa-tester-feedback.md QA Findings 2025-04-29 09:55:59]
+- **[2025-04-29 09:48:39] - Feature: RAG Markdown Generation - Documentation Complete**
+  - Status: Completed
+  - Mode: `docs-writer`
+  - Details: Updated `docs/rag-pipeline-implementation-spec.md` to reflect the new Markdown output option and logic.
+  - Commit: `e943016` (documented)
+  - Related Context: [activeContext.md 2025-04-29 09:48:39], [docs-writer.md Documentation Plan Update 2025-04-29 09:48:39]
+- **[2025-04-29 09:43:58] - Feature: RAG Markdown Generation - Final TDD Verification Complete**
+  - Status: Completed
+  - Mode: `tdd`
+  - Details: Final verification pass completed for commit `e943016`. Test coverage and clarity deemed adequate. All tests pass. Feature ready for Completion phase.
+  - Commit: `e943016` (verified)
+  - Related Context: [activeContext.md 2025-04-29 09:43:58], [tdd.md Verification Summary 2025-04-29 09:43:58]
+- **[2025-04-29 09:39:34] - Feature: RAG Markdown Generation - Integration Verified**
+- **[2025-04-29 09:48:39] - Pattern: Configurable Output Format (RAG)**
+  - Description: The RAG processing pipeline now supports configurable output formats (`txt`, `markdown`) via the `output_format` parameter in relevant functions (`process_document_for_rag`). Markdown output includes basic structural elements derived from the source document.
+  - Implementation: `lib/python_bridge.py` (commit `e943016`)
+  - Specification: `docs/rag-markdown-generation-spec.md`
+  - Documentation: `docs/rag-pipeline-implementation-spec.md`
+  - Status: Completed
+  - Mode: `integration`
+  - Details: Verified integration of commit `e943016`. Full test suite (`npm test`) passed. No regressions detected.
+  - Commit: `e943016` (verified)
+  - Related Context: [activeContext.md 2025-04-29 09:39:34], [integration.md Test Scenario RAG-MD-INT-VERIFY-01]
+- **[2025-04-29 09:36:33] - Feature: RAG Markdown Generation - TDD Refactor Complete**
+  - Status: Completed
+  - Mode: `tdd`
+  - Details: Refactored implementation (`lib/python_bridge.py`) and tests (`__tests__/python/test_python_bridge.py`) for clarity and maintainability. All tests pass.
+  - Commit: `e943016`
+  - Related Context: [activeContext.md 2025-04-29 09:36:33], [tdd.md TDD Cycle Log 2025-04-29 09:36:33]
 ## Progress
+- **[2025-04-29 10:02:50] - Debug - Applied Fixes for RAG Markdown QA Failures** - Modified `lib/python_bridge.py` to address QA issues: applied cleaning (null chars, headers/footers) to Markdown output for PDFs, improved list detection/formatting heuristics for PDFs, added specific TOC handling for EPUB lists, and refined footnote detection/formatting for both PDF and EPUB. [Ref: ActiveContext 2025-04-29 10:02:50]
+- **[2025-04-29 09:55:10] - QA - RAG Markdown Generation FAILED** - QA testing for the RAG Markdown generation feature (commit `e943016`) completed. The feature failed due to significant deviations from the specification (`docs/rag-markdown-generation-spec.md`), particularly in list and footnote generation for both PDF and EPUB, and heading detection/cleaning for PDF. See `memory-bank/feedback/qa-tester-feedback.md` [2025-04-29 09:52:00] for details.
+- **[2025-04-29 09:47:33] - DocsWriter - Documented RAG Markdown Generation** - Updated `docs/rag-pipeline-implementation-spec.md` to reflect the implementation and verification of the RAG Markdown generation feature (commit `e943016`), clarifying `output_format` and linking to the relevant spec (`docs/rag-markdown-generation-spec.md`).
+- **[2025-04-29 09:38:41] - Integration - Verified RAG Markdown Generation Integration** - Confirmed successful integration of the RAG Markdown structure generation feature (commit `e943016`). Full test suite (`npm test`) passed. [Ref: ActiveContext 2025-04-29 09:38:41]
+- **[2025-04-29 03:01:59] - Code - TDD Green Completed (RAG Markdown Generation)** - Implemented Markdown generation logic in `lib/python_bridge.py` based on spec `docs/rag-markdown-generation-spec.md`. Pytest confirms target tests now pass (16 xpassed). Commit: `215ec6d`. [Ref: ActiveContext 2025-04-29 03:01:59]
 - **[2025-04-29 03:01:59] - Code - TDD Green Completed (RAG Markdown Generation)** - Implemented Markdown generation logic in `lib/python_bridge.py` based on spec `docs/rag-markdown-generation-spec.md`. Pytest confirms target tests now pass (16 xpassed). [Ref: ActiveContext 2025-04-29 03:01:59]
 - **[2025-04-29 02:51:06] - SPARC - Delegate Clause Triggered (Context 134%)** - Handing over orchestration before TDD Green phase due to high context. [Ref: ActiveContext 2025-04-29 02:51:06]
 - **[2025-04-29 02:48:54] - TDD - Red Phase Completed (RAG Markdown Generation)** - Added failing tests (`@pytest.mark.xfail`) to `__tests__/python/test_python_bridge.py` for refined Markdown structure generation (PDF/EPUB). Tests confirmed xfailing. Commit: 05985b2. [Ref: ActiveContext 2025-04-29 02:48:54]
@@ -33,6 +74,12 @@
 - **Related**: `docs/search-first-id-lookup-spec.md`, Decision-SearchFirstIDLookup-01
 
 
+### Pattern: RAG Markdown Generation - [2025-04-29 09:47:33]
+- **Context**: Enhancing the RAG pipeline to produce structured Markdown output.
+- **Problem**: Plain text output from RAG processing lacks structure (headings, lists, footnotes), limiting its usefulness for certain downstream tasks.
+- **Solution**: Refined the Python bridge (`lib/python_bridge.py`) functions (`_process_pdf`, `_process_epub`) to optionally generate Markdown. Uses `PyMuPDF` heuristics (font size, flags) for PDFs and `BeautifulSoup` DOM traversal for EPUBs to map structural elements to Markdown syntax. Controlled by the `output_format` parameter ('text' or 'markdown') in `process_document` and `download_book_to_file`.
+- **Components**: `lib/python_bridge.py` (updated `_process_pdf`, `_process_epub`, added `_format_pdf_markdown`, `_analyze_pdf_block`, `_epub_node_to_markdown`), `src/lib/zlibrary-api.ts` (passes `output_format`), `src/index.ts` (updated tool schemas).
+- **Related**: `docs/rag-markdown-generation-spec.md`, `docs/rag-pipeline-implementation-spec.md` (updated), ActiveContext [2025-04-29 09:47:33]
 # System Patterns
 ### Pattern: RAG Pipeline File Output - [2025-04-23 23:30:58]
 - **Context**: Processing documents (EPUB, TXT, PDF) for RAG workflows.

@@ -34,6 +34,22 @@
 # Debugger Specific Memory
 <!-- Entries below should be added reverse chronologically (newest first) -->
 ## Issue History
+### Issue: RAG-MD-QA-FAIL-01 - RAG Markdown Generation QA Failures - Status: Fixes Applied - [2025-04-29 10:02:50]
+- **Reported**: [2025-04-29 09:55:59] (via SPARC Handover) / **Severity**: High / **Symptoms**: QA testing (commit `e943016`) failed against spec `docs/rag-markdown-generation-spec.md`. Issues: PDF heading noise, PDF/EPUB list formatting, PDF/EPUB footnote formatting, PDF null characters. [See QA Feedback 2025-04-29 09:52:00]
+- **Investigation**:
+    1. Read QA feedback (`memory-bank/feedback/qa-tester-feedback.md` [2025-04-29 09:52:00]).
+    2. Read specification (`docs/rag-markdown-generation-spec.md`).
+    3. Read implementation (`lib/python_bridge.py`).
+    4. Hypothesized root causes: PDF cleaning applied only to text output; basic list heuristics; strict EPUB footnote attribute matching; insufficient PDF footnote heuristics.
+- **Root Cause**: Confirmed hypotheses: PDF cleaning logic bypassed Markdown path; list heuristics were too simple; EPUB footnote logic relied on specific attributes/ID formats not present in sample.
+- **Fix Applied**:
+    1. Modified `_process_pdf` to apply null char removal and header/footer cleaning to content *before* joining pages, regardless of `output_format`. [See Diff 2025-04-29 10:00:51]
+    2. Enhanced PDF list detection in `_analyze_pdf_block` (regex for ordered lists) and formatting in `_format_pdf_markdown` (use detected marker). [See Diff 2025-04-29 10:01:09]
+    3. Added specific handling for `nav[epub:type="toc"]` in `_epub_node_to_markdown` to format TOC links as lists. [See Diff 2025-04-29 10:01:25, 2025-04-29 10:01:51, 2025-04-29 10:02:18]
+    4. Refined PDF footnote definition heuristic in `_format_pdf_markdown`. [See Diff 2025-04-29 10:02:50]
+    5. Broadened EPUB footnote ID detection regex and improved definition cleaning in `_epub_node_to_markdown`. [See Diff 2025-04-29 10:02:50]
+- **Verification**: Fixes applied. Next step: Delegate to TDD mode to add specific regression tests.
+- **Related Issues**: [GlobalContext Progress 2025-04-29 09:55:10] (QA Failure Report)
 ### Issue: Investigate-GetDownloadInfo-01 - Investigate `get_download_info` Errors and Necessity - Status: Resolved (Recommendation: Deprecate) - [2025-04-28 17:31:01]
 - **Reported**: [2025-04-28 17:21:43] (via Task Description) / **Severity**: Low / **Symptoms**: Handover context mentioned errors; user intervention questioned value due to ID lookup instability.
 - **Investigation**:

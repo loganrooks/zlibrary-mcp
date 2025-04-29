@@ -87,6 +87,13 @@
 
 
 ## Integration Test Scenarios
+### Scenario: RAG Markdown Generation Integration Verification - [2025-04-29 09:38:41]
+- **ID**: RAG-MD-INT-VERIFY-01
+- **Components**: [zlibrary-mcp], [lib/python_bridge.py], [__tests__/*]
+- **Steps**: 1. Run full test suite (`npm test`) after commit `e943016`.
+- **Expected**: All test suites pass (exit code 0).
+- **Status**: Auto
+- **Last Run**: [2025-04-29 09:38:41] - **PASS**
 ### Scenario: RAG Download Workflow - download_book_to_file (Basic) - [2025-04-28 12:55:24]
 - **ID**: RAG-DL-WF-01
 - **Components**: [zlibrary-mcp: download_book_to_file], [lib/python_bridge.py: download_book, _scrape_and_download], [zlibrary/src/zlibrary/libasync.py: download_book]

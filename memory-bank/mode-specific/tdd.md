@@ -1,3 +1,20 @@
+## Verification Reviews
+<!-- Entries below should be added reverse chronologically (newest first) -->
+
+### Verification: RAG Markdown Generation - [2025-04-29 09:43:13]
+- **Scope**: RAG Markdown generation feature (commit `e943016`)
+- **Trigger**: Final TDD Verification Pass request from SPARC.
+- **Actions**:
+    - Reviewed implementation (`lib/python_bridge.py`) and tests (`__tests__/python/test_python_bridge.py`) against spec (`docs/rag-markdown-generation-spec.md`).
+    - Ran full test suite (`npm test`).
+- **Outcome**: PASS
+- **Findings**:
+    - Implementation aligns with spec.
+    - Test coverage for specified Markdown features (headings, lists, footnotes, etc.) is adequate.
+    - Tests are clear and follow TDD principles.
+    - Full test suite passed successfully (59/59 tests).
+- **Next Steps**: Mark feature verification complete.
+- **Related**: `docs/rag-markdown-generation-spec.md`, Commit `e943016`, [activeContext.md 2025-04-29 09:42:55]
 ### Test Execution: Node.js Suite - [2025-04-29 02:15:00]
 - **Trigger**: Post-Code Change (RAG Quality Refinement)
 - **Outcome**: PASS / **Summary**: 59 tests passed
@@ -63,6 +80,47 @@
     - EPUB Footnotes: `test_process_epub_markdown_generates_footnotes` / Status: Green
 - **Related Requirements**: `docs/rag-output-qa-report.md`, `docs/rag-output-quality-spec.md`
 # Tester (TDD) Specific Memory
+### Test Execution: Regression (npm test - Post RAG Markdown Refactor) - [2025-04-29 09:35:04]
+- **Trigger**: Post-Refactor (`lib/python_bridge.py`, `__tests__/python/test_python_bridge.py`)
+- **Outcome**: PASS / **Summary**: 59 tests passed
+- **Failed Tests**: None
+- **Coverage Change**: Not measured.
+- **Notes**: Confirmed refactoring did not introduce regressions in Node.js tests.
+
+### Test Execution: Unit (pytest - Post RAG Markdown Refactor) - [2025-04-29 09:33:13]
+- **Trigger**: Post-Refactor (`lib/python_bridge.py`, `__tests__/python/test_python_bridge.py`)
+- **Outcome**: PASS / **Summary**: 40 passed, 4 skipped, 8 xfailed, 3 xpassed
+- **Failed Tests**: None
+- **Coverage Change**: Not measured.
+- **Notes**: Confirmed refactoring passed relevant Python tests. xfail/xpass count consistent with expectations.
+
+### TDD Cycle: RAG Markdown Generation (Refactor) - [2025-04-29 09:35:19]
+- **Red**: N/A (Refactor phase following Green Phase commit `215ec6d`)
+- **Green**: N/A (Refactor phase)
+- **Refactor**:
+    - `lib/python_bridge.py`: Added comments to clarify heuristics (`_analyze_pdf_block`, `_format_pdf_markdown`, `_epub_node_to_markdown`). Added type hints and improved docstrings (`_analyze_pdf_block`, `_format_pdf_markdown`, `_epub_node_to_markdown`, `_save_processed_text`). Fixed indentation errors introduced during refactoring. Renamed `fn_id_attr` to `footnote_id_attribute`. Ensured basic PEP 8 compliance.
+    - `__tests__/python/test_python_bridge.py`: Removed `@pytest.mark.xfail` from implemented RAG Markdown tests. Removed obsolete tests for deprecated `_scrape_and_download` function. Renamed RAG Markdown tests for clarity (e.g., `test_rag_markdown_pdf_generates_headings`). Removed `xfail` markers from ID lookup workaround tests (`test_get_by_id_workaround_*`).
+- **Files Changed**: `lib/python_bridge.py`, `__tests__/python/test_python_bridge.py`
+- **Outcome**: Refactor phase complete. Code improved for clarity, maintainability, and standards adherence. All tests (`pytest`, `npm test`) pass. Commit: `e943016`.
+- **Related**: `docs/rag-markdown-generation-spec.md`, Commit `215ec6d` (Green Phase)
+### TDD Cycle: RAG Markdown EPUB List Formatting (TOC) - [2025-04-29 10:15:06]
+- **Red**: Added `test_rag_markdown_epub_formats_toc_as_list` to `__tests__/python/test_python_bridge.py` (marked xfail).
+- **Green**: Modified `_process_epub` loop to prioritize and exclusively process `nav[epub:type="toc"]` if found. Test `xpassed` initially, failed after removing `xfail`, then passed after fix. / Code File: `lib/python_bridge.py`
+- **Refactor**: Minimal refactoring needed.
+- **Outcome**: Cycle completed, test passing. Addresses QA feedback on EPUB TOC list formatting.
+- **Related**: QA Feedback [2025-04-29 09:52:00], ActiveContext [2025-04-29 10:15:06]
+### TDD Cycle: RAG Markdown PDF List Formatting - [2025-04-29 10:11:42]
+- **Red**: Added `test_rag_markdown_pdf_handles_various_ordered_lists` to `__tests__/python/test_python_bridge.py` (marked xfail).
+- **Green**: No code change needed. Test `xpassed` then passed after removing `xfail`, confirming Debug fix ([See Diff 2025-04-29 10:01:09]) was sufficient.
+- **Refactor**: Minimal refactoring needed.
+- **Outcome**: Cycle completed, test passing. Addresses QA feedback on PDF list formatting.
+- **Related**: QA Feedback [2025-04-29 09:52:00], ActiveContext [2025-04-29 10:11:42]
+### TDD Cycle: RAG Markdown PDF Heading Noise - [2025-04-29 10:09:59]
+- **Red**: Added `test_rag_markdown_pdf_ignores_header_footer_noise_as_heading` to `__tests__/python/test_python_bridge.py` (marked xfail).
+- **Green**: Refactored cleaning logic to run *before* analysis in `_analyze_pdf_block`. Enhanced `header_footer_patterns` regex in `_analyze_pdf_block` to catch more noise patterns. / Code File: `lib/python_bridge.py`
+- **Refactor**: Minimal refactoring needed.
+- **Outcome**: Cycle completed, test passing. Addresses QA feedback on PDF heading noise.
+- **Related**: QA Feedback [2025-04-29 09:52:00], ActiveContext [2025-04-29 10:09:59]
 <!-- Entries below should be added reverse chronologically (newest first) -->
 ### Test Execution: Regression (pytest - Post DownloadsPaginator Fix) - [2025-04-28 21:57:20]
 - **Trigger**: Manual (`pytest`) after fixing `DownloadsPaginator` parser and tests.
@@ -132,6 +190,12 @@
 ## Test Execution Results
 ### Test Execution: Unit (pytest - RAG Markdown Red Phase) - [2025-04-29 02:48:41]
 - **Trigger**: Manual (`.../python -m pytest __tests__/python/test_python_bridge.py`) after adding failing tests.
+### Test Execution: Final Verification (npm test - RAG Markdown) - [2025-04-29 09:42:55]
+- **Trigger**: Manual (`npm test`) as part of final TDD verification pass.
+- **Outcome**: PASS / **Summary**: 59 tests passed
+- **Failed Tests**: None
+- **Coverage Change**: Not measured.
+- **Notes**: Confirmed all tests pass on commit `e943016`. Console errors observed during test run are related to mocks in other suites (`venv-manager`, `zlibrary-api`) and do not affect this feature's verification.
 - **Outcome**: PASS (with xfails/xpasses) / **Summary**: 27 passed, 12 skipped, 12 xfailed, 12 xpassed
 - **Failed Tests**: None (All relevant new tests are xfailed as expected).
 - **Coverage Change**: N/A

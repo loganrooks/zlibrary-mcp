@@ -1,3 +1,10 @@
+### [2025-04-29 09:17:15] Intervention: User Corrected Context Percentage Calculation Bug
+- **Trigger**: User message upon task resumption.
+- **Context**: Previous SPARC instance initiated handover based on reported context size > 100%. User clarified that the reported percentage in `environment_details` is often calculated incorrectly (assuming 200k max tokens instead of 1M).
+- **Action Taken**: Acknowledged user feedback. Calculated actual context percentage (Tokens / 1,000,000 * 100), which is currently ~15.4%. Cancelled the unnecessary handover initiated by the previous instance. Will manually calculate percentage for Delegate Clause checks going forward.
+- **Rationale**: Avoid unnecessary handovers based on faulty environment data. Adhere to user correction.
+- **Outcome**: Handover cancelled. Proceeding with TDD Refactor phase delegation.
+- **Follow-up**: Remember to manually calculate context percentage. Include this note in future handover messages if delegation becomes necessary.
 # SPARC Orchestrator Feedback
 <!-- Entries below should be added reverse chronologically (newest first) -->
 ### [2025-04-28 12:20:17] Intervention: User Corrected Context Percentage Calculation

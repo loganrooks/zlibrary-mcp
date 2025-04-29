@@ -127,7 +127,7 @@ def mock_fitz(mocker):
 MOCK_BOOK_RESULT = {
     'id': '12345',
     'name': 'The Great Test',
-    'author': 'Py Test',
+    'author': 'Py Test', # Already present
     'year': '2025',
     'language': 'en',
     'extension': 'epub',
@@ -266,8 +266,8 @@ def mock_save_text(mocker):
 # --- Tests for get_recent_books ---
 
 # Mock data for recent books
-MOCK_RECENT_BOOK_1 = { 'id': '999', 'name': 'Recent Book 1', 'author': 'Author A', 'year': '2025', 'extension': 'epub' }
-MOCK_RECENT_BOOK_2 = { 'id': '998', 'name': 'Recent Book 2', 'author': 'Author B', 'year': '2025', 'extension': 'pdf' }
+MOCK_RECENT_BOOK_1 = { 'id': '999', 'name': 'Recent Book 1', 'author': 'Author A', 'year': '2025', 'extension': 'epub' } # Already present
+MOCK_RECENT_BOOK_2 = { 'id': '998', 'name': 'Recent Book 2', 'author': 'Author B', 'year': '2025', 'extension': 'pdf' } # Already present
 MOCK_RECENT_RESULTS = [MOCK_RECENT_BOOK_1, MOCK_RECENT_BOOK_2]
 
 # Removed xfail marker
@@ -343,10 +343,19 @@ async def test_process_document_epub_success(tmp_path, mocker, mock_save_text):
     # Mock the internal helper called by process_document
     mock_internal_epub = mocker.patch('lib.rag_processing.process_epub', return_value=expected_content) # Updated path
 
-    result = await process_document(str(epub_path)) # Use await
+    # Add default None for new metadata args
+    result = await process_document(str(epub_path), book_id=None, author=None, title=None)
 
     mock_internal_epub.assert_called_once_with(Path(epub_path), 'txt') # Expect Path and 'txt'
-    mock_save_text.assert_called_once_with(Path(epub_path), expected_content, 'txt') # Expect Path and 'txt'
+    # Update mock_save_text assertion to include metadata=None
+    mock_save_text.assert_called_once_with(
+        original_file_path=Path(epub_path),
+        text_content=expected_content,
+        output_format='txt',
+        book_id=None,
+        author=None,
+        title=None
+    )
     # Assert the final dictionary returned by process_document
     assert result == {"processed_file_path": str(mock_save_text.return_value)}
 
@@ -371,7 +380,8 @@ async def test_process_document_epub_read_error(tmp_path, mocker, mock_save_text
 
     # Assert that process_document wraps and raises the error
     with pytest.raises(RuntimeError, match=r"Error processing document .*test\.epub: EPUB read failed"): # Expect RuntimeError
-        await process_document(str(epub_path)) # Use await
+        # Add default None for new metadata args
+        await process_document(str(epub_path), book_id=None, author=None, title=None)
 
     mock_internal_epub.assert_called_once_with(Path(epub_path), 'txt') # Expect Path and 'txt'
     mock_save_text.assert_not_called() # Save should not be called on error
@@ -386,10 +396,19 @@ async def test_process_document_txt_utf8(tmp_path, mocker, mock_save_text):
     # Mock the internal helper
     mock_internal_txt = mocker.patch('lib.rag_processing.process_txt', return_value=content) # Updated path
 
-    result = await process_document(str(txt_path)) # Use await
+    # Add default None for new metadata args
+    result = await process_document(str(txt_path), book_id=None, author=None, title=None)
 
     mock_internal_txt.assert_called_once_with(Path(txt_path)) # Expect Path
-    mock_save_text.assert_called_once_with(Path(txt_path), content, 'txt') # Expect Path and 'txt'
+    # Update mock_save_text assertion to include metadata=None
+    mock_save_text.assert_called_once_with(
+        original_file_path=Path(txt_path),
+        text_content=content,
+        output_format='txt',
+        book_id=None,
+        author=None,
+        title=None
+    )
     assert result == {"processed_file_path": str(mock_save_text.return_value)}
 
 # Refactored to test via process_document
@@ -402,10 +421,19 @@ async def test_process_document_txt_latin1_fallback(tmp_path, mocker, mock_save_
     expected_processed_content = "This is a Latin-1 file with chars like: ."
     mock_internal_txt = mocker.patch('lib.rag_processing.process_txt', return_value=expected_processed_content) # Updated path
 
-    result = await process_document(str(txt_path)) # Use await
+    # Add default None for new metadata args
+    result = await process_document(str(txt_path), book_id=None, author=None, title=None)
 
     mock_internal_txt.assert_called_once_with(Path(txt_path)) # Expect Path
-    mock_save_text.assert_called_once_with(Path(txt_path), expected_processed_content, 'txt') # Expect Path and 'txt'
+    # Update mock_save_text assertion to include metadata=None
+    mock_save_text.assert_called_once_with(
+        original_file_path=Path(txt_path),
+        text_content=expected_processed_content,
+        output_format='txt',
+        book_id=None,
+        author=None,
+        title=None
+    )
     assert result == {"processed_file_path": str(mock_save_text.return_value)}
 
 # Refactored to test via process_document
@@ -418,7 +446,8 @@ async def test_process_document_txt_read_error(tmp_path, mocker, mock_save_text)
 
     # Assert that process_document wraps and raises the error
     with pytest.raises(RuntimeError, match=r"Error processing document .*no_permission\.txt: Permission denied"): # Expect RuntimeError
-        await process_document(str(txt_path)) # Use await
+        # Add default None for new metadata args
+        await process_document(str(txt_path), book_id=None, author=None, title=None)
 
     mock_internal_txt.assert_called_once_with(Path(txt_path)) # Expect Path
     mock_save_text.assert_not_called()
@@ -434,10 +463,19 @@ async def test_process_document_pdf_success(tmp_path, mocker, mock_save_text):
     # Mock the internal helper
     mock_internal_pdf = mocker.patch('lib.rag_processing.process_pdf', return_value=expected_content) # Updated path
 
-    result = await process_document(str(pdf_path)) # Use await
+    # Add default None for new metadata args
+    result = await process_document(str(pdf_path), book_id=None, author=None, title=None)
 
     mock_internal_pdf.assert_called_once_with(Path(pdf_path), 'txt') # Expect Path and 'txt'
-    mock_save_text.assert_called_once_with(Path(pdf_path), expected_content, 'txt') # Expect Path and 'txt'
+    # Update mock_save_text assertion to include metadata=None
+    mock_save_text.assert_called_once_with(
+        original_file_path=Path(pdf_path),
+        text_content=expected_content,
+        output_format='txt',
+        book_id=None,
+        author=None,
+        title=None
+    )
     assert result == {"processed_file_path": str(mock_save_text.return_value)}
 
 # Refactored to test via process_document
@@ -449,7 +487,8 @@ async def test_process_document_pdf_encrypted(tmp_path, mocker, mock_save_text):
     mock_internal_pdf = mocker.patch('lib.rag_processing.process_pdf', side_effect=ValueError("PDF is encrypted")) # Updated path
 
     with pytest.raises(RuntimeError, match=r"Error processing document .*encrypted\.pdf: PDF is encrypted"): # Expect RuntimeError wrapper
-        await process_document(str(pdf_path)) # Use await
+        # Add default None for new metadata args
+        await process_document(str(pdf_path), book_id=None, author=None, title=None)
 
     mock_internal_pdf.assert_called_once_with(Path(pdf_path), 'txt') # Expect Path and 'txt'
     mock_save_text.assert_not_called()
@@ -466,7 +505,8 @@ async def test_process_document_pdf_corrupted(tmp_path, mocker, mock_save_text):
     mock_internal_pdf = mocker.patch('lib.rag_processing.process_pdf', side_effect=fitz_error("Corrupted PDF")) # Updated path
 
     with pytest.raises(RuntimeError, match=r"Error processing document .*corrupted\.pdf.*Corrupted PDF"): # Expect RuntimeError wrapper
-        await process_document(str(pdf_path))
+        # Add default None for new metadata args
+        await process_document(str(pdf_path), book_id=None, author=None, title=None)
 
     mock_internal_pdf.assert_called_once_with(Path(pdf_path), 'txt') # Expect Path and 'txt'
     mock_save_text.assert_not_called()
@@ -480,7 +520,8 @@ async def test_process_document_pdf_image_based(tmp_path, mocker, mock_save_text
     # Mock the internal helper to return empty string
     mock_internal_pdf = mocker.patch('lib.rag_processing.process_pdf', return_value="") # Updated path
 
-    result = await process_document(str(pdf_path))
+    # Add default None for new metadata args
+    result = await process_document(str(pdf_path), book_id=None, author=None, title=None)
 
     mock_internal_pdf.assert_called_once_with(Path(pdf_path), 'txt') # Expect Path and 'txt'
     mock_save_text.assert_not_called() # Save should not be called for empty content
@@ -515,7 +556,15 @@ async def test_process_document_pdf_removes_noise(tmp_path, mocker, mock_save_te
 
     mock_internal_pdf.assert_called_once_with(Path(pdf_path), 'txt') # Expect Path and 'txt'
     # Assert that _save_processed_text was called with the *cleaned* content
-    mock_save_text.assert_called_once_with(Path(pdf_path), expected_clean_content, 'txt') # Expect Path and 'txt'
+    # Update assertion to include metadata=None
+    mock_save_text.assert_called_once_with(
+        original_file_path=Path(pdf_path),
+        text_content=expected_clean_content,
+        output_format='txt',
+        book_id=None,
+        author=None,
+        title=None
+    )
     assert result == {"processed_file_path": str(mock_save_text.return_value)}
 
 
@@ -542,7 +591,15 @@ Paragraph 2.
     result = await process_document(str(pdf_path), output_format='markdown')
 
     mock_internal_pdf.assert_called_once_with(Path(pdf_path), 'markdown') # Expect Path and 'markdown'
-    mock_save_text.assert_called_once_with(Path(pdf_path), expected_markdown, 'markdown') # Expect Path and 'markdown'
+    # Update assertion to include metadata=None
+    mock_save_text.assert_called_once_with(
+        original_file_path=Path(pdf_path),
+        text_content=expected_markdown,
+        output_format='markdown',
+        book_id=None,
+        author=None,
+        title=None
+    )
     assert result == {"processed_file_path": str(mock_save_text.return_value)}
 
 # Refactored to test via process_document
@@ -563,7 +620,15 @@ Paragraph."""
     result = await process_document(str(pdf_path), output_format='markdown')
 
     mock_internal_pdf.assert_called_once_with(Path(pdf_path), 'markdown') # Expect Path and 'markdown'
-    mock_save_text.assert_called_once_with(Path(pdf_path), expected_markdown, 'markdown') # Expect Path and 'markdown'
+    # Update assertion to include metadata=None
+    mock_save_text.assert_called_once_with(
+        original_file_path=Path(pdf_path),
+        text_content=expected_markdown,
+        output_format='markdown',
+        book_id=None,
+        author=None,
+        title=None
+    )
     assert result == {"processed_file_path": str(mock_save_text.return_value)}
 
 # Refactored to test via process_document
@@ -582,7 +647,15 @@ async def test_process_document_pdf_markdown_footnotes(tmp_path, mocker, mock_sa
     result = await process_document(str(pdf_path), output_format='markdown')
 
     mock_internal_pdf.assert_called_once_with(Path(pdf_path), 'markdown') # Expect Path and 'markdown'
-    mock_save_text.assert_called_once_with(Path(pdf_path), expected_markdown, 'markdown') # Expect Path and 'markdown'
+    # Update assertion to include metadata=None
+    mock_save_text.assert_called_once_with(
+        original_file_path=Path(pdf_path),
+        text_content=expected_markdown,
+        output_format='markdown',
+        book_id=None,
+        author=None,
+        title=None
+    )
     assert result == {"processed_file_path": str(mock_save_text.return_value)}
 
 # Refactored to test via process_document
@@ -598,7 +671,15 @@ async def test_process_document_pdf_markdown_ignores_noise_heading(tmp_path, moc
     result = await process_document(str(pdf_path), output_format='markdown')
 
     mock_internal_pdf.assert_called_once_with(Path(pdf_path), 'markdown') # Expect Path and 'markdown'
-    mock_save_text.assert_called_once_with(Path(pdf_path), expected_markdown, 'markdown') # Expect Path and 'markdown'
+    # Update assertion to include metadata=None
+    mock_save_text.assert_called_once_with(
+        original_file_path=Path(pdf_path),
+        text_content=expected_markdown,
+        output_format='markdown',
+        book_id=None,
+        author=None,
+        title=None
+    )
     assert result == {"processed_file_path": str(mock_save_text.return_value)}
 
 # Refactored to test via process_document
@@ -620,7 +701,15 @@ Not a list."""
     result = await process_document(str(pdf_path), output_format='markdown')
 
     mock_internal_pdf.assert_called_once_with(Path(pdf_path), 'markdown') # Expect Path and 'markdown'
-    mock_save_text.assert_called_once_with(Path(pdf_path), expected_markdown, 'markdown') # Expect Path and 'markdown'
+    # Update assertion to include metadata=None
+    mock_save_text.assert_called_once_with(
+        original_file_path=Path(pdf_path),
+        text_content=expected_markdown,
+        output_format='markdown',
+        book_id=None,
+        author=None,
+        title=None
+    )
     assert result == {"processed_file_path": str(mock_save_text.return_value)}
 
 # Refactored to test via process_document
@@ -638,7 +727,15 @@ async def test_process_document_epub_markdown_toc_list(tmp_path, mocker, mock_sa
     result = await process_document(str(epub_path), output_format='markdown')
 
     mock_internal_epub.assert_called_once_with(Path(epub_path), 'markdown') # Expect Path and 'markdown'
-    mock_save_text.assert_called_once_with(Path(epub_path), expected_markdown, 'markdown') # Expect Path and 'markdown'
+    # Update assertion to include metadata=None
+    mock_save_text.assert_called_once_with(
+        original_file_path=Path(epub_path),
+        text_content=expected_markdown,
+        output_format='markdown',
+        book_id=None,
+        author=None,
+        title=None
+    )
     assert result == {"processed_file_path": str(mock_save_text.return_value)}
 
 
@@ -659,7 +756,15 @@ async def test_process_document_epub_markdown_multi_footnotes(tmp_path, mocker, 
     result = await process_document(str(epub_path), output_format='markdown')
 
     mock_internal_epub.assert_called_once_with(Path(epub_path), 'markdown') # Expect Path and 'markdown'
-    mock_save_text.assert_called_once_with(Path(epub_path), expected_markdown, 'markdown') # Expect Path and 'markdown'
+    # Update assertion to include metadata=None
+    mock_save_text.assert_called_once_with(
+        original_file_path=Path(epub_path),
+        text_content=expected_markdown,
+        output_format='markdown',
+        book_id=None,
+        author=None,
+        title=None
+    )
     assert result == {"processed_file_path": str(mock_save_text.return_value)}
 
 
@@ -680,7 +785,15 @@ async def test_process_document_pdf_markdown_footnote_format(tmp_path, mocker, m
     result = await process_document(str(pdf_path), output_format='markdown') # Use await
 
     mock_internal_pdf.assert_called_once_with(Path(pdf_path), 'markdown') # Expect Path and 'markdown'
-    mock_save_text.assert_called_once_with(Path(pdf_path), expected_markdown, 'markdown') # Expect Path and 'markdown'
+    # Update assertion to include metadata=None
+    mock_save_text.assert_called_once_with(
+        original_file_path=Path(pdf_path),
+        text_content=expected_markdown,
+        output_format='markdown',
+        book_id=None,
+        author=None,
+        title=None
+    )
     assert result == {"processed_file_path": str(mock_save_text.return_value)}
 
 # --- RAG Output Format Tests ---
@@ -697,7 +810,15 @@ async def test_process_document_epub_format_text(tmp_path, mocker, mock_save_tex
     result = await process_document(str(epub_path), output_format='text') # Explicitly 'text'
 
     mock_internal_epub.assert_called_once_with(Path(epub_path), 'text') # Expect Path and 'text'
-    mock_save_text.assert_called_once_with(Path(epub_path), expected_text, 'text') # Expect Path and 'text'
+    # Update assertion to include metadata=None
+    mock_save_text.assert_called_once_with(
+        original_file_path=Path(epub_path),
+        text_content=expected_text,
+        output_format='text',
+        book_id=None,
+        author=None,
+        title=None
+    )
     assert result == {"processed_file_path": str(mock_save_text.return_value)}
 
 
@@ -714,7 +835,15 @@ async def test_process_document_epub_format_markdown(tmp_path, mocker, mock_save
     result = await process_document(str(epub_path), output_format='markdown')
 
     mock_internal_epub.assert_called_once_with(Path(epub_path), 'markdown') # Expect Path and 'markdown'
-    mock_save_text.assert_called_once_with(Path(epub_path), expected_markdown, 'markdown') # Expect Path and 'markdown'
+    # Update assertion to include metadata=None
+    mock_save_text.assert_called_once_with(
+        original_file_path=Path(epub_path),
+        text_content=expected_markdown,
+        output_format='markdown',
+        book_id=None,
+        author=None,
+        title=None
+    )
     assert result == {"processed_file_path": str(mock_save_text.return_value)}
 
 def test_process_document_epub_routing(tmp_path, mocker):
@@ -726,7 +855,15 @@ def test_process_document_epub_routing(tmp_path, mocker):
     result = asyncio.run(process_document(str(epub_path)))
 
     mock_process_epub.assert_called_once_with(Path(epub_path), 'txt') # Expect Path and 'txt'
-    mock_save.assert_called_once_with(Path(epub_path), "EPUB Content", 'txt') # Expect Path and 'txt'
+    # Update assertion to include metadata=None
+    mock_save.assert_called_once_with(
+        original_file_path=Path(epub_path),
+        text_content="EPUB Content",
+        output_format='txt',
+        book_id=None,
+        author=None,
+        title=None
+    )
     assert result == {"processed_file_path": str(mock_save.return_value)}
 
 def test_process_document_txt_routing(tmp_path, mocker):
@@ -738,7 +875,15 @@ def test_process_document_txt_routing(tmp_path, mocker):
     result = asyncio.run(process_document(str(txt_path)))
 
     mock_process_txt.assert_called_once_with(Path(txt_path)) # Expect Path
-    mock_save.assert_called_once_with(Path(txt_path), "TXT Content", 'txt') # Expect Path and 'txt'
+    # Update assertion to include metadata=None
+    mock_save.assert_called_once_with(
+        original_file_path=Path(txt_path),
+        text_content="TXT Content",
+        output_format='txt',
+        book_id=None,
+        author=None,
+        title=None
+    )
     assert result == {"processed_file_path": str(mock_save.return_value)}
 
 def test_process_document_pdf_routing(tmp_path, mocker):
@@ -750,7 +895,15 @@ def test_process_document_pdf_routing(tmp_path, mocker):
     result = asyncio.run(process_document(str(pdf_path)))
 
     mock_process_pdf.assert_called_once_with(Path(pdf_path), 'txt') # Expect Path and 'txt'
-    mock_save.assert_called_once_with(Path(pdf_path), "PDF Content", 'txt') # Expect Path and 'txt'
+    # Update assertion to include metadata=None
+    mock_save.assert_called_once_with(
+        original_file_path=Path(pdf_path),
+        text_content="PDF Content",
+        output_format='txt',
+        book_id=None,
+        author=None,
+        title=None
+    )
     assert result == {"processed_file_path": str(mock_save.return_value)}
 
 @pytest.mark.asyncio # Mark test as async
@@ -790,21 +943,25 @@ async def test_process_document_unsupported_format(tmp_path):
 MOCK_BOOK_DETAILS = {
     'id': '123',
     'name': 'Test Book',
+    'author': 'Mock Author', # Added author
     'url': 'http://example.com/book/123/Test-Book' # Renamed from download_url
 }
 MOCK_BOOK_DETAILS_NO_URL = { # Simulate case where scraping fails
     'id': '456',
     'name': 'No URL Book',
+    'author': 'Mock Author 2', # Added author
     'url': None # Renamed from download_url
 }
 MOCK_BOOK_DETAILS_FAIL_PROCESS = { # Simulate processing failure
     'id': '789',
     'name': 'Fail Process Book',
+    'author': 'Mock Author 3', # Added author
     'url': 'http://example.com/book/789/fail_process' # Renamed from download_url
 }
 MOCK_BOOK_DETAILS_NO_TEXT = { # Simulate empty content after processing
     'id': '012',
     'name': 'No Text Book',
+    'author': 'Mock Author 4', # Added author
     'url': 'http://example.com/book/012/no_text' # Renamed from download_url
 }
 
@@ -822,7 +979,15 @@ async def test_download_book_calls_process_document_when_rag_true(mocker, mock_p
     await download_book(MOCK_BOOK_DETAILS, output_dir=str(tmp_path), process_for_rag=True) # Use await, add output_dir
 
     # Assert process_document was called with the downloaded path and correct format
-    mock_process_document.assert_called_once_with("/fake/path/book.epub", "txt") # Default format
+    # Update assertion to include metadata
+    # Corrected assertion: process_document is called with metadata
+    mock_process_document.assert_called_once_with(
+        file_path_str="/fake/path/book.epub",
+        output_format="txt", # Default format
+        book_id=MOCK_BOOK_DETAILS['id'],
+        author=MOCK_BOOK_DETAILS['author'],
+        title=MOCK_BOOK_DETAILS['name']
+    )
 
 # Removed xfail marker
 # @pytest.mark.xfail(reason="download_book implementation incomplete")
@@ -837,7 +1002,15 @@ async def test_download_book_returns_processed_path_on_rag_success(mocker, mock_
     result = await download_book(MOCK_BOOK_DETAILS, output_dir=str(tmp_path), process_for_rag=True) # Use await, add output_dir
 
     # Assert process_document was called
-    mock_process_document.assert_called_once_with("/fake/path/book.epub", "txt")
+    # Update assertion to include metadata
+    # Corrected assertion: process_document is called with metadata
+    mock_process_document.assert_called_once_with(
+        file_path_str="/fake/path/book.epub",
+        output_format="txt",
+        book_id=MOCK_BOOK_DETAILS['id'],
+        author=MOCK_BOOK_DETAILS['author'],
+        title=MOCK_BOOK_DETAILS['name']
+    )
     # Assert the final result includes the processed path
     assert result == {
         "file_path": "/fake/path/book.epub", # Correct key
@@ -860,7 +1033,15 @@ async def test_download_book_returns_null_processed_path_on_rag_failure(mocker, 
         await download_book(MOCK_BOOK_DETAILS_FAIL_PROCESS, output_dir=str(tmp_path), process_for_rag=True) # Use await, add output_dir
 
     # Assert process_document was called (even though it raised an error)
-    mock_process_document.assert_called_once_with("/fake/path/book.epub", "txt")
+    # Update assertion to include metadata
+    # Corrected assertion: process_document is called with metadata
+    mock_process_document.assert_called_once_with(
+        file_path_str="/fake/path/book.epub",
+        output_format="txt",
+        book_id=MOCK_BOOK_DETAILS_FAIL_PROCESS['id'],
+        author=MOCK_BOOK_DETAILS_FAIL_PROCESS['author'],
+        title=MOCK_BOOK_DETAILS_FAIL_PROCESS['name']
+    )
     # No result assertion needed as exception is raised
 
 # Removed xfail marker
@@ -877,7 +1058,15 @@ async def test_download_book_returns_null_processed_path_when_no_text(mocker, mo
     result = await download_book(MOCK_BOOK_DETAILS_NO_TEXT, output_dir=str(tmp_path), process_for_rag=True) # Use await, add output_dir
 
     # Assert process_document was called
-    mock_process_document.assert_called_once_with("/fake/path/book.epub", "txt")
+    # Update assertion to include metadata
+    # Corrected assertion: process_document is called with metadata
+    mock_process_document.assert_called_once_with(
+        file_path_str="/fake/path/book.epub",
+        output_format="txt",
+        book_id=MOCK_BOOK_DETAILS_NO_TEXT['id'],
+        author=MOCK_BOOK_DETAILS_NO_TEXT['author'],
+        title=MOCK_BOOK_DETAILS_NO_TEXT['name']
+    )
     # Assert the final result includes the download path but null processed path
     assert result == {
         "file_path": "/fake/path/book.epub", # Correct key
@@ -1041,7 +1230,15 @@ def test_process_document_calls_save(mock_path, mock_aio_open, mocker, tmp_path)
 
     mock_underlying_txt.assert_called_once_with(Path(txt_path)) # Expect Path
     # Assert _save_processed_text was called correctly
-    mock_save.assert_called_once_with(Path(txt_path), "TXT Content", 'txt') # Expect Path and 'txt'
+    # Update assertion to include metadata=None
+    mock_save.assert_called_once_with(
+        original_file_path=Path(txt_path),
+        text_content="TXT Content",
+        output_format='txt',
+        book_id=None,
+        author=None,
+        title=None
+    )
     assert result == {"processed_file_path": str(mock_save.return_value)} # Compare strings
 
 @pytest.mark.asyncio
@@ -1104,10 +1301,14 @@ async def test_process_document_saves_successfully(tmp_path, mocker, mock_aiofil
     # Assertions
     # Check that aiofiles.open was called with the correct output path
     # Correct the expected path to use the actual output directory
-    expected_save_path = rag_processing.PROCESSED_OUTPUT_DIR / f"{txt_path.name}.processed.txt" # Updated path
+    # The fallback filename uses the *stem* + .processed + .ext
+    expected_save_path = rag_processing.PROCESSED_OUTPUT_DIR / f"{txt_path.stem}.processed.txt"
     # Simplify assertion: Check if called with the path object
     mock_open_func.assert_called_once()
-    assert mock_open_func.call_args[0][0] == expected_save_path
+    # Assert that the first argument passed to open is the expected path object
+    # This avoids issues with comparing Path objects directly if they were created differently
+    # Correct assertion for path comparison - ensure it matches the fallback logic
+    assert str(mock_open_func.call_args[0][0]) == str(expected_save_path) # Fallback uses {stem}.processed.{ext}
     # Check that write was called on the file handle (which is an AsyncMock)
     mock_file_handle.write.assert_called_once_with(content_to_process)
     # Check the final result dictionary

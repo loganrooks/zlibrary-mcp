@@ -194,10 +194,17 @@ async def get_recent_books(count=10, format=None):
 
 # --- Core Bridge Functions ---
 
-async def process_document(file_path_str: str, output_format: str = "txt") -> dict:
+async def process_document(
+    file_path_str: str,
+    output_format: str = "txt",
+    book_id: str = None, # Add metadata params
+    author: str = None,
+    title: str = None
+) -> dict:
     """
-    Detects file type, calls the appropriate processing function, saves the result,
-    and returns a dictionary containing the processed file path (or null).
+    Detects file type, calls the appropriate processing function, saves the result
+    with appropriate filename (slug or original), and returns a dictionary
+    containing the processed file path (or null).
     """
     file_path = Path(file_path_str)
     if not file_path.exists():
@@ -222,7 +229,15 @@ async def process_document(file_path_str: str, output_format: str = "txt") -> di
 
         # Save the processed text if any was extracted
         if processed_text is not None and processed_text != "":
-            processed_file_path = await rag_processing.save_processed_text(file_path, processed_text, output_format)
+            # Pass metadata to save_processed_text
+            processed_file_path = await rag_processing.save_processed_text(
+                original_file_path=file_path,
+                text_content=processed_text,
+                output_format=output_format,
+                book_id=book_id,
+                author=author,
+                title=title
+            )
         else:
              logging.warning(f"No text extracted from {file_path}, processed file not saved.")
              processed_file_path = None # Explicitly set to None
@@ -256,8 +271,14 @@ async def download_book(book_details: dict, output_dir: str, process_for_rag: bo
 
         if process_for_rag and downloaded_file_path_str:
             logging.info(f"Processing downloaded file for RAG: {downloaded_file_path_str}")
-            # Call the main process_document function
-            process_result = await process_document(downloaded_file_path_str, processed_output_format)
+            # Call the main process_document function, passing metadata
+            process_result = await process_document(
+                file_path_str=downloaded_file_path_str,
+                output_format=processed_output_format,
+                book_id=book_details.get('id'), # Extract from book_details
+                author=book_details.get('author'),
+                title=book_details.get('name') # Use 'name' key for title
+            )
             processed_file_path_str = process_result.get("processed_file_path") # Can be None
 
         return {

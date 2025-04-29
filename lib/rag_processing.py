@@ -2,6 +2,8 @@ import re
 import logging
 from pathlib import Path
 import aiofiles
+import unicodedata # Added for slugify
+import os # Ensure os is imported if needed for path manipulation later
 
 # Check if libraries are available
 try:
@@ -28,6 +30,34 @@ class FileSaveError(Exception):
 # Constants
 SUPPORTED_FORMATS = ['.epub', '.txt', '.pdf'] # Keep relevant constants? Or import? Keep for now.
 PROCESSED_OUTPUT_DIR = Path("./processed_rag_output")
+
+# --- Slugify Helper ---
+
+def _slugify(value, allow_unicode=False):
+    """
+    Convert to ASCII if 'allow_unicode' is False. Convert spaces or repeated
+    dashes to single dashes. Remove characters that aren't alphanumerics,
+    underscores, or hyphens. Convert to lowercase. Also strip leading and
+    trailing whitespace, dashes, and underscores.
+    """
+    value = str(value).lower() # Ensure string and lowercase
+    if allow_unicode:
+        value = unicodedata.normalize('NFKC', value)
+        # Replace non-word chars (letters, numbers, underscore) with a space
+        value = re.sub(r'[^\w]', ' ', value)
+    else:
+        # ASCII path: Normalize, encode/decode
+        value = unicodedata.normalize('NFKD', value).encode('ascii', 'ignore').decode('ascii')
+        # Replace non a-z0-9 chars (including underscore) with a space
+        value = re.sub(r'[^a-z0-9]', ' ', value)
+
+    # Collapse consecutive whitespace to single hyphen
+    value = re.sub(r'\s+', '-', value)
+    # Strip leading/trailing hyphens
+    value = value.strip('-')
+
+    # Ensure slug is not empty, default to 'file' if it becomes empty
+    return value if value else 'file'
 
 # --- PDF Markdown Helpers ---
 
@@ -500,25 +530,63 @@ def process_pdf(file_path: Path, output_format: str = "txt") -> str:
             except Exception as close_error: logging.error(f"Error closing PDF {file_path}: {close_error}")
 
 
-async def save_processed_text(original_file_path: Path, text_content: str, output_format: str = "txt") -> Path:
-    """Saves the processed text content to a file asynchronously."""
-    if text_content is None: # Allow empty string, but not None
-         raise ValueError("Cannot save None content.")
-
+async def save_processed_text(
+    original_file_path: Path,
+    text_content: str,
+    output_format: str = "txt",
+    book_id: str = None, # Add book_id
+    author: str = None,  # Add author
+    title: str = None    # Add title
+) -> Path:
+    """Saves the processed text content to a file with a human-readable slug if metadata is provided."""
+    output_filename = "unknown_processed_file" # Default filename in case of early error
     try:
+        if text_content is None: # Allow empty string, but not None
+             raise ValueError("Cannot save None content.")
+
+        # Ensure output directory exists
         PROCESSED_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-        base_name = original_file_path.name
-        # Ensure output format is part of the extension
-        output_filename = f"{base_name}.processed.{output_format}"
-        output_file_path = PROCESSED_OUTPUT_DIR / output_filename
-        logging.info(f"Saving processed text to: {output_file_path}")
-        async with aiofiles.open(output_file_path, 'w', encoding='utf-8') as f:
+
+        # Determine filename
+        original_stem = original_file_path.stem
+        # Use os.path.splitext to reliably get the original extension for fallback
+        _, original_ext = os.path.splitext(original_file_path.name)
+        output_extension = f".{output_format.lower()}" # e.g., .txt, .md
+
+        if book_id and author and title:
+            # Generate slug: author-title
+            author_slug = _slugify(author)
+            title_slug = _slugify(title)
+            slug = f"{author_slug}-{title_slug}"
+            # Limit slug length if necessary (e.g., 100 chars) to avoid overly long filenames
+            max_slug_len = 100
+            if len(slug) > max_slug_len:
+                 # Cut at max_slug_len, then find last hyphen to avoid cutting mid-word
+                slug = slug[:max_slug_len]
+                if '-' in slug:
+                    slug = slug.rsplit('-', 1)[0]
+
+            # Construct new filename: author-title-id.extension
+            output_filename = f"{slug}-{book_id}{output_extension}"
+        else:
+            # Fallback: append ".processed" to the original stem and add the new extension
+            output_filename = f"{original_stem}.processed{output_extension}"
+            logging.warning(f"Metadata (author, title, book_id) missing for {original_file_path}. Using fallback filename: {output_filename}")
+
+
+        output_path = PROCESSED_OUTPUT_DIR / output_filename
+
+        # Write content asynchronously
+        async with aiofiles.open(output_path, mode='w', encoding='utf-8') as f:
             await f.write(text_content)
-        logging.info(f"Successfully saved processed text for {original_file_path.name}")
-        return output_file_path
+
+        logging.info(f"Processed text saved to: {output_path}")
+        return output_path
+
     except OSError as e:
-        logging.error(f"OS error saving processed file {output_file_path}: {e}")
+        logging.error(f"OS error saving processed file {output_path}: {e}")
         raise FileSaveError(f"Failed to save processed file due to OS error: {e}") from e
     except Exception as e:
-        logging.error(f"Unexpected error saving processed file {output_file_path}: {e}")
-        raise FileSaveError(f"An unexpected error occurred while saving processed file: {e}") from e
+        logging.exception(f"Failed to save processed text for {original_file_path}")
+        # Wrap the original exception for better context
+        raise FileSaveError(f"Failed to save processed text to {output_filename}: {e}") from e

@@ -1,6 +1,21 @@
 # Auto-Coder Specific Memory
 <!-- Entries below should be added reverse chronologically (newest first) -->
 ### Implementation: `download_book` in Forked Library - [2025-04-24 03:49:26]
+### [2025-04-29 19:34:25] _slugify Function
+- **Purpose**: Generate URL-safe slugs from strings (author, title).
+- **Files**: `lib/rag_processing.py`
+- **Status**: Implemented
+- **Dependencies**: `re`, `unicodedata`
+- **API Surface**: `_slugify(value, allow_unicode=False)`
+- **Tests**: `__tests__/python/test_rag_processing.py::test_slugify_ascii`, `__tests__/python/test_rag_processing.py::test_slugify_unicode`
+
+### [2025-04-29 19:34:25] save_processed_text Function Update
+- **Purpose**: Modified to generate human-readable filenames using `_slugify`.
+- **Files**: `lib/rag_processing.py`
+- **Status**: Implemented
+- **Dependencies**: `_slugify`, `pathlib.Path`, `aiofiles`, `logging`, `os`
+- **API Surface**: `save_processed_text(original_file_path: Path, text_content: str, output_format: str = "txt", book_id: str = None, author: str = None, title: str = None) -> Path`
+- **Tests**: `__tests__/python/test_rag_processing.py` (various tests)
 ## API/Handler Modifications
 
 ### [2025-04-29 16:36:11] Fix MCP Result Format (`tools/call`)

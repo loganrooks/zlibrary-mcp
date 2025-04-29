@@ -1,3 +1,13 @@
+### [2025-04-29 19:34:03] - Code - Decision: Slugify Logic
+- **Decision**: Implemented `_slugify` function in `lib/rag_processing.py` to generate human-readable slugs (`author-title`) for filenames. Logic involves lowercasing, normalizing (ASCII/Unicode), replacing non-alphanumeric/non-word chars with spaces, collapsing spaces/hyphens to single hyphens, and stripping ends. Underscores are replaced in ASCII path, kept in Unicode path (`\w`).
+- **Rationale**: Provides user-friendly filenames while handling various characters. Iteratively refined based on test failures.
+- **Alternatives**: Simpler regex (failed edge cases), external slugify library (avoided adding dependency).
+- **Impact**: Affects `save_processed_text` filename generation. Tests updated.
+
+### [2025-04-29 19:34:03] - Code - Progress: Implemented Human-Readable Slugs
+- **Status**: Completed
+- **Details**: Modified `lib/rag_processing.py` (`_slugify`, `save_processed_text`) and `lib/python_bridge.py` (`download_book`) to generate filenames like `author-title-id.extension`. Updated tests in `__tests__/python/test_rag_processing.py` and `__tests__/python/test_python_bridge.py`. All relevant tests are passing.
+- **Link**: [Ref: GlobalContext 2025-04-29 19:01:54]
 [2025-04-28 10:40:30] - DevOps - Git Cleanup Complete - Checked status on `feature/rag-file-output`. Committed remaining uncommitted changes (code fixes, test adjustments, venv script, MB updates) in two logical commits (224de6f, b4a280c). Working directory is now clean.
 [2025-04-28 12:55:24] - Integration - RAG Download Workflow Verified (SUCCESS) - Successfully tested `download_book_to_file` end-to-end on branch `feature/rag-file-output` (commit `f2d1b9c`). Fixed scraping selector in `libasync.py` and filename extension logic in `python_bridge.py`. Confirmed correct EPUB download (`downloads/3762555.epub`). [Ref: Integration Test Scenario RAG-DL-WF-01, Issue INT-RAG-DL-001 Resolved, Issue INT-RAG-FN-001 Resolved]
 [2025-04-28 12:41:53] - Integration - RAG Download Workflow FAILED (Incorrect Content) - User feedback indicates `download_book_to_file` downloaded HTML instead of EPUB for book ID 3762555. Scraping logic in `libasync.py` is likely flawed. [Ref: Integration Test Scenario RAG-DL-WF-01, Issue INT-RAG-DL-001]

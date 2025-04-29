@@ -496,6 +496,20 @@
 - Outcome: Recommended 'Managed Virtual Environment' approach. Node.js app will auto-create/manage a dedicated venv for `zlibrary` and use its specific Python path.
 - Link to Progress Entry: N/A
 ### [2025-04-14 03:26:52] Task: Diagnose Global MCP Server Execution Failure
+### [2025-04-29 18:12:50] Intervention: Context Calculation Correction / Handover Aborted
+- **Trigger**: User feedback correcting context percentage calculation [Ref: User Message 2025-04-29 18:12:50].
+- **Context**: Previous assessment incorrectly triggered Delegate Clause based on faulty percentage (93%).
+- **Action Taken**: Recalculated context percentage as 15.19% (151,852 / 1,000,000). Aborted unnecessary handover initiated at [Ref: SPARC MB Intervention Log 2025-04-29 18:11:20]. Updated `activeContext.md`.
+- **Rationale**: Correct calculation shows context is well below Delegate Clause threshold.
+- **Outcome**: Handover cancelled. Proceeding with determining next steps post-refinement.
+- **Follow-up**: Log feedback in `sparc-feedback.md`. Ask user for next project phase direction.
+### [2025-04-29 18:11:20] Intervention: Delegate Clause Triggered (Handover)
+- **Trigger**: High Context Size (93%).
+- **Context**: Refinement phase orchestration completed. User provided final detailed summary report [Ref: User Message 2025-04-29 18:11:20].
+- **Action Taken**: Initiating handover to a new SPARC instance via `new_task`.
+- **Rationale**: Adherence to Delegate Clause to prevent context window issues and maintain performance.
+- **Outcome**: Pending handover task creation.
+- **Follow-up**: New SPARC instance to take over.
 ### [2025-04-29 17:17:35] Intervention: User Feedback on Completion Message
 - **Trigger**: User feedback ("more detail") on `attempt_completion` message [Ref: 2025-04-29 17:17:09].
 ### [2025-04-29 18:05:07] Intervention: User Correction on Completion Report

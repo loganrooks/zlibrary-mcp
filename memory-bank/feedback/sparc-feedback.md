@@ -1,3 +1,7 @@
+### [2025-04-29 18:12:50] User Feedback: Context Percentage Calculation
+- **Source:** User Input
+- **Issue:** SPARC incorrectly calculated context percentage, leading to an unnecessary Delegate Clause trigger and handover attempt. User provided correct calculation method (Tokens / 1,000,000 * 100).
+- **Action:** Acknowledged error, recalculated percentage correctly (15.19%), aborted handover, updated Memory Bank intervention logs. [Ref: SPARC MB Intervention Log 2025-04-29 18:12:50]
 [2025-04-29 18:03:22] - User Feedback - Completion report lacked sufficient detail. It did not follow the requested format or summarize the tasks orchestrated by this instance before handover, as instructed by the subsequent instance's completion message.
 ### [2025-04-29 18:01:33] Intervention: User Feedback on Completion Message Detail Chain
 - **Trigger**: User feedback on `attempt_completion` message [Ref: 2025-04-29 18:01:33].

@@ -1,9 +1,7 @@
 import { PythonShell, Options as PythonShellOptions } from 'python-shell';
-import * as fs from 'fs';
 import * as path from 'path';
 import { getManagedPythonPath } from './venv-manager.js'; // Import ESM style
-import * as https from 'https';
-import * as http from 'http';
+// Removed unused fs, https, http imports
 import { fileURLToPath } from 'url';
 
 // Recreate __dirname for ESM
@@ -105,11 +103,12 @@ interface GetRecentBooksArgs {
 }
 
 interface DownloadBookToFileArgs {
-    id: string;
-    format?: string | null;
+    // id: string; // Replaced by bookDetails
+    // format?: string | null; // Replaced by bookDetails
+    bookDetails: Record<string, any>; // Expect the full book details object
     outputDir?: string;
     process_for_rag?: boolean;
-    processed_output_format?: string; // Added for RAG output format
+    processed_output_format?: string;
 }
 
 interface ProcessDocumentForRagArgs {
@@ -142,14 +141,6 @@ export async function searchBooks({
 export async function getBookById({ id }: GetBookByIdArgs): Promise<any> {
   // Pass arguments as an object matching Python function signature
   return await callPythonFunction('get_by_id', { book_id: id });
-}
-
-/**
- * Get download link for a book
- */
-export async function getDownloadInfo({ id, format = null }: GetDownloadInfoArgs): Promise<any> {
-  // Pass arguments as an object matching Python function signature
-  return await callPythonFunction('get_download_info', { book_id: id, format });
 }
 
 /**
@@ -213,42 +204,38 @@ export async function processDocumentForRag({ filePath, outputFormat = 'txt' }: 
       throw new Error(`Python processing failed: ${result.error}`);
   }
 
-  // Check for the expected processed_file_path key
-  if (!result?.processed_file_path) {
-      throw new Error(`Invalid response from Python bridge during processing. Missing processed_file_path.`);
-  }
+  // Check for the expected processed_file_path key's presence.
+  // Allow null value as valid (e.g., for image PDFs).
+  // Throw error only if the key is completely missing.
+  if (!result || !('processed_file_path' in result)) {
+       throw new Error(`Invalid response from Python bridge during processing. Missing processed_file_path key.`);
+   }
+  // No error thrown if key exists, even if value is null.
   // Return only the processed file path object
   return { processed_file_path: result.processed_file_path };
 }
 
-/**
- * Helper function to generate a safe filename from book info.
- */
-function generateSafeFilename(id: string, format: string | null, downloadInfo: any): string {
-    const title = (downloadInfo.title || `book_${id}`) // Fallback title
-      .replace(/[/\\?%*:|"<>]/g, '-') // Replace invalid characters
-      .substring(0, 100); // Limit length
-
-    const fileExt = (downloadInfo.format || format || 'unknown').toLowerCase(); // Ensure extension
-    return `${title}.${fileExt}`;
-}
+// Removed unused generateSafeFilename function
 
 /**
  * Download a book directly to a file
  */
 export async function downloadBookToFile({
-    id,
-    format = null,
+    // id, // Replaced by bookDetails
+    // format = null, // Replaced by bookDetails
+    bookDetails, // Use bookDetails object
     outputDir = './downloads',
     process_for_rag = false,
-    processed_output_format = 'txt' // Add format for processed output
+    processed_output_format = 'txt'
 }: DownloadBookToFileArgs): Promise<{ file_path: string; processed_file_path?: string | null; processing_error?: string }> {
   try {
-    console.log(`[downloadBookToFile - ${id}] Calling Python bridge... process_for_rag=${process_for_rag}`);
-    // Call the updated Python function which handles download and optional processing/saving
+    const logId = bookDetails?.id || 'unknown_id'; // Use ID from details for logging
+    console.log(`[downloadBookToFile - ${logId}] Calling Python bridge... process_for_rag=${process_for_rag}`);
+    // Call the Python function, passing the bookDetails object
     const result = await callPythonFunction('download_book', {
-        book_id: id,
-        format: format,
+        book_details: bookDetails, // Pass the whole object
+        // book_id: id, // Removed
+        // format: format, // Removed
         output_dir: outputDir,
         process_for_rag: process_for_rag,
         processed_output_format: processed_output_format
@@ -283,72 +270,4 @@ export async function downloadBookToFile({
   }
 }
 
-/**
- * Helper function to download a file from URL
- */
-function downloadFile(url: string, outputPath: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    // Determine protocol (http or https)
-    const protocol = url.startsWith('https:') ? https : http;
-
-    // Create file stream
-    const fileStream = fs.createWriteStream(outputPath);
-
-    // Make request
-    const request = protocol.get(url, (response) => {
-      // Check for redirect
-      if (response.statusCode && response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
-        // Follow redirect
-        console.log(`Redirecting download to: ${response.headers.location}`);
-        return downloadFile(response.headers.location, outputPath)
-          .then(resolve)
-          .catch(reject);
-      }
-
-      // Check for error
-      if (response.statusCode !== 200) {
-        reject(new Error(`Failed to download file, status: ${response.statusCode}`));
-        response.resume(); // Consume response data to free up memory
-        return;
-      }
-
-      // Pipe response to file
-      response.pipe(fileStream);
-
-      // Handle events
-      fileStream.on('finish', () => {
-        fileStream.close((closeErr) => { // Pass potential close error to reject
-            if (closeErr) {
-                reject(closeErr);
-            } else {
-                resolve();
-            }
-        });
-      });
-    });
-
-    // Handle request errors
-    request.on('error', (err) => {
-      try {
-        if (fs.existsSync(outputPath)) {
-            fs.unlinkSync(outputPath); // Remove partial file
-        }
-      } catch (unlinkErr) {
-          console.error(`Error removing partial file ${outputPath}: ${unlinkErr}`);
-      }
-      reject(err);
-    });
-
-    // Handle file errors
-    fileStream.on('error', (err) => {
-       try {
-        if (fs.existsSync(outputPath)) {
-            fs.unlinkSync(outputPath); // Remove partial file
-        }
-      } catch (unlinkErr) {
-          console.error(`Error removing partial file ${outputPath}: ${unlinkErr}`);
-      }
-      reject(err);
-    });
-  });
-}
+// Removed unused downloadFile helper function

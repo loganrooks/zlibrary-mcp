@@ -1,5 +1,24 @@
+[2025-04-28 10:40:30] - DevOps - Git Cleanup Complete - Checked status on `feature/rag-file-output`. Committed remaining uncommitted changes (code fixes, test adjustments, venv script, MB updates) in two logical commits (224de6f, b4a280c). Working directory is now clean.
+[2025-04-28 12:55:24] - Integration - RAG Download Workflow Verified (SUCCESS) - Successfully tested `download_book_to_file` end-to-end on branch `feature/rag-file-output` (commit `f2d1b9c`). Fixed scraping selector in `libasync.py` and filename extension logic in `python_bridge.py`. Confirmed correct EPUB download (`downloads/3762555.epub`). [Ref: Integration Test Scenario RAG-DL-WF-01, Issue INT-RAG-DL-001 Resolved, Issue INT-RAG-FN-001 Resolved]
+[2025-04-28 12:41:53] - Integration - RAG Download Workflow FAILED (Incorrect Content) - User feedback indicates `download_book_to_file` downloaded HTML instead of EPUB for book ID 3762555. Scraping logic in `libasync.py` is likely flawed. [Ref: Integration Test Scenario RAG-DL-WF-01, Issue INT-RAG-DL-001]
+[2025-04-28 12:30:11] - Integration - RAG Download Workflow Verified (Premature) - Successfully tested `download_book_to_file` end-to-end on branch `feature/rag-file-output` (commit `f2d1b9c`). Fixed `AttributeError` and `TypeError` in `zlibrary/src/zlibrary/libasync.py`. Download confirmed working. [Ref: Integration Test Scenario RAG-DL-WF-01]
+[2025-04-28 13:22:47] - Debug - Resolved Pytest Regression (Post-Integration) - Fixed 4 failing tests in `__tests__/python/test_python_bridge.py` by correcting outdated assertions expecting directory paths instead of full file paths. Tests verified passing. Commit: 26cd7c8. [See Issue REG-PYTEST-001]
+- **[2025-04-28 22:04:00] - DocsWriter - Completed Documentation Update** - Updated `README.md` to reflect current project status, recent fixes (`get_download_history`, `get_recent_books`), tool deprecation (`get_download_info`), passing test suites, and ADR-002 alignment. Verified consistency with related architecture/spec documents.
+## Progress
+- **[2025-04-28 20:49:00] - TDD - Completed `get_recent_books` Implementation** - Implemented `get_recent_books` in `lib/python_bridge.py` and added tests. Fixed regressions in `download_book` tests. All relevant tests pass. Commit: 75b6f11.
+- **[2025-04-28 17:31:01] - Debug - Completed `get_download_info` Investigation** - Analyzed tool errors, dependency on ID lookup, and redundancy with ADR-002 workflow. Recommended deprecation. [See Debug Report 2025-04-28 17:31:01]
+- **[2025-04-28 17:03:01] - SpecPseudo - Verified RAG Spec Alignment** - Confirmed `docs/rag-pipeline-implementation-spec.md` (v2.1) aligns with ADR-002 regarding the `download_book_to_file` workflow (using `bookDetails` from `search_books`). No changes required.
+[2025-04-28 10:04:09] - Debug - Resolved Python test failures (`test_python_bridge.py`) related to PDF processing mocks during TDD Refactor phase. All Python and JS tests now pass. [See Debug Issue TDD-Refactor-Block-PyTest-20250428]
+- **[2025-04-28 04:00:05] - Debug - Resolved TDD Green Phase Blockage (Python Tests)** - Investigated and fixed issues in `lib/python_bridge.py` and `__tests__/python/test_python_bridge.py` that prevented TDD Green Phase completion. Refactored tests, corrected assertions, fixed return values, and marked obsolete tests as xfail. `pytest` now exits 0. [See Issue TDD-GREEN-BLOCK-20250428]
 # Product Context
 <!-- Entries below should be added reverse chronologically (newest first) -->
+
+### Product: RAG Spec Update (Download Workflow) - [2025-04-24 17:33:32]
+- **Context**: Updated `docs/rag-pipeline-implementation-spec.md` (to v2.1) to accurately reflect the download workflow defined in ADR-002.
+- **Changes**: Clarified the two-step process (search for `bookDetails`, pass details to `download_book_to_file`, internal scraping of book page URL using selector `a.btn.btn-primary.dlButton`). Updated tool schemas, Node/Python pseudocode, and TDD anchors accordingly. Input for `download_book_to_file` changed from `id` to `bookDetails`.
+- **Status**: Specification Updated (Draft).
+- **Related**: ADR-002, `docs/rag-pipeline-implementation-spec.md` (v2.1)
+
 
 ### Product: Search-First ID Lookup Specification - [2025-04-16 18:14:19]
 - **Context**: Specification generated for an alternative internal ID lookup strategy requested by the user.
@@ -147,8 +166,36 @@
 - **Tradeoffs**: Requires Python 3 pre-installed by user. Adds one-time setup step. Avoids package bloat (bundling) and fragility (detection).
 - **Related**: Decision-PythonEnvStrategy-01, Issue-GlobalExecFail-01
 
+### Decision-DeprecateGetDownloadInfo-01 - [2025-04-28 17:31:01]
+- **Decision**: Recommend deprecating the `get_download_info` tool.
+- **Rationale**: Investigation confirmed the tool relies on the unstable ID lookup mechanism (`_find_book_by_id_via_search`). Its primary output (`download_url`) is unreliable (returned `null` during testing) and is not used by the current download workflow defined in ADR-002 (which uses scraping via `download_book`). Other metadata provided is redundant with `search_books`. The tool serves no essential purpose and adds unnecessary complexity.
+- **Alternatives Considered**: Fixing (unnecessary given ADR-002), Refactoring (pointless as functionality is unused/unreliable).
+- **Implementation**: Remove the tool definition from `src/index.ts`, the handler from `src/lib/zlibrary-api.ts`, the corresponding function from `lib/python_bridge.py`, and associated tests.
+- **Related**: ADR-002, [Debug Report 2025-04-28 17:31:01]
 # Decision Log
+### Decision-PrioritizeGitCleanup-01 - [2025-04-28 02:20:01]
+- **Decision**: Prioritize cleaning up uncommitted changes ('git debt') before proceeding with the TDD cycle for RAG download workflow. Delegate task to `devops`.
+- **Rationale**: User intervention identified significant uncommitted changes, potentially impacting stability and future work. Maintaining clean version control is crucial.
+- **Alternatives Considered**: Proceeding with TDD (risks conflicts/lost work), manual cleanup (less efficient).
+- **Implementation**: Delegate task to `devops` to analyze `git status`, group changes logically, and commit.
+- **Related**: ActiveContext [2025-04-28 02:20:01]
+### Decision-DownloadBookDeps-01 - [2025-04-24 03:18:12]
+- **Decision**: Use `httpx` for async HTTP requests (with `follow_redirects=True`) and `aiofiles` for async file writing in the `download_book` implementation within the forked `zlibrary` library (`zlibrary/src/zlibrary/libasync.py`). Add `httpx` and `aiofiles` as dependencies to the forked library's `zlibrary/pyproject.toml`.
+- **Rationale**: `httpx` is preferred for async requests and supports redirects. `aiofiles` is needed for non-blocking file I/O within the async method. Dependencies must be declared within the sub-project's configuration.
+- **Alternatives Considered**: Using `aiohttp` (already present, but `httpx` was requested and is suitable), using standard blocking file I/O (would block the async event loop).
+- **Implementation**: Added dependencies to `zlibrary/pyproject.toml`. Implemented `download_book` using these libraries.
+- **Related**: ActiveContext [2025-04-24 03:49:26]
+
+
 <!-- Entries below should be added reverse chronologically (newest first) -->
+### Decision-DownloadScrapingStrategy-01 - [2025-04-24 16:59:28]
+- **Decision**: Reaffirm the download workflow strategy implemented in `zlibrary/src/zlibrary/libasync.py::download_book` (on `feature/rag-file-output` branch). This involves: obtaining the book page URL from search/get_by_id results (`BookItem['url']`), fetching that page, parsing with BeautifulSoup, selecting the download link via CSS selector (`a.btn.btn-primary.dlButton`), extracting the `href`, and downloading from the extracted URL.
+- **Rationale**: Investigation confirmed this aligns with the required strategy shift mandated by user feedback and integration failures (Ref: INT-RAG-003, SPARC Feedback 2025-04-24 16:41:02). It correctly uses the book page URL to find the actual download link, addressing the unreliability of direct ID-based URL construction.
+- **Alternatives Considered**: Direct URL construction (unreliable), relying on a non-existent dedicated download info function.
+- **Consequences**: More reliable than previous attempts, but dependent on website HTML structure (selector brittleness). Error handling is implemented.
+- **Related**: ADR-002, ActiveContext [2025-04-24 16:59:28]
+
+
 ### Decision-RAGOutputFile-01 - [2025-04-23 23:29:31]
 - **Decision**: Modify RAG processing tools (`process_document_for_rag`, `download_book_to_file` with `process_for_rag: true`) to save extracted text content to a file and return the file path (`processed_file_path`) instead of the raw text content.
 - **Rationale**: Addresses critical feedback ([Ref: SPARC Feedback 2025-04-23 23:26:20]) regarding agent instability caused by context overload when handling large amounts of raw text returned by the tools. Returning a file path is more scalable and robust.
@@ -266,6 +313,15 @@
 
 
 ### Feature: Jest Test Suite Fixes (TS/ESM) - [2025-04-15 04:08:00]
+### Decision: Version Control Handling in Delegations - [2025-04-28 03:19:37]
+- **Context**: User provided clarification following `code` mode's early return.
+- **Decision**: Updated SPARC's internal rules for instructing delegated modes on version control:
+    - Standard completion: Commit before `attempt_completion`.
+    - Early return: Do NOT commit before `attempt_completion`.
+    - Task resumption: Do NOT clear workspace before resuming.
+    - MB-only changes: Do NOT require cleanup before other tasks.
+- **Rationale**: Ensure consistent and appropriate git state management by delegated modes, preventing unnecessary commits on failure and avoiding conflicts during task resumption.
+- **Related**: ActiveContext [2025-04-28 03:19:37]
 - **Status**: Partially Complete.
 - **Details**: Resolved all failures in `__tests__/zlibrary-api.test.js`. Failures in `__tests__/venv-manager.test.js` persist despite multiple attempts using `unstable_mockModule` and `jest.spyOn` for `fs`/`child_process` mocks, adjusting error handling, and disabling Jest transforms. Root cause likely complex interaction between Jest ESM, built-in module mocking, and async rejection handling.
 - **Related**: Decision-JestMockingStrategy-01, ActiveContext [2025-04-15 04:08:00]
@@ -282,6 +338,37 @@
 ### Task: Debug `BookNotFound` Error in Forked `zlibrary` Library - [2025-04-16 07:27:22]
 - **Status**: Complete.
 - **Details**: Added logging to `zlibrary` logger, `libasync.py`, and `abs.py`. Used `fetcher` tool to check direct website response and analyzed logs from `use_mcp_tool` call after enabling logger. Confirmed root cause: Z-Library website search (e.g., `/s/id:3433851?exact=1`) returns a standard search page with 'nothing has been found'. This prevents the library from discovering the correct book page URL (which includes a slug, e.g., `/book/ID/slug`). The library correctly parses the 'not found' response and raises `BookNotFound`. The issue is external website behavior, invalidating the previous `search(id:...)` workaround.
+### Task: Version Control Cleanup - [2025-04-24 17:52:23]
+- **Status**: Complete.
+- **Details**: User requested immediate focus on cleaning up uncommitted Git changes before proceeding with other tasks. Halted TDD delegation for RAG spec implementation. Preparing to delegate Git status analysis and commit task to devops mode.
+- **Related**: ActiveContext [2025-04-24 17:52:23]
+
+
+### Task: TDD Red Phase - RAG Download Workflow (Spec v2.1) - [2025-04-24 17:59:17]
+- **Status**: Failed. [See Code Early Return 2025-04-28 03:17:29]
+- **Details**: Write failing tests (Red phase) for the RAG download workflow implementation, specifically focusing on the changes introduced in spec v2.1 (using `bookDetails` from `search_books`, internal scraping via `_scrape_and_download`).
+### Task: Debug TDD Refactor Blockage (RAG Download Workflow) - [2025-04-28 09:22:38]
+- **Status**: Pending Delegation.
+- **Details**: Investigate persistent test failures across multiple suites (`__tests__/index.test.js`, `__tests__/python/test_python_bridge.py`) encountered during TDD Refactor phase ([GlobalContext Progress 2025-04-28 04:04:00]). `tdd` mode returned early, suspecting build, cache, environment, or deeper implementation issues. Debug mode should analyze failures, review `tdd` feedback, and identify/fix the root cause.
+- **Related**: ActiveContext [2025-04-28 09:22:38], Commit `6746f13`, [GlobalContext Progress 2025-04-28 04:04:00] (Failed Refactor Task), `memory-bank/feedback/tdd-feedback.md` [Timestamp from TDD feedback]
+### Task: TDD Refactor Phase - RAG Download Workflow (Spec v2.1) - [2025-04-28 04:04:00]
+- **Status**: Failed. [See TDD Early Return 2025-04-28 09:21:23]
+- **Details**: Refactor the RAG download workflow implementation (`lib/python_bridge.py`, `src/lib/zlibrary-api.ts`) and associated tests (`__tests__/python/test_python_bridge.py`, `__tests__/zlibrary-api.test.js`) following the successful Green Phase (commit `6746f13`). Ensure code clarity, maintainability, and adherence to project standards while keeping all tests passing.
+- **Related**: ActiveContext [2025-04-28 04:04:00], `docs/rag-pipeline-implementation-spec.md` (latest), ADR-002, Commit `6746f13`, [GlobalContext Progress 2025-04-28 03:38:04] (Debug Task), `memory-bank/feedback/tdd-feedback.md` [Timestamp from TDD feedback]
+- **Outcome**: `tdd` mode returned early due to persistent, intractable test failures across multiple suites (`__tests__/index.test.js`, `__tests__/python/test_python_bridge.py`) during refactoring. Potential build, cache, environment, or deeper implementation issues suspected.
+- **Related**: ActiveContext [2025-04-24 17:59:17], `docs/rag-pipeline-implementation-spec.md` (v2.1)
+### Task: Debug TDD Green Phase Blockage (RAG Download Workflow) - [2025-04-28 03:38:04]
+- **Status**: Completed. [See Debug Completion 2025-04-28 04:02:58]
+- **Details**: Investigate persistent failures preventing completion of TDD Green Phase for RAG download workflow. `code` mode failed twice ([GlobalContext Progress 2025-04-28 02:43:32], [GlobalContext Progress 2025-04-28 03:21:02]) due to `apply_diff` errors on `__tests__/python/test_python_bridge.py`, potentially context-related or tool-related. Debug mode should analyze the failures, review `code` mode feedback, and either fix the tests directly or diagnose the root cause.
+- **Related**: ActiveContext [2025-04-28 03:38:04], `docs/rag-pipeline-implementation-spec.md` (latest), ADR-002, `memory-bank/feedback/code-feedback.md` [2025-04-28 03:17:29], `memory-bank/feedback/code-feedback.md` [2025-04-28 03:36:37], `memory-bank/mode-specific/debug.md` [2025-04-28 04:00:45]
+- **Outcome**: Debug mode fixed syntax errors in `lib/python_bridge.py` and refactored/corrected tests in `__tests__/python/test_python_bridge.py` (mocking, assertions, structure). Python tests now pass, unblocking TDD Green Phase. Commit: `6746f13`.
+### Task: TDD Green Phase - RAG Download Workflow (Spec v2.1) - Retry 1 - [2025-04-28 03:21:02]
+- **Status**: Failed. [See Code Early Return 2025-04-28 03:37:14]
+- **Details**: Retrying implementation of minimal code changes in `lib/python_bridge.py` and `src/lib/zlibrary-api.ts` to make failing tests pass, according to Spec v2.1. Previous attempt failed due to tool errors ([GlobalContext Progress 2025-04-28 02:43:32]). Delegating via `new_task` for fresh context.
+- **Related**: ActiveContext [2025-04-28 03:21:02], `docs/rag-pipeline-implementation-spec.md` (latest), ADR-002, Decision-DownloadScrapingStrategy-01, `memory-bank/feedback/code-feedback.md` [2025-04-28 03:17:29], `memory-bank/feedback/code-feedback.md` [2025-04-28 03:36:37]
+- **Outcome**: `code` mode returned early again due to persistent `apply_diff` failures while modifying `__tests__/python/test_python_bridge.py`. Mode incorrectly believed `write_to_file` fallback was forbidden.
+
+
 - **Related**: Issue-BookNotFound-IDLookup-02, ActiveContext [2025-04-16 07:27:22]
 
 
@@ -289,7 +376,84 @@
 - **Specification**: See SpecPseudo MB entry [2025-04-14 03:31:01]
 
 # Progress
+### Task: Update Project Documentation - [2025-04-28 22:19:26]
+- **Status**: Completed.
+- **Details**: `docs-writer` updated `README.md` to reflect recent fixes (`get_download_history`, `get_recent_books`), tool removal (`get_download_info`), and passing test suites. Commit: `0330d0977dff86e9c90fc15b022a2ace515765df`.
+- **Related**: ActiveContext [2025-04-28 22:19:26], Delegation Log [2025-04-28 22:00:24]
+
+### Task: Investigate and Fix Test Suite Issues (TDD) - [2025-04-28 21:59:35]
+- **Status**: Completed.
+- **Details**: `tdd` resolved TEST-TODO-DISCREPANCY/TEST-REQ-ERROR. Removed obsolete Jest tests, fixed Pytest import/parser logic. Both `npm test` &amp; `pytest` suites pass. Commit: `3e732b3`.
+- **Related**: ActiveContext [2025-04-28 21:59:35], Delegation Log [2025-04-28 21:40:16]
+
+### Task: Implement `venv-manager` TODO Tests (TDD) - [2025-04-28 21:39:08]
+- **Status**: Completed.
+- **Details**: `tdd` implemented 9 TODO tests in `__tests__/venv-manager.test.js`. Test suite passes. Commit assumed successful.
+- **Related**: ActiveContext [2025-04-28 21:39:57], Delegation Log [2025-04-28 20:51:37]
+
+### Task: Implement `get_recent_books` Python Bridge Function (TDD) - [2025-04-28 20:50:30]
+- **Status**: Completed.
+- **Details**: `tdd` implemented `get_recent_books` in `lib/python_bridge.py`. Added tests and fixed regressions. Commit: `75b6f11`.
+- **Related**: ActiveContext [2025-04-28 20:50:30], Delegation Log [2025-04-28 19:11:37], Issue-RecentBooksMissing-01
+
+### Task: Fix `get_download_history` Parser (TDD) - [2025-04-28 19:10:43]
+- **Status**: Completed.
+- **Details**: `tdd` updated parser logic in `zlibrary/src/zlibrary/abs.py` for new HTML structure. Added/updated tests. Commit: `9350af5`.
+- **Related**: ActiveContext [2025-04-28 19:10:43], Delegation Log [2025-04-28 18:57:12], Issue-HistoryParseError-01
+
+### Task: Investigate `get_download_history` & `get_recent_books` Errors - [2025-04-28 18:56:31]
+- **Status**: Completed.
+- **Details**: `debug` identified root causes: broken parser for history (Issue-HistoryParseError-01), missing function for recent books (Issue-RecentBooksMissing-01).
+- **Related**: ActiveContext [2025-04-28 18:56:31], Delegation Log [2025-04-28 18:51:41]
+### Task: TDD Green Phase - RAG Download Workflow (Spec v2.1) - [2025-04-28 02:43:32]
+- **Status**: Pending Delegation.
+- **Details**: Implement minimal code changes in `lib/python_bridge.py` and `src/lib/zlibrary-api.ts` to make the failing tests (established in Red Phase [GlobalContext Progress 2025-04-28 02:34:57]) pass, according to Spec v2.1.
+- **Related**: ActiveContext [2025-04-28 02:43:32], `docs/rag-pipeline-implementation-spec.md` (latest), ADR-002, Decision-DownloadScrapingStrategy-01, `memory-bank/feedback/code-feedback.md` [2025-04-28 03:17:29]
+- **Outcome**: `code` mode returned early due to persistent `apply_diff` failures while modifying `__tests__/python/test_python_bridge.py`, possibly context-related.
+### Task: Update README.md - [2025-04-28 02:41:30]
+- **Status**: In Progress (DocsWriter).
+- **Details**: Updating main project README to reflect current status (RAG pipeline Spec v2.1, TDD Red complete), architecture (Python bridge, vendored `zlibrary` fork, ADR-002 download workflow), and setup instructions.
+- **Related**: `README.md`, ADR-002, `docs/architecture/rag-pipeline.md`, `docs/rag-pipeline-implementation-spec.md`
+### Task: Update README.md - [2025-04-28 02:39:11]
+- **Status**: Complete. [See Docs Completion 2025-04-28 02:42:35]
+- **Details**: User requested updating `README.md` to reflect current project status, including the RAG pipeline progress (Spec v2.1, TDD Red Phase complete), the inclusion of the `zlibrary` fork, and other key architectural decisions (e.g., ADR-002). This interrupts the TDD Green Phase delegation.
+- **Related**: ActiveContext [2025-04-28 02:39:11], `README.md`
+### Task: TDD Red Phase - RAG Download Workflow (Spec v2.1) - [2025-04-28 02:34:57]
+- **Status**: Complete. (User confirmed completion 2025-04-28 02:38:09)
+- **Details**: Write failing tests (Red phase) for the RAG download workflow implementation, specifically focusing on the changes introduced in spec v2.1 (using `bookDetails` from `search_books`, internal scraping via `_scrape_and_download` in Python bridge, calling `download_book` in `zlibrary` fork).
+- **Related**: ActiveContext [2025-04-28 02:34:57], `docs/rag-pipeline-implementation-spec.md` (latest), ADR-002, Decision-DownloadScrapingStrategy-01
+### Task: Version Control Cleanup (Git Debt) - [2025-04-28 02:32:41]
+- **Status**: Complete.
+- **Details**: Committed uncommitted changes (RAG tests, venv updates, MB logs, zlibrary fork) in 4 logical commits (87c4791, 61d153e, 8eb4e3b, df840fa) on branch feature/rag-file-output. Added processed_rag_output/ to .gitignore.
+- **Related**: ActiveContext [2025-04-28 02:32:25], Decision-PrioritizeGitCleanup-01
+### Task: Version Control Cleanup (Git Debt) - [2025-04-28 02:23:30]
+- **Status**: Complete. [See DevOps Completion 2025-04-28 02:33:43]
+- **Details**: DevOps analyzed `git status`, added `processed_rag_output/` to `.gitignore`, and committed changes in 5 logical commits (87c4791, 61d153e, 8eb4e3b, df840fa, 4f103f2) on `feature/rag-file-output`. Working directory clean.
+- **Related**: ActiveContext [2025-04-28 02:20:01], Decision-PrioritizeGitCleanup-01
+### Task: Implement `download_book` in Forked Library - [2025-04-24 03:49:26]
+- **Status**: Complete.
+- **Details**: Implemented the missing `download_book` async method in `zlibrary/src/zlibrary/libasync.py` using `httpx` and `aiofiles`. Added `DownloadError` exception and updated dependencies (`httpx`, `aiofiles`) in `zlibrary/pyproject.toml`. Committed changes (8a30920) to `feature/rag-file-output`. Addresses INT-RAG-003.
+- **Related**: ActiveContext [2025-04-24 03:49:26], Issue INT-RAG-003
+
+
 <!-- Entries below should be added reverse chronologically (newest first) -->
+### Task: Re-Verify RAG `download_book_to_file` Integration - [2025-04-24 16:36:00]
+- **Status**: Halted.
+- **Details**: Verification blocked by intractable errors in the `zlibrary` fork's download logic (dependency issues, signature mismatches, scraping failures). Requires dedicated fix in the library before integration can proceed.
+- **Related**: Issue INT-RAG-DOWNLOAD-REPLAN, ActiveContext [2025-04-24 16:36:00]
+
+
+### Task: Verify RAG File Output Integration - [2025-04-24 03:07:03]
+- **Status**: Partially Complete (Verification Blocked).
+- **Details**: Verified `process_document_for_rag` works for PDF, EPUB, TXT on `feature/rag-file-output` branch. Output correctly saved to `./processed_rag_output/`. Verification of `download_book_to_file` (combined workflow) is blocked due to missing `download_book` method implementation in the forked `zlibrary` library (AttributeError). `npm test` passed, but with 17 TODOs (6 more than expected) and a console error about `requirements.txt` path. Memory Bank updates were successful after initial rejections.
+- **Related**: ActiveContext [2025-04-24 03:06:50], Integration Issues INT-RAG-001, INT-RAG-002, INT-RAG-003, TEST-REQ-ERROR, TEST-TODO-DISCREPANCY.
+
+### Task: RAG Pipeline - Feature Branch Creation - [2025-04-24 01:46:10]
+- **Status**: Complete.
+- **Details**: Created feature branch `feature/rag-file-output` after committing RAG Green Phase changes (commit d6bd8ab) and Memory Bank updates (commit 144429b) to `master`.
+- **Related**: ActiveContext [2025-04-24 01:46:10]
+
+
 ### Task: RAG Pipeline (EPUB/TXT/PDF) - File Output Redesign - [2025-04-24 00:57:19]
 - **Status**: Refinement (TDD Refactor Phase Pending).
 - **Details**: Integration verification (Tasks 2 & 3) halted due to critical design flaw ([Ref: SPARC Feedback 2025-04-23 23:26:20]). Architecture redesigned ([Ref: Architect Completion 2025-04-23 23:30:58]), specifications updated ([Ref: Spec/Pseudo Completion 2025-04-23 23:40:42]), TDD Red phase completed ([Ref: TDD Completion 2025-04-23 23:51:14]), and TDD Green phase implementation completed ([Ref: Code Completion 2025-04-24 00:57:19]). Awaiting Refactor phase.

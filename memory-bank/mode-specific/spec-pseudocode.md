@@ -3,7 +3,7 @@
 ## Functional Requirements
 ### Feature: RAG Document Processing Pipeline (v2 - File Output)
 - Added: 2025-04-23 23:37:09
-- Description: Update the RAG pipeline to save processed text (EPUB, TXT, PDF) to `./processed_rag_output/` and return the `processed_file_path` instead of raw text. Involves updating `download_book_to_file` and `process_document_for_rag` tools (schemas, Node handlers), and Python bridge (`process_document` orchestrates extraction and saving via new `_save_processed_text` helper).
+- Description: Update the RAG pipeline to save processed text (EPUB, TXT, PDF) to `./processed_rag_output/` and return the `processed_file_path` instead of raw text. **Clarifies the `download_book_to_file` workflow per ADR-002 (input `bookDetails` from search, internal scraping).** Involves updating `download_book_to_file` and `process_document_for_rag` tools (schemas, Node handlers), and Python bridge (`download_book` handles scraping, `process_document` orchestrates extraction and saving via `_save_processed_text` helper).
 - Acceptance criteria: 1. `download_book_to_file` (process=true) returns `file_path` and `processed_file_path`. 2. `process_document_for_rag` returns `processed_file_path`. 3. Python bridge saves text to `./processed_rag_output/<original>.processed.<format>`. 4. File saving errors (`FileSaveError`) are handled and propagated. 5. Image-based/empty PDFs result in `processed_file_path: None`. 6. Tool schemas reflect new inputs/outputs.
 - Dependencies: Node.js (`zod`), Python (`ebooklib`, `beautifulsoup4`, `lxml`, `PyMuPDF`), Existing `zlibrary` Python lib, Managed Python Venv.
 - Status: Draft (Specification Complete)
@@ -383,68 +383,196 @@ def process_document(file_path_str: str, output_format: str = "txt") -> dict:
 - Test propagates `FileSaveError` from `_save_processed_text`.
 - Test raises `FileNotFoundError` if input path doesn't exist.
 
-### Pseudocode: Python Bridge (`lib/python_bridge.py`) - `download_book` (Updated for File Output)
+### Pseudocode: Python Bridge (`lib/python_bridge.py`) - `download_book` (Updated for Download Workflow)
 - Created: 2025-04-14 12:13:00
-- Updated: 2025-04-23 23:37:09
+- Updated: 2025-04-24 17:33:32
 ```python
 # File: lib/python_bridge.py (Updated Core Function)
-# Dependencies: zlibrary, os, logging, pathlib
+# Dependencies: zlibrary, os, logging, pathlib, asyncio
 # Assumes process_document is defined and handles saving
+# Assumes _scrape_and_download helper is defined
 
 import os
 import logging
+import asyncio
 from pathlib import Path
-from zlibrary import ZLibrary
+# from zlibrary import ZLibrary # ZLibrary instance not needed directly if scraping
 
-def download_book(book_id, format=None, output_dir=None, process_for_rag=False, processed_output_format="txt"):
+# Custom Exceptions assumed defined: DownloadScrapeError, DownloadExecutionError, FileSaveError
+
+def download_book(book_details: dict, output_dir=None, process_for_rag=False, processed_output_format="txt"):
     """
-    Downloads a book and optionally processes it, saving the processed text.
+    Downloads a book using details containing the book page URL. Extracts the URL,
+    fetches the page, scrapes the download link (selector: a.btn.btn-primary.dlButton),
+    downloads the file, and optionally processes it. See ADR-002.
     Returns a dictionary containing file_path and optionally processed_file_path.
     """
-    zl = ZLibrary() # Adjust initialization as needed
-    logging.info(f"Attempting download for book_id: {book_id}, format: {format}")
+    # Use default output dir if not provided
+    output_dir_str = output_dir if output_dir else "./downloads"
 
-    # Perform download (assuming library handles naming)
-    download_result_path_str = zl.download_book(
-        book_id=book_id,
-        # format=format, # Pass if library supports
-        output_dir=output_dir,
-    )
+    logging.info(f"Attempting download using book details, process_for_rag={process_for_rag}")
 
-    if not download_result_path_str or not os.path.exists(download_result_path_str):
-        raise RuntimeError(f"Download failed or file not found for book_id: {book_id}")
+    book_page_url = book_details.get('url')
+    if not book_page_url:
+        raise ValueError("Missing 'url' (book page URL) in book_details input.")
 
+    try:
+        # Perform scraping and download using the async helper
+        # Run the async function synchronously for the bridge
+        download_result_path_str = asyncio.run(_scrape_and_download(book_page_url, output_dir_str))
+
+    except (DownloadScrapeError, DownloadExecutionError) as download_err:
+        logging.error(f"Download failed for book page {book_page_url}: {download_err}")
+        raise RuntimeError(f"Download failed: {download_err}") from download_err
+    except Exception as e:
+        logging.exception(f"Unexpected error during download process for {book_page_url}")
+        raise RuntimeError(f"Unexpected download error: {e}") from e
+
+    # --- Post-Download Processing ---
     download_result_path = Path(download_result_path_str)
     logging.info(f"Book downloaded successfully to: {download_result_path}")
 
     result = {"file_path": str(download_result_path)}
-    processed_path_str = None
+    processed_path_str = None # Use string path
 
     if process_for_rag:
         logging.info(f"Processing downloaded file for RAG: {download_result_path}")
         try:
-            # Call the updated process_document which saves the file
+            # Call the updated process_document which now saves the file
             process_result = process_document(str(download_result_path), processed_output_format)
-            processed_path_str = process_result.get("processed_file_path") # Get the path string
-            if processed_path_str:
-                 result["processed_file_path"] = processed_path_str
-            else:
-                 logging.warning(f"Processing requested for {download_result_path}, but no output file was saved.")
-                 result["processed_file_path"] = None # Explicitly set to None
+            processed_path_str = process_result.get("processed_file_path") # Can be None
+            result["processed_file_path"] = processed_path_str # Assign None if processing yielded no text
 
         except Exception as e:
+            # Log processing errors but don't fail the download result
             logging.error(f"Failed to process document after download for {download_result_path}: {e}")
+### Pseudocode: Python Bridge (`lib/python_bridge.py`) - `_scrape_and_download` (New Helper)
+- Created: 2025-04-24 17:33:32
+- Updated: 2025-04-24 17:33:32
+```python
+# File: lib/python_bridge.py (New Helper Function)
+# Dependencies: httpx, aiofiles, bs4, logging, asyncio, urllib.parse, re
+
+import httpx
+import aiofiles
+import logging
+import asyncio
+import re
+from pathlib import Path
+from urllib.parse import urljoin
+from bs4 import BeautifulSoup
+
+# Assumed defined: DOWNLOAD_SELECTOR, DownloadScrapeError, DownloadExecutionError
+
+async def _scrape_and_download(book_page_url: str, output_dir_str: str) -> str:
+    """Fetches book page, scrapes download link, and downloads the file."""
+    if not DOWNLOAD_LIBS_AVAILABLE:
+        raise ImportError("Required libraries 'httpx' and 'aiofiles' are not installed.")
+
+    headers = {'User-Agent': 'Mozilla/5.0 ...'} # Add appropriate User-Agent
+    timeout = 30.0
+
+    async with httpx.AsyncClient(follow_redirects=True, timeout=timeout, headers=headers) as client:
+        # 1. Fetch book page
+        try:
+            logging.info(f"Fetching book page: {book_page_url}")
+            response = await client.get(book_page_url)
+            response.raise_for_status() # Check for HTTP errors
+        except httpx.RequestError as exc:
+            logging.error(f"Network error fetching book page {book_page_url}: {exc}")
+            raise DownloadScrapeError(f"Network error fetching book page: {exc}") from exc
+        except httpx.HTTPStatusError as exc:
+            logging.error(f"HTTP error {exc.response.status_code} fetching book page {book_page_url}")
+            raise DownloadScrapeError(f"HTTP error {exc.response.status_code} fetching book page.") from exc
+
+        # 2. Parse and Scrape download link
+        try:
+            soup = BeautifulSoup(response.text, 'lxml')
+            link_element = soup.select_one(DOWNLOAD_SELECTOR)
+            if not link_element or not link_element.has_attr('href'):
+                logging.error(f"Could not find download link using selector '{DOWNLOAD_SELECTOR}' on {book_page_url}")
+                raise DownloadScrapeError("Download link selector not found on book page.")
+            relative_url = link_element['href']
+            download_url = urljoin(str(response.url), relative_url)
+            logging.info(f"Found download URL: {download_url}")
+        except Exception as exc:
+            logging.exception(f"Error parsing book page {book_page_url}")
+            raise DownloadScrapeError(f"Error parsing book page: {exc}") from exc
+
+        # 3. Determine output path and filename
+        output_dir = Path(output_dir_str)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        # Try to get filename from Content-Disposition or URL
+        filename = download_url.split('/')[-1].split('?')[0] or "downloaded_book" # Basic fallback
+
+        # 4. Download the file
+        try:
+            logging.info(f"Starting download from {download_url}")
+            async with client.stream('GET', download_url) as download_response:
+                # Try to get filename from header first
+                content_disposition = download_response.headers.get('content-disposition')
+                if content_disposition:
+                    fname_match = re.search(r'filename\*?=(?:UTF-8\'\')?([^;\n]*)', content_disposition, re.IGNORECASE)
+                    if fname_match:
+                        potential_fname = fname_match.group(1).strip('"')
+                        # Basic sanitization
+                        potential_fname = re.sub(r'[\\/*?:"<>|]', "_", potential_fname)
+                        if potential_fname:
+                            filename = potential_fname
+
+                output_path = output_dir / filename
+                logging.info(f"Saving download to: {output_path}")
+
+                download_response.raise_for_status() # Check download request status
+
+                async with aiofiles.open(output_path, 'wb') as f:
+                    async for chunk in download_response.aiter_bytes():
+                        await f.write(chunk)
+
+            logging.info(f"Download complete: {output_path}")
+            return str(output_path)
+
+        except httpx.RequestError as exc:
+            logging.error(f"Network error during download from {download_url}: {exc}")
+            raise DownloadExecutionError(f"Network error during download: {exc}") from exc
+        except httpx.HTTPStatusError as exc:
+            logging.error(f"HTTP error {exc.response.status_code} during download from {download_url}")
+            raise DownloadExecutionError(f"HTTP error {exc.response.status_code} during download.") from exc
+        except OSError as exc:
+            logging.error(f"File system error saving download to {output_path}: {exc}")
+            raise DownloadExecutionError(f"File system error saving download: {exc}") from exc
+        except Exception as exc:
+            logging.exception(f"Unexpected error during download/saving from {download_url}")
+            raise DownloadExecutionError(f"Unexpected error during download: {exc}") from exc
+```
+#### TDD Anchors:
+- Test raises `ImportError` if `httpx`/`aiofiles` missing.
+- Mock `httpx.AsyncClient.get` for book page fetch. Test successful fetch.
+- Test book page fetch failure (network error) raises `DownloadScrapeError`.
+- Test book page fetch failure (HTTP status error) raises `DownloadScrapeError`.
+- Mock `BeautifulSoup` parsing. Test successful selection of download link (`a.btn.btn-primary.dlButton`) and extraction of `href`.
+- Test parsing failure (selector not found) raises `DownloadScrapeError`.
+- Test unexpected parsing error raises `DownloadScrapeError`.
+- Mock `httpx.AsyncClient.stream` for final download. Test successful download writes file and returns correct path.
+- Test filename extraction logic (Content-Disposition, URL fallback).
+- Test final download failure (network error) raises `DownloadExecutionError`.
+- Test final download failure (HTTP status error) raises `DownloadExecutionError`.
+- Test file saving failure (OS error) raises `DownloadExecutionError`.
+
+
             result["processed_file_path"] = None # Indicate processing failure
 
     return result
 ```
 #### TDD Anchors:
-- Mock `zlibrary.download_book`.
-- Test `process_for_rag=False` -> Returns only `file_path`.
-- Test `process_for_rag=True` -> Calls `process_document` internally.
+- Test raises `ValueError` if `book_details['url']` is missing.
+- Test successful extraction of URL from `book_details`.
+- Mock `_scrape_and_download`. Test it's called with correct URL and output dir.
+- Test successful return from `_scrape_and_download` results in correct `file_path`.
+- Test `DownloadScrapeError` or `DownloadExecutionError` from `_scrape_and_download` raises `RuntimeError`.
+- Test `process_for_rag=True` calls `process_document` with the downloaded path.
 - Test `process_for_rag=True` (Successful Processing) -> Returns `file_path` and `processed_file_path` (string path).
 - Test `process_for_rag=True` (Processing Fails/No Text) -> Returns `file_path` and `processed_file_path: None`.
-- Test download failure handling.
 
 ### Pseudocode: Python Bridge (`lib/python_bridge.py`) - `_process_pdf` (Updated Return)
 - Created: 2025-04-14 14:08:30
@@ -473,17 +601,18 @@ def _process_pdf(file_path: Path) -> str:
 - Test returns empty string (`""`) for empty PDF.
 - (Other anchors remain the same)
 
-### Pseudocode: Tool Schemas (Zod) - Updated for File Output
+### Pseudocode: Tool Schemas (Zod) - Updated for File Output & Download Workflow
 - Created: 2025-04-14 12:13:00
-- Updated: 2025-04-23 23:37:09
+- Updated: 2025-04-24 17:33:32
 ```typescript
 // File: src/lib/schemas.ts (or inline in index.ts)
 import { z } from 'zod';
 
 // Updated Input for download_book_to_file
 export const DownloadBookToFileInputSchema = z.object({
-  id: z.string().describe("The Z-Library book ID"),
-  format: z.string().optional().describe("File format (e.g., \"pdf\", \"epub\")"),
+  // Changed from 'id' to 'bookDetails' to align with ADR-002
+  bookDetails: z.object({}).passthrough().describe("The full book details object obtained from a search_books result, containing the necessary book page URL under the 'url' key."),
+  // 'format' removed as it's determined internally during scraping/download
   outputDir: z.string().optional().default("./downloads").describe("Directory to save the original file (default: './downloads')"),
   process_for_rag: z.boolean().optional().default(false).describe("If true, process content for RAG and save to processed output file"),
   processed_output_format: z.string().optional().default("txt").describe("Desired format for the processed output file (default: 'txt')")
@@ -492,7 +621,7 @@ export const DownloadBookToFileInputSchema = z.object({
 // Updated Output for download_book_to_file
 export const DownloadBookToFileOutputSchema = z.object({
     file_path: z.string().describe("The absolute path to the original downloaded file"),
-    processed_file_path: z.string().optional().describe("The absolute path to the file containing processed text (only if process_for_rag was true)")
+    processed_file_path: z.string().optional().nullable().describe("The absolute path to the file containing processed text (if process_for_rag was true and text was extracted), or null otherwise.") // Updated field, allow null
 });
 
 // Updated Input for process_document_for_rag
@@ -503,30 +632,32 @@ export const ProcessDocumentForRagInputSchema = z.object({
 
 // Updated Output for process_document_for_rag
 export const ProcessDocumentForRagOutputSchema = z.object({
-  processed_file_path: z.string().describe("The absolute path to the file containing extracted and processed plain text content")
+  // Allow null if processing yields no text (e.g., image PDF)
+  processed_file_path: z.string().nullable().describe("The absolute path to the file containing extracted and processed plain text content, or null if no text was extracted.")
 });
 ```
 #### TDD Anchors:
-- Verify `DownloadBookToFileInputSchema` accepts `process_for_rag`, `processed_output_format`.
-- Verify `DownloadBookToFileOutputSchema` includes optional `processed_file_path`.
+- Verify `DownloadBookToFileInputSchema` requires `bookDetails` object, accepts optional `outputDir`, `process_for_rag`, `processed_output_format`.
+- Verify `DownloadBookToFileOutputSchema` includes `file_path` and optional `processed_file_path` (nullable).
 - Verify `ProcessDocumentForRagInputSchema` requires `file_path`, accepts optional `output_format`.
-- Verify `ProcessDocumentForRagOutputSchema` requires `processed_file_path`.
+- Verify `ProcessDocumentForRagOutputSchema` requires `processed_file_path` (nullable).
 
-### Pseudocode: Tool Registration (`index.ts` Snippet) - Updated for File Output
+### Pseudocode: Tool Registration (`index.ts` Snippet) - Updated for File Output & Download Workflow
 - Created: 2025-04-14 12:13:00
-- Updated: 2025-04-23 23:37:09
+- Updated: 2025-04-24 17:33:32
 ```typescript
 // File: src/index.ts (Conceptual Snippet)
 // ... imports (Server, StdioServerTransport, z, zlibraryApi, schemas) ...
 
+// Assume schemas are defined or imported from e.g., './lib/schemas'
 import {
-  DownloadBookToFileInputSchema,
+  DownloadBookToFileInputSchema, // Use updated schema name if changed
   DownloadBookToFileOutputSchema,
   ProcessDocumentForRagInputSchema,
   ProcessDocumentForRagOutputSchema,
   // ... other schemas
-} from './lib/schemas';
-import * as zlibraryApi from './lib/zlibrary-api';
+} from './lib/schemas'; // Example path
+import * as zlibraryApi from './lib/zlibrary-api'; // Assuming API functions are exported
 
 const server = new Server({
   // ... other server options
@@ -536,28 +667,30 @@ const server = new Server({
         // ... other tools
         {
           name: 'download_book_to_file',
-          description: 'Downloads a book file from Z-Library and optionally processes its content for RAG, saving the result to a separate file.',
-          inputSchema: DownloadBookToFileInputSchema,
+          description: 'Downloads a book file from Z-Library using details obtained from search_books. Internally scrapes the book page for the download link (see ADR-002), downloads, and optionally processes for RAG.', // Updated description
+          inputSchema: DownloadBookToFileInputSchema, // Use updated schema
           outputSchema: DownloadBookToFileOutputSchema,
         },
         {
           name: 'process_document_for_rag',
           description: 'Processes an existing local document file (EPUB, TXT, PDF) to extract plain text content for RAG, saving the result to a file.',
           inputSchema: ProcessDocumentForRagInputSchema,
-          outputSchema: ProcessDocumentForRagOutputSchema,
+          outputSchema: ProcessDocumentForRagOutputSchema, // Use updated schema
         },
       ];
     },
     call: async (request) => {
       // ... generic validation ...
-      if (request.name === 'download_book_to_file') {
-        const validatedArgs = DownloadBookToFileInputSchema.parse(request.arguments);
-        const result = await zlibraryApi.downloadBookToFile(validatedArgs);
+      if (request.name === 'download_book_to_file') { // Use 'name' based on recent fixes
+        const validatedArgs = DownloadBookToFileInputSchema.parse(request.arguments); // Use updated schema
+        const result = await zlibraryApi.downloadBookToFile(validatedArgs); // Pass validated args containing bookDetails
+        // Optional: DownloadBookToFileOutputSchema.parse(result);
         return result;
       }
-      if (request.name === 'process_document_for_rag') {
+      if (request.name === 'process_document_for_rag') { // Use 'name'
         const validatedArgs = ProcessDocumentForRagInputSchema.parse(request.arguments);
         const result = await zlibraryApi.processDocumentForRag(validatedArgs);
+        // Optional: ProcessDocumentForRagOutputSchema.parse(result);
         return result;
       }
       // ... handle other tools
@@ -565,76 +698,107 @@ const server = new Server({
     },
   },
 });
+
 // ... transport setup and server.connect() ...
 ```
 #### TDD Anchors:
-- Test `tools/list` includes updated descriptions/schemas.
-- Test `tools/call` routes correctly.
-- Test input validation using updated Zod schemas.
+- Test `tools/list` includes updated descriptions/schemas for `download_book_to_file`.
+- Test `tools/call` routes `download_book_to_file` correctly.
+- Test input validation using updated `DownloadBookToFileInputSchema`.
 
-### Pseudocode: Node.js Handlers (`lib/zlibrary-api.ts`) - Updated for File Output
+### Pseudocode: Node.js Handlers (`lib/zlibrary-api.ts`) - Updated for File Output & Download Workflow
 - Created: 2025-04-14 12:13:00
-- Updated: 2025-04-23 23:37:09
+- Updated: 2025-04-24 17:33:32
 ```pseudocode
 // File: src/lib/zlibrary-api.ts
 // Dependencies: ./python-bridge, path
 
-IMPORT callPythonFunction FROM './python-bridge'
+IMPORT callPythonFunction FROM './python-bridge' // Assumes this handles calling Python and parsing JSON response/error
 IMPORT path
 
+// --- Updated Function ---
+
 ASYNC FUNCTION downloadBookToFile(args):
-  // args = { id, format?, outputDir?, process_for_rag?, processed_output_format? }
-  LOG `Downloading book ${args.id}, process_for_rag=${args.process_for_rag}`
+  // args = { bookDetails, outputDir?, process_for_rag?, processed_output_format? }
+  LOG `Downloading book using details, process_for_rag=${args.process_for_rag}`
+
+  // Prepare arguments for Python script
   pythonArgs = {
-    book_id: args.id,
-    format: args.format,
+    book_details: args.bookDetails, // Pass the whole bookDetails object
     output_dir: args.outputDir,
     process_for_rag: args.process_for_rag,
     processed_output_format: args.processed_output_format
   }
+
   TRY
+    // Call the Python bridge function
     resultJson = AWAIT callPythonFunction('download_book', pythonArgs)
+
+    // Basic validation of Python response
     IF NOT resultJson OR NOT resultJson.file_path THEN
-      THROW Error("Invalid response from Python: Missing original file_path.")
+      THROW Error("Invalid response from Python bridge during download: Missing original file_path.")
     ENDIF
-    IF args.process_for_rag AND resultJson.processed_file_path IS UNDEFINED THEN // Check if key exists
-       THROW Error("Invalid response from Python: Processing requested but processed_file_path missing or null.")
+    // Check if processed_file_path exists (it could be null if processing yielded no text)
+    IF args.process_for_rag AND resultJson.processed_file_path IS UNDEFINED THEN
+       THROW Error("Invalid response from Python bridge: Processing requested but processed_file_path key is missing.")
     ENDIF
-    response = { file_path: resultJson.file_path }
-    IF args.process_for_rag THEN // Always include the key if processing was requested
-      response.processed_file_path = resultJson.processed_file_path // Could be null if processing yielded no text
-    ENDIF
+
+    // Construct the response object based on the schema
+    response = {
+      file_path: resultJson.file_path,
+      // Include processed_file_path if processing was requested, preserving null if returned
+      ...(args.process_for_rag && { processed_file_path: resultJson.processed_file_path })
+    }
+
     RETURN response
+
   CATCH error
     LOG `Error in downloadBookToFile: ${error.message}`
-    THROW Error(`Failed to download/process book ${args.id}: ${error.message}`)
+    // Propagate a user-friendly error
+    THROW Error(`Failed to download/process book: ${error.message}`) // Removed ID as it's inside bookDetails
   ENDTRY
 END FUNCTION
+
+// --- Updated Function ---
 
 ASYNC FUNCTION processDocumentForRag(args):
   // args = { file_path, output_format? }
   LOG `Processing document for RAG: ${args.file_path}`
+
+  // Resolve to absolute path before sending to Python
   absolutePath = path.resolve(args.file_path)
+
   pythonArgs = {
     file_path: absolutePath,
     output_format: args.output_format
   }
+
   TRY
+    // Call the Python bridge function
     resultJson = AWAIT callPythonFunction('process_document', pythonArgs)
-    IF NOT resultJson OR resultJson.processed_file_path IS UNDEFINED THEN // Check if key exists
-      THROW Error("Invalid response from Python: Missing processed_file_path.")
+
+    // Basic validation of Python response (allow null processed_file_path)
+    IF NOT resultJson OR resultJson.processed_file_path IS UNDEFINED THEN
+      THROW Error("Invalid response from Python bridge during processing. Missing processed_file_path key.")
     ENDIF
-    RETURN { processed_file_path: resultJson.processed_file_path } // Could be null
+
+    // Return the result object matching the schema
+    RETURN {
+      processed_file_path: resultJson.processed_file_path // Can be null
+    }
+
   CATCH error
     LOG `Error in processDocumentForRag: ${error.message}`
+    // Propagate a user-friendly error
     THROW Error(`Failed to process document ${args.file_path}: ${error.message}`)
   ENDTRY
 END FUNCTION
 
-EXPORT { downloadBookToFile, processDocumentForRag /*, ... */ }
+// --- Export Functions ---
+EXPORT { downloadBookToFile, processDocumentForRag /*, ... other functions */ }
 ```
 #### TDD Anchors:
-- `downloadBookToFile`: Mock `callPythonFunction`. Test `process_for_rag` flag passed. Test handling of responses with/without `processed_file_path` (including null). Test error handling (missing paths).
+- `downloadBookToFile`: Mock `callPythonFunction`. Test `bookDetails` object passed correctly. Test handling of responses with/without `processed_file_path` (including null). Test error handling (missing paths, Python errors).
 - `processDocumentForRag`: Mock `callPythonFunction`. Test `file_path` and `output_format` passed. Test handling of successful response (`processed_file_path`, including null) and error response.
 
 

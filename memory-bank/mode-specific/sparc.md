@@ -1,5 +1,12 @@
 # SPARC Orchestrator Specific Memory
 <!-- Entries below should be added reverse chronologically (newest first) -->
+### [2025-04-28 17:10:28] Intervention: Re-evaluation of ID Lookup Necessity
+- **Trigger**: User feedback denying `architect` task delegation for ID lookup failure strategy. User questioned the value of maintaining the problematic `get_book_by_id` functionality.
+- **Context**: Attempting to delegate task to design fallbacks for the fragile internal "Search-First" ID lookup mechanism.
+- **Action Taken**: Halted delegation to `architect`. Acknowledged user's valid concern regarding the persistent instability of ID-only lookups.
+- **Rationale**: The ID-only lookup relies on unstable scraping and has caused numerous issues. ADR-002 already moved the primary download workflow away from it. Fixing/patching may be less valuable than removing/refactoring dependent features.
+- **Outcome**: Decided to pivot strategy. Instead of designing fallbacks, will investigate the necessity of tools relying on this mechanism (`get_book_by_id`, `get_download_info`).
+- **Follow-up**: Update delegation log for cancelled `architect` task. Delegate new task to `debug` to investigate `get_download_info` errors and its reliance on ID lookup.
 ### [2025-04-23 22:14:54] Task: Debug Tool Call Regression (REG-001: "Invalid tool name type")
 - Assigned to: debug
 - Description: Diagnose and fix the tool call failure occurring after ESM migration.
@@ -431,6 +438,250 @@
 
 ## Delegations Log
 <!-- Append new delegation records here -->
+### [2025-04-28 22:00:24] Task: Update Project Documentation
+- Assigned to: docs-writer
+- Description: Update the project documentation to reflect the current status, recent changes, and ensure accuracy.
+- Expected deliverable: Updated docs, commit hash.
+- Status: completed
+- Completion time: 2025-04-28 22:19:26
+- Outcome: `README.md` updated to reflect recent fixes, tool changes, and passing test suites. Other docs reviewed for consistency. Commit: `0330d0977dff86e9c90fc15b022a2ace515765df`.
+- Link to Progress Entry: [GlobalContext Progress - Outstanding Issues]
+### [2025-04-28 21:40:16] Task: Investigate and Fix Test Suite Issues (TDD)
+- Assigned to: tdd
+- Description: Investigate and resolve the outstanding test suite issues identified as TEST-TODO-DISCREPANCY and TEST-REQ-ERROR.
+- Expected deliverable: Fixed tests, passing suite, and commit hash.
+- Status: completed
+- Completion time: 2025-04-28 21:59:35
+- Outcome: Resolved TEST-TODO-DISCREPANCY/TEST-REQ-ERROR. Removed obsolete Jest tests, fixed Pytest import/parser logic in `zlibrary/src/zlibrary/abs.py`. Both `npm test` &amp; `pytest` suites pass. Commit: `3e732b3`.
+- Link to Progress Entry: [Delegation Log 2025-04-24 03:10:21]
+### [2025-04-28 20:51:37] Task: Implement `venv-manager` TODO Tests (TDD)
+- Assigned to: tdd
+- Description: Implement the pending tests marked with `// TODO:` comments within `__tests__/venv-manager.test.js`.
+- Expected deliverable: Implemented tests, passing suite, and commit hash.
+- Status: completed
+- Completion time: 2025-04-28 21:39:08
+- Outcome: Successfully implemented 9 TODO tests in `__tests__/venv-manager.test.js`. Exported required functions (`createVenv`, `saveVenvPathConfig`, `readVenvPathConfig`) from `src/lib/venv-manager.ts`. Test suite passes (13 passed).
+- Link to Progress Entry: [GlobalContext Progress - Outstanding Issues]
+### [2025-04-28 19:11:37] Task: Implement `get_recent_books` Python Bridge Function (TDD)
+- Assigned to: tdd
+- Description: Implement the missing `get_recent_books` function in the Python bridge script (`lib/python_bridge.py`).
+- Expected deliverable: Implemented function, passing tests, and commit hash.
+- Status: completed
+- Completion time: 2025-04-28 20:50:30
+- Outcome: Successfully implemented `get_recent_books` in `lib/python_bridge.py`. Added tests and fixed regressions in existing `download_book` tests in `__tests__/python/test_python_bridge.py`. Relevant tests pass. Commit: `75b6f11`.
+- Link to Progress Entry: [ActiveContext 2025-04-28 18:56:31] (Ref: Issue-RecentBooksMissing-01)
+### [2025-04-28 18:57:12] Task: Fix `get_download_history` Parser (TDD)
+- Assigned to: tdd
+- Description: Fix the broken HTML parser for the `get_download_history` functionality within the forked `zlibrary` library.
+- Expected deliverable: Fixed code, passing tests, and commit hash.
+- Status: completed
+- Completion time: 2025-04-28 19:10:43
+- Outcome: Successfully updated parser logic in `zlibrary/src/zlibrary/abs.py` for new HTML structure (`div.dstats-table-content`, `span.hidden-xs`). Added/updated tests in `__tests__/python/test_python_bridge.py`. All relevant tests pass. Commit: `9350af5`.
+- Link to Progress Entry: [ActiveContext 2025-04-28 18:56:31] (Ref: Issue-HistoryParseError-01)
+### [2025-04-28 18:51:41] Task: Investigate `get_download_history` & `get_recent_books` Errors
+- Assigned to: debug
+- Description: Investigate and diagnose errors reported for `get_download_history` and `get_recent_books` tools.
+- Expected deliverable: Debug report with root cause analysis and recommendations.
+- Status: completed
+- Completion time: 2025-04-28 18:56:31
+- Outcome: Investigation complete. `get_download_history` fails due to broken parser (`zlibrary/src/zlibrary/abs.py`, Issue-HistoryParseError-01). `get_recent_books` fails due to missing function in Python bridge (`lib/python_bridge.py`, Issue-RecentBooksMissing-01). Recommendations: Fix parser, implement function.
+- Link to Progress Entry: [ActiveContext 2025-04-28 18:56:31]
+### [2025-04-28 18:39:17] Task: Deprecate and Remove `get_download_info` Tool (TDD)
+- Assigned to: tdd
+- Description: Remove the `get_download_info` tool, its associated handler functions, and related tests, following the deprecation decision.
+- Expected deliverable: Confirmation of removal, passing tests, and commit hash.
+- Status: completed
+- Completion time: 2025-04-28 18:50:29
+- Outcome: Successfully removed `get_download_info` tool definition (`src/index.ts`), handler (`src/lib/zlibrary-api.ts`), Python function (`lib/python_bridge.py`), and associated tests (`__tests__/python/test_python_bridge.py`). All test suites (`npm test`, `pytest`) confirmed passing post-removal. Commit: `8bef4c2`.
+- Link to Progress Entry: [ActiveContext 2025-04-28 18:38:37]
+### [2025-04-28 17:11:17] Task: Investigate `get_download_info` Tool Errors and Necessity
+- Assigned to: debug
+- Description: Analyze errors, confirm ID lookup reliance, evaluate purpose, and recommend action for `get_download_info`.
+- Expected deliverable: Investigation report and recommendation (Fix/Refactor/Deprecate).
+- Status: completed
+- Completion time: 2025-04-28 18:38:37
+- Outcome: Investigation confirmed `get_download_info` relies on the unstable `id:` search workaround (`_find_book_by_id_via_search`), fails to retrieve the actual download URL, and its metadata is redundant with `search_books`. The tool is unused by the current ADR-002 download workflow. Recommendation: **Deprecate**. See [Debug MB Investigate-GetDownloadInfo-01].
+- Link to Progress Entry: [ActiveContext 2025-04-28 17:11:17]
+### [2025-04-28 17:08:37] Task: Design Failure Strategy for Internal ID Lookup
+- Assigned to: architect
+- Description: Design a robust failure strategy for the internal ID-based lookup mechanism (`_internal_search` and `_internal_get_book_details_by_id` in `lib/python_bridge.py`). The current "Search-First" strategy (see `docs/search-first-id-lookup-spec.md`) is prone to failure if the external site changes or search-by-ID becomes unreliable. Consider fallback options, error handling improvements, and potential alternative lookup methods.
+- Expected deliverable: Architectural proposal outlining the recommended failure strategy, including potential changes to functions, error handling, and dependencies. An ADR may be required if significant changes are proposed.
+- Status: failed
+- Completion time: 2025-04-28 17:10:28
+- Outcome: Task cancelled due to user intervention questioning the value of maintaining the fragile ID lookup functionality. Strategy pivoted to investigate necessity/reliability of dependent tools (`get_download_info`) via `debug` mode. See [Intervention Log 2025-04-28 17:10:28].
+- Link to Progress Entry: [ActiveContext 2025-04-28 17:08:16]
+### [2025-04-28 16:51:22] Task: Update RAG Implementation Specification (Download Workflow)
+- Assigned to: spec-pseudocode
+- Description: Update `docs/rag-pipeline-implementation-spec.md` to align with the reaffirmed download workflow (ADR-002). Specifically, clarify that the `bookDetails` object required by `download_book_to_file` should be sourced from the results of the `search_books` tool, not `get_book_by_id`. Reference ADR-002.
+- Expected deliverable: Updated `docs/rag-pipeline-implementation-spec.md` file content.
+- Status: completed
+- Completion time: 2025-04-28 17:07:27
+- Outcome: Specification file (`docs/rag-pipeline-implementation-spec.md`) already correctly reflected the download workflow from ADR-002. No changes were necessary.
+- Link to Progress Entry: [ActiveContext 2025-04-28 16:51:01]
+### [2025-04-28 13:24:57] Task: Re-run Regression Testing & Test Coverage (Post-Debug Fix)
+- Assigned to: tdd
+- Description: Re-run full test suites (`pytest` in `zlibrary/`, `npm test`) after debug fix (commit `26cd7c8`). Verify all tests pass. Review changes in `zlibrary/src/zlibrary/libasync.py` and `lib/python_bridge.py` (from commit `f3b5f96`) and ensure adequate test coverage exists or add/update tests as needed.
+- Expected deliverable: Test results confirmation (all passing). Confirmation of adequate test coverage or updated/new tests. Commit hash if changes are made.
+- Status: completed
+- Completion time: 2025-04-28 14:43:14
+- Outcome: All tests (`pytest`, `npm test`) passed successfully. Coverage for integration changes (`f3b5f96`) deemed sufficient. Minor test cleanup committed (`f466479`).
+- Link to Progress Entry: [ActiveContext 2025-04-28 13:24:06]
+### [2025-04-28 13:13:27] Task: Debug Regression Test Failures (Post-Integration Fixes)
+- Assigned to: debug
+- Description: Investigate and fix the `pytest` failures reported by `tdd` mode ([SPARC MB 2025-04-28 13:13:06]) in `__tests__/python/test_python_bridge.py`. The regression occurred after integration fixes (commit `f3b5f96`) and is likely related to output path handling in `lib/python_bridge.py`.
+- Expected deliverable: Root cause analysis, fixed code/tests, confirmation of passing `pytest` suite, and commit hash.
+- Status: completed
+- Completion time: 2025-04-28 13:24:06
+- Outcome: Successfully fixed the 4 failing tests in `__tests__/python/test_python_bridge.py`. Root cause was outdated test assertions expecting directory path instead of full file path argument for `_scrape_and_download`. Updated assertions. Commit: `26cd7c8`.
+- Link to Progress Entry: [ActiveContext 2025-04-28 13:12:25]
+### [2025-04-28 13:05:25] Task: Regression Testing & Test Coverage (Post-Integration Fixes)
+- Assigned to: tdd
+- Description: Run full test suites (`pytest` in `zlibrary/`, `npm test`) to check for regressions after integration fixes (commit `f3b5f96`). Review changes in `zlibrary/src/zlibrary/libasync.py` and `lib/python_bridge.py` and ensure adequate test coverage exists or add/update tests as needed.
+- Expected deliverable: Test results confirmation (all passing). Confirmation of adequate test coverage or updated/new tests. Commit hash if changes are made.
+- Status: failed
+- Completion time: 2025-04-28 13:12:25 (Early Return)
+- Outcome: Returned early. `pytest` failed with 4 errors in `__tests__/python/test_python_bridge.py` after integration fixes (`f3b5f96`), indicating a regression likely related to output path handling in `lib/python_bridge.py`. See `memory-bank/mode-specific/tdd.md` for details.
+- Link to Progress Entry: [ActiveContext 2025-04-28 13:04:18]
+### [2025-04-28 12:20:55] Task: Verify RAG Download Workflow Integration
+- Assigned to: integration
+- Description: Perform integration testing on the RAG download workflow implemented up to commit `f2d1b9c`. Verify end-to-end functionality including `bookDetails` input, Python bridge call, `zlibrary` fork usage, scraping, download, and saving.
+- Expected deliverable: Integration test report.
+- Status: completed
+- Completion time: 2025-04-28 13:04:18
+- Outcome: Integration successful. Verified `download_book_to_file` works end-to-end. Fixed issues INT-RAG-DL-001 (scraping selector) and INT-RAG-FN-001 (filename extension) in `zlibrary/src/zlibrary/libasync.py` and `lib/python_bridge.py`. Commit: `f3b5f96`.
+- Link to Progress Entry: [ActiveContext 2025-04-28 13:04:18]
+### [2025-04-28 10:44:50] Task: TDD Refactor Phase - RAG Download Workflow (Spec v2.1) - Retry 1
+- Assigned to: tdd
+- Description: Refactor the RAG download workflow implementation (`lib/python_bridge.py`, `src/lib/zlibrary-api.ts`) and associated tests (`__tests__/python/test_python_bridge.py`, `__tests__/zlibrary-api.test.js`) following the successful Green Phase fixes (commit `e58da14`). Improve code clarity and maintainability while keeping all tests passing. Previous attempt blocked by test failures now resolved.
+- Expected deliverable: Refactored code and tests, confirmation of passing tests, and commit hash.
+- Status: completed
+- Completion time: 2025-04-28 11:41:21
+- Outcome: Refactored `lib/python_bridge.py` (pathlib, removed debug/obsolete code) and `__tests__/python/test_python_bridge.py` (removed obsolete test). Tests passed. Commit: `f2d1b9c`.
+- Link to Progress Entry: [GlobalContext Progress 2025-04-28 04:04:00] (Original failed task)
+### [2025-04-28 10:20:40] Task: Check Git Status & Cleanup (Post Debug Fix)
+- Assigned to: devops
+- Description: Check `git status` on `feature/rag-file-output` after commit `e58da14`. If uncommitted changes exist, analyze using `git diff`, propose a logical commit plan, and execute upon approval. Address user feedback on version control hygiene.
+- Expected deliverable: Report on `git status`. If changes exist, a commit plan and execution confirmation.
+- Status: completed
+- Completion time: 2025-04-28 10:44:31
+- Outcome: Identified uncommitted changes (code/test fixes, untracked file, MB updates). Committed code/test fixes + untracked file (`224de6f`) and MB updates (`b4a280c`). Git status clean.
+- Link to Progress Entry: N/A (New task initiated by intervention)
+### [2025-04-28 09:22:54] Task: Debug TDD Refactor Blockage (RAG Download Workflow)
+- Assigned to: debug
+- Description: Investigate persistent test failures across multiple suites (`__tests__/index.test.js`, `__tests__/python/test_python_bridge.py`) encountered during TDD Refactor phase ([GlobalContext Progress 2025-04-28 04:04:00]). `tdd` mode returned early. Analyze failures, review `tdd` feedback, and identify/fix the root cause.
+- Expected deliverable: Diagnosis report and/or fixed code/tests.
+- Status: pending
+- Link to Progress Entry: [GlobalContext Progress 2025-04-28 09:22:38]
+### [2025-04-28 04:04:14] Task: TDD Refactor Phase - RAG Download Workflow (Spec v2.1)
+- Assigned to: tdd
+- Description: Refactor the RAG download workflow implementation (`lib/python_bridge.py`, `src/lib/zlibrary-api.ts`) and associated tests (`__tests__/python/test_python_bridge.py`, `__tests__/zlibrary-api.test.js`) following the successful Green Phase (commit `6746f13`). Improve code clarity and maintainability while keeping tests passing.
+- Expected deliverable: Refactored code and tests, confirmation of passing tests, and commit hash.
+- Status: failed
+- Completion time: 2025-04-28 09:21:23 (Early Return)
+- Outcome: Returned early due to persistent, intractable test failures across multiple suites (`__tests__/index.test.js`, `__tests__/python/test_python_bridge.py`) during refactoring. Potential build, cache, environment, or deeper implementation issues suspected. See `memory-bank/feedback/tdd-feedback.md` [Timestamp from TDD feedback].
+- Link to Progress Entry: [GlobalContext Progress 2025-04-28 04:04:00]
+### [2025-04-28 03:38:16] Task: Debug TDD Green Phase Blockage (RAG Download Workflow)
+- Assigned to: debug
+- Description: Investigate persistent failures preventing completion of TDD Green Phase for RAG download workflow. `code` mode failed twice ([GlobalContext Progress 2025-04-28 02:43:32], [GlobalContext Progress 2025-04-28 03:21:02]) due to `apply_diff` errors on `__tests__/python/test_python_bridge.py`. Analyze failures, review `code` feedback, and either fix tests directly or diagnose root cause.
+- Expected deliverable: Diagnosis report and/or fixed `__tests__/python/test_python_bridge.py` file.
+- Status: completed
+- Completion time: 2025-04-28 04:02:58
+- Outcome: Fixed syntax errors in `lib/python_bridge.py` and refactored/corrected tests in `__tests__/python/test_python_bridge.py` (mocking, assertions, structure). Python tests now pass. Commit: `6746f13`.
+- Link to Progress Entry: [GlobalContext Progress 2025-04-28 03:38:04]
+### [2025-04-28 03:21:16] Task: TDD Green Phase - RAG Download Workflow (Spec v2.1) - Retry 1
+- Assigned to: code
+- Description: Retrying implementation of minimal code changes in `lib/python_bridge.py` and `src/lib/zlibrary-api.ts` to make failing tests pass, according to Spec v2.1. Delegating via `new_task` for fresh context due to previous tool failures.
+- Expected deliverable: Modified code files, confirmation of passing tests, and commit hash.
+- Status: failed
+- Completion time: 2025-04-28 03:37:14 (Early Return)
+- Outcome: Returned early again due to persistent `apply_diff` failures while modifying `__tests__/python/test_python_bridge.py`. Mode incorrectly believed `write_to_file` fallback was forbidden. See `memory-bank/feedback/code-feedback.md` [2025-04-28 03:36:37].
+- Link to Progress Entry: [GlobalContext Progress 2025-04-28 03:21:02]
+### [2025-04-28 02:43:46] Task: TDD Green Phase - RAG Download Workflow (Spec v2.1)
+- Assigned to: code
+- Description: Implement minimal code changes in `lib/python_bridge.py` and `src/lib/zlibrary-api.ts` to make the failing tests (established in Red Phase [GlobalContext Progress 2025-04-28 02:34:57]) pass, according to Spec v2.1.
+- Expected deliverable: Modified code files, confirmation of passing tests, and commit hash.
+- Status: failed
+- Completion time: 2025-04-28 03:17:29 (Early Return)
+- Outcome: Returned early due to persistent `apply_diff` failures while modifying `__tests__/python/test_python_bridge.py`, possibly context-related. See `memory-bank/feedback/code-feedback.md` [2025-04-28 03:17:29].
+- Link to Progress Entry: [GlobalContext Progress 2025-04-28 02:43:32]
+### [2025-04-28 02:39:25] Task: Update README.md
+- Assigned to: docs-writer
+- Description: User requested updating `README.md` to reflect current project status, including the RAG pipeline progress (Spec v2.1, TDD Red Phase complete), the inclusion of the `zlibrary` fork, and other key architectural decisions (e.g., ADR-002).
+- Expected deliverable: Updated `README.md` file content.
+- Status: completed
+- Completion time: 2025-04-28 02:42:35
+- Outcome: `README.md` updated to reflect current project status, RAG pipeline progress, `zlibrary` fork inclusion, and ADR-002 architecture.
+- Link to Progress Entry: [GlobalContext Progress 2025-04-28 02:39:11]
+### [2025-04-28 02:35:15] Task: TDD Red Phase - RAG Download Workflow (Spec v2.1)
+- Assigned to: tdd
+- Description: Write failing tests (Red phase) for the RAG download workflow implementation, specifically focusing on the changes introduced in spec v2.1 (using `bookDetails` from `search_books`, internal scraping via `_scrape_and_download` in Python bridge, calling `download_book` in `zlibrary` fork).
+- Expected deliverable: Failing/xfail test files and confirmation.
+- Status: completed (User confirmed completion 2025-04-28 02:38:09)
+- Completion time: 2025-04-28 02:38:09 (Assumed based on user confirmation)
+- Outcome: Failing tests established for RAG download workflow spec v2.1.
+- Link to Progress Entry: [GlobalContext Progress 2025-04-28 02:34:57]
+### [2025-04-28 02:23:43] Task: Version Control Cleanup (Git Debt)
+- Assigned to: devops
+- Description: Analyze `git status`, group uncommitted changes logically, and commit each group following best practices. Prioritized by user intervention.
+- Expected deliverable: Analysis, proposed commit plan, and execution upon approval.
+- Status: completed
+- Completion time: 2025-04-28 02:33:43
+- Outcome: Analyzed status, added `processed_rag_output/` to `.gitignore`, committed changes in 5 logical commits (87c4791, 61d153e, 8eb4e3b, df840fa, 4f103f2) on `feature/rag-file-output`. Working directory clean.
+- Link to Progress Entry: [GlobalContext Progress 2025-04-28 02:23:30]
+### [2025-04-24 17:53:18] Task: Version Control Cleanup and Commit
+- Assigned to: devops
+- Description: Analyze `git status`, group uncommitted changes logically, and commit them following best practices. Prioritized by user.
+- Expected deliverable: Analysis, proposed commit plan, and execution upon approval.
+- Status: completed
+- Completion time: 2025-04-24 17:59:17
+- Outcome: Successfully committed uncommitted changes (fba6ff6, dac35d0, 4410f50) on feature/rag-file-output.
+- Link to Progress Entry: [GlobalContext Progress 2025-04-24 17:52:23]
+
+### [2025-04-24 17:59:17] Task: TDD Red Phase - RAG Download Workflow (Spec v2.1)
+- Assigned to: tdd
+- Description: Write failing tests (Red phase) for the RAG download workflow implementation, specifically focusing on the changes introduced in spec v2.1 (using `bookDetails` from `search_books`, internal scraping via `_scrape_and_download`).
+- Expected deliverable: Failing/xfail test files and confirmation.
+- Status: pending
+- Link to Progress Entry: [GlobalContext Progress 2025-04-24 17:59:17]
+
+
+
+### [2025-04-24 03:52:00] Task: Implement `download_book` Method in Forked `zlibrary` Library
+- Assigned to: code
+- Description: Implement missing `download_book` async method in `zlibrary/src/zlibrary/libasync.py` on `feature/rag-file-output` branch.
+- Expected deliverable: Implemented method, updated deps, commit confirmation.
+- Status: completed
+- Completion time: 2025-04-24 03:52:00
+- Outcome: Implemented `download_book` using `httpx` and `aiofiles`. Added `DownloadError` exception. Added `httpx`/`aiofiles` to `zlibrary/pyproject.toml`. Committed (`8a30920`) to `feature/rag-file-output`. Blocker INT-RAG-003 resolved.
+- Link to Progress Entry: N/A
+
+### [2025-04-24 03:10:21] Task: Verify Integration of Redesigned RAG File Output
+- Assigned to: integration
+- Description: Verify redesigned RAG file output mechanism on `feature/rag-file-output` branch.
+- Expected deliverable: Confirmation report, test status, issues.
+- Status: completed (partially blocked)
+- Completion time: 2025-04-24 03:10:21
+- Outcome: `process_document_for_rag` verified successfully. Combined `download_book_to_file` blocked by missing `download_book` method in forked `zlibrary` lib (INT-RAG-003). Test suite passed with new TODOs/error (TEST-TODO-DISCREPANCY, TEST-REQ-ERROR).
+- Link to Progress Entry: N/A
+
+### [2025-04-24 02:21:47] Task: TDD Refactor Phase - RAG File Output Redesign
+- Assigned to: tdd
+- Description: Refactor RAG file output code on `feature/rag-file-output` branch.
+- Expected deliverable: Refactored code, passing tests, commit confirmation.
+- Status: completed
+- Completion time: 2025-04-24 02:21:47
+- Outcome: Refactored `lib/python_bridge.py` and `src/lib/zlibrary-api.ts` for clarity and DRYness. Tests confirmed passing. Changes committed (`a440e2a`) to `feature/rag-file-output`.
+- Link to Progress Entry: N/A
+
+### [2025-04-24 02:05:39] Task: Create Feature Branch and Commit RAG Green Phase Changes
+- Assigned to: devops
+- Description: Create branch `feature/rag-file-output` and commit Green Phase changes.
+- Expected deliverable: Confirmation of branch/commit success.
+- Status: completed
+- Completion time: 2025-04-24 02:05:39
+- Outcome: Branch `feature/rag-file-output` created. Green phase changes (`lib/python_bridge.py`, `__tests__/zlibrary-api.test.js`) committed (`d6bd8ab`). Currently on feature branch.
+- Link to Progress Entry: N/A
+
 ### [2025-04-24 00:57:19] Task: TDD Green Phase - Implement RAG File Output Redesign
 - Assigned to: code
 - Description: Implement redesigned RAG file output mechanism to pass failing tests.
@@ -451,6 +702,53 @@
 
 ### [2025-04-23 23:30:58] Task: Redesign RAG Pipeline Output Mechanism
 - Assigned to: architect
+### [2025-04-24 17:27:32] Intervention: Delegate Clause Invoked (Context > 50%)
+### [2025-04-28 02:20:01] Intervention: Prioritize Git Cleanup
+- **Trigger**: User input.
+- **Context**: Preparing to delegate TDD Red phase task for RAG download workflow.
+- **Action Taken**: Paused TDD delegation. Will delegate version control cleanup task to `devops`.
+- **Rationale**: User identified significant uncommitted changes ('git debt') that should be addressed before proceeding.
+- **Outcome**: Workflow redirected to address version control.
+- **Follow-up**: Delegate task to `devops`. Add reminder about version control to future task messages.
+- **Trigger**: Context window size reached 51%.
+- **Context**: Preparing to delegate RAG specification update task.
+- **Action Taken**: Halted task delegation. Initiated handover process as per Delegate Clause.
+- **Rationale**: Proactively manage context window limitations to prevent performance degradation or failure.
+- **Outcome**: Handover to new SPARC instance initiated.
+- **Follow-up**: Complete Memory Bank updates and generate handover message using `new_task`.
+
+### [2025-04-24 16:48:16] Intervention: User Corrected Download Strategy & Halted TDD Task
+- **Trigger**: User message clarifying previous context and halting the delegated `tdd` task.
+- **Context**: SPARC delegated a `tdd` task to fix `download_book` based on incomplete integration report, without addressing the core issue of obtaining the download URL.
+- **Action Taken**: Halted the `tdd` task. Acknowledged the need to redesign the download workflow based on scraping the book's *page URL* (obtained via search/details) to find the download link.
+- **Rationale**: Align with user's correct diagnosis that the fundamental problem is obtaining the download URL, requiring architectural replanning.
+- **Outcome**: TDD task halted. Will delegate redesign (with investigation) to `architect` mode.
+- **Follow-up**: Delegate redesign task to `architect`. [See Feedback 2025-04-24 16:41:02]
+
+### [2025-04-24 16:41:02] Intervention: User Corrected Download Strategy & Halted TDD Task
+- **Trigger**: User message clarifying previous context and halting the delegated `tdd` task.
+- **Context**: SPARC delegated a `tdd` task to fix `download_book` based on incomplete integration report, without addressing the core issue of obtaining the download URL.
+- **Action Taken**: Halted the `tdd` task. Acknowledged the need to redesign the download workflow based on scraping the book's *page URL* (obtained via search/details) to find the download link.
+- **Rationale**: Align with user's correct diagnosis that the fundamental problem is obtaining the download URL, requiring architectural replanning.
+- **Outcome**: TDD task halted. Will delegate redesign to `architect` mode.
+- **Follow-up**: Delegate redesign task to `architect`. [See Feedback 2025-04-24 16:41:02]
+
+### [2025-04-24 16:41:02] Intervention: User Corrected Download Strategy & Halted TDD Task
+- **Trigger**: User message clarifying previous context and halting the delegated `tdd` task.
+- **Context**: SPARC delegated a `tdd` task to fix `download_book` based on incomplete integration report, without addressing the core issue of obtaining the download URL.
+- **Action Taken**: Halted the `tdd` task. Acknowledged the need to redesign the download workflow based on scraping the book's *page URL* (obtained via search/details) to find the download link.
+- **Rationale**: Align with user's correct diagnosis that the fundamental problem is obtaining the download URL, requiring architectural replanning.
+- **Outcome**: TDD task halted. Will delegate redesign to `architect` mode.
+- **Follow-up**: Delegate redesign task to `architect`. [See Feedback 2025-04-24 16:41:02]
+
+### [2025-04-24 16:41:02] Intervention: User Corrected Download Strategy & Halted TDD Task
+- **Trigger**: User message clarifying previous context and halting the delegated `tdd` task.
+- **Context**: SPARC delegated a `tdd` task to fix `download_book` based on incomplete integration report, without addressing the core issue of obtaining the download URL.
+- **Action Taken**: Halted the `tdd` task. Acknowledged the need to redesign the download workflow based on scraping the book's *page URL* (obtained via search/details) to find the download link.
+- **Rationale**: Align with user's correct diagnosis that the fundamental problem is obtaining the download URL, requiring architectural replanning.
+- **Outcome**: TDD task halted. Will delegate redesign to `architect` mode.
+- **Follow-up**: Delegate redesign task to `architect`. [See Feedback 2025-04-24 16:41:02]
+
 - Description: Redesign RAG tools to save processed text to file and return path, addressing context overload issue.
 - Expected deliverable: Updated architecture docs and summary.
 - Status: completed
@@ -468,6 +766,13 @@
 - Link to Progress Entry: [GlobalContext Progress 2025-04-14 13:15:49]
 
 ### [2025-04-18 02:39:50] Task: Generate System Refinement Report
+# Workflow State (Current - Overwrite this section)
+- Current phase: Completion
+- Phase start: 2025-04-28 22:21:03
+- Current focus: All recent delegated tasks (debug, TDD, docs) completed successfully. Test suites passing. Documentation updated. Performing final pre-completion checks.
+- Next actions: Call `attempt_completion`.
+- Last Updated: 2025-04-28 22:21:03
+
 - Assigned to: system-refiner
 - Description: Analyze feedback, logs, and mode memories to propose improvements to Roo system rules (.clinerules-*), ensuring generalizability.
 - Expected deliverable: Detailed report with findings, options, and recommendations.
@@ -478,15 +783,54 @@
 
 
 
+# Workflow State (Current - Overwrite this section)
+- Current phase: Refinement (Version Control Cleanup)
+- Phase start: 2025-04-24 17:52:23
+- Current focus: Addressing user request to clean up uncommitted Git changes before proceeding with RAG implementation.
+- Next actions: Delegate Git status analysis and commit task to `devops` mode.
+- Last Updated: 2025-04-24 17:52:51
+
 ## Workflow State (Current - Overwrite this section)
-- Current phase: Implementation (Version Control)
-- Phase start: 2025-04-24 01:07:05
-- Current focus: Handling version control for completed Green Phase changes (RAG file output redesign) as per user request (create feature branch `feature/rag-file-output` and commit).
-- Next actions: Delegate Git operations (branch, add, commit) to `devops` mode.
-- Last Updated: 2025-04-24 01:07:05
+- Current phase: Integration
+## Workflow State (Current - Overwrite this section)
+## Workflow State (Current - Overwrite this section)
+- Current phase: Handover
+- Phase start: 2025-04-24 17:27:32
+- Current focus: Handing over orchestration to new SPARC instance due to context window limitations (Delegate Clause).
+- Next actions: Generate handover message via `new_task`.
+- Last Updated: 2025-04-24 17:27:32
+
+
+- Current phase: Architecture (Redesign - Download Workflow)
+- Phase start: 2025-04-24 16:48:47
+- Current focus: Addressing user intervention regarding flawed download strategy. Halted implementation/testing of `download_book`. Need `architect` to investigate codebase and design a robust workflow to scrape the book page URL (from search/details) to find the actual download link before attempting download.
+- Next actions: Delegate download workflow investigation and redesign task to `architect` mode.
+- Last Updated: 2025-04-24 16:48:47
+
+
+- Phase start: 2025-04-24 03:52:59
+- Current focus: Re-verifying the integration of the redesigned RAG file output mechanism, now that the `download_book` method has been implemented in the forked library (resolving INT-RAG-003). Still need to address test issues (TEST-TODO-DISCREPANCY, TEST-REQ-ERROR).
+- Next actions: Re-delegate integration verification task (focus on combined workflow) to `integration` mode.
+- Last Updated: 2025-04-24 03:52:59
 
 
 ### [2025-04-23 23:26:50] Intervention: User Identified Critical RAG Pipeline Design Flaw
+## Workflow State (Current - Overwrite this section)
+## Workflow State (Current - Overwrite this section)
+- Current phase: Architecture (Redesign - Download Workflow)
+- Phase start: 2025-04-24 16:41:45
+- Current focus: Addressing user intervention regarding flawed download strategy. Halted implementation/testing of `download_book`. Need to redesign the workflow to scrape the book page URL (from search/details) to find the actual download link before attempting download.
+- Next actions: Delegate download workflow redesign task (with investigation emphasis) to `architect` mode.
+- Last Updated: 2025-04-24 16:48:47
+
+
+- Current phase: Architecture (Redesign - Download Workflow)
+- Phase start: 2025-04-24 16:41:45
+- Current focus: Addressing user intervention regarding flawed download strategy. Halted implementation/testing of `download_book`. Need to redesign the workflow to scrape the book page URL (from search/details) to find the actual download link before attempting download.
+- Next actions: Delegate download workflow redesign task to `architect` mode.
+- Last Updated: 2025-04-24 16:41:45
+
+
 - **Trigger**: User denied `new_task` for Task 3 Integration Verification.
 ### [2025-04-24 01:02:21] Intervention: User Feedback on Version Control Practices
 - **Trigger**: User denied `new_task` delegation for TDD Refactor phase.
@@ -503,4 +847,12 @@
 - **Follow-up**: Delegate redesign task to `architect`. [See Feedback 2025-04-23 23:26:20]
 
 ## Intervention Log
+### [2025-04-24 17:52:23] Intervention: Prioritize Version Control Cleanup
+- **Trigger**: User input.
+- **Context**: SPARC was about to delegate TDD task after spec update.
+- **Action Taken**: Halted TDD delegation. Acknowledged user request to prioritize cleaning up uncommitted Git changes.
+- **Rationale**: Ensure proper version control hygiene before proceeding with new implementation phases.
+- **Outcome**: Task delegated to `devops` mode to analyze Git status and propose/execute commits.
+- **Follow-up**: Await `devops` analysis and commit plan. [See Feedback 2025-04-24 17:52:23]
+
 <!-- Append intervention details using the format below -->

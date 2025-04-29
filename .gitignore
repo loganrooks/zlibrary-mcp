@@ -70,3 +70,6 @@ __tests__/venv-manager.test.d.ts
 # __tests__/venv-manager.test.js
 __tests__/zlibrary-api.test.d.ts
 # __tests__/zlibrary-api.test.js
+
+# Ignore generated RAG output
+processed_rag_output/

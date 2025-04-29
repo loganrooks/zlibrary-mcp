@@ -79,15 +79,17 @@ const GetRecentBooksParamsSchema = z.object({
 });
 
 const DownloadBookToFileParamsSchema = z.object({
-  id: z.string().describe('Z-Library book ID'),
-  format: z.string().optional().describe('File format (e.g., "pdf", "epub")'),
+  // id: z.string().describe('Z-Library book ID'), // Replaced by bookDetails
+  // format: z.string().optional().describe('File format (e.g., "pdf", "epub")'), // Replaced by bookDetails
+  bookDetails: z.object({}).passthrough().describe('The full book details object obtained from search_books or get_book_by_id'), // Changed from z.record to z.object().passthrough()
   outputDir: z.string().optional().default('./downloads').describe('Directory to save the file to (default: "./downloads")'),
   process_for_rag: z.boolean().optional().describe('Whether to process the document content for RAG after download'),
+  processed_output_format: z.string().optional().describe('Desired output format for RAG processing (e.g., "text", "markdown")'), // Removed duplicate line
 });
 
 const ProcessDocumentForRagParamsSchema = z.object({
   file_path: z.string().describe('Path to the downloaded file to process'),
-  output_format: z.string().optional().default('text').describe('Desired output format (e.g., "text", "markdown")') // Future use
+  output_format: z.string().optional().describe('Desired output format (e.g., "text", "markdown")') // Re-applying again: Ensure it's purely optional, no default
 });
 
 // Define a type for the handler map
@@ -109,11 +111,6 @@ const handlers: HandlerMap = {
   getBookById: async (args: z.infer<typeof GetBookByIdParamsSchema>) => {
     try { return await zlibraryApi.getBookById(args); }
     catch (error: any) { return { error: { message: error.message || 'Failed to get book information' } }; }
-  },
-
-  getDownloadInfo: async (args: z.infer<typeof GetDownloadInfoParamsSchema>) => {
-    try { return await zlibraryApi.getDownloadInfo(args); }
-    catch (error: any) { return { error: { message: error.message || 'Failed to get download information' } }; }
   },
 
   fullTextSearch: async (args: z.infer<typeof FullTextSearchParamsSchema>) => {
@@ -188,11 +185,6 @@ const toolRegistry: Record<string, ToolRegistryEntry> = {
     description: 'Get detailed information about a book by its ID',
     schema: GetBookByIdParamsSchema,
     handler: handlers.getBookById,
-  },
-  get_download_info: {
-    description: 'Get download information for a book including its download URL',
-    schema: GetDownloadInfoParamsSchema,
-    handler: handlers.getDownloadInfo,
   },
   full_text_search: {
     description: 'Search for books containing specific text in their content',

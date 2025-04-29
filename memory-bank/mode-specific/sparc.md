@@ -438,6 +438,14 @@
 
 ## Delegations Log
 <!-- Append new delegation records here -->
+### [2025-04-28 21:40:16] Task: Investigate and Fix Test Suite Issues (TDD)
+- Assigned to: tdd
+- Description: Investigate and resolve the outstanding test suite issues identified as TEST-TODO-DISCREPANCY and TEST-REQ-ERROR.
+- Expected deliverable: Fixed tests, passing suite, and commit hash.
+- Status: completed
+- Completion time: 2025-04-28 21:59:35
+- Outcome: Resolved TEST-TODO-DISCREPANCY/TEST-REQ-ERROR. Removed obsolete Jest tests, fixed Pytest import/parser logic in `zlibrary/src/zlibrary/abs.py`. Both `npm test` &amp; `pytest` suites pass. Commit: `3e732b3`.
+- Link to Progress Entry: [Delegation Log 2025-04-24 03:10:21]
 ### [2025-04-28 20:51:37] Task: Implement `venv-manager` TODO Tests (TDD)
 - Assigned to: tdd
 - Description: Implement the pending tests marked with `// TODO:` comments within `__tests__/venv-manager.test.js`.

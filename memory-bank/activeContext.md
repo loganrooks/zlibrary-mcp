@@ -1,3 +1,6 @@
+[2025-04-28 22:04:00] - DocsWriter - Task Complete: Update Project Documentation - Reviewed and updated README.md to reflect recent changes (tool updates, test status, ADR-002). Verified consistency with related docs (RAG spec, ADR-002, architecture docs).
+[2025-04-28 21:59:35] - SPARC - TDD Complete: Fix Test Suite Issues - Received confirmation from `tdd`. TEST-TODO-DISCREPANCY/TEST-REQ-ERROR resolved. Obsolete Jest tests removed, Pytest import/parser fixed. Both `npm test` &amp; `pytest` suites pass. Commit: `3e732b3`.
+[2025-04-28 21:57:45] - TDD - Task Complete: Investigated and fixed test suite issues (TEST-TODO-DISCREPANCY, TEST-REQ-ERROR). Removed obsolete tests, fixed DownloadsPaginator parser. Both npm test and pytest suites pass. Commit: 3e732b3.
 [2025-04-28 21:39:57] - SPARC - Commit Attempted: `git commit -am "test: Implement venv-manager TODO tests"` - Executed command, assuming success despite undefined exit code.
 [2025-04-28 21:39:08] - SPARC - TDD Complete: Implement `venv-manager` TODO tests - Received confirmation. 9 TODO tests implemented in `__tests__/venv-manager.test.js`. Required functions exported from `src/lib/venv-manager.ts`. Test suite passes.
 [2025-04-28 21:18:00] - TDD - Green - Test 'should log warning but not throw if saving config fails' passed.

@@ -1,2 +1,6 @@
 # Optimizer Specific Memory
 <!-- Entries below should be added reverse chronologically (newest first) -->
+### Optimization: [2025-04-29 17:01:37] - Move Utility Script
+- **Target**: `get_venv_python_path.mjs` / **Type**: Modularity / **Desc**: Moved script from root to `scripts/` directory for better organization. / **Metrics Before**: N/A / **Metrics After**: N/A / **Related Debt**: [Ref: holistic-reviewer completion 2025-04-29 16:57:57] / **Related Issue**: N/A
+### Optimization: [2025-04-29 15:52:56] - Refactor python_bridge.py (RAG Extraction)
+- **Target**: `lib/python_bridge.py` / **Type**: Modularity / **Desc**: Extracted RAG document processing logic (EPUB/TXT/PDF parsing, Markdown generation, file saving) into new module `lib/rag_processing.py` to reduce file size and improve separation of concerns. / **Metrics Before**: `lib/python_bridge.py` 861 lines / **Metrics After**: `lib/python_bridge.py` ~350 lines (estimated), `lib/rag_processing.py` ~511 lines / **Related Debt**: [Ref: holistic-reviewer completion 2025-04-29 15:41:26] / **Related Issue**: N/A

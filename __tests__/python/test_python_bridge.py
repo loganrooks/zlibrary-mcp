@@ -826,6 +826,198 @@ def test_process_epub_markdown_generates_footnotes(tmp_path, mock_ebooklib, mock
     # Ensure footnote definition appears after the reference paragraph
     assert result.find("Some text with a reference[^1].") < result.find("[^1]: This is the footnote content.")
     # Removed incorrect assertions copied from list test below
+# --- New Tests for RAG Markdown Generation Refinement (Based on Spec v1.0 Anchors) ---
+
+@pytest.mark.xfail(reason="Markdown generation refinement not implemented yet")
+def test_pdf_paragraph(tmp_path, mock_fitz, mocker):
+    """Tests if normal PDF text blocks are formatted as paragraphs in Markdown."""
+    mock_open_func, mock_doc, mock_page = mock_fitz
+    mocker.patch('os.path.exists', return_value=True)
+    # Mock page.get_text("dict") to return a simple paragraph block
+    mock_page_dict = {
+        "blocks": [{
+            "type": 0, "bbox": (10, 10, 100, 20),
+            "lines": [{"spans": [{"size": 10, "flags": 0, "text": "This is a paragraph."}]}]
+        }]
+    }
+    mock_page.get_text.return_value = mock_page_dict # Mock the 'dict' call
+
+    result = _process_pdf(str(tmp_path / "test.pdf"), output_format='markdown')
+    assert result.strip() == "This is a paragraph."
+    mock_page.get_text.assert_called_once_with("dict", flags=mocker.ANY) # Check dict was called
+
+@pytest.mark.xfail(reason="Markdown generation refinement not implemented yet")
+def test_pdf_multiple_footnotes(tmp_path, mock_fitz, mocker):
+    """Tests handling multiple footnote references and definitions in PDF Markdown."""
+    mock_open_func, mock_doc, mock_page = mock_fitz
+    mocker.patch('os.path.exists', return_value=True)
+    mock_page_dict = {
+        "blocks": [
+            {"type": 0, "bbox": (10,10,200,20), "lines": [{"spans": [
+                {"size": 10, "flags": 0, "text": "Text with ref "},
+                {"size": 8, "flags": 1, "text": "1"}, # Superscript flag = 1
+                {"size": 10, "flags": 0, "text": " and ref "},
+                {"size": 8, "flags": 1, "text": "2"},
+                {"size": 10, "flags": 0, "text": "."},
+            ]}]},
+            {"type": 0, "bbox": (10,50,200,60), "lines": [{"spans": [ # Definition 1
+                {"size": 8, "flags": 1, "text": "1"},
+                {"size": 9, "flags": 0, "text": " First footnote content."},
+            ]}]},
+             {"type": 0, "bbox": (10,70,200,80), "lines": [{"spans": [ # Definition 2
+                {"size": 8, "flags": 1, "text": "2"},
+                {"size": 9, "flags": 0, "text": " Second footnote content."},
+            ]}]},
+        ]
+    }
+    mock_page.get_text.return_value = mock_page_dict
+    result = _process_pdf(str(tmp_path / "test.pdf"), output_format='markdown')
+    expected = """Text with ref [^1] and ref [^2].
+
+---
+[^1]: First footnote content.
+[^2]: Second footnote content.""" # Assuming --- separator and sorting
+    # Normalize whitespace for comparison
+    assert "\n".join(line.strip() for line in result.splitlines() if line.strip()) == "\n".join(line.strip() for line in expected.splitlines() if line.strip())
+
+@pytest.mark.xfail(reason="Markdown generation refinement not implemented yet")
+def test_pdf_output_format_text(tmp_path, mock_fitz, mocker):
+    """Tests that output_format='text' returns plain text for PDF."""
+    mock_open_func, mock_doc, mock_page = mock_fitz
+    mocker.patch('os.path.exists', return_value=True)
+    mock_page.get_text.return_value = "Plain text from PDF." # Mock the 'text' call
+
+    result = _process_pdf(str(tmp_path / "test.pdf"), output_format='text')
+    assert result == "Plain text from PDF."
+    mock_page.get_text.assert_called_once_with('text') # Verify 'text' was called
+
+@pytest.mark.xfail(reason="Markdown generation refinement not implemented yet")
+def test_pdf_output_format_markdown(tmp_path, mock_fitz, mocker):
+    """Tests that output_format='markdown' returns Markdown for PDF."""
+    mock_open_func, mock_doc, mock_page = mock_fitz
+    mocker.patch('os.path.exists', return_value=True)
+    # Mock page.get_text("dict") for Markdown path
+    mock_page_dict = {
+        "blocks": [{"type": 0, "bbox": (10,10,100,20), "lines": [{"spans": [{"size": 10, "flags": 0, "text": "Markdown text."}]}]}]
+    }
+    mock_page.get_text.return_value = mock_page_dict
+
+    result = _process_pdf(str(tmp_path / "test.pdf"), output_format='markdown')
+    assert result.strip() == "Markdown text." # Basic check
+    mock_page.get_text.assert_called_once_with("dict", flags=mocker.ANY) # Verify 'dict' was called
+
+@pytest.mark.xfail(reason="Markdown generation refinement not implemented yet")
+def test_epub_nested_lists(tmp_path, mock_ebooklib, mocker):
+    """Tests if _process_epub generates nested Markdown lists."""
+    mock_read_epub, mock_epub = mock_ebooklib
+    html_content = b"""
+    <html><body>
+        <ul>
+            <li>Item 1</li>
+            <li>Item 2
+                <ol>
+                    <li>Sub 2.1</li>
+                    <li>Sub 2.2</li>
+                </ol>
+            </li>
+            <li>Item 3</li>
+        </ul>
+    </body></html>
+    """
+    mock_item = MagicMock()
+    mock_item.get_content.return_value = html_content
+    mock_epub.get_items_of_type.return_value = [mock_item]
+
+    result = _process_epub(str(tmp_path / "test.epub"), output_format='markdown')
+    expected = """* Item 1
+* Item 2
+    1. Sub 2.1
+    2. Sub 2.2
+* Item 3"""
+    # Basic check, exact indentation might vary based on implementation
+    assert "Sub 2.1" in result
+    assert "Sub 2.2" in result
+    assert "* Item 1" in result.splitlines() # Check top level items
+
+@pytest.mark.xfail(reason="Markdown generation refinement not implemented yet")
+def test_epub_blockquote(tmp_path, mock_ebooklib, mocker):
+    """Tests if _process_epub generates Markdown blockquotes."""
+    mock_read_epub, mock_epub = mock_ebooklib
+    html_content = b'<html><body><blockquote>This is a quote.</blockquote></body></html>'
+    mock_item = MagicMock()
+    mock_item.get_content.return_value = html_content
+    mock_epub.get_items_of_type.return_value = [mock_item]
+
+    result = _process_epub(str(tmp_path / "test.epub"), output_format='markdown')
+    assert result.strip().startswith("> This is a quote.")
+
+@pytest.mark.xfail(reason="Markdown generation refinement not implemented yet")
+def test_epub_code_block(tmp_path, mock_ebooklib, mocker):
+    """Tests if _process_epub generates Markdown code blocks."""
+    mock_read_epub, mock_epub = mock_ebooklib
+    html_content = b'<html><body><pre><code>def hello():\n  print("world")</code></pre></body></html>'
+    mock_item = MagicMock()
+    mock_item.get_content.return_value = html_content
+    mock_epub.get_items_of_type.return_value = [mock_item]
+
+    result = _process_epub(str(tmp_path / "test.epub"), output_format='markdown')
+    expected = """```
+def hello():
+  print("world")
+```"""
+    assert result.strip() == expected.strip()
+
+@pytest.mark.xfail(reason="Markdown generation refinement not implemented yet")
+def test_epub_multiple_footnotes(tmp_path, mock_ebooklib, mocker):
+    """Tests handling multiple footnote references and definitions in EPUB Markdown."""
+    mock_read_epub, mock_epub = mock_ebooklib
+    html_content = b"""
+    <html><body>
+        <p>Text with ref <a href="#fn1" epub:type="noteref">1</a> and ref <a href="#fn2" epub:type="noteref">2</a>.</p>
+        <aside id="fn1" epub:type="footnote"><p>First footnote.</p></aside>
+        <aside id="fn2" epub:type="footnote"><p>Second footnote.</p></aside>
+    </body></html>
+    """
+    mock_item = MagicMock()
+    mock_item.get_content.return_value = html_content
+    mock_epub.get_items_of_type.return_value = [mock_item]
+
+    result = _process_epub(str(tmp_path / "test.epub"), output_format='markdown')
+    expected = """Text with ref [^1] and ref [^2].
+
+---
+[^1]: First footnote.
+[^2]: Second footnote."""
+    # Normalize whitespace for comparison
+    assert "\n".join(line.strip() for line in result.splitlines() if line.strip()) == "\n".join(line.strip() for line in expected.splitlines() if line.strip())
+
+
+@pytest.mark.xfail(reason="Markdown generation refinement not implemented yet")
+def test_epub_output_format_text(tmp_path, mock_ebooklib, mocker):
+    """Tests that output_format='text' returns plain text for EPUB."""
+    mock_read_epub, mock_epub = mock_ebooklib
+    html_content = b'<html><body><h1>Heading</h1><p>Paragraph.</p></body></html>'
+    mock_item = MagicMock()
+    mock_item.get_content.return_value = html_content
+    mock_epub.get_items_of_type.return_value = [mock_item]
+
+    result = _process_epub(str(tmp_path / "test.epub"), output_format='text')
+    assert "Heading" in result
+    assert "Paragraph" in result
+    assert "#" not in result # Should not contain Markdown
+
+@pytest.mark.xfail(reason="Markdown generation refinement not implemented yet")
+def test_epub_output_format_markdown(tmp_path, mock_ebooklib, mocker):
+    """Tests that output_format='markdown' returns Markdown for EPUB."""
+    mock_read_epub, mock_epub = mock_ebooklib
+    html_content = b'<html><body><h1>Heading</h1><p>Paragraph.</p></body></html>'
+    mock_item = MagicMock()
+    mock_item.get_content.return_value = html_content
+    mock_epub.get_items_of_type.return_value = [mock_item]
+
+    result = _process_epub(str(tmp_path / "test.epub"), output_format='markdown')
+    assert result.strip().startswith("# Heading")
+    assert "Paragraph." in result
 @pytest.mark.xfail(reason="Implementation does not exist yet")
 def test_process_document_epub_routing(tmp_path, mocker):
     epub_path = tmp_path / "test.epub"

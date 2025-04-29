@@ -1,5 +1,19 @@
 # SPARC Orchestrator Specific Memory
 <!-- Entries below should be added reverse chronologically (newest first) -->
+### [2025-04-29 02:42:55] Intervention: Delegate Clause Invoked (Context > 50%)
+- **Trigger**: Context window size reached 52%.
+- **Context**: Received RAG Markdown generation specification from `spec-pseudocode`. Preparing handover before TDD phase.
+- **Action Taken**: Halted task planning. Initiated handover process as per Delegate Clause. Updated Memory Bank.
+- **Rationale**: Proactively manage context window limitations to prevent performance degradation or failure.
+- **Outcome**: Handover to new SPARC instance initiated via `new_task`.
+- **Follow-up**: New SPARC instance to take over orchestration, starting with TDD Red phase for Markdown generation.
+### [2025-04-29 02:34:51] Intervention: Delegate Clause Invoked (Context > 50%)
+- **Trigger**: Context window size reached 105%.
+- **Context**: Received QA re-evaluation results. Preparing next steps for RAG Markdown structure refinement.
+- **Action Taken**: Halted task planning. Initiated handover process as per Delegate Clause. Updated Memory Bank.
+- **Rationale**: Proactively manage context window limitations to prevent performance degradation or failure.
+- **Outcome**: Handover to new SPARC instance initiated via `new_task`.
+- **Follow-up**: New SPARC instance to take over orchestration, focusing on RAG Markdown structure.
 ### [2025-04-28 23:51:39] Intervention: New Objectives Post-Completion Feedback
 - **Trigger**: User feedback after `attempt_completion`.
 - **Context**: User confirmed previous work merged to `master`. Requested workspace cleanup and RAG output quality evaluation.
@@ -445,6 +459,22 @@
 
 ## Delegations Log
 <!-- Append new delegation records here -->
+### [2025-04-29 02:40:07] Task: Define RAG Markdown Structure Generation Strategy
+- Assigned to: spec-pseudocode
+- Description: Define implementation strategy, pseudocode, and TDD anchors for adding Markdown structure (headings, lists, etc.) to PDF/EPUB processing in `lib/python_bridge.py`.
+- Expected deliverable: Specification document (`docs/rag-markdown-generation-spec.md`), pseudocode, TDD anchors.
+- Status: completed
+- Completion time: 2025-04-29 02:42:55
+- Outcome: Strategy defined using refined `PyMuPDF` heuristics and `BeautifulSoup` logic. Spec created: `docs/rag-markdown-generation-spec.md`.
+- Link to Progress Entry: [GlobalContext Progress 2025-04-29 02:42:55]
+### [2025-04-29 02:21:31] Task: Re-evaluate RAG Output Quality (Post-Refinement)
+- Assigned to: qa-tester
+- Description: Re-run QA evaluation for `process_document_for_rag` on commit `60c0764` against `docs/rag-output-quality-spec.md`.
+- Expected deliverable: Updated or new QA report (`docs/rag-output-qa-report-rerun-20250429.md`).
+- Status: completed
+- Completion time: 2025-04-29 02:34:51
+- Outcome: Partial success. PDF noise fixed. Markdown structure generation (PDF/EPUB) still fails spec. Report created: `docs/rag-output-qa-report-rerun-20250429.md`. Recommendations: Prioritize Markdown structure implementation, update TDD suite.
+- Link to Progress Entry: [activeContext.md entry 2025-04-29 02:34:51]
 ### [2025-04-28 22:00:24] Task: Update Project Documentation
 - Assigned to: docs-writer
 - Description: Update the project documentation to reflect the current status, recent changes, and ensure accuracy.
@@ -774,11 +804,11 @@
 
 ### [2025-04-18 02:39:50] Task: Generate System Refinement Report
 # Workflow State (Current - Overwrite this section)
-- Current phase: Refinement
-- Phase start: 2025-04-28 23:51:39
-- Current focus: Received user feedback post-completion. Confirmed merge to master. Initiating new task sequence: Workspace cleanup and RAG output quality evaluation.
-- Next actions: Create a new branch (`git checkout -b feature/rag-eval-cleanup`). Delegate workspace review/cleanup to `holistic-reviewer`.
-- Last Updated: 2025-04-28 23:52:46
+- Current phase: Refinement (Post-QA)
+- Phase start: 2025-04-29 02:34:51
+- Current focus: Handing over orchestration due to Delegate Clause. Next task for new instance: Address RAG Markdown structure deficiency identified in QA re-run (`docs/rag-output-qa-report-rerun-20250429.md`).
+- Next actions: [Handover via new_task]
+- Last Updated: 2025-04-29 02:35:48
 
 - Assigned to: system-refiner
 - Description: Analyze feedback, logs, and mode memories to propose improvements to Roo system rules (.clinerules-*), ensuring generalizability.
@@ -791,12 +821,11 @@
 
 
 # Workflow State (Current - Overwrite this section)
-- Current phase: Refinement (Version Control Cleanup)
-- Phase start: 2025-04-24 17:52:23
-- Current focus: Addressing user request to clean up uncommitted Git changes before proceeding with RAG implementation.
-- Next actions: Delegate Git status analysis and commit task to `devops` mode.
-- Last Updated: 2025-04-24 17:52:51
-
+- Current phase: Specification (Completed) -> Handover
+- Phase start: 2025-04-29 02:40:07
+- Current focus: RAG Markdown structure generation specification complete (`docs/rag-markdown-generation-spec.md`). Preparing handover due to Delegate Clause (Context 52%).
+- Next actions: Initiate handover to new SPARC instance for TDD Red phase.
+- Last Updated: 2025-04-29 02:44:13
 ## Workflow State (Current - Overwrite this section)
 - Current phase: Integration
 ## Workflow State (Current - Overwrite this section)

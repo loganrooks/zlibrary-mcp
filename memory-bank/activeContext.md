@@ -1,3 +1,11 @@
+[2025-04-29 02:42:55] - SPARC - Handover Triggered (Delegate Clause) - Context size 52% exceeds threshold. Preparing handover. Next step: TDD Red phase for Markdown generation.
+[2025-04-29 02:42:55] - SPARC - Spec/Pseudo Complete - Received spec `docs/rag-markdown-generation-spec.md` for RAG Markdown structure generation from `spec-pseudocode`.
+[2025-04-29 02:40:07] - SpecPseudo - Strategy Defined - Defined strategy for RAG Markdown generation (PDF/EPUB) in `lib/python_bridge.py`. Strategy involves refining existing `PyMuPDF` heuristics for PDF and enhancing `BeautifulSoup` logic for EPUB, avoiding new major dependencies. Generated pseudocode and TDD anchors. Preparing specification document. [Ref: Task `Define RAG Markdown Structure Generation Strategy`]
+[2025-04-29 02:34:51] - SPARC - Handover Triggered - Delegate Clause invoked due to context size (105%). Preparing handover to new SPARC instance. Next focus: Address RAG Markdown structure deficiency.
+[2025-04-29 02:34:51] - SPARC - QA Re-evaluation Complete - Received results from qa-tester. PDF noise fixed. Markdown structure generation (PDF/EPUB) still fails spec. See report: docs/rag-output-qa-report-rerun-20250429.md.
+[2025-04-29 02:33:00] - QATester - Completed - RAG output QA re-evaluation (commit `60c0764`). PDF processing significantly improved (noise reduced). Markdown structure issues persist for both PDF and EPUB. EPUB->Text unchanged. Preparing final report.
+[2025-04-29 02:20:23] - SPARC - Handover Initiated (Delegate Clause) - Suspicious context size drop (82% -> 10%) after TDD completion. Initiating handover to new SPARC instance proactively per Delegate Clause. Next step: Re-run QA evaluation on commit `60c0764`.
+[2025-04-29 02:20:07] - SPARC - Task Completed (tdd) - RAG output quality refinement finished (commit `60c0764`). Addressed PDF/EPUB issues via TDD. Tests passing. Preparing for QA re-evaluation / Handover.
 [2025-04-29 02:15:00] - TDD - Test Execution - Node.js test suite (npm test) passed.
 [2025-04-29 02:14:54] - TDD - Test Execution - Python test suite (pytest) passed (27 passed, 12 skipped, 5 xfailed, 9 xpassed).
 [2025-04-29 02:14:31] - TDD - Refactor - Refactored EPUB footnote handling in _process_epub (added comments).

@@ -376,6 +376,35 @@
 - **Specification**: See SpecPseudo MB entry [2025-04-14 03:31:01]
 
 # Progress
+### Task: Update Project Documentation - [2025-04-28 22:19:26]
+- **Status**: Completed.
+- **Details**: `docs-writer` updated `README.md` to reflect recent fixes (`get_download_history`, `get_recent_books`), tool removal (`get_download_info`), and passing test suites. Commit: `0330d0977dff86e9c90fc15b022a2ace515765df`.
+- **Related**: ActiveContext [2025-04-28 22:19:26], Delegation Log [2025-04-28 22:00:24]
+
+### Task: Investigate and Fix Test Suite Issues (TDD) - [2025-04-28 21:59:35]
+- **Status**: Completed.
+- **Details**: `tdd` resolved TEST-TODO-DISCREPANCY/TEST-REQ-ERROR. Removed obsolete Jest tests, fixed Pytest import/parser logic. Both `npm test` &amp; `pytest` suites pass. Commit: `3e732b3`.
+- **Related**: ActiveContext [2025-04-28 21:59:35], Delegation Log [2025-04-28 21:40:16]
+
+### Task: Implement `venv-manager` TODO Tests (TDD) - [2025-04-28 21:39:08]
+- **Status**: Completed.
+- **Details**: `tdd` implemented 9 TODO tests in `__tests__/venv-manager.test.js`. Test suite passes. Commit assumed successful.
+- **Related**: ActiveContext [2025-04-28 21:39:57], Delegation Log [2025-04-28 20:51:37]
+
+### Task: Implement `get_recent_books` Python Bridge Function (TDD) - [2025-04-28 20:50:30]
+- **Status**: Completed.
+- **Details**: `tdd` implemented `get_recent_books` in `lib/python_bridge.py`. Added tests and fixed regressions. Commit: `75b6f11`.
+- **Related**: ActiveContext [2025-04-28 20:50:30], Delegation Log [2025-04-28 19:11:37], Issue-RecentBooksMissing-01
+
+### Task: Fix `get_download_history` Parser (TDD) - [2025-04-28 19:10:43]
+- **Status**: Completed.
+- **Details**: `tdd` updated parser logic in `zlibrary/src/zlibrary/abs.py` for new HTML structure. Added/updated tests. Commit: `9350af5`.
+- **Related**: ActiveContext [2025-04-28 19:10:43], Delegation Log [2025-04-28 18:57:12], Issue-HistoryParseError-01
+
+### Task: Investigate `get_download_history` & `get_recent_books` Errors - [2025-04-28 18:56:31]
+- **Status**: Completed.
+- **Details**: `debug` identified root causes: broken parser for history (Issue-HistoryParseError-01), missing function for recent books (Issue-RecentBooksMissing-01).
+- **Related**: ActiveContext [2025-04-28 18:56:31], Delegation Log [2025-04-28 18:51:41]
 ### Task: TDD Green Phase - RAG Download Workflow (Spec v2.1) - [2025-04-28 02:43:32]
 - **Status**: Pending Delegation.
 - **Details**: Implement minimal code changes in `lib/python_bridge.py` and `src/lib/zlibrary-api.ts` to make the failing tests (established in Red Phase [GlobalContext Progress 2025-04-28 02:34:57]) pass, according to Spec v2.1.

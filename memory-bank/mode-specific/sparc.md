@@ -459,6 +459,14 @@
 
 ## Delegations Log
 <!-- Append new delegation records here -->
+### [2025-04-29 02:51:06] Task: TDD Red Phase - RAG Markdown Structure Generation
+- Assigned to: tdd
+- Description: Implement failing tests (Red phase) for RAG Markdown structure generation based on spec `docs/rag-markdown-generation-spec.md`.
+- Expected deliverable: Failing/xfail tests in `__tests__/python/test_python_bridge.py`, confirmation, commit hash.
+- Status: completed
+- Completion time: 2025-04-29 02:51:06
+- Outcome: Added 10 xfail tests covering PDF/EPUB Markdown structure. Tests confirmed failing. Commit: `05985b2`.
+- Link to Progress Entry: [activeContext.md entry 2025-04-29 02:51:06]
 ### [2025-04-29 02:40:07] Task: Define RAG Markdown Structure Generation Strategy
 - Assigned to: spec-pseudocode
 - Description: Define implementation strategy, pseudocode, and TDD anchors for adding Markdown structure (headings, lists, etc.) to PDF/EPUB processing in `lib/python_bridge.py`.
@@ -875,6 +883,13 @@
 - **Rationale**: Ensure code changes are properly tracked in version control before refactoring begins.
 - **Outcome**: Refactor task halted. Querying user via `ask_followup_question`.
 - **Follow-up**: Await user response on Git strategy. [See Feedback 2025-04-24 01:02:21]
+### [2025-04-29 02:51:06] Intervention: Delegate Clause Invoked (Context > 50%)
+- **Trigger**: Context window size reported as 134%.
+- **Context**: Received TDD Red phase completion from `tdd` mode. Preparing for TDD Green phase delegation.
+- **Action Taken**: Halted task planning. Initiating handover process as per Delegate Clause. Updating Memory Bank.
+- **Rationale**: Proactively manage context window limitations to prevent performance degradation or failure.
+- **Outcome**: Handover to new SPARC instance to be initiated via `new_task`.
+- **Follow-up**: New SPARC instance to take over orchestration, starting with TDD Green phase for RAG Markdown generation. [See activeContext.md entry 2025-04-29 02:51:06]
 
 - **Context**: SPARC delegated verification based on existing specs where RAG tools return full processed text content.
 - **Action Taken**: Halted Task 2 & 3 integration verification. Acknowledged user feedback that returning full text content overloads agent context. Confirmed RAG tools must be redesigned to save processed text to a file and return the file path.

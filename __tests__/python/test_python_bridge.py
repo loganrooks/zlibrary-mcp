@@ -1663,8 +1663,8 @@ async def test_process_document_raises_save_error(mock_process_epub, mock_save, 
     # Call the function and expect it to return an error dict, not raise IOError
     result = await process_document(str(epub_path))
 
-    mock_process_epub.assert_called_once_with(str(epub_path))
-    mock_save.assert_called_once_with(str(epub_path), "EPUB Content", 'txt')
+    mock_process_epub.assert_called_once_with(str(epub_path), 'text') # Expect 'text' format arg
+    mock_save.assert_called_once_with(str(epub_path), "EPUB Content", 'text') # Expect 'text' format arg
     # Assert the returned dictionary contains the expected error message
     assert "error" in result
     # <<< FIXED: Assert correct wrapped error message

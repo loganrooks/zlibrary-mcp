@@ -130,6 +130,12 @@
 - **Coverage Change**: N/A
 - **Notes**: Confirmed `test_downloads_paginator_parse_page_old_structure_raises_error` passes (correctly raises error) and `test_downloads_paginator_parse_page_new_structure` xfails as expected before implementation fix.
 ## Test Execution Results
+### Test Execution: Unit (pytest - RAG Markdown Red Phase) - [2025-04-29 02:48:41]
+- **Trigger**: Manual (`.../python -m pytest __tests__/python/test_python_bridge.py`) after adding failing tests.
+- **Outcome**: PASS (with xfails/xpasses) / **Summary**: 27 passed, 12 skipped, 12 xfailed, 12 xpassed
+- **Failed Tests**: None (All relevant new tests are xfailed as expected).
+- **Coverage Change**: N/A
+- **Notes**: Confirmed new tests for refined Markdown generation (PDF/EPUB) are collected and marked xfailed. Red phase established.
 ### Test Execution: Regression (pytest - Post `get_download_info` Removal) - [2025-04-28 18:49:16]
 - **Trigger**: Manual (`/home/rookslog/.cache/zlibrary-mcp/zlibrary-mcp-venv/bin/python -m pytest __tests__/python/`) after removing `get_download_info` code and tests.
 - **Outcome**: PASS
@@ -446,6 +452,11 @@
 - **Red**: N/A (Refactor phase following Green Phase commit `e58da14` and cleanup commit `b4a280c`)
 - **Green**: N/A (Refactor phase)
 - **Refactor**:
+### TDD Cycle: RAG Markdown Generation Refinement - [2025-04-29 02:48:54]
+- **Red**: Added 10 failing tests (`@pytest.mark.xfail`) to `__tests__/python/test_python_bridge.py` covering PDF/EPUB paragraphs, nested lists, blockquotes, code blocks, multiple footnotes, and output format routing. / Test File: `__tests__/python/test_python_bridge.py`
+- **Green**: N/A
+- **Refactor**: N/A
+- **Outcome**: Red phase complete. Tests confirmed xfailing. Commit: 05985b2.
     - `lib/python_bridge.py`: Removed debug logs from `_scrape_and_download`. Standardized path handling in `_scrape_and_download` using `pathlib`. Removed obsolete `EBOOKLIB_AVAILABLE` check from `_process_epub`. Removed unused `domain_arg` logic from `main` function for `get_by_id` and `get_download_info`.
     - `__tests__/python/test_python_bridge.py`: Removed obsolete test `test_process_epub_ebooklib_not_available`.
     - `src/lib/zlibrary-api.ts`: Reviewed, no changes needed.
@@ -711,6 +722,21 @@
 
 ### Test Plan: Global Execution Fix (Venv & Import) - 2025-04-14 03:35:59
 ### Test Plan: RAG Document Processing Pipeline - 2025-04-14 12:24:17
+### Test Plan: RAG Markdown Generation Refinement - [2025-04-29 02:48:54]
+- **Objective**: Implement refined Markdown generation for PDF/EPUB based on `docs/rag-markdown-generation-spec.md` v1.0.
+- **Scope**: `_process_pdf`, `_process_epub`, and new helpers in `lib/python_bridge.py`.
+- **Test Cases**:
+    - `test_pdf_paragraph`: Verify normal text block -> paragraph / Status: Red (xfail)
+    - `test_pdf_multiple_footnotes`: Verify multiple refs/defs -> correct Markdown / Status: Red (xfail)
+    - `test_pdf_output_format_text`: Verify `output_format='text'` -> plain text / Status: Red (xfail)
+    - `test_pdf_output_format_markdown`: Verify `output_format='markdown'` -> Markdown / Status: Red (xfail)
+    - `test_epub_nested_lists`: Verify nested `ul`/`ol` -> nested Markdown lists / Status: Red (xfail)
+    - `test_epub_blockquote`: Verify `<blockquote>` -> `> Quote` / Status: Red (xfail)
+    - `test_epub_code_block`: Verify `<pre><code>` -> fenced code block / Status: Red (xfail)
+    - `test_epub_multiple_footnotes`: Verify multiple refs/defs -> correct Markdown / Status: Red (xfail)
+    - `test_epub_output_format_text`: Verify `output_format='text'` -> plain text / Status: Red (xfail)
+    - `test_epub_output_format_markdown`: Verify `output_format='markdown'` -> Markdown / Status: Red (xfail)
+- **Related Requirements**: `docs/rag-markdown-generation-spec.md`, `memory-bank/mode-specific/spec-pseudocode.md` [2025-04-29 02:40:07]
 - **Objective**: Drive implementation of RAG pipeline features (tool updates, new tool, Node handlers, Python processing, dependency management).
 - **Scope**: `index.js`, `lib/zlibrary-api.js`, `lib/python-bridge.py`, `lib/venv-manager.js`, `__tests__/python/test_python_bridge.py`.
 - **Test Cases**:

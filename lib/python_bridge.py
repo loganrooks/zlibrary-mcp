@@ -212,104 +212,275 @@ async def get_recent_books(count=10, format=None):
 
 # --- RAG Document Processing Functions ---
 
-def _process_epub(file_path):
-    """Extracts text content from an EPUB file."""
-    # The import itself will raise ImportError if ebooklib is not available.
-    # No need for the EBOOKLIB_AVAILABLE flag check here.
-    # if not EBOOKLIB_AVAILABLE:
-    #      raise ImportError("Required library 'ebooklib' is not installed or available.")
+# --- PDF Markdown Helpers ---
+
+def _analyze_pdf_block(block):
+  """Analyzes a PyMuPDF text block to infer structure (heading level, list type)."""
+  # Heuristic logic based on font size, flags, position, text patterns
+  heading_level = 0
+  is_list_item = False
+  list_type = None # 'ul' or 'ol'
+  list_indent = 0 # Placeholder
+  text_content = ""
+  spans = []
+
+  if block.get('type') == 0: # Text block
+    # Aggregate text and span info
+    for line in block.get('lines', []):
+      for span in line.get('spans', []):
+        spans.append(span)
+        text_content += span.get('text', '')
+
+    if spans:
+      first_span = spans[0]
+      font_size = first_span.get('size', 10)
+      flags = first_span.get('flags', 0)
+      is_bold = flags & 2 # Font flag for bold
+
+      # Heading heuristic (example, needs tuning)
+      if font_size > 18 or (font_size > 14 and is_bold): heading_level = 1
+      elif font_size > 14 or (font_size > 12 and is_bold): heading_level = 2
+      elif font_size > 12 or (font_size > 11 and is_bold): heading_level = 3
+      # ... more levels ...
+
+      # List heuristic (example, needs tuning)
+      trimmed_text = text_content.strip()
+      # Basic unordered list check
+      if trimmed_text.startswith(('•', '*', '-')):
+        is_list_item = True
+        list_type = 'ul'
+        # Indentation could be inferred from block['bbox'][0] (x-coordinate)
+      # Basic ordered list check
+      elif re.match(r"^\d+\.\s+", trimmed_text):
+        is_list_item = True
+        list_type = 'ol'
+      # ... more complex list detection (e.g., a), i.) ...
+
+  return {
+    'heading_level': heading_level,
+    'is_list_item': is_list_item,
+    'list_type': list_type,
+    'list_indent': list_indent, # Placeholder for future nesting use
+    'text': text_content.strip(),
+    'spans': spans # Pass spans for footnote detection
+  }
+
+def _format_pdf_markdown(page):
+  """Generates Markdown string from a PyMuPDF page object."""
+  blocks = page.get_text("dict", flags=fitz.TEXTFLAGS_DICT).get("blocks", [])
+  markdown_lines = []
+  footnote_defs = {} # Store footnote definitions [^id]: content
+  current_list_type = None
+  # list_level = 0 # Basic nesting tracker - deferred
+
+  for block in blocks:
+    analysis = _analyze_pdf_block(block)
+    text = analysis['text']
+    spans = analysis['spans']
+
+    if not text: continue
+
+    # Footnote Reference/Definition Detection (using superscript flag)
+    processed_text_parts = []
+    potential_def_id = None
+    first_span_in_block = True
+    for span in spans:
+        span_text = span.get('text', '')
+        flags = span.get('flags', 0)
+        is_superscript = flags & 1 # Superscript flag
+
+        if is_superscript and span_text.isdigit():
+            fn_id = span_text
+            # Definition heuristic: superscript number at start of block
+            if first_span_in_block:
+                potential_def_id = fn_id
+                # Don't add the number itself to the text for definitions
+            else: # Reference
+                processed_text_parts.append(f"[^{fn_id}]")
+        else:
+            processed_text_parts.append(span_text)
+        first_span_in_block = False
+
+    processed_text = "".join(processed_text_parts).strip()
+
+    # Store definition if found, otherwise format content
+    if potential_def_id:
+        # The text following the superscript number is the definition
+        footnote_defs[potential_def_id] = processed_text
+        continue # Don't add definition block as regular content
+
+    # Format based on analysis
+    if analysis['heading_level'] > 0:
+      markdown_lines.append(f"{'#' * analysis['heading_level']} {processed_text}")
+      current_list_type = None # Reset list context after heading
+    elif analysis['is_list_item']:
+      # Basic list handling (needs refinement for nesting based on indent)
+      # Remove original list marker from text if present
+      if analysis['list_type'] == 'ul':
+          clean_text = re.sub(r"^[\*•-]\s*", "", processed_text).strip()
+          markdown_lines.append(f"* {clean_text}")
+      elif analysis['list_type'] == 'ol':
+          clean_text = re.sub(r"^\d+\.\s*", "", processed_text).strip()
+          markdown_lines.append(f"1. {clean_text}") # Simple numbering, needs context for correct sequence
+      current_list_type = analysis['list_type']
+    else: # Regular paragraph
+      # Only add if it's not empty after processing
+      if processed_text:
+          markdown_lines.append(processed_text)
+      current_list_type = None # Reset list context
+
+  # Append footnote definitions at the end
+  if footnote_defs:
+      markdown_lines.append("\n---") # Add separator
+      for fn_id, fn_text in sorted(footnote_defs.items()):
+          markdown_lines.append(f"[^{fn_id}]: {fn_text}")
+
+  # Join lines with double newlines for paragraph breaks
+  return "\n\n".join(markdown_lines).strip()
+
+
+# --- EPUB Markdown Helpers ---
+
+def _epub_node_to_markdown(node, footnote_defs, list_level=0):
+  """Recursively converts BeautifulSoup node to Markdown string."""
+  markdown_parts = []
+  node_name = getattr(node, 'name', None)
+  indent = "  " * list_level # Indentation for nested lists
+
+  if node_name == 'h1': prefix = '# '
+  elif node_name == 'h2': prefix = '## '
+  elif node_name == 'h3': prefix = '### '
+  elif node_name == 'h4': prefix = '#### '
+  elif node_name == 'h5': prefix = '##### '
+  elif node_name == 'h6': prefix = '###### '
+  elif node_name == 'p': prefix = ''
+  elif node_name == 'ul':
+      # Handle UL items recursively
+      for child in node.find_all('li', recursive=False):
+          item_text = _epub_node_to_markdown(child, footnote_defs, list_level + 1).strip()
+          if item_text: markdown_parts.append(f"{indent}* {item_text}")
+      return "\n".join(markdown_parts) # Return joined list items
+  elif node_name == 'ol':
+      # Handle OL items recursively
+      for i, child in enumerate(node.find_all('li', recursive=False)):
+          item_text = _epub_node_to_markdown(child, footnote_defs, list_level + 1).strip()
+          if item_text: markdown_parts.append(f"{indent}{i+1}. {item_text}")
+      return "\n".join(markdown_parts) # Return joined list items
+  elif node_name == 'li':
+      # Process content within LI, prefix handled by parent ul/ol
+      prefix = ''
+  elif node_name == 'blockquote': prefix = '> '
+  elif node_name == 'pre':
+      # Handle code blocks
+      code_content = node.get_text() # Keep formatting
+      return f"```\n{code_content}\n```"
+  elif node_name == 'a' and node.get('epub:type') == 'noteref':
+      # Handle footnote reference
+      ref_id_text = node.get_text(strip=True)
+      ref_id_href = node.get('href', '')
+      ref_id = None
+      if ref_id_text.isdigit():
+          ref_id = ref_id_text
+      elif '#' in ref_id_href:
+          match = re.search(r'(\d+)$', ref_id_href) # Look for digits at the end
+          if match: ref_id = match.group(1)
+
+      if ref_id: return f"[^{ref_id}]"
+      else: return "" # Ignore if ID not found
+  elif node_name == 'aside' and node.get('epub:type') == 'footnote':
+      # Store footnote definition and return empty (handled separately)
+      fn_id_attr = node.get('id', '')
+      fn_id_match = re.search(r'(\d+)$', fn_id_attr) # Look for digits at the end
+      fn_id = fn_id_match.group(1) if fn_id_match else None
+      # Process the *content* of the aside tag, not the tag itself recursively
+      fn_content_parts = []
+      for child in node.children:
+          if isinstance(child, str):
+              cleaned_text = child.strip()
+              if cleaned_text: fn_content_parts.append(cleaned_text)
+          elif getattr(child, 'name', None):
+              child_md = _epub_node_to_markdown(child, footnote_defs, list_level) # Process children
+              if child_md: fn_content_parts.append(child_md)
+      fn_text = " ".join(fn_content_parts).strip()
+
+      if fn_id and fn_text:
+          # Remove potential self-reference like '[^1]' if it's the start
+          fn_text = re.sub(r"^\[\^" + re.escape(fn_id) + r"\]\s*", "", fn_text).strip()
+          footnote_defs[fn_id] = fn_text
+      return "" # Don't include definition inline
+  else:
+      # Default: process children or get text
+      prefix = ''
+
+  # Process children recursively or get text content
+  content_parts = []
+  for child in getattr(node, 'children', []):
+      if isinstance(child, str):
+          # Keep significant whitespace, strip leading/trailing only
+          cleaned_text = child # Don't strip internal whitespace yet
+          if cleaned_text: content_parts.append(cleaned_text)
+      elif getattr(child, 'name', None): # It's another tag
+          child_md = _epub_node_to_markdown(child, footnote_defs, list_level)
+          if child_md: content_parts.append(child_md)
+
+  # Join parts, handling whitespace carefully
+  full_content = "".join(content_parts)
+  # Collapse multiple whitespace chars but keep single newlines for structure
+  full_content = re.sub(r'\s+', ' ', full_content).strip()
+
+  # Apply prefix if content exists
+  if full_content:
+      # Handle blockquotes needing prefix on each line (if content has newlines)
+      if prefix == '> ' and '\n' in full_content:
+          return '> ' + full_content.replace('\n', '\n> ')
+      else:
+          return prefix + full_content
+  else:
+      return ""
+
+
+# --- Main Processing Functions (Refactored) ---
+
+def _process_epub(file_path_str: str, output_format: str = 'text') -> str:
+    """Extracts text content from an EPUB file, optionally generating Markdown."""
     try:
-        # Assuming ebooklib is available if we pass the check above
-        book = epub.read_epub(file_path)
-        content = []
-        for item in book.get_items_of_type(ebooklib.ITEM_DOCUMENT):
-            soup = BeautifulSoup(item.get_content(), 'html.parser')
-            # --- Refactored Markdown Heading/List/Footnote Generation ---
-            item_content = []
-            footnote_defs = {} # Store definitions for this item { '1': 'content' }
+        book = epub.read_epub(file_path_str)
+        all_content_parts = []
+        footnote_defs = {} # Collect across all items
 
-            # --- Refactored Footnote Handling ---
-            # First pass: Find, store, and remove footnote definitions (<aside epub:type="footnote">)
-            # This prevents them from being processed as regular content later.
-            for footnote_element in soup.find_all(attrs={"epub:type": "footnote"}):
-                footnote_id = footnote_element.get('id')
-                if footnote_id:
-                    # Extract number from id (e.g., 'fn1' -> '1')
-                    num_match = re.search(r'\d+', footnote_id)
-                    if num_match:
-                        num = num_match.group(0)
-                        footnote_text = footnote_element.get_text(strip=True) # Use different variable name
-                        if footnote_text:
-                            footnote_defs[num] = footnote_text # Store the text
-                            footnote_element.decompose() # Remove from soup
+        items = book.get_items_of_type(ebooklib.ITEM_DOCUMENT)
+        for item in items:
+            html_content = item.get_content().decode('utf-8', errors='ignore')
+            soup = BeautifulSoup(html_content, 'lxml')
 
-            # Second pass: Process main content elements (now excluding footnote definitions)
-            for element in soup.body.find_all(recursive=False): # Process top-level elements
-                # Handle footnote references (<a> tags with epub:type="noteref") within elements
-                # before getting the element's main text.
-                for noteref in element.find_all('a', attrs={"epub:type": "noteref"}):
-                    ref_num_text = noteref.get_text(strip=True)
-                    ref_num_href = noteref.get('href', '')
-                    num = None
-                    if ref_num_text.isdigit():
-                        num = ref_num_text
-                    elif '#' in ref_num_href: # Try extracting from href like #fn1
-                        num_match = re.search(r'\d+', ref_num_href)
-                        if num_match:
-                            num = num_match.group(0)
+            if output_format == 'markdown':
+                item_md_parts = []
+                # Process body content, collecting footnote defs
+                if soup.body:
+                    for element in soup.body.children: # Iterate direct children
+                         md_part = _epub_node_to_markdown(element, footnote_defs)
+                         if md_part: item_md_parts.append(md_part)
+                item_markdown = "\n\n".join(item_md_parts).strip() # Join parts with double newline
+                if item_markdown: all_content_parts.append(item_markdown)
+            else: # Plain text
+                # Basic text extraction, could be improved
+                text = soup.get_text(separator='\n', strip=True) # Use newline separator
+                if text: all_content_parts.append(text)
 
-                    if num:
-                        # Replace the <a> tag with Markdown footnote marker
-                        noteref.replace_with(f"[^{num}]")
-                    else:
-                        noteref.decompose() # Remove if number couldn't be found
+        # Append collected footnote definitions for Markdown
+        if output_format == 'markdown' and footnote_defs:
+            fn_section = ["\n\n---"] # Separator
+            for fn_id, fn_text in sorted(footnote_defs.items()):
+                fn_section.append(f"[^{fn_id}]: {fn_text}")
+            all_content_parts.append("\n".join(fn_section))
 
-                # Now get text after potential modifications
-                text = element.get_text(strip=True)
-                if not text and element.name not in ['ul', 'ol']: # Allow empty lists
-                    continue # Skip empty elements unless it's a list container
-
-                # --- Refactored List Generation ---
-                # Handle Unordered Lists (ul)
-                if element.name == 'ul':
-                    for li in element.find_all('li', recursive=False): # Process direct children li
-                        li_text = li.get_text(strip=True)
-                        if li_text:
-                            item_content.append(f"* {li_text}") # Use '*' marker
-                    continue # Handled list, move to next top-level element
-                # Handle Ordered Lists (ol)
-                elif element.name == 'ol':
-                    for i, li in enumerate(element.find_all('li', recursive=False)): # Process direct children li
-                        li_text = li.get_text(strip=True)
-                        if li_text:
-                            item_content.append(f"{i + 1}. {li_text}") # Use numbered marker
-                    continue # Handled list, move to next top-level element
-                # --- End Refactored List Generation ---
-
-                # Map HTML heading tags to Markdown (if not a list)
-                heading_level = 0
-                if element.name.startswith('h') and len(element.name) == 2 and element.name[1].isdigit():
-                    heading_level = int(element.name[1])
-
-                if 1 <= heading_level <= 6:
-                    item_content.append(f"{'#' * heading_level} {text}")
-                else: # Paragraph or other block element
-                    item_content.append(text)
-
-            if not item_content: # Fallback if no relevant tags found
-                 fallback_text = soup.get_text(strip=True)
-                 if fallback_text:
-                     content.append(fallback_text)
-            elif item_content: # Only append if we actually gathered content
-                 # Append collected footnote definitions for this item
-                 if footnote_defs:
-                     for num, def_text in sorted(footnote_defs.items()):
-                         item_content.append(f"[^{num}]: {def_text}")
-                 content.append("\n\n".join(item_content))
-            # --- End Refactored Generations ---
-        return "\n\n".join(content) # Join content from different items
+        full_content = "\n\n".join(all_content_parts).strip()
+        if not full_content: raise ValueError("EPUB contains no extractable content")
+        return full_content
     except Exception as e:
-        raise Exception(f"Error processing EPUB {file_path}: {e}")
+        logging.exception(f"Error processing EPUB {file_path_str}") # Log full traceback
+        raise Exception(f"Error processing EPUB {file_path_str}: {e}") from e
+
 
 def _process_txt(file_path):
     """Reads content from a TXT file."""
@@ -322,200 +493,69 @@ def _process_txt(file_path):
         raise Exception(f"Error processing TXT {file_path}: {e}")
 
 
-def _process_pdf(file_path: str, output_format: str = 'text') -> str: # Add output_format arg
+def _process_pdf(file_path: str, output_format: str = 'text') -> str:
     """
     Extracts text content from a PDF file using PyMuPDF (fitz), optionally
     generating basic Markdown structure.
-
-    Args:
-        file_path: The absolute path to the PDF file.
-        output_format: The desired output format ('text' or 'markdown').
-
-    Returns:
-        The extracted content as plain text or basic Markdown.
-
-    Raises:
-        FileNotFoundError: If the file_path does not exist.
-        ValueError: If the PDF is encrypted or contains no extractable text.
-        RuntimeError: If there's an error opening or processing the PDF.
-        ImportError: If fitz (PyMuPDF) is not installed.
     """
-    # Assuming logging is configured elsewhere or basicConfig is used
-    # logging.basicConfig(level=logging.INFO) # Uncomment if basic logging needed
-    logging.info(f"Processing PDF: {file_path}")
+    logging.info(f"Processing PDF: {file_path} (Format: {output_format})")
     if not os.path.exists(file_path):
         raise FileNotFoundError(f"File not found: {file_path}")
 
-    doc = None  # Initialize doc to None for finally block
+    doc = None
     try:
-        # Attempt to open the PDF
         doc = fitz.open(file_path)
-
-        # Check for encryption
         if doc.is_encrypted:
             logging.warning(f"PDF is encrypted: {file_path}")
             raise ValueError("PDF is encrypted")
 
-        all_text = []
-        # Iterate through pages
+        all_content = []
         for page_num in range(len(doc)):
             try:
                 page = doc.load_page(page_num)
-
                 if output_format == 'markdown':
-                    # --- Refactored Markdown Generation ---
-                    page_content = []
-                    footnote_definitions = {} # Store footnote content { '1': 'Footnote text' }
-                    # Extract text blocks with font info
-                    page_dict = page.get_text("dict", flags=fitz.TEXTFLAGS_DICT) # Use dict format
-
-                    for block in page_dict.get("blocks", []):
-                        if block.get("type") == 0: # Process only text blocks
-                            block_text_parts = []
-                            # Determine potential heading/list/footnote based on the first span
-                            # NOTE: This is a simplified heuristic. Real PDFs are more complex.
-                            heading_level = 0
-                            try:
-                                first_span = block["lines"][0]["spans"][0]
-                                size = first_span.get("size", 12)
-                                # Simple size thresholds (adjust as needed based on common PDF styles)
-                                if size >= 20: heading_level = 1 # Likely Title
-                                elif size >= 16: heading_level = 2 # Likely Section
-                                elif size >= 14: heading_level = 3 # Likely Subsection
-                            except (IndexError, KeyError):
-                                pass # Ignore blocks without lines/spans or size info
-
-                            # Collect text, identify footnote refs/defs
-                            line_buffer = []
-                            potential_footnote_def = None
-                            first_span_in_block = True
-                            for line in block.get("lines", []):
-                                for span in line.get("spans", []):
-                                    text = span.get("text", "") # Keep whitespace initially
-                                    flags = span.get("flags", 0)
-                                    is_superscript = flags & 1 # Check superscript flag
-
-                                    # Refactored Footnote Detection
-                                    # Heuristic: Superscript number at the start of a block is likely a definition.
-                                    # Superscript number elsewhere is likely a reference.
-                                    if is_superscript and text.isdigit():
-                                        footnote_num = text.strip()
-                                        if first_span_in_block:
-                                            potential_footnote_def = footnote_num
-                                            # Skip adding the number itself to the line buffer for definitions
-                                        else:
-                                            line_buffer.append(f"[^{footnote_num}]") # Format as Markdown reference
-                                    else:
-                                        line_buffer.append(text) # Append normal text
-                                    first_span_in_block = False # Mark subsequent spans as not the first
-
-                            # Process collected block text
-                            if line_buffer:
-                                full_block_text = "".join(line_buffer).strip()
-                                # Refactored List Detection (applied after potential footnote marker removal)
-                                is_list_item = False
-                                list_marker = ""
-                                ordered_match = re.match(r"^(\d+)\.\s+", full_block_text)
-                                unordered_match = re.match(r"^([\*•-])\s+", full_block_text)
-
-                                if ordered_match:
-                                    is_list_item = True
-                                    list_marker = f"{ordered_match.group(1)}. "
-                                    full_block_text = full_block_text[len(ordered_match.group(0)):].strip()
-                                elif unordered_match:
-                                    is_list_item = True
-                                    list_marker = "* "
-                                    full_block_text = full_block_text[len(unordered_match.group(0)):].strip()
-
-                                # Store definition or append content
-                                if potential_footnote_def:
-                                    footnote_definitions[potential_footnote_def] = full_block_text.strip()
-                                elif heading_level > 0:
-                                    page_content.append(f"{'#' * heading_level} {full_block_text}")
-                                elif is_list_item:
-                                     page_content.append(f"{list_marker}{full_block_text}")
-                                else:
-                                    page_content.append(full_block_text)
-
-                    # Append footnote definitions at the end of the page
-                    for num, text in sorted(footnote_definitions.items()):
-                         page_content.append(f"[^{num}]: {text}")
-
-                    # Basic cleaning for Markdown (null chars, excessive newlines)
-                    page_md = "\n\n".join(page_content) # Join with double newline
-                    page_md = page_md.replace('\x00', '')
-                    page_md = re.sub(r'\n\s*\n', '\n\n', page_md).strip()
-                    if page_md:
-                        all_text.append(page_md)
-                    # --- End Refactored Markdown Generation ---
+                    page_content = _format_pdf_markdown(page) # Use the helper
                 else: # Default to text processing
-                    text = page.get_text("text") # Extract plain text
-                    # --- Refactored Cleaning (RAG Quality) ---
-                    if text: # Process only if text exists
-                        # 1. Remove null characters
-                        text = text.replace('\x00', '')
-
-                        # 2. Define common header/footer patterns (can be expanded)
+                    page_content = page.get_text("text")
+                    if page_content:
+                        # Apply text cleaning (null chars, headers/footers)
+                        page_content = page_content.replace('\x00', '')
                         header_footer_patterns = [
                             re.compile(r"^(JSTOR.*|Downloaded from.*|Copyright ©.*)\n?", re.IGNORECASE | re.MULTILINE),
                             re.compile(r"^Page \d+\s*\n?", re.MULTILINE)
                         ]
-
-                        # 3. Apply patterns
                         for pattern in header_footer_patterns:
-                            text = pattern.sub('', text)
+                            page_content = pattern.sub('', page_content)
+                        page_content = re.sub(r'\n\s*\n', '\n\n', page_content).strip()
 
-                        # 4. Remove excessive blank lines
-                        text = re.sub(r'\n\s*\n', '\n\n', text)
-
-                        # 5. Strip leading/trailing whitespace
-                        cleaned_text = text.strip()
-
-                        # 6. Append if non-empty
-                        if cleaned_text:
-                            all_text.append(cleaned_text)
-                    # --- End Refactored Cleaning ---
+                if page_content:
+                    all_content.append(page_content)
 
             except Exception as page_error:
                 logging.warning(f"Could not process page {page_num + 1} in {file_path}: {page_error}")
-                # Continue processing other pages
 
-        # Combine extracted content (either text or markdown)
-        full_content = "\n\n".join(all_text).strip()
-
-        # Check if any content was extracted
+        full_content = "\n\n".join(all_content).strip()
         if not full_content:
-            logging.warning(f"No extractable content found in PDF (possibly image-based): {file_path}")
-            raise ValueError(
-                "PDF contains no extractable content layer (possibly image-based)"
-            )
+            logging.warning(f"No extractable content found in PDF: {file_path}")
+            raise ValueError("PDF contains no extractable content layer (possibly image-based)")
 
         logging.info(f"Finished PDF: {file_path}. Extracted length: {len(full_content)}")
         return full_content
 
-    except RuntimeError as fitz_error: # Catch generic runtime errors, potentially from fitz
+    except RuntimeError as fitz_error:
         logging.error(f"PyMuPDF error processing {file_path}: {fitz_error}")
-        raise RuntimeError(
-            f"Error opening or processing PDF: {file_path} - {fitz_error}"
-        )
+        raise RuntimeError(f"Error opening or processing PDF: {file_path} - {fitz_error}") from fitz_error
     except Exception as e:
-        # Catch other potential errors during opening or processing
-        logging.error(f"Unexpected error processing PDF {file_path}: {e}")
-        # Re-raise specific errors if needed
+        logging.exception(f"Unexpected error processing PDF {file_path}") # Log traceback
+        # Re-raise specific errors if needed, otherwise wrap
         if isinstance(e, (ValueError, FileNotFoundError)):
-            raise e
-        raise RuntimeError(
-            f"Error opening or processing PDF: {file_path} - {e}"
-        )
+             raise e
+        raise RuntimeError(f"Unexpected error processing PDF {file_path}: {e}") from e
     finally:
-        # Ensure the document is closed
         if doc:
-            try:
-                doc.close()
-            except Exception as close_error:
-                logging.error(f"Error closing PDF document {file_path}: {close_error}")
+            doc.close()
 
-
+# Helper function to save processed text
 def _save_processed_text(file_path_str: str, text_content: str, output_format: str = 'txt') -> Path:
     """Saves the processed text content to a file."""
     processed_output_dir = Path("./processed_rag_output")
@@ -529,16 +569,25 @@ def _save_processed_text(file_path_str: str, text_content: str, output_format: s
         processed_output_dir.mkdir(parents=True, exist_ok=True)
 
         # Generate filename: <original_name>.processed.<format>
-        output_filename = f"{original_path.name}.processed.{output_format}"
+        # Use original stem + suffix if possible, otherwise just name
+        if original_path.suffix:
+            base_name = original_path.stem
+        else:
+            base_name = original_path.name # Use full name if no suffix
+
+        # Ensure output format is reasonable (default to txt)
+        safe_output_format = output_format if output_format in ['txt', 'md', 'markdown'] else 'txt'
+        if safe_output_format == 'markdown': safe_output_format = 'md' # Use shorter extension
+
+        output_filename = f"{base_name}.processed.{safe_output_format}"
         output_path = processed_output_dir / output_filename
 
         logging.info(f"Saving processed text to: {output_path}")
         with open(output_path, 'w', encoding='utf-8') as f:
             f.write(text_content)
-
         return output_path
     except OSError as e:
-        logging.exception(f"OS error saving processed file for {file_path_str}")
+        logging.exception(f"OS error saving processed file for {file_path_str}: {e}")
         raise FileSaveError(f"Failed to save processed file due to OS error: {e}")
     except Exception as e:
         logging.exception(f"Unexpected error saving processed file for {file_path_str}")
@@ -552,6 +601,7 @@ async def process_document(file_path_str: str, output_format='txt') -> dict:
     """
     Processes a document file (EPUB, TXT, PDF) to extract text content,
     saves it to a file, and returns the path.
+    Accepts 'text' or 'markdown' for output_format.
     """
     try:
         file_path = Path(file_path_str)
@@ -559,15 +609,20 @@ async def process_document(file_path_str: str, output_format='txt') -> dict:
              raise FileNotFoundError(f"File not found: {file_path_str}")
 
         ext = file_path.suffix.lower()
+        # Normalize output format alias
+        normalized_output_format = 'markdown' if output_format == 'md' else output_format
+        if normalized_output_format not in ['text', 'markdown']:
+            normalized_output_format = 'text' # Default to text if invalid
+
         processed_text = None
 
         if ext == '.epub':
-            processed_text = _process_epub(file_path_str)
+            processed_text = _process_epub(file_path_str, normalized_output_format) # Pass format
         elif ext == '.txt':
+            # TXT processing doesn't change based on output_format, but save format does
             processed_text = _process_txt(file_path_str)
         elif ext == '.pdf':
-            # Pass output_format to _process_pdf
-            processed_text = _process_pdf(file_path_str, output_format=output_format)
+            processed_text = _process_pdf(file_path_str, normalized_output_format) # Pass format
         else:
             raise ValueError(f"Unsupported file format: {ext}. Supported: {SUPPORTED_FORMATS}")
 
@@ -579,7 +634,7 @@ async def process_document(file_path_str: str, output_format='txt') -> dict:
              raise ValueError(f"No text content could be extracted from {file_path_str}")
 
         # Save the processed text
-        saved_path = _save_processed_text(file_path_str, processed_text, output_format)
+        saved_path = _save_processed_text(file_path_str, processed_text, normalized_output_format)
 
         # Return the path to the saved file
         return {"processed_file_path": str(saved_path)}
@@ -626,10 +681,14 @@ def main():
             if not book_id: raise ValueError("Missing 'book_id'")
             response = asyncio.run(get_by_id(book_id))
         elif function_name == 'get_download_info':
-            book_id = args_dict.get('book_id')
-            format_arg = args_dict.get('format') # Keep format if needed by caller
-            if not book_id: raise ValueError("Missing 'book_id'")
-            response = asyncio.run(get_download_info(book_id, format_arg))
+            # This tool is deprecated and likely relies on faulty ID lookup.
+            # Consider removing or raising a specific error.
+            logging.warning("Deprecated tool 'get_download_info' called.")
+            raise NotImplementedError("Tool 'get_download_info' is deprecated.")
+            # book_id = args_dict.get('book_id')
+            # format_arg = args_dict.get('format') # Keep format if needed by caller
+            # if not book_id: raise ValueError("Missing 'book_id'")
+            # response = asyncio.run(get_download_info(book_id, format_arg))
         elif function_name == 'full_text_search':
             response = asyncio.run(full_text_search(**args_dict))
         elif function_name == 'get_download_history':
@@ -639,20 +698,17 @@ def main():
         elif function_name == 'get_recent_books': # <<< CORRECTLY PLACED HANDLER
             response = asyncio.run(get_recent_books(**args_dict)) # <<< CORRECTLY PLACED HANDLER
         elif function_name == 'process_document':
+            # Get format from args, default to 'text'
+            output_format = args_dict.get('output_format', 'text')
+            args_dict['output_format'] = output_format # Ensure it's in the dict for **args_dict
             response = asyncio.run(process_document(**args_dict))
         elif function_name == 'download_book': # Handler for download_book
             if 'book_details' not in args_dict:
                  raise ValueError("Missing 'book_details' argument for download_book")
-            book_details_arg = args_dict['book_details']
-            output_dir_arg = args_dict.get('output_dir', './downloads')
-            process_for_rag_arg = args_dict.get('process_for_rag', False)
-            processed_output_format_arg = args_dict.get('processed_output_format', 'txt')
-            response = asyncio.run(download_book(
-                book_details=book_details_arg,
-                output_dir=output_dir_arg,
-                process_for_rag=process_for_rag_arg,
-                processed_output_format=processed_output_format_arg
-            ))
+            # Get format from args, default to 'text'
+            processed_output_format = args_dict.get('processed_output_format', 'text')
+            args_dict['processed_output_format'] = processed_output_format # Ensure it's in the dict
+            response = asyncio.run(download_book(**args_dict))
         else:
             print(json.dumps({"error": f"Unknown function: {function_name}"}))
             return 1
@@ -674,6 +730,10 @@ def main():
         logging.error(f"FileSaveError during {function_name}: {fse}")
         print(json.dumps({"error": str(fse)}))
         return 1
+    except NotImplementedError as nie:
+        logging.warning(f"NotImplementedError during {function_name}: {nie}")
+        print(json.dumps({"error": str(nie)}))
+        return 1
     except Exception as e:
         print(traceback.format_exc(), file=sys.stderr)
         print(json.dumps({"error": str(e)}))
@@ -682,9 +742,8 @@ def main():
         print(json.dumps({"error": f"An unexpected error occurred: {e}"}))
         return 1
 
-# --- New download_book function ---
 # --- Internal Download/Scraping Helper (Spec v2.1) ---
-async def _scrape_and_download(book_page_url: str, output_path: str) -> str: # Accept full output path
+async def _scrape_and_download(book_page_url: str, output_path: str) -> str:
     """
     Calls the zlibrary fork's download_book method which handles scraping and downloading.
     Note: This function now expects the *book_page_url* and the full *output_path*.
@@ -725,10 +784,11 @@ async def _scrape_and_download(book_page_url: str, output_path: str) -> str: # A
         raise RuntimeError(f"An unexpected error occurred during download: {e}") from e # Wrap other errors
 
 
-async def download_book(book_details: dict, output_dir='./downloads', process_for_rag=False, processed_output_format='txt') -> dict: # Expect book_details dict
+async def download_book(book_details: dict, output_dir='./downloads', process_for_rag=False, processed_output_format='txt') -> dict:
     """
     Downloads a book using the provided details.
     Optionally processes the downloaded file for RAG.
+    Accepts 'text' or 'markdown' for processed_output_format.
     """
     global zlib_client
     if not zlib_client:
@@ -767,7 +827,7 @@ async def download_book(book_details: dict, output_dir='./downloads', process_fo
         if process_for_rag:
             logging.info(f"Processing downloaded file for RAG: {downloaded_file_path_str}")
             try:
-                # Call process_document which handles extraction and saving
+                # Pass the desired format to process_document
                 processing_result = await process_document(downloaded_file_path_str, processed_output_format)
                 if "error" in processing_result:
                     processing_error_str = processing_result["error"]

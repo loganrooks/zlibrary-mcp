@@ -269,13 +269,19 @@ def _analyze_pdf_block(block: dict) -> dict:
             is_bold = flags & 2 # Font flag for bold
 
             # --- Heading Heuristic (Example based on size/boldness) ---
-            # This is a simple heuristic and might misclassify text.
-            if font_size > 18 or (font_size > 14 and is_bold):
-                heading_level = 1
-            elif font_size > 14 or (font_size > 12 and is_bold):
-                heading_level = 2
-            elif font_size > 12 or (font_size > 11 and is_bold):
-                heading_level = 3
+            # Reordered to check more specific conditions first
+            if font_size > 12 and font_size <= 14 and is_bold: # H3 (Adjusted condition slightly for clarity)
+                 heading_level = 3
+            elif font_size > 11 and font_size <= 12 and is_bold: # H3 (Adjusted condition slightly for clarity)
+                 heading_level = 3
+            elif font_size > 14 and font_size <= 18 and is_bold: # H2
+                 heading_level = 2
+            elif font_size > 12 and font_size <= 14: # H3
+                 heading_level = 3
+            elif font_size > 14 and font_size <= 18: # H2
+                 heading_level = 2
+            elif font_size > 18: # H1
+                 heading_level = 1
             # TODO: Consider adding more levels or refining based on document analysis.
 
             # --- List Heuristic (Example based on starting characters) ---
@@ -324,6 +330,8 @@ def _format_pdf_markdown(page: fitz.Page) -> str:
     Returns:
         A string containing the generated Markdown.
     """
+    fn_id = None # Initialize to prevent UnboundLocalError
+    cleaned_fn_text = "" # Initialize to prevent UnboundLocalError
     blocks = page.get_text("dict", flags=fitz.TEXTFLAGS_DICT).get("blocks", [])
     markdown_lines = []
     footnote_defs = {} # Store footnote definitions [^id]: content
@@ -341,7 +349,9 @@ def _format_pdf_markdown(page: fitz.Page) -> str:
         # Footnote Reference/Definition Detection (using superscript flag)
         processed_text_parts = []
         potential_def_id = None
+        potential_def_id = None # Initialize potential_def_id for each block
         first_span_in_block = True
+        fn_id = None # Initialize fn_id before the span loop
         for span in spans:
             span_text = span.get('text', '')
             flags = span.get('flags', 0)
@@ -363,18 +373,13 @@ def _format_pdf_markdown(page: fitz.Page) -> str:
 
         # Store definition if found, otherwise format content
         if potential_def_id:
-            # Use regex to capture text *after* the marker and leading punctuation/space
-            match = re.match(r"^\d+[\.\)]?\s*(.*)", processed_text)
-            if match:
-                cleaned_def_text = match.group(1).strip() # Get captured group and strip ends
-            else:
-                 # Fallback if regex match fails unexpectedly (shouldn't happen if potential_def_id is set)
-                 cleaned_def_text = re.sub(r"^\d+[\.\)]?\s*", "", processed_text).strip()
-
-            footnote_defs[potential_def_id] = cleaned_def_text
+            # Clean the definition text (remove the initial marker if present and any leading punctuation)
+            # cleaned_def_text = re.sub(r"^\d+[\.\)]?\s*", "", processed_text).strip() # Original cleaning attempt, now done later
+            # Store potentially uncleaned text (cleaning moved to final formatting)
+            footnote_defs[potential_def_id] = processed_text # Store raw processed text
             continue # Don't add definition block as regular content
 
-        # Format based on analysis
+        # Format based on analysis (REMOVED REDUNDANT BLOCK)
         if analysis['heading_level'] > 0:
             markdown_lines.append(f"{'#' * analysis['heading_level']} {processed_text}")
             current_list_type = None # Reset list context after heading
@@ -401,13 +406,38 @@ def _format_pdf_markdown(page: fitz.Page) -> str:
             current_list_type = None # Reset list context
 
     # Append footnote definitions at the end
-    if footnote_defs:
-        markdown_lines.append("\n---") # Add separator
-        for fn_id, fn_text in sorted(footnote_defs.items()):
-            markdown_lines.append(f"[^{fn_id}]: {fn_text}")
+    # Footnote definitions are handled separately below
+    # if footnote_defs:
+        # markdown_lines.append("---") # REMOVED: Separator added later during footnote_block construction
+        # for fn_id, fn_text in sorted(footnote_defs.items()):
+            # Apply regex cleaning directly here (Reverted to original regex as lstrip wasn't the issue)
+            # cleaned_fn_text = re.sub(r"^[^\w]+", "", fn_text).strip()
+            markdown_lines.append(f"[^{fn_id}]: {cleaned_fn_text}")
 
-    # Join lines with double newlines for paragraph breaks
-    return "\n\n".join(markdown_lines).strip()
+    # Join main content lines with double newlines
+    main_content = "\n\n".join(md_line for md_line in markdown_lines if not md_line.startswith("[^")) # Exclude footnote defs for now
+    main_content_stripped = main_content.strip() # Store stripped version for checks
+
+    # Format footnote section separately, joining with single newlines
+    footnote_block = ""
+    if footnote_defs:
+        footnote_lines = []
+        for fn_id, fn_text in sorted(footnote_defs.items()):
+            # Apply regex cleaning directly here
+            cleaned_fn_text = re.sub(r"^[^\w]+", "", fn_text).strip()
+            footnote_lines.append(f"[^{fn_id}]: {cleaned_fn_text}")
+        # Construct the footnote block with correct spacing
+        footnote_block = "---\n" + "\n".join(footnote_lines) # Definitions joined by single newline
+
+    # Combine main content and footnote section
+    if footnote_block:
+        # Add double newline separator only if main content exists and is not empty
+        separator = "\n\n" if main_content_stripped else ""
+        # Ensure no leading/trailing whitespace on the final combined string
+        return (main_content_stripped + separator + footnote_block).strip()
+    else:
+        # Return only the stripped main content if no footnotes
+        return main_content_stripped
 
 
 # --- EPUB Markdown Helpers ---
@@ -633,7 +663,9 @@ def _process_pdf(file_path: str, output_format: str = 'text') -> str:
                     page_content = _format_pdf_markdown(page) # Use the helper
                 else: # Default to text processing
                     page_content = page.get_text("text")
-                    # Cleaning will be applied after potential Markdown generation
+                    # Reverted: Cleaning is now handled in _analyze_pdf_block for markdown,
+                    # and plain text output should remain relatively raw.
+                    # If cleaning is needed for plain text, it should be a separate step/option.
 
                 if page_content:
                     all_content.append(page_content)

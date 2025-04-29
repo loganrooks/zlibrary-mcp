@@ -134,7 +134,7 @@ async function getConfigPath(): Promise<string> {
  * @returns The path to the Python 3 executable.
  * @throws {Error} If no suitable Python 3 executable is found or version check fails.
  */
-async function findPythonExecutable(deps: VenvManagerDependencies): Promise<string> {
+export function findPythonExecutable(deps: VenvManagerDependencies): string { // Removed async and Promise
     const candidates = ['python3', 'python'];
     for (const candidate of candidates) {
         try {
@@ -159,7 +159,7 @@ async function findPythonExecutable(deps: VenvManagerDependencies): Promise<stri
  * @returns The path to the Python executable within the created venv.
  * @throws {Error} If venv creation fails.
  */
-async function createVenv(deps: VenvManagerDependencies, pythonExecutable: string, venvDir: string): Promise<string> {
+export async function createVenv(deps: VenvManagerDependencies, pythonExecutable: string, venvDir: string): Promise<string> {
     console.log(`Creating Python virtual environment in: ${venvDir}...`);
     // Ensure parent directory exists
     // Use await for async mkdir if available, otherwise stick to sync for simplicity here
@@ -220,7 +220,7 @@ async function installDependencies(deps: VenvManagerDependencies, venvPythonPath
  * @param deps Injected dependencies (fs, child_process).
  * @param venvPythonPath - The path to save.
  */
-async function saveVenvPathConfig(deps: VenvManagerDependencies, venvPythonPath: string): Promise<void> {
+export async function saveVenvPathConfig(deps: VenvManagerDependencies, venvPythonPath: string): Promise<void> {
     const configPath = await getConfigPath();
     try {
         deps.fs.writeFileSync(configPath, venvPythonPath, 'utf8');
@@ -236,7 +236,7 @@ async function saveVenvPathConfig(deps: VenvManagerDependencies, venvPythonPath:
  * @param deps Injected dependencies (fs, child_process).
  * @returns The saved path, or null if not found or invalid.
  */
-async function readVenvPathConfig(deps: VenvManagerDependencies): Promise<string | null> {
+export async function readVenvPathConfig(deps: VenvManagerDependencies): Promise<string | null> {
     const configPath = await getConfigPath();
     try {
         if (deps.fs.existsSync(configPath)) {

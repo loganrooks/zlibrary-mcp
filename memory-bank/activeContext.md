@@ -1,3 +1,38 @@
+[2025-04-28 21:39:08] - SPARC - TDD Complete: Implement `venv-manager` TODO tests - Received confirmation. 9 TODO tests implemented in `__tests__/venv-manager.test.js`. Required functions exported from `src/lib/venv-manager.ts`. Test suite passes.
+[2025-04-28 21:18:00] - TDD - Green - Test 'should log warning but not throw if saving config fails' passed.
+[2025-04-28 21:17:00] - TDD - Red - Added test 'should log warning but not throw if saving config fails'.
+[2025-04-28 21:16:00] - TDD - Green - Test 'should return null if the config file is invalid' passed.
+[2025-04-28 21:15:00] - TDD - Red - Added test 'should return null if the config file is invalid'.
+[2025-04-28 21:14:00] - TDD - Green - Test 'should return null if the config file does not exist' passed.
+[2025-04-28 21:13:00] - TDD - Red - Added test 'should return null if the config file does not exist'.
+[2025-04-28 21:12:00] - TDD - Green - Test 'should load the venv Python path from the config file' passed after exporting readVenvPathConfig.
+[2025-04-28 21:11:00] - TDD - Red - Test 'should load the venv Python path from the config file' failed (readVenvPathConfig not exported).
+[2025-04-28 21:10:00] - TDD - Red - Added test 'should load the venv Python path from the config file'.
+[2025-04-28 21:09:00] - TDD - Green - Test 'should save the venv Python path to a config file' passed after fixing function name and adding await.
+[2025-04-28 21:08:00] - TDD - Red - Test 'should save the venv Python path to a config file' failed (incorrect function name/missing await).
+[2025-04-28 21:07:00] - TDD - Red - Added test 'should save the venv Python path to a config file'.
+[2025-04-28 21:06:00] - TDD - Green - Test 'should handle venv creation failures' passed.
+[2025-04-28 21:05:00] - TDD - Red - Added test 'should handle venv creation failures'.
+[2025-04-28 21:00:00] - TDD - Green - Test 'should create the virtual environment in the correct cache directory' passed after exporting createVenv.
+[2025-04-28 20:59:00] - TDD - Red - Test 'should create the virtual environment in the correct cache directory' failed (createVenv not exported).
+[2025-04-28 20:58:00] - TDD - Red - Added test 'should create the virtual environment in the correct cache directory'.
+[2025-04-28 20:57:00] - TDD - Green - Test 'should throw an error if no compatible python3 is found' passed.
+[2025-04-28 20:56:00] - TDD - Red - Added test 'should throw an error if no compatible python3 is found'.
+[2025-04-28 20:55:00] - TDD - Green - Test 'should find a compatible python3 executable on PATH' passed after removing async.
+[2025-04-28 20:54:00] - TDD - Red - Test 'should find a compatible python3 executable on PATH' failed due to async/await mismatch.
+[2025-04-28 20:53:00] - TDD - Red - Added test 'should find a compatible python3 executable on PATH'.
+[2025-04-28 20:52:00] - TDD - Start - Implementing TODO tests in __tests__/venv-manager.test.js.
+[2025-04-28 20:50:30] - SPARC - TDD Complete: Implement `get_recent_books` - Received confirmation from `tdd`. Function implemented in `lib/python_bridge.py`. Tests added and regressions fixed in `__tests__/python/test_python_bridge.py`. Commit: `75b6f11`.
+[2025-04-28 20:49:00] - TDD - Completed `get_recent_books` Implementation - Implemented `get_recent_books` in `lib/python_bridge.py` and added tests. Fixed regressions in `download_book` tests. All relevant tests pass. Commit: 75b6f11.
+[2025-04-28 19:10:43] - SPARC - TDD Complete: Fix `get_download_history` Parser - Received confirmation from `tdd`. Parser logic in `zlibrary/src/zlibrary/abs.py` updated for new HTML structure. Tests added/updated and passing. Commit: `9350af5`.
+[2025-04-28 18:56:31] - SPARC - Debug Complete: History/Recent Tools - Received report from `debug`. `get_download_history` fails due to broken parser (`zlibrary/abs.py`). `get_recent_books` fails due to missing function (`lib/python_bridge.py`). Recommendations: Fix parser, implement function.
+[2025-04-28 18:50:29] - SPARC - TDD Complete: `get_download_info` Removed - Received confirmation from `tdd` mode. Tool, handlers, and tests removed successfully. All tests passing. Commit: `8bef4c2`.
+[2025-04-28 18:49:28] - TDD - Task Complete - Removed deprecated `get_download_info` tool, handlers, and tests. Verified test suites pass. Commit: 8bef4c2.
+[2025-04-28 18:38:37] - SPARC - Debug Complete, Deprecating `get_download_info` - Received report from `debug` confirming `get_download_info` is redundant and relies on unstable ID lookup. Accepting recommendation to deprecate. Delegating removal task to `tdd`.
+[2025-04-28 17:31:01] - Debug - Completed Investigation (get_download_info) - Analyzed `get_download_info` tool. Confirmed dependency on `_find_book_by_id_via_search`. Found its primary output (`download_url`) is unreliable (`null`) and unused by current ADR-002 workflow. Metadata is redundant with `search_books`. Recommended deprecation. [See Debug Report 2025-04-28 17:31:01]
+[2025-04-28 17:23:10] - Debug - Investigating `get_download_info` Tool - Started investigation into errors and necessity of the `get_download_info` tool, following handover context and user intervention regarding ID lookup instability. Reading Memory Bank.
+[2025-04-28 17:08:16] - SPARC - RAG Spec Verified, Delegating ID Lookup Strategy - Confirmed RAG spec is up-to-date. Proceeding with next outstanding issue: Delegating task to `architect` to design a robust failure strategy for internal ID-based lookups.
+[2025-04-28 17:07:27] - SPARC - RAG Spec Verification Complete - Received completion report from `spec-pseudocode`. Confirmed `docs/rag-pipeline-implementation-spec.md` already aligns with ADR-002 download workflow. No changes needed.
 [2025-04-28 17:03:01] - SpecPseudo - Verified Spec Alignment - Reviewed `docs/rag-pipeline-implementation-spec.md` (v2.1) against `docs/adr/ADR-002-Download-Workflow-Redesign.md`. Confirmed spec already correctly reflects the requirement to use `bookDetails` from `search_books` as input for `download_book_to_file`. No changes needed. Preparing completion.
 [2025-04-28 16:51:01] - SPARC - Regression Testing Complete, Delegating Spec Update - Received successful completion report from `tdd` (commit `f466479`). All tests pass. RAG download workflow integration/refinement complete. Returning to original objective: Delegating task to `spec-pseudocode` to update `docs/rag-pipeline-implementation-spec.md`.
 [2025-04-28 14:43:14] - SPARC - Regression Testing Complete - Received successful completion report from `tdd`. All tests (`pytest`, `npm test`) pass after debug fix (`26cd7c8`). Coverage for integration changes (`f3b5f96`) deemed sufficient. Minor test cleanup committed (`f466479`). RAG download workflow integration/refinement complete.

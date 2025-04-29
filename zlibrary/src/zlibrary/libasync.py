@@ -25,7 +25,7 @@ from .exception import (
 from .util import GET_request, POST_request, GET_request_cookies
 from .abs import SearchPaginator, BookItem
 from .profile import ZlibProfile
-from .const import Extension, Language
+from .const import Extension, Language, OrderOptions
 from typing import Optional
 import json
 
@@ -173,12 +173,17 @@ class AsyncZlib:
         to_year: Optional[int] = None,
         lang: List[Union[Language, str]] = [],
         extensions: List[Union[Extension, str]] = [],
+        order: Optional[Union[OrderOptions, str]] = None, # Added order parameter
         count: int = 10,
     ) -> SearchPaginator:
         if not self.profile:
             raise NoProfileError
-        if not q:
-            raise EmptyQueryError
+        # Allow empty query if sorting by newest (to get all recent books)
+        # if not q:
+        #     raise EmptyQueryError
+        if not q and not (order and (order == OrderOptions.NEWEST or order == "date_created")):
+             raise EmptyQueryError("Search query cannot be empty unless ordering by newest.")
+
 
         payload = f"{self.mirror}/s/{quote(q)}?"
         if exact:
@@ -203,6 +208,20 @@ class AsyncZlib:
                     payload += f"&extensions%5B%5D={ext}"
                 elif type(ext) is Extension:
                     payload += f"&extensions%5B%5D={ext.value}"
+        # Add order logic
+        if order:
+            if isinstance(order, OrderOptions):
+                payload += f"&order={order.value}"
+            elif isinstance(order, str):
+                 # Basic validation for string input
+                 allowed_orders = [opt.value for opt in OrderOptions]
+                 if order in allowed_orders:
+                      payload += f"&order={order}"
+                 else:
+                      logger.warning(f"Invalid string value '{order}' provided for order parameter. Ignoring.")
+            else:
+                 logger.warning(f"Invalid type '{type(order)}' provided for order parameter. Ignoring.")
+
 
         paginator = SearchPaginator(
             url=payload, count=count, request=self._r, mirror=self.mirror

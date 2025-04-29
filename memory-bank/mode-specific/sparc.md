@@ -1,5 +1,12 @@
 # SPARC Orchestrator Specific Memory
 <!-- Entries below should be added reverse chronologically (newest first) -->
+### [2025-04-28 17:10:28] Intervention: Re-evaluation of ID Lookup Necessity
+- **Trigger**: User feedback denying `architect` task delegation for ID lookup failure strategy. User questioned the value of maintaining the problematic `get_book_by_id` functionality.
+- **Context**: Attempting to delegate task to design fallbacks for the fragile internal "Search-First" ID lookup mechanism.
+- **Action Taken**: Halted delegation to `architect`. Acknowledged user's valid concern regarding the persistent instability of ID-only lookups.
+- **Rationale**: The ID-only lookup relies on unstable scraping and has caused numerous issues. ADR-002 already moved the primary download workflow away from it. Fixing/patching may be less valuable than removing/refactoring dependent features.
+- **Outcome**: Decided to pivot strategy. Instead of designing fallbacks, will investigate the necessity of tools relying on this mechanism (`get_book_by_id`, `get_download_info`).
+- **Follow-up**: Update delegation log for cancelled `architect` task. Delegate new task to `debug` to investigate `get_download_info` errors and its reliance on ID lookup.
 ### [2025-04-23 22:14:54] Task: Debug Tool Call Regression (REG-001: "Invalid tool name type")
 - Assigned to: debug
 - Description: Diagnose and fix the tool call failure occurring after ESM migration.
@@ -431,11 +438,69 @@
 
 ## Delegations Log
 <!-- Append new delegation records here -->
+### [2025-04-28 20:51:37] Task: Implement `venv-manager` TODO Tests (TDD)
+- Assigned to: tdd
+- Description: Implement the pending tests marked with `// TODO:` comments within `__tests__/venv-manager.test.js`.
+- Expected deliverable: Implemented tests, passing suite, and commit hash.
+- Status: completed
+- Completion time: 2025-04-28 21:39:08
+- Outcome: Successfully implemented 9 TODO tests in `__tests__/venv-manager.test.js`. Exported required functions (`createVenv`, `saveVenvPathConfig`, `readVenvPathConfig`) from `src/lib/venv-manager.ts`. Test suite passes (13 passed).
+- Link to Progress Entry: [GlobalContext Progress - Outstanding Issues]
+### [2025-04-28 19:11:37] Task: Implement `get_recent_books` Python Bridge Function (TDD)
+- Assigned to: tdd
+- Description: Implement the missing `get_recent_books` function in the Python bridge script (`lib/python_bridge.py`).
+- Expected deliverable: Implemented function, passing tests, and commit hash.
+- Status: completed
+- Completion time: 2025-04-28 20:50:30
+- Outcome: Successfully implemented `get_recent_books` in `lib/python_bridge.py`. Added tests and fixed regressions in existing `download_book` tests in `__tests__/python/test_python_bridge.py`. Relevant tests pass. Commit: `75b6f11`.
+- Link to Progress Entry: [ActiveContext 2025-04-28 18:56:31] (Ref: Issue-RecentBooksMissing-01)
+### [2025-04-28 18:57:12] Task: Fix `get_download_history` Parser (TDD)
+- Assigned to: tdd
+- Description: Fix the broken HTML parser for the `get_download_history` functionality within the forked `zlibrary` library.
+- Expected deliverable: Fixed code, passing tests, and commit hash.
+- Status: completed
+- Completion time: 2025-04-28 19:10:43
+- Outcome: Successfully updated parser logic in `zlibrary/src/zlibrary/abs.py` for new HTML structure (`div.dstats-table-content`, `span.hidden-xs`). Added/updated tests in `__tests__/python/test_python_bridge.py`. All relevant tests pass. Commit: `9350af5`.
+- Link to Progress Entry: [ActiveContext 2025-04-28 18:56:31] (Ref: Issue-HistoryParseError-01)
+### [2025-04-28 18:51:41] Task: Investigate `get_download_history` & `get_recent_books` Errors
+- Assigned to: debug
+- Description: Investigate and diagnose errors reported for `get_download_history` and `get_recent_books` tools.
+- Expected deliverable: Debug report with root cause analysis and recommendations.
+- Status: completed
+- Completion time: 2025-04-28 18:56:31
+- Outcome: Investigation complete. `get_download_history` fails due to broken parser (`zlibrary/src/zlibrary/abs.py`, Issue-HistoryParseError-01). `get_recent_books` fails due to missing function in Python bridge (`lib/python_bridge.py`, Issue-RecentBooksMissing-01). Recommendations: Fix parser, implement function.
+- Link to Progress Entry: [ActiveContext 2025-04-28 18:56:31]
+### [2025-04-28 18:39:17] Task: Deprecate and Remove `get_download_info` Tool (TDD)
+- Assigned to: tdd
+- Description: Remove the `get_download_info` tool, its associated handler functions, and related tests, following the deprecation decision.
+- Expected deliverable: Confirmation of removal, passing tests, and commit hash.
+- Status: completed
+- Completion time: 2025-04-28 18:50:29
+- Outcome: Successfully removed `get_download_info` tool definition (`src/index.ts`), handler (`src/lib/zlibrary-api.ts`), Python function (`lib/python_bridge.py`), and associated tests (`__tests__/python/test_python_bridge.py`). All test suites (`npm test`, `pytest`) confirmed passing post-removal. Commit: `8bef4c2`.
+- Link to Progress Entry: [ActiveContext 2025-04-28 18:38:37]
+### [2025-04-28 17:11:17] Task: Investigate `get_download_info` Tool Errors and Necessity
+- Assigned to: debug
+- Description: Analyze errors, confirm ID lookup reliance, evaluate purpose, and recommend action for `get_download_info`.
+- Expected deliverable: Investigation report and recommendation (Fix/Refactor/Deprecate).
+- Status: completed
+- Completion time: 2025-04-28 18:38:37
+- Outcome: Investigation confirmed `get_download_info` relies on the unstable `id:` search workaround (`_find_book_by_id_via_search`), fails to retrieve the actual download URL, and its metadata is redundant with `search_books`. The tool is unused by the current ADR-002 download workflow. Recommendation: **Deprecate**. See [Debug MB Investigate-GetDownloadInfo-01].
+- Link to Progress Entry: [ActiveContext 2025-04-28 17:11:17]
+### [2025-04-28 17:08:37] Task: Design Failure Strategy for Internal ID Lookup
+- Assigned to: architect
+- Description: Design a robust failure strategy for the internal ID-based lookup mechanism (`_internal_search` and `_internal_get_book_details_by_id` in `lib/python_bridge.py`). The current "Search-First" strategy (see `docs/search-first-id-lookup-spec.md`) is prone to failure if the external site changes or search-by-ID becomes unreliable. Consider fallback options, error handling improvements, and potential alternative lookup methods.
+- Expected deliverable: Architectural proposal outlining the recommended failure strategy, including potential changes to functions, error handling, and dependencies. An ADR may be required if significant changes are proposed.
+- Status: failed
+- Completion time: 2025-04-28 17:10:28
+- Outcome: Task cancelled due to user intervention questioning the value of maintaining the fragile ID lookup functionality. Strategy pivoted to investigate necessity/reliability of dependent tools (`get_download_info`) via `debug` mode. See [Intervention Log 2025-04-28 17:10:28].
+- Link to Progress Entry: [ActiveContext 2025-04-28 17:08:16]
 ### [2025-04-28 16:51:22] Task: Update RAG Implementation Specification (Download Workflow)
 - Assigned to: spec-pseudocode
 - Description: Update `docs/rag-pipeline-implementation-spec.md` to align with the reaffirmed download workflow (ADR-002). Specifically, clarify that the `bookDetails` object required by `download_book_to_file` should be sourced from the results of the `search_books` tool, not `get_book_by_id`. Reference ADR-002.
 - Expected deliverable: Updated `docs/rag-pipeline-implementation-spec.md` file content.
-- Status: pending
+- Status: completed
+- Completion time: 2025-04-28 17:07:27
+- Outcome: Specification file (`docs/rag-pipeline-implementation-spec.md`) already correctly reflected the download workflow from ADR-002. No changes were necessary.
 - Link to Progress Entry: [ActiveContext 2025-04-28 16:51:01]
 ### [2025-04-28 13:24:57] Task: Re-run Regression Testing & Test Coverage (Post-Debug Fix)
 - Assigned to: tdd

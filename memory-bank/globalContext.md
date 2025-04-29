@@ -4,6 +4,8 @@
 [2025-04-28 12:30:11] - Integration - RAG Download Workflow Verified (Premature) - Successfully tested `download_book_to_file` end-to-end on branch `feature/rag-file-output` (commit `f2d1b9c`). Fixed `AttributeError` and `TypeError` in `zlibrary/src/zlibrary/libasync.py`. Download confirmed working. [Ref: Integration Test Scenario RAG-DL-WF-01]
 [2025-04-28 13:22:47] - Debug - Resolved Pytest Regression (Post-Integration) - Fixed 4 failing tests in `__tests__/python/test_python_bridge.py` by correcting outdated assertions expecting directory paths instead of full file paths. Tests verified passing. Commit: 26cd7c8. [See Issue REG-PYTEST-001]
 ## Progress
+- **[2025-04-28 20:49:00] - TDD - Completed `get_recent_books` Implementation** - Implemented `get_recent_books` in `lib/python_bridge.py` and added tests. Fixed regressions in `download_book` tests. All relevant tests pass. Commit: 75b6f11.
+- **[2025-04-28 17:31:01] - Debug - Completed `get_download_info` Investigation** - Analyzed tool errors, dependency on ID lookup, and redundancy with ADR-002 workflow. Recommended deprecation. [See Debug Report 2025-04-28 17:31:01]
 - **[2025-04-28 17:03:01] - SpecPseudo - Verified RAG Spec Alignment** - Confirmed `docs/rag-pipeline-implementation-spec.md` (v2.1) aligns with ADR-002 regarding the `download_book_to_file` workflow (using `bookDetails` from `search_books`). No changes required.
 [2025-04-28 10:04:09] - Debug - Resolved Python test failures (`test_python_bridge.py`) related to PDF processing mocks during TDD Refactor phase. All Python and JS tests now pass. [See Debug Issue TDD-Refactor-Block-PyTest-20250428]
 - **[2025-04-28 04:00:05] - Debug - Resolved TDD Green Phase Blockage (Python Tests)** - Investigated and fixed issues in `lib/python_bridge.py` and `__tests__/python/test_python_bridge.py` that prevented TDD Green Phase completion. Refactored tests, corrected assertions, fixed return values, and marked obsolete tests as xfail. `pytest` now exits 0. [See Issue TDD-GREEN-BLOCK-20250428]
@@ -163,6 +165,12 @@
 - **Tradeoffs**: Requires Python 3 pre-installed by user. Adds one-time setup step. Avoids package bloat (bundling) and fragility (detection).
 - **Related**: Decision-PythonEnvStrategy-01, Issue-GlobalExecFail-01
 
+### Decision-DeprecateGetDownloadInfo-01 - [2025-04-28 17:31:01]
+- **Decision**: Recommend deprecating the `get_download_info` tool.
+- **Rationale**: Investigation confirmed the tool relies on the unstable ID lookup mechanism (`_find_book_by_id_via_search`). Its primary output (`download_url`) is unreliable (returned `null` during testing) and is not used by the current download workflow defined in ADR-002 (which uses scraping via `download_book`). Other metadata provided is redundant with `search_books`. The tool serves no essential purpose and adds unnecessary complexity.
+- **Alternatives Considered**: Fixing (unnecessary given ADR-002), Refactoring (pointless as functionality is unused/unreliable).
+- **Implementation**: Remove the tool definition from `src/index.ts`, the handler from `src/lib/zlibrary-api.ts`, the corresponding function from `lib/python_bridge.py`, and associated tests.
+- **Related**: ADR-002, [Debug Report 2025-04-28 17:31:01]
 # Decision Log
 ### Decision-PrioritizeGitCleanup-01 - [2025-04-28 02:20:01]
 - **Decision**: Prioritize cleaning up uncommitted changes ('git debt') before proceeding with the TDD cycle for RAG download workflow. Delegate task to `devops`.

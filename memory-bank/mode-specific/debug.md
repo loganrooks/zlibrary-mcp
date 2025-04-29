@@ -34,6 +34,17 @@
 # Debugger Specific Memory
 <!-- Entries below should be added reverse chronologically (newest first) -->
 ## Issue History
+### Issue: Investigate-GetDownloadInfo-01 - Investigate `get_download_info` Errors and Necessity - Status: Resolved (Recommendation: Deprecate) - [2025-04-28 17:31:01]
+- **Reported**: [2025-04-28 17:21:43] (via Task Description) / **Severity**: Low / **Symptoms**: Handover context mentioned errors; user intervention questioned value due to ID lookup instability.
+- **Investigation**:
+    1. Attempted to reproduce errors using `use_mcp_tool` with ID `3762555`. Tool succeeded but returned `download_url: null`. [2025-04-28 17:30:29]
+    2. Read `src/lib/zlibrary-api.ts`. Confirmed `getDownloadInfo` calls Python bridge function `get_download_info`. [2025-04-28 17:30:45]
+    3. Read `lib/python_bridge.py`. Confirmed Python `get_download_info` calls helper `_find_book_by_id_via_search`, which uses the `id:{book_id}` search workaround. It then attempts to extract `download_url` from the search result. [2025-04-28 17:31:01]
+    4. Evaluated purpose: Tool aims to get metadata + direct download URL. Metadata is redundant with `search_books`. Direct download URL is unreliable (`null`) and unused by ADR-002 workflow (which scrapes book page URL from `search_books` result).
+- **Root Cause**: Tool is redundant and relies on unstable mechanisms (ID search) for data (`download_url`) that is not used by the primary download workflow (ADR-002).
+- **Fix Applied**: None. Recommendation is to deprecate.
+- **Verification**: Analysis confirmed redundancy and reliance on unused/unreliable data path.
+- **Related Issues**: ADR-002, Decision-DeprecateGetDownloadInfo-01, [SPARC MB Delegation Log 2025-04-16 07:30:00], [Intervention Log 2025-04-28 17:10:28]
 ### Issue: REG-PYTEST-001 - Pytest Regression Post-Integration (f3b5f96) - Status: Resolved - [2025-04-28 13:23:23]
 - **Reported**: [2025-04-28 13:12:25] (via SPARC Delegation) / **Severity**: High / **Symptoms**: 4 tests failed in `__tests__/python/test_python_bridge.py` after integration fixes (commit `f3b5f96`). Failures related to `_scrape_and_download` mock assertions.
 - **Investigation**:

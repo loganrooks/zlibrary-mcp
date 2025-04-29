@@ -10,6 +10,7 @@ from zlibrary.const import OrderOptions # Need this import
 
 import httpx
 import re # Add re module for regex
+import aiofiles # <<< ADDED IMPORT
 # os import removed, using pathlib
 from pathlib import Path
 import ebooklib
@@ -783,8 +784,9 @@ async def download_book(book_details: dict, output_dir: str, process_for_rag: bo
     processed_file_path_str = None # Initialize
 
     try:
-        # Use the scraping helper
-        downloaded_file_path_str = await _scrape_and_download(book_page_url, output_dir) # Assumes _scrape_and_download exists
+        # Use the client's download method
+        # downloaded_file_path_str = await _scrape_and_download(book_page_url, output_dir) # Assumes _scrape_and_download exists
+        downloaded_file_path_str = await zlib_client.download_book(book_details, output_dir) # Use client download
 
         if process_for_rag and downloaded_file_path_str:
             logging.info(f"Processing downloaded file for RAG: {downloaded_file_path_str}")

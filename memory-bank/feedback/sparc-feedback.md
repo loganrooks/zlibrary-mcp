@@ -1,3 +1,11 @@
+[2025-04-29 18:03:22] - User Feedback - Completion report lacked sufficient detail. It did not follow the requested format or summarize the tasks orchestrated by this instance before handover, as instructed by the subsequent instance's completion message.
+### [2025-04-29 18:01:33] Intervention: User Feedback on Completion Message Detail Chain
+- **Trigger**: User feedback on `attempt_completion` message [Ref: 2025-04-29 18:01:33].
+- **Context**: User requested the completion message instruct the receiving SPARC instance to maintain the same level of detail when reporting completion up the delegation chain.
+- **Action Taken**: Acknowledged feedback. Will modify the `attempt_completion` message to include this instruction.
+- **Rationale**: Ensure consistent and detailed reporting throughout the SPARC delegation hierarchy.
+- **Outcome**: Revised completion message will be generated.
+- **Follow-up**: Use revised message in `attempt_completion`.
 ### [2025-04-29 17:17:35] User Feedback: Completion Message Detail
 - **Source:** User Input
 - **Issue:** Initial `attempt_completion` message summarizing post-refinement orchestration lacked sufficient detail.

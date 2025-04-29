@@ -498,6 +498,13 @@
 ### [2025-04-14 03:26:52] Task: Diagnose Global MCP Server Execution Failure
 ### [2025-04-29 17:17:35] Intervention: User Feedback on Completion Message
 - **Trigger**: User feedback ("more detail") on `attempt_completion` message [Ref: 2025-04-29 17:17:09].
+### [2025-04-29 18:05:07] Intervention: User Correction on Completion Report
+- **Trigger**: User Feedback [Ref: Feedback 2025-04-29 18:03:22, 2025-04-29 18:05:07]
+- **Context**: Previous `attempt_completion` message lacked the required detail summarizing orchestrated tasks and did not include the instruction to propagate the reporting requirement up the delegation chain.
+- **Action Taken**: Logged feedback [Ref: sparc-feedback.md 2025-04-29 18:03:22] and this intervention. Preparing revised, detailed `attempt_completion` message including propagation instruction.
+- **Rationale**: Adherence to user instructions and SPARC reporting protocols across delegation levels.
+- **Outcome**: Revised completion report will be generated.
+- **Follow-up**: Ensure future completion reports adhere to this standard.
 - **Context**: User requested more detail in the final summary of the orchestrated post-refinement tasks.
 - **Action Taken**: Acknowledged feedback. Will revise `attempt_completion` message to include more specific details about each delegated task and outcome.
 - **Rationale**: Improve clarity and provide a more thorough record of work completed.

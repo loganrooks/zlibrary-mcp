@@ -506,8 +506,23 @@
 ### [2025-04-29 18:11:20] Intervention: Delegate Clause Triggered (Handover)
 - **Trigger**: High Context Size (93%).
 - **Context**: Refinement phase orchestration completed. User provided final detailed summary report [Ref: User Message 2025-04-29 18:11:20].
+# Workflow State (Current - Overwrite this section)
+- Current phase: Specification (Post-Refinement New Features)
+- Phase start: 2025-04-29 19:01:54
+- Current focus: Orchestrating implementation of new file naming convention and specification for RAG robustness enhancements.
+- Next actions: 
+    1. Delegate file naming task to `code`.
+    2. Delegate RAG robustness specification task to `spec-pseudocode`.
+- Last Updated: 2025-04-29 19:01:54
 - **Action Taken**: Initiating handover to a new SPARC instance via `new_task`.
 - **Rationale**: Adherence to Delegate Clause to prevent context window issues and maintain performance.
+### [2025-04-29 19:02:43] Task: Implement Human-Readable File Slugs
+- Assigned to: `code`
+- Description: Modify file saving logic (likely in `lib/rag_processing.py`) to use the format `author-title-id.extension`. Investigate how to obtain author/title metadata. Update tests.
+- Expected deliverable: Updated Python code, updated tests, commit with changes.
+- Status: pending
+- Link to GlobalContext Entry: [Ref: GlobalContext 2025-04-29 19:01:54]
+- Link to ActiveContext Entry: [Ref: ActiveContext 2025-04-29 19:01:54]
 - **Outcome**: Pending handover task creation.
 - **Follow-up**: New SPARC instance to take over.
 ### [2025-04-29 17:17:35] Intervention: User Feedback on Completion Message

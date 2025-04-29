@@ -7,6 +7,10 @@
 - **[2025-04-29 09:35:19] - TDD - Refactor Completed (RAG Markdown Generation)** - Refactored `lib/python_bridge.py` and `__tests__/python/test_python_bridge.py` for clarity and standards. All tests pass. Commit: `e943016`. [Ref: ActiveContext 2025-04-29 09:35:19]
 - **[2025-04-29 09:55:59] - Feature: RAG Markdown Generation - QA Testing FAILED**
   - Status: Failed QA
+### [2025-04-29 19:01:54] New Objectives Post-Refinement
+- **File Naming Convention:** Implement human-readable slugs (`author-title-id.extension`) for processed files to improve user experience. (Priority: High)
+- **RAG Robustness Enhancement:** Improve testing with real-world documents (philosophy focus), investigate PDF extraction quality (PyMuPDF vs. alternatives like pdfminer.six), potentially add quality detection/preprocessing/OCR. (Priority: Medium/Large Effort)
+- **Current State:** Refinement phase complete. Merged `feature/rag-generation` to `main`. Current commit: `647ba488186ecc9189b5d92822d52bef556c0c17`.
   - Mode: `qa-tester`
   - Details: QA testing revealed significant issues with Markdown output quality and correctness, particularly with heading levels and list formatting. See feedback for details. Feature requires refinement/debugging.
   - Commit: `e943016` (tested)

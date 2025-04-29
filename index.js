@@ -10,7 +10,7 @@ const fs = require('fs'); // For reading package.json
 const path = require('path'); // For reading package.json
 const {
   searchBooks,
-  getBookById,
+  // getBookById, // Removed deprecated tool export
   getDownloadInfo,
   fullTextSearch,
   getDownloadHistory,
@@ -38,10 +38,7 @@ const handlers = {
     } catch (error) { return { error: error.message || 'Failed to search books' }; }
   },
 
-  getBookById: async ({ id }) => {
-    try { return await getBookById(id); }
-    catch (error) { return { error: error.message || 'Failed to get book information' }; }
-  },
+  // Removed deprecated getBookById handler
 
   getDownloadInfo: async ({ id, format }) => {
     try { return await getDownloadInfo(id, format); }
@@ -158,11 +155,7 @@ const toolRegistry = {
     schema: SearchBooksParamsSchema,
     handler: handlers.searchBooks,
   },
-  get_book_by_id: {
-    description: 'Get detailed information about a book by its ID',
-    schema: GetBookByIdParamsSchema,
-    handler: handlers.getBookById,
-  },
+  // Removed deprecated get_book_by_id tool registration
   get_download_info: {
     description: 'Get download information for a book including its download URL',
     schema: GetDownloadInfoParamsSchema,

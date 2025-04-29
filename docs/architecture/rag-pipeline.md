@@ -14,7 +14,7 @@ Two primary workflows are supported:
 
 **Workflow 1: Combined Download & Process** (Efficient for immediate use)
 
-1.  **Agent:** Uses `search_books` (existing tool) to find a document and obtain the `bookDetails` object. (Note: `get_book_by_id` is currently unreliable).
+1.  **Agent:** Uses `search_books` (existing tool) to find a document and obtain the `bookDetails` object.
 2.  **Agent:** Calls `download_book_to_file` (updated tool), specifying `book_id`, `outputDir` (optional), and setting `process_for_rag: true`. Can optionally specify `processed_output_format`.
 3.  **Server (`zlibrary-mcp`):** Receives the request.
     *   Node.js layer calls the Python bridge.
@@ -27,7 +27,7 @@ Two primary workflows are supported:
 
 **Workflow 2: Separate Download & Process** (Flexible for existing files)
 
-1.  **Agent:** Uses `search_books` (existing tool) to obtain the `bookDetails` object. (Note: `get_book_by_id` is currently unreliable).
+1.  **Agent:** Uses `search_books` (existing tool) to obtain the `bookDetails` object.
 2.  **Agent:** Calls `download_book_to_file` (updated tool), specifying `book_id` and `outputDir` (optional) (leaving `process_for_rag` as `false` or omitting it).
 3.  **Server (`zlibrary-mcp`):** Downloads the file via the Python bridge and returns only the `file_path` to the agent.
 4.  **Agent:** (At a later time, or with an existing file) Calls `process_document_for_rag` (updated tool), providing the `file_path`. Can optionally specify `output_format`.
@@ -109,7 +109,7 @@ graph TD
 ### `download_book_to_file` (Updated)
 
 *   **Description:** Downloads a specific book file from Z-Library to a local path. Optionally processes the content for RAG simultaneously, saving the result to a separate file.
-*   **Input:** `{ "bookDetails": "object (The full book details object obtained from search_books or get_book_by_id)", "outputDir": "string (optional, default: './downloads')", "process_for_rag": "boolean (optional, default: false)", "processed_output_format": "string (optional, default: 'txt')" }`
+*   **Input:** `{ "bookDetails": "object (The full book details object obtained from search_books)", "outputDir": "string (optional, default: './downloads')", "process_for_rag": "boolean (optional, default: false)", "processed_output_format": "string (optional, default: 'txt')" }`
 *   **Output:**
     *   If `process_for_rag` is `false` or omitted: `{ "file_path": "string" }` (Path to the original downloaded file)
     *   If `process_for_rag` is `true`: `{ "file_path": "string", "processed_file_path": "string" }` (Paths to original download and the processed text file)

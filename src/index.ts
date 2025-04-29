@@ -48,11 +48,6 @@ const SearchBooksParamsSchema = z.object({
   count: z.number().int().optional().default(10).describe('Number of results to return per page'),
 });
 
-const GetDownloadInfoParamsSchema = z.object({
-  id: z.string().describe('Z-Library book ID'),
-  format: z.string().optional().describe('File format (e.g., "pdf", "epub")'),
-});
-
 const FullTextSearchParamsSchema = z.object({
   query: z.string().describe('Text to search for in book content'),
   exact: z.boolean().optional().default(false).describe('Whether to perform an exact match search'),
@@ -77,7 +72,7 @@ const GetRecentBooksParamsSchema = z.object({
 const DownloadBookToFileParamsSchema = z.object({
   // id: z.string().describe('Z-Library book ID'), // Replaced by bookDetails
   // format: z.string().optional().describe('File format (e.g., "pdf", "epub")'), // Replaced by bookDetails
-  bookDetails: z.object({}).passthrough().describe('The full book details object obtained from search_books or get_book_by_id'), // Changed from z.record to z.object().passthrough()
+  bookDetails: z.object({}).passthrough().describe('The full book details object obtained from search_books'), // Changed from z.record to z.object().passthrough()
   outputDir: z.string().optional().default('./downloads').describe('Directory to save the file to (default: "./downloads")'),
   process_for_rag: z.boolean().optional().describe('Whether to process the document content for RAG after download'),
   processed_output_format: z.string().optional().describe('Desired output format for RAG processing (e.g., "text", "markdown")'), // Removed duplicate line

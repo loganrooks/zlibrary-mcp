@@ -1,3 +1,6 @@
+**Note:** This specification describes an internal scraping strategy that was ultimately deemed unworkable due to external website limitations. The `get_book_by_id` tool has been deprecated. See **[ADR-003: Handle Failure of `get_book_by_id` Tool](./adr/ADR-003-Handle-ID-Lookup-Failure.md)** for the final decision.
+
+---
 # Specification: Internal ID-Based Book Lookup
 
 ## 1. Background
@@ -120,8 +123,8 @@ async def _internal_get_book_details_by_id(book_id: str, domain: str) -> dict:
 
 ```
 
-#### 2.1.4. Caller Modifications (`get_book_by_id`, `get_download_info`)
-Modify the existing Python functions called by the Node.js bridge (`get_book_by_id`, `get_download_info` or similar within the `if __name__ == "__main__":` block) to use the new internal lookup function.
+#### 2.1.4. Caller Modifications (`get_download_info`)
+Modify the existing Python functions called by the Node.js bridge (`get_download_info` or similar within the `if __name__ == "__main__":` block) to use the new internal lookup function.
 
 ```python
 # Inside if __name__ == "__main__": block

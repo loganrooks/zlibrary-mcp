@@ -12,13 +12,15 @@ This Model Context Protocol (MCP) server provides access to Z-Library for AI cod
     - Resolved test suite issues (Commit `3e732b3`).
     - Deprecated and removed `get_download_info` tool (Commit `8bef4c2`).
     - RAG download workflow follows ADR-002 (Commit `f466479` or later).
+    - Deprecated `get_book_by_id` tool (Commit `454c92e`, see ADR-003).
+    - Refactored RAG processing logic from `python_bridge.py` to `rag_processing.py` (Commit `cf8ee5c`).
 - **Branch:** `feature/rag-eval-cleanup` (Current development branch)
 
 ## Architecture Overview
 
 This project is primarily built using **Node.js/TypeScript** and acts as an MCP server. Key architectural features include:
 
-- **Python Bridge:** Utilizes a Python bridge (`lib/python_bridge.py`, `src/lib/python-bridge.ts`) to leverage Python libraries for specific tasks, notably interacting with the Z-Library website and processing document formats (EPUB, TXT, PDF).
+- **Python Bridge:** Utilizes a Python bridge (`lib/python_bridge.py` for core logic, `lib/rag_processing.py` for document processing, `src/lib/python-bridge.ts` for Node interface) to leverage Python libraries for specific tasks, notably interacting with the Z-Library website and processing document formats (EPUB, TXT, PDF).
 - **Managed Python Environment:** The server manages its own Python virtual environment (`.venv`) to ensure consistent dependency handling (see `setup_venv.sh`).
 - **Vendored `zlibrary` Fork:** Includes a modified fork of the `sertraline/zlibrary` Python library within the `zlibrary/` directory. This fork contains specific modifications, particularly for the book download logic which involves scraping the book's detail page to find the actual download link (see ADR-002).
 - **RAG Pipeline:** Implements workflows for downloading books and processing their content (EPUB, TXT, PDF) into plain text suitable for RAG. Processed text is saved to `./processed_rag_output/` and the file path is returned to the agent to avoid context overload (see `docs/architecture/rag-pipeline.md`).
@@ -112,7 +114,7 @@ Configure the server in your AI assistant's settings. Ensure the `command` point
 ## Available Tools
 
 - `search_books`: Search for books. **Recommended** for finding books and obtaining `bookDetails`.
-- `get_book_by_id`: Get details by ID. (Currently unreliable due to external site changes).
+- `get_book_by_id`: **DEPRECATED**. (Unreliable due to external site changes, use `search_books`).
 - `full_text_search`: Search within book content.
 - `get_download_history`: View download history (Parser fixed).
 - `get_download_limits`: Check download limits.

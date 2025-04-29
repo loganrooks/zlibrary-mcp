@@ -160,7 +160,7 @@ export function findPythonExecutable(deps: VenvManagerDependencies): string { //
  * @throws {Error} If venv creation fails.
  */
 export async function createVenv(deps: VenvManagerDependencies, pythonExecutable: string, venvDir: string): Promise<string> {
-    console.log(`Creating Python virtual environment in: ${venvDir}...`);
+    // console.log(`Creating Python virtual environment in: ${venvDir}...`); // Removed debug log
     // Ensure parent directory exists
     // Use await for async mkdir if available, otherwise stick to sync for simplicity here
     deps.fs.mkdirSync(path.dirname(venvDir), { recursive: true });
@@ -169,7 +169,7 @@ export async function createVenv(deps: VenvManagerDependencies, pythonExecutable
         const { stderr, code } = await runCommand(deps, pythonExecutable, ['-m', 'venv', venvDir]);
         if (code === 0) {
             const venvPythonPath = path.join(venvDir, VENV_BIN_DIR, 'python');
-            console.log(`Virtual environment created successfully. Python path: ${venvPythonPath}`);
+            // console.log(`Virtual environment created successfully. Python path: ${venvPythonPath}`); // Removed debug log
             return venvPythonPath;
         } else {
             throw new Error(`Failed to create virtual environment (exit code ${code}). Stderr: ${stderr}`);
@@ -194,11 +194,11 @@ async function installDependencies(deps: VenvManagerDependencies, venvPythonPath
             console.log(`Requirements file not found at ${absolutePath}, skipping.`);
             return;
         }
-        console.log(`Installing packages from ${absolutePath} using ${venvPythonPath}...`);
+        // console.log(`Installing packages from ${absolutePath} using ${venvPythonPath}...`); // Removed debug log
         try {
             const { stderr, code } = await runCommand(deps, venvPythonPath, ['-m', 'pip', 'install', '--no-cache-dir', '--force-reinstall', '--upgrade', '-r', absolutePath]);
             if (code === 0) {
-                console.log(`Packages from ${filePath} installed successfully.`);
+                // console.log(`Packages from ${filePath} installed successfully.`); // Removed debug log
             } else {
                 throw new Error(`Failed to install packages from ${filePath} (exit code ${code}). Stderr: ${stderr}`);
             }
@@ -224,7 +224,7 @@ export async function saveVenvPathConfig(deps: VenvManagerDependencies, venvPyth
     const configPath = await getConfigPath();
     try {
         deps.fs.writeFileSync(configPath, venvPythonPath, 'utf8');
-        console.log(`Saved venv Python path to ${configPath}`);
+        // console.log(`Saved venv Python path to ${configPath}`); // Removed debug log
     } catch (error: any) {
         console.error(`Warning: Failed to save venv config to ${configPath}: ${error.message}`);
         // Non-fatal, but setup will run again next time.
@@ -243,10 +243,10 @@ export async function readVenvPathConfig(deps: VenvManagerDependencies): Promise
             const venvPythonPath = deps.fs.readFileSync(configPath, 'utf8').trim();
             // Basic validation: check if the file exists
             if (deps.fs.existsSync(venvPythonPath)) {
-                console.log(`Read venv Python path from config: ${venvPythonPath}`);
+                // console.log(`Read venv Python path from config: ${venvPythonPath}`); // Removed debug log
                 return venvPythonPath;
             } else {
-                console.warn(`Configured venv Python path not found: ${venvPythonPath}. Re-running setup.`);
+                // console.warn(`Configured venv Python path not found: ${venvPythonPath}. Re-running setup.`); // Already commented
                 deps.fs.unlinkSync(configPath); // Remove invalid config
                 return null;
             }
@@ -267,23 +267,23 @@ async function checkPackageInstalled(deps: VenvManagerDependencies, venvPythonPa
     // Check for a key runtime package and a key dev package
     const runtimePackage = 'zlibrary';
     const devPackage = 'pytest';
-    console.log(`Checking if key packages '${runtimePackage}' and '${devPackage}' are installed in ${venvPythonPath}...`);
+    // console.log(`Checking if key packages '${runtimePackage}' and '${devPackage}' are installed in ${venvPythonPath}...`); // Removed debug log
     try {
         // Check runtime package
         const { code: runtimeCode } = await runCommand(deps, venvPythonPath, ['-m', 'pip', 'show', runtimePackage], {}, false);
         if (runtimeCode !== 0) {
-             console.log(`Key runtime package '${runtimePackage}' not found (pip show exit code ${runtimeCode}). Assuming requirements need installation.`);
+             // console.log(`Key runtime package '${runtimePackage}' not found (pip show exit code ${runtimeCode}). Assuming requirements need installation.`); // Removed debug log
              return false;
         }
-         console.log(`Key runtime package '${runtimePackage}' is installed.`);
+         // console.log(`Key runtime package '${runtimePackage}' is installed.`); // Removed debug log
 
         // Check dev package
         const { code: devCode } = await runCommand(deps, venvPythonPath, ['-m', 'pip', 'show', devPackage], {}, false);
          if (devCode !== 0) {
-             console.log(`Key dev package '${devPackage}' not found (pip show exit code ${devCode}). Assuming requirements need installation.`);
+             // console.log(`Key dev package '${devPackage}' not found (pip show exit code ${devCode}). Assuming requirements need installation.`); // Removed debug log
              return false;
          }
-         console.log(`Key dev package '${devPackage}' is installed.`);
+         // console.log(`Key dev package '${devPackage}' is installed.`); // Removed debug log
 
         // If both checks pass
         return true;
@@ -308,20 +308,20 @@ const defaultDeps: VenvManagerDependencies = {
  * @throws {Error} If setup fails at any critical step.
  */
 export async function ensureVenvReady(deps: VenvManagerDependencies = defaultDeps): Promise<void> {
-    console.log('Ensuring Python virtual environment is ready...');
+    // console.log('Ensuring Python virtual environment is ready...'); // Removed debug log
     let venvPythonPath = await readVenvPathConfig(deps);
 
     if (venvPythonPath) {
         // Config exists, verify package installation
         const isInstalled = await checkPackageInstalled(deps, venvPythonPath);
         if (isInstalled) {
-            console.log('Venv and package already configured and valid.');
+            // console.log('Venv and package already configured and valid.'); // Removed debug log
             return; // Already set up
         } else {
-            console.log(`Key package not found in configured venv. Re-installing from requirements.txt...`);
+            // console.log(`Key package not found in configured venv. Re-installing from requirements.txt...`); // Removed debug log
             try {
                 await installDependencies(deps, venvPythonPath);
-                console.log('Venv re-validated successfully.');
+                // console.log('Venv re-validated successfully.'); // Removed debug log
                 return; // Setup complete after re-install
             } catch (installError: any) {
                 console.error(`Failed to reinstall packages from requirements.txt: ${installError.message}. Attempting full venv recreation.`);
@@ -346,14 +346,14 @@ export async function ensureVenvReady(deps: VenvManagerDependencies = defaultDep
     }
 
     // If we reach here, venvPythonPath is null (no config or config was invalid/package missing and reinstall failed)
-    console.log('Setting up new Python virtual environment...');
+    // console.log('Setting up new Python virtual environment...'); // Removed debug log
     try { // Restore outer try block
         const pythonExecutable = await findPythonExecutable(deps);
         const venvDir = await getVenvDir();
 
         // Clean up potentially incomplete venv dir if it exists
         if (deps.fs.existsSync(venvDir)) {
-             console.log(`Removing potentially incomplete venv directory: ${venvDir}`);
+             // console.log(`Removing potentially incomplete venv directory: ${venvDir}`); // Removed debug log
              deps.fs.rmSync(venvDir, { recursive: true, force: true });
         }
 
@@ -362,7 +362,7 @@ export async function ensureVenvReady(deps: VenvManagerDependencies = defaultDep
         await installDependencies(deps, venvPythonPath!);
         // Add non-null assertion
         await saveVenvPathConfig(deps, venvPythonPath!);
-        console.log('Python virtual environment setup complete.');
+        // console.log('Python virtual environment setup complete.'); // Removed debug log
     } catch (error: any) { // Restore outer catch block
         console.error(`Critical error during venv setup: ${error.message}`);
         // Use throw (original behavior)

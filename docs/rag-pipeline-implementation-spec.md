@@ -216,12 +216,17 @@ END FUNCTION
 EXPORT { downloadBookToFile, processDocumentForRag /*, ... other functions */ }
 ```
 
-## 5. Python Bridge (`lib/python_bridge.py`)
+## 5. Python Bridge (`lib/python_bridge.py` & `lib/rag_processing.py`)
 
-This script handles the core logic for downloading, processing, and saving files.
+The Python bridge consists of two main files:
+- `lib/python_bridge.py`: Handles the main interface, argument parsing, calling the `zlibrary` library, and orchestrating calls to the RAG processing module.
+- `lib/rag_processing.py`: Contains the specific logic for processing document content (EPUB, TXT, PDF) and saving the results.
+
+This section details the relevant functions within `lib/rag_processing.py` and how they are called by `lib/python_bridge.py`.
 
 ```python
-# File: lib/python_bridge.py
+# File: lib/rag_processing.py (Contains processing logic)
+# File: lib/python_bridge.py (Calls functions below)
 # Dependencies: zlibrary, ebooklib, beautifulsoup4, lxml, PyMuPDF, httpx, aiofiles
 # Standard Libs: json, sys, os, argparse, logging, pathlib, asyncio, urllib.parse
 import json
@@ -278,7 +283,7 @@ class DownloadExecutionError(Exception):
     pass
 
 
-# --- Helper Functions for Processing ---
+# --- Helper Functions for Processing (in lib/rag_processing.py) ---
 
 def _html_to_text(html_content):
     """Extracts plain text from HTML using BeautifulSoup."""
@@ -371,7 +376,7 @@ def _process_pdf(file_path: Path) -> str:
             try: doc.close()
             except Exception as close_error: logging.error(f"Error closing PDF {file_path}: {close_error}")
 
-# --- New Helper Function for Saving ---
+# --- Helper Function for Saving (in lib/rag_processing.py) ---
 
 def _save_processed_text(original_file_path: Path, text_content: str, output_format: str = "txt") -> Path:
     """Saves the processed text content to a file."""
@@ -395,7 +400,7 @@ def _save_processed_text(original_file_path: Path, text_content: str, output_for
         logging.error(f"Unexpected error saving processed file {output_file_path}: {e}")
         raise FileSaveError(f"An unexpected error occurred while saving processed file: {e}") from e
 
-# --- Helper for Scraping and Downloading (async) ---
+# --- Helper for Scraping and Downloading (async, in lib/python_bridge.py) ---
 
 async def _scrape_and_download(book_page_url: str, output_dir_str: str) -> str:
     """Fetches book page, scrapes download link, and downloads the file."""
@@ -480,7 +485,7 @@ async def _scrape_and_download(book_page_url: str, output_dir_str: str) -> str:
             raise DownloadExecutionError(f"Unexpected error during download: {exc}") from exc
 
 
-# --- Core Bridge Functions (Updated) ---
+# --- Core Bridge Functions (in lib/python_bridge.py, calling rag_processing.py) ---
 
 def process_document(file_path_str: str, output_format: str = "txt") -> dict:
     """

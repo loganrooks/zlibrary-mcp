@@ -1,5 +1,90 @@
 # Holistic Reviewer Specific Memory
 <!-- Entries below should be added reverse chronologically (newest first) -->
+## Delegated Tasks Log
+### Delegated Task: Cleanup Root Utility Script - [2025-04-29 17:00:00]
+- **Assigned To**: `optimizer`
+- **Related Finding**: Organization - [2025-04-29 17:00:00] (Root Utility Script)
+- **Task Description**: Move the utility script `get_venv_python_path.mjs` from the root directory to a more appropriate location like `scripts/` or `utils/`. Update any references if necessary (though likely none exist outside potential external tooling configurations).
+- **Status**: Pending
+
+### Delegated Task: Remove Unused Zod Schema - [2025-04-29 17:00:00]
+- **Assigned To**: `optimizer`
+- **Related Finding**: Hygiene - [2025-04-29 17:00:00] (Unused Zod Schema)
+- **Task Description**: Remove the unused Zod schema `GetDownloadInfoParamsSchema` from `src/index.ts`.
+- **Status**: Pending
+
+## Review Findings & Recommendations
+### Finding: SPARC/TDD - [2025-04-29 17:00:00]
+- **Category**: SPARC/TDD
+- **Location/File(s)**: `zlibrary/src/zlibrary/abs.py`
+- **Observation**: File length (813 lines) significantly exceeds the SPARC <500 line guideline. This is part of the vendored library fork.
+- **Recommendation**: Defer refactoring due to the risks associated with modifying external library code, unless specific bugs necessitate changes within this file. Log as technical debt.
+- **Severity/Priority**: Low
+
+### Finding: SPARC/TDD - [2025-04-29 17:00:00]
+- **Category**: SPARC/TDD
+- **Location/File(s)**: `lib/rag_processing.py`
+- **Observation**: File length (524 lines) slightly exceeds the SPARC <500 line guideline.
+- **Recommendation**: Note for potential future refactoring by `optimizer` if complexity increases or maintenance becomes difficult. No immediate action required.
+- **Severity/Priority**: Low
+
+### Finding: Hygiene - [2025-04-29 17:00:00]
+- **Category**: Hygiene
+- **Location/File(s)**: `src/index.ts`
+- **Observation**: Unused Zod schema `GetDownloadInfoParamsSchema` (related to deprecated `get_download_info` tool) remains in the code.
+- **Recommendation**: Delegate removal to `optimizer` mode.
+- **Severity/Priority**: Low
+- **Delegated Task ID**: Remove Unused Zod Schema - [2025-04-29 17:00:00]
+
+### Finding: Organization - [2025-04-29 17:00:00]
+- **Category**: Organization
+- **Location/File(s)**: `/get_venv_python_path.mjs`
+- **Observation**: Utility script `get_venv_python_path.mjs` exists at the root level. While functional, its location is slightly unconventional.
+- **Recommendation**: Delegate moving the script to a more standard location (e.g., `scripts/`) to `optimizer` mode.
+- **Severity/Priority**: Low
+- **Delegated Task ID**: Cleanup Root Utility Script - [2025-04-29 17:00:00]
+
+### Finding: Hygiene - [2025-04-29 17:00:00]
+- **Category**: Hygiene
+- **Location/File(s)**: `src/lib/zlibrary-api.ts`, `src/lib/venv-manager.ts`
+- **Observation**: Numerous `console.log` and `console.warn` statements were present, cluttering test output. Error logging in `zlibrary-api.ts` used `JSON.stringify` which obscured error details.
+- **Recommendation**: Removed debug logs and improved error logging in `zlibrary-api.ts` to log the raw error object. (Completed during this review)
+- **Severity/Priority**: Medium
+
+### Finding: Documentation - [2025-04-29 17:00:00]
+- **Category**: Documentation
+- **Location/File(s)**: `docs/rag-pipeline-implementation-spec.md`
+- **Observation**: Specification did not reflect the refactoring of RAG processing logic from `lib/python_bridge.py` to `lib/rag_processing.py`.
+- **Recommendation**: Updated the specification to correctly reference `lib/rag_processing.py`. (Completed during this review)
+- **Severity/Priority**: Medium
+
+### Finding: Documentation - [2025-04-29 17:00:00]
+- **Category**: Documentation
+- **Location/File(s)**: `docs/internal-id-lookup-spec.md`, `docs/search-first-id-lookup-spec.md`
+- **Observation**: These specifications described ID lookup strategies that are now superseded by the decision in ADR-003 to deprecate ID lookup.
+- **Recommendation**: Marked both files as superseded with a note pointing to ADR-003. (Completed during this review)
+- **Severity/Priority**: Medium
+
+### Finding: Documentation - [2025-04-29 17:00:00]
+- **Category**: Documentation
+- **Location/File(s)**: `docs/adr/ADR-003-Handle-ID-Lookup-Failure.md`
+- **Observation**: ADR status was "Proposed" despite the decision being implemented (tool deprecated).
+- **Recommendation**: Updated status to "Accepted". (Completed during this review)
+- **Severity/Priority**: Low
+
+### Finding: Documentation - [2025-04-29 17:00:00]
+- **Category**: Documentation
+- **Location/File(s)**: `README.md`
+- **Observation**: README did not explicitly mention the deprecation of `get_book_by_id` or the refactoring of `python_bridge.py` into `rag_processing.py`.
+- **Recommendation**: Updated README to include these details. (Completed during this review)
+- **Severity/Priority**: Medium
+
+### Finding: Integration - [2025-04-29 17:00:00]
+- **Category**: Integration
+- **Location/File(s)**: `__tests__/index.test.js`, `index.js`, `src/index.ts`
+- **Observation**: References to the deprecated `get_book_by_id` tool (mocks, tests, handler, registration, comments) remained after the initial deprecation task.
+- **Recommendation**: Removed/commented out all remaining references. (Completed during this review)
+- **Severity/Priority**: High
 ## Review Findings & Recommendations
 ### Delegated Task: Deprecate get_book_by_id (Code) - [2025-04-29 15:39:00]
 - **Assigned To**: `code`

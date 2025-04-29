@@ -2,7 +2,7 @@
 
 **Date**: 2025-04-29
 
-**Status**: Proposed
+**Status**: Accepted
 
 ## Context
 

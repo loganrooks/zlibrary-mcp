@@ -48,10 +48,6 @@ const SearchBooksParamsSchema = z.object({
   count: z.number().int().optional().default(10).describe('Number of results to return per page'),
 });
 
-const GetBookByIdParamsSchema = z.object({
-  id: z.string().describe('Z-Library book ID'),
-});
-
 const GetDownloadInfoParamsSchema = z.object({
   id: z.string().describe('Z-Library book ID'),
   format: z.string().optional().describe('File format (e.g., "pdf", "epub")'),
@@ -106,11 +102,6 @@ const handlers: HandlerMap = {
       // Assuming searchBooks returns the array directly
       return { content: results, total: results.length, query: args.query };
     } catch (error: any) { return { error: { message: error.message || 'Failed to search books' } }; }
-  },
-
-  getBookById: async (args: z.infer<typeof GetBookByIdParamsSchema>) => {
-    try { return await zlibraryApi.getBookById(args); }
-    catch (error: any) { return { error: { message: error.message || 'Failed to get book information' } }; }
   },
 
   fullTextSearch: async (args: z.infer<typeof FullTextSearchParamsSchema>) => {
@@ -180,11 +171,6 @@ const toolRegistry: Record<string, ToolRegistryEntry> = {
     description: 'Search for books in Z-Library',
     schema: SearchBooksParamsSchema,
     handler: handlers.searchBooks,
-  },
-  get_book_by_id: {
-    description: 'Get detailed information about a book by its ID',
-    schema: GetBookByIdParamsSchema,
-    handler: handlers.getBookById,
   },
   full_text_search: {
     description: 'Search for books containing specific text in their content',

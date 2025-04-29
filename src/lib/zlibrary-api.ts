@@ -84,10 +84,6 @@ interface FullTextSearchArgs extends SearchBooksArgs {
     words?: boolean;
 }
 
-interface GetBookByIdArgs {
-    id: string;
-}
-
 interface GetDownloadInfoArgs {
     id: string;
     format?: string | null;
@@ -133,14 +129,6 @@ export async function searchBooks({
   return await callPythonFunction('search', {
     query, exact, from_year: fromYear, to_year: toYear, languages, extensions, count
   });
-}
-
-/**
- * Get book details by ID
- */
-export async function getBookById({ id }: GetBookByIdArgs): Promise<any> {
-  // Pass arguments as an object matching Python function signature
-  return await callPythonFunction('get_by_id', { book_id: id });
 }
 
 /**

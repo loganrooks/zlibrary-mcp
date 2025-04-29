@@ -113,18 +113,6 @@ async def _find_book_by_id_via_search(book_id):
         raise ValueError(f"Ambiguous search result for Book ID {book_id}.")
 
 
-async def get_by_id(book_id):
-    """Get book details by ID using search workaround"""
-    if not zlib_client:
-        await initialize_client()
-
-    try:
-        book = await _find_book_by_id_via_search(book_id)
-        return book
-    except Exception as e:
-        logging.exception(f"Error in get_by_id for ID {book_id}")
-        raise e # Re-raise the exception after logging
-
 async def full_text_search(query, exact=False, phrase=True, words=False, languages=None, extensions=None, count=10):
     """Search for text within book contents"""
     if not zlib_client:
@@ -307,8 +295,6 @@ async def main():
         # Call the requested function
         if function_name == 'search':
             result = await search(**args_dict)
-        elif function_name == 'get_by_id':
-            result = await get_by_id(**args_dict)
         elif function_name == 'full_text_search':
             result = await full_text_search(**args_dict)
         elif function_name == 'get_download_history':

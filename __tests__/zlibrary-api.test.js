@@ -248,32 +248,6 @@ describe('Z-Library API', () => {
         expect(result).toEqual(mockApiResultEmpty);
     });
 
-  describe('getBookById', () => {
-    test('should call Python bridge for getBookById', async () => {
-        const mockApiResult = { id: 'book123', title: 'Specific Book' };
-        mockGetManagedPythonPath.mockResolvedValue('/fake/python');
-        mockPythonShellRun.mockResolvedValueOnce([mockApiResult]); // Simulate python returning the object
-
-        const bookArgs = { id: 'book123' };
-        result = await zlibApi.getBookById(bookArgs);
-
-        expect(mockPythonShellRun).toHaveBeenCalledWith('python_bridge.py', expect.objectContaining({ // Corrected script name
-            scriptPath: '/home/rookslog/zlibrary-mcp/lib', // Corrected script path
-            args: ['get_by_id', JSON.stringify({ book_id: bookArgs.id })]
-        }));
-        expect(result).toEqual(mockApiResult);
-    });
-
-     test('should handle errors from Python bridge during getBookById', async () => {
-      const apiError = new Error('Python Get Book Failed');
-      mockGetManagedPythonPath.mockResolvedValue('/fake/python');
-      mockPythonShellRun.mockRejectedValue(apiError);
-
-      await expect(zlibApi.getBookById({ id: 'fail123' })).rejects.toThrow(`Python bridge execution failed for get_by_id: ${apiError.message}`);
-      expect(mockPythonShellRun).toHaveBeenCalledWith('python_bridge.py', expect.objectContaining({ scriptPath: '/home/rookslog/zlibrary-mcp/lib', args: ['get_by_id', JSON.stringify({ book_id: 'fail123' })] })); // Corrected script name and path
-    });
-  });
-
   describe('fullTextSearch', () => {
     test('should call Python bridge for fullTextSearch', async () => {
         const mockApiResult = [{ id: '2', title: 'JS Book' }]; // Python returns list

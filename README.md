@@ -2,14 +2,17 @@
 
 This Model Context Protocol (MCP) server provides access to Z-Library for AI coding assistants like RooCode and Cline for VSCode. It allows AI assistants to search for books, retrieve metadata, download files, and process document content for Retrieval-Augmented Generation (RAG) workflows.
 
-## Current Status (As of 2025-04-28)
+## Current Status (As of 2025-04-28 22:00 UTC-4)
 
-- **Development Focus:** Implementing the RAG document processing pipeline, specifically the download workflow.
-- **Branch:** `feature/rag-file-output`
-- **Progress:**
-    - Specification for the RAG download workflow updated (v2.1) to align with ADR-002 (see `docs/rag-pipeline-implementation-spec.md`).
-    - TDD Red Phase (writing failing tests) for the updated download workflow is complete.
-    - Next Step: TDD Green Phase (implementation).
+- **Stability:** Stable. Both Node.js (`npm test`) and Python (`pytest`) test suites are passing.
+- **Recent Updates:**
+    - Fixed `get_download_history` parser (Commit `9350af5`).
+    - Implemented `get_recent_books` tool (Commit `75b6f11`).
+    - Implemented `venv-manager` tests (Commit assumed `3e732b3` or prior).
+    - Resolved test suite issues (Commit `3e732b3`).
+    - Deprecated and removed `get_download_info` tool (Commit `8bef4c2`).
+    - RAG download workflow follows ADR-002 (Commit `f466479` or later).
+- **Branch:** `main` (or primary development branch)
 
 ## Architecture Overview
 
@@ -24,10 +27,10 @@ This project is primarily built using **Node.js/TypeScript** and acts as an MCP 
 
 - 📚 Search for books by title, author, year, language, and format
 - 📖 Get detailed book information and metadata (Note: ID-based lookup is currently unreliable due to external website changes; search is recommended)
-- 🔗 Get download information (subject to the same ID lookup limitations)
 - 🔍 Full-text search within book contents
-- 📊 View download history and limits
-- 💾 Download books directly to local file system (`./downloads/` by default)
+- 📊 View download history (Parser fixed) and limits
+- 📈 Get recently added books
+- 💾 Download books directly to local file system (`./downloads/` by default) using `bookDetails` from search results (see ADR-002).
 - ✨ Process downloaded documents (EPUB, TXT, PDF) into plain text for RAG, saving output to `./processed_rag_output/`
 
 ## Prerequisites
@@ -110,12 +113,11 @@ Configure the server in your AI assistant's settings. Ensure the `command` point
 
 - `search_books`: Search for books. **Recommended** for finding books and obtaining `bookDetails`.
 - `get_book_by_id`: Get details by ID. (Currently unreliable due to external site changes).
-- `get_download_info`: Get download info by ID. (Currently unreliable).
 - `full_text_search`: Search within book content.
-- `get_download_history`: View download history.
+- `get_download_history`: View download history (Parser fixed).
 - `get_download_limits`: Check download limits.
-- `get_recent_books`: Get recently added books.
-- `download_book_to_file`: Download a book using `bookDetails` from search. Can optionally process for RAG.
+- `get_recent_books`: Get recently added books (Implemented).
+- `download_book_to_file`: Download a book using `bookDetails` from search results. Can optionally process for RAG.
 - `process_document_for_rag`: Process an existing local file (EPUB, TXT, PDF) for RAG.
 
 ## Development
@@ -124,6 +126,7 @@ Configure the server in your AI assistant's settings. Ensure the `command` point
 
 ```bash
 # Run all tests (Jest for Node.js, Pytest for Python bridge)
+# Both suites are currently passing.
 npm test
 ```
 

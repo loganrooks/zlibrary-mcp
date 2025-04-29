@@ -1,6 +1,13 @@
 # Specification Writer Specific Memory
 <!-- Entries below should be added reverse chronologically (newest first) -->
 ## Functional Requirements
+### Feature: RAG Output Quality Evaluation Criteria
+- Added: 2025-04-29 01:34:12
+- Description: Defined measurable quality criteria for evaluating Markdown and Text output from the `process_document_for_rag` tool (EPUB/PDF sources) to ensure suitability for RAG ingestion. Covers structure preservation, content fidelity, reference handling, and RAG-specific suitability (chunking, metadata, images). Includes TDD anchors for future automated testing.
+- Acceptance criteria: 1. Specification document `docs/rag-output-quality-spec.md` exists. 2. Document covers criteria for both Markdown and Text outputs. 3. Document includes TDD anchors. 4. Criteria are clear and measurable for QA testing.
+- Dependencies: `process_document_for_rag` tool implementation (`lib/python_bridge.py` using `ebooklib`, `PyMuPDF`).
+- Status: Draft (Specification Complete)
+- Related: `docs/rag-output-quality-spec.md`
 ### Feature: RAG Document Processing Pipeline (v2 - File Output)
 - Added: 2025-04-23 23:37:09
 - Description: Update the RAG pipeline to save processed text (EPUB, TXT, PDF) to `./processed_rag_output/` and return the `processed_file_path` instead of raw text. **Clarifies the `download_book_to_file` workflow per ADR-002 (input `bookDetails` from search, internal scraping).** Involves updating `download_book_to_file` and `process_document_for_rag` tools (schemas, Node handlers), and Python bridge (`download_book` handles scraping, `process_document` orchestrates extraction and saving via `_save_processed_text` helper).

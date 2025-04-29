@@ -9,6 +9,7 @@ from zlibrary.exception import DownloadError
 from zlibrary.const import OrderOptions # Need this import
 
 import httpx
+import re # Add re module for regex
 # os import removed, using pathlib
 from pathlib import Path
 import ebooklib
@@ -223,12 +224,90 @@ def _process_epub(file_path):
         content = []
         for item in book.get_items_of_type(ebooklib.ITEM_DOCUMENT):
             soup = BeautifulSoup(item.get_content(), 'html.parser')
-            # Extract text, trying to preserve paragraphs
-            text = '\n\n'.join(p.get_text(strip=True) for p in soup.find_all(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6']))
-            if not text: # Fallback if no paragraph tags found
-                text = soup.get_text(strip=True)
-            content.append(text)
-        return "\n\n".join(content)
+            # --- Refactored Markdown Heading/List/Footnote Generation ---
+            item_content = []
+            footnote_defs = {} # Store definitions for this item { '1': 'content' }
+
+            # --- Refactored Footnote Handling ---
+            # First pass: Find, store, and remove footnote definitions (<aside epub:type="footnote">)
+            # This prevents them from being processed as regular content later.
+            for footnote_element in soup.find_all(attrs={"epub:type": "footnote"}):
+                footnote_id = footnote_element.get('id')
+                if footnote_id:
+                    # Extract number from id (e.g., 'fn1' -> '1')
+                    num_match = re.search(r'\d+', footnote_id)
+                    if num_match:
+                        num = num_match.group(0)
+                        footnote_text = footnote_element.get_text(strip=True) # Use different variable name
+                        if footnote_text:
+                            footnote_defs[num] = footnote_text # Store the text
+                            footnote_element.decompose() # Remove from soup
+
+            # Second pass: Process main content elements (now excluding footnote definitions)
+            for element in soup.body.find_all(recursive=False): # Process top-level elements
+                # Handle footnote references (<a> tags with epub:type="noteref") within elements
+                # before getting the element's main text.
+                for noteref in element.find_all('a', attrs={"epub:type": "noteref"}):
+                    ref_num_text = noteref.get_text(strip=True)
+                    ref_num_href = noteref.get('href', '')
+                    num = None
+                    if ref_num_text.isdigit():
+                        num = ref_num_text
+                    elif '#' in ref_num_href: # Try extracting from href like #fn1
+                        num_match = re.search(r'\d+', ref_num_href)
+                        if num_match:
+                            num = num_match.group(0)
+
+                    if num:
+                        # Replace the <a> tag with Markdown footnote marker
+                        noteref.replace_with(f"[^{num}]")
+                    else:
+                        noteref.decompose() # Remove if number couldn't be found
+
+                # Now get text after potential modifications
+                text = element.get_text(strip=True)
+                if not text and element.name not in ['ul', 'ol']: # Allow empty lists
+                    continue # Skip empty elements unless it's a list container
+
+                # --- Refactored List Generation ---
+                # Handle Unordered Lists (ul)
+                if element.name == 'ul':
+                    for li in element.find_all('li', recursive=False): # Process direct children li
+                        li_text = li.get_text(strip=True)
+                        if li_text:
+                            item_content.append(f"* {li_text}") # Use '*' marker
+                    continue # Handled list, move to next top-level element
+                # Handle Ordered Lists (ol)
+                elif element.name == 'ol':
+                    for i, li in enumerate(element.find_all('li', recursive=False)): # Process direct children li
+                        li_text = li.get_text(strip=True)
+                        if li_text:
+                            item_content.append(f"{i + 1}. {li_text}") # Use numbered marker
+                    continue # Handled list, move to next top-level element
+                # --- End Refactored List Generation ---
+
+                # Map HTML heading tags to Markdown (if not a list)
+                heading_level = 0
+                if element.name.startswith('h') and len(element.name) == 2 and element.name[1].isdigit():
+                    heading_level = int(element.name[1])
+
+                if 1 <= heading_level <= 6:
+                    item_content.append(f"{'#' * heading_level} {text}")
+                else: # Paragraph or other block element
+                    item_content.append(text)
+
+            if not item_content: # Fallback if no relevant tags found
+                 fallback_text = soup.get_text(strip=True)
+                 if fallback_text:
+                     content.append(fallback_text)
+            elif item_content: # Only append if we actually gathered content
+                 # Append collected footnote definitions for this item
+                 if footnote_defs:
+                     for num, def_text in sorted(footnote_defs.items()):
+                         item_content.append(f"[^{num}]: {def_text}")
+                 content.append("\n\n".join(item_content))
+            # --- End Refactored Generations ---
+        return "\n\n".join(content) # Join content from different items
     except Exception as e:
         raise Exception(f"Error processing EPUB {file_path}: {e}")
 
@@ -243,15 +322,17 @@ def _process_txt(file_path):
         raise Exception(f"Error processing TXT {file_path}: {e}")
 
 
-def _process_pdf(file_path: str) -> str:
+def _process_pdf(file_path: str, output_format: str = 'text') -> str: # Add output_format arg
     """
-    Extracts text content from a PDF file using PyMuPDF (fitz).
+    Extracts text content from a PDF file using PyMuPDF (fitz), optionally
+    generating basic Markdown structure.
 
     Args:
         file_path: The absolute path to the PDF file.
+        output_format: The desired output format ('text' or 'markdown').
 
     Returns:
-        The extracted plain text content.
+        The extracted content as plain text or basic Markdown.
 
     Raises:
         FileNotFoundError: If the file_path does not exist.
@@ -280,25 +361,137 @@ def _process_pdf(file_path: str) -> str:
         for page_num in range(len(doc)):
             try:
                 page = doc.load_page(page_num)
-                text = page.get_text("text") # Extract plain text
-                if text:
-                    all_text.append(text.strip())
+
+                if output_format == 'markdown':
+                    # --- Refactored Markdown Generation ---
+                    page_content = []
+                    footnote_definitions = {} # Store footnote content { '1': 'Footnote text' }
+                    # Extract text blocks with font info
+                    page_dict = page.get_text("dict", flags=fitz.TEXTFLAGS_DICT) # Use dict format
+
+                    for block in page_dict.get("blocks", []):
+                        if block.get("type") == 0: # Process only text blocks
+                            block_text_parts = []
+                            # Determine potential heading/list/footnote based on the first span
+                            # NOTE: This is a simplified heuristic. Real PDFs are more complex.
+                            heading_level = 0
+                            try:
+                                first_span = block["lines"][0]["spans"][0]
+                                size = first_span.get("size", 12)
+                                # Simple size thresholds (adjust as needed based on common PDF styles)
+                                if size >= 20: heading_level = 1 # Likely Title
+                                elif size >= 16: heading_level = 2 # Likely Section
+                                elif size >= 14: heading_level = 3 # Likely Subsection
+                            except (IndexError, KeyError):
+                                pass # Ignore blocks without lines/spans or size info
+
+                            # Collect text, identify footnote refs/defs
+                            line_buffer = []
+                            potential_footnote_def = None
+                            first_span_in_block = True
+                            for line in block.get("lines", []):
+                                for span in line.get("spans", []):
+                                    text = span.get("text", "") # Keep whitespace initially
+                                    flags = span.get("flags", 0)
+                                    is_superscript = flags & 1 # Check superscript flag
+
+                                    # Refactored Footnote Detection
+                                    # Heuristic: Superscript number at the start of a block is likely a definition.
+                                    # Superscript number elsewhere is likely a reference.
+                                    if is_superscript and text.isdigit():
+                                        footnote_num = text.strip()
+                                        if first_span_in_block:
+                                            potential_footnote_def = footnote_num
+                                            # Skip adding the number itself to the line buffer for definitions
+                                        else:
+                                            line_buffer.append(f"[^{footnote_num}]") # Format as Markdown reference
+                                    else:
+                                        line_buffer.append(text) # Append normal text
+                                    first_span_in_block = False # Mark subsequent spans as not the first
+
+                            # Process collected block text
+                            if line_buffer:
+                                full_block_text = "".join(line_buffer).strip()
+                                # Refactored List Detection (applied after potential footnote marker removal)
+                                is_list_item = False
+                                list_marker = ""
+                                ordered_match = re.match(r"^(\d+)\.\s+", full_block_text)
+                                unordered_match = re.match(r"^([\*•-])\s+", full_block_text)
+
+                                if ordered_match:
+                                    is_list_item = True
+                                    list_marker = f"{ordered_match.group(1)}. "
+                                    full_block_text = full_block_text[len(ordered_match.group(0)):].strip()
+                                elif unordered_match:
+                                    is_list_item = True
+                                    list_marker = "* "
+                                    full_block_text = full_block_text[len(unordered_match.group(0)):].strip()
+
+                                # Store definition or append content
+                                if potential_footnote_def:
+                                    footnote_definitions[potential_footnote_def] = full_block_text.strip()
+                                elif heading_level > 0:
+                                    page_content.append(f"{'#' * heading_level} {full_block_text}")
+                                elif is_list_item:
+                                     page_content.append(f"{list_marker}{full_block_text}")
+                                else:
+                                    page_content.append(full_block_text)
+
+                    # Append footnote definitions at the end of the page
+                    for num, text in sorted(footnote_definitions.items()):
+                         page_content.append(f"[^{num}]: {text}")
+
+                    # Basic cleaning for Markdown (null chars, excessive newlines)
+                    page_md = "\n\n".join(page_content) # Join with double newline
+                    page_md = page_md.replace('\x00', '')
+                    page_md = re.sub(r'\n\s*\n', '\n\n', page_md).strip()
+                    if page_md:
+                        all_text.append(page_md)
+                    # --- End Refactored Markdown Generation ---
+                else: # Default to text processing
+                    text = page.get_text("text") # Extract plain text
+                    # --- Refactored Cleaning (RAG Quality) ---
+                    if text: # Process only if text exists
+                        # 1. Remove null characters
+                        text = text.replace('\x00', '')
+
+                        # 2. Define common header/footer patterns (can be expanded)
+                        header_footer_patterns = [
+                            re.compile(r"^(JSTOR.*|Downloaded from.*|Copyright ©.*)\n?", re.IGNORECASE | re.MULTILINE),
+                            re.compile(r"^Page \d+\s*\n?", re.MULTILINE)
+                        ]
+
+                        # 3. Apply patterns
+                        for pattern in header_footer_patterns:
+                            text = pattern.sub('', text)
+
+                        # 4. Remove excessive blank lines
+                        text = re.sub(r'\n\s*\n', '\n\n', text)
+
+                        # 5. Strip leading/trailing whitespace
+                        cleaned_text = text.strip()
+
+                        # 6. Append if non-empty
+                        if cleaned_text:
+                            all_text.append(cleaned_text)
+                    # --- End Refactored Cleaning ---
+
             except Exception as page_error:
                 logging.warning(f"Could not process page {page_num + 1} in {file_path}: {page_error}")
                 # Continue processing other pages
 
-        # Combine extracted text
-        full_text = "\n\n".join(all_text).strip()
+        # Combine extracted content (either text or markdown)
+        full_content = "\n\n".join(all_text).strip()
 
-        # Check if any text was extracted
-        if not full_text:
-            logging.warning(f"No extractable text found in PDF (possibly image-based): {file_path}")
+        # Check if any content was extracted
+        if not full_content:
+            logging.warning(f"No extractable content found in PDF (possibly image-based): {file_path}")
             raise ValueError(
-                "PDF contains no extractable text layer (possibly image-based)"
+                "PDF contains no extractable content layer (possibly image-based)"
             )
 
-        logging.info(f"Finished PDF: {file_path}. Extracted length: {len(full_text)}")
-        return full_text
+        logging.info(f"Finished PDF: {file_path}. Extracted length: {len(full_content)}")
+        return full_content
 
     except RuntimeError as fitz_error: # Catch generic runtime errors, potentially from fitz
         logging.error(f"PyMuPDF error processing {file_path}: {fitz_error}")
@@ -373,7 +566,8 @@ async def process_document(file_path_str: str, output_format='txt') -> dict:
         elif ext == '.txt':
             processed_text = _process_txt(file_path_str)
         elif ext == '.pdf':
-            processed_text = _process_pdf(file_path_str)
+            # Pass output_format to _process_pdf
+            processed_text = _process_pdf(file_path_str, output_format=output_format)
         else:
             raise ValueError(f"Unsupported file format: {ext}. Supported: {SUPPORTED_FORMATS}")
 

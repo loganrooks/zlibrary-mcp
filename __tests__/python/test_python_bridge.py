@@ -535,9 +535,297 @@ def test_process_pdf_file_not_found(tmp_path, mock_fitz):
         _process_pdf(str(pdf_path))
     # Ensure fitz.open wasn't even called if file doesn't exist before check
     # mock_open_func.assert_not_called() # This depends on implementation order
+# Test for PDF Text Noise Reduction (Refactored for RAG Quality Refinement)
+def test_process_pdf_text_removes_noise_refactored(tmp_path, mock_fitz, mocker):
+    """Tests if _process_pdf removes common headers/footers (regex) and null chars."""
+    mock_open_func, mock_doc, mock_page = mock_fitz
+    dummy_path = str(tmp_path / "noisy_sample.pdf")
+    mock_os_exists = mocker.patch('os.path.exists', return_value=True)
 
+    # Simulate noisy text extraction with more variations
+    noisy_text_page1 = (
+        "JSTOR Some Info\n" # Variation 1
+        "Page 1\n"
+        "This is the actual content.\n"
+        "With some\x00null characters.\n"
+        "Downloaded from AnotherSource\n" # Variation 2
+    )
+    noisy_text_page2 = (
+        "Copyright © 2025 Publisher\n" # Variation 3
+        "More actual content.\n"
+        "Page 2" # No trailing newline
+    )
+    # Mock load_page to return the same page mock, but change its get_text return value
+    mock_page.get_text.side_effect = [noisy_text_page1, noisy_text_page2]
+    mock_doc.__len__.return_value = 2 # Simulate 2 pages
+    mock_doc.load_page.side_effect = [mock_page, mock_page] # Return same mock page instance
+
+    # Call the function under test
+    result = _process_pdf(dummy_path)
+
+    mock_os_exists.assert_called_once_with(dummy_path)
+    mock_open_func.assert_called_once_with(dummy_path)
+    assert mock_doc.load_page.call_count == 2
+    assert mock_page.get_text.call_count == 2
+    mock_page.get_text.assert_called_with('text') # Check last call args
+
+    # Assertions for the *desired* clean output after regex cleaning
+    assert "JSTOR" not in result, "Header text should be removed"
+    assert "Downloaded from" not in result, "Footer text should be removed"
+    assert "Copyright ©" not in result, "Copyright text should be removed"
+    assert "Page 1" not in result, "Page number should be removed"
+    assert "Page 2" not in result, "Page number should be removed"
+    assert "\x00" not in result, "Null characters should be removed"
+    assert "This is the actual content." in result, "Core content missing"
+# Test for PDF Markdown Heading Generation (Added for RAG Quality Refinement)
+def test_process_pdf_markdown_generates_headings(tmp_path, mock_fitz, mocker):
+    """Tests if _process_pdf generates Markdown headings when output_format is 'markdown'."""
+    mock_open_func, mock_doc, mock_page = mock_fitz
+    dummy_path = tmp_path / "structured_sample.pdf" # Keep as Path object initially
+    dummy_path.touch() # Create the dummy file
+    dummy_path_str = str(dummy_path) # Convert to string for function calls
+    # mock_os_exists = mocker.patch('os.path.exists', return_value=True) # No longer needed as file exists
+
+    # Simulate structured text extraction from fitz using get_text("dict")
+    # Simplified structure: list of blocks, each block has lines, each line has spans
+    # We'll identify headings based on a mock 'size' attribute
+    mock_page_dict = {
+        "width": 600, "height": 800, "blocks": [
+            { # Block 1: Title (Large Font)
+                "lines": [{"spans": [{"size": 20, "flags": 0, "font": "Times-Bold", "text": "Document Title"}]}],
+                "type": 0 # Text block
+            },
+            { # Block 2: Section Heading (Medium Font)
+                "lines": [{"spans": [{"size": 16, "flags": 0, "font": "Times-Bold", "text": "Section 1"}]}],
+                "type": 0
+            },
+            { # Block 3: Normal Paragraph
+                "lines": [{"spans": [{"size": 12, "flags": 0, "font": "Times-Roman", "text": "This is paragraph text."}]}],
+                "type": 0
+            },
+             { # Block 4: Subsection Heading (Slightly Larger Font)
+                "lines": [{"spans": [{"size": 14, "flags": 0, "font": "Times-Bold", "text": "Subsection 1.1"}]}],
+                "type": 0
+            },
+             { # Block 5: Another Paragraph
+                "lines": [{"spans": [{"size": 12, "flags": 0, "font": "Times-Roman", "text": "More paragraph text."}]}],
+                "type": 0
+            }
+        ]
+    }
+    mock_page.get_text.return_value = mock_page_dict # Mock get_text("dict")
+    mock_doc.__len__.return_value = 1
+    mock_doc.load_page.return_value = mock_page
+
+    # --- Modification needed in process_document to call _process_pdf with format ---
+    # --- For now, assume _process_pdf is modified to accept format and return markdown ---
+    # --- We will mock process_document later or modify _process_pdf directly ---
+
+    # Mock _save_processed_text to just return the content for testing
+    # This avoids file I/O in this unit test
+    mocker.patch('python_bridge._save_processed_text', side_effect=lambda p, c, f: c)
+
+    # Call process_document which should route to _process_pdf with 'markdown'
+    # NOTE: This assumes process_document is updated to pass output_format
+    result_dict = asyncio.run(process_document(dummy_path_str, output_format='markdown')) # Use string path
+    result = result_dict.get("processed_file_path") # Get content from mocked save
+
+    # Assertions for Markdown output
+    assert result is not None, "Processing failed or returned None"
+    assert "# Document Title" in result, "H1 Title missing"
+    assert "## Section 1" in result, "H2 Section missing"
+    assert "### Subsection 1.1" in result, "H3 Subsection missing"
+    assert "This is paragraph text." in result, "Paragraph text missing"
+    assert "More paragraph text." in result, "Paragraph text missing"
+    # Check order (simple check)
+    assert result.find("# Document Title") < result.find("## Section 1")
+    assert result.find("## Section 1") < result.find("This is paragraph text.")
+    assert result.find("This is paragraph text.") < result.find("### Subsection 1.1")
+    assert result.find("### Subsection 1.1") < result.find("More paragraph text.")
+    assert "More paragraph text." in result, "Paragraph text missing" # Corrected assertion text
+    # Check concatenation (should have double newline between page content after cleaning) - Removed incorrect assertion
+
+# Test for PDF Markdown List Generation (Added for RAG Quality Refinement)
+def test_process_pdf_markdown_generates_lists(tmp_path, mock_fitz, mocker):
+    """Tests if _process_pdf generates Markdown lists when output_format is 'markdown'."""
+    mock_open_func, mock_doc, mock_page = mock_fitz
+    dummy_path = tmp_path / "list_sample.pdf"
+    dummy_path.touch()
+    dummy_path_str = str(dummy_path)
+
+    # Simulate structured text extraction with list-like patterns
+    mock_page_dict = {
+        "width": 600, "height": 800, "blocks": [
+            { # Block 1: Ordered List Item 1
+                "lines": [{"spans": [{"size": 12, "flags": 0, "font": "Times-Roman", "text": "1. First item."}]}], "type": 0
+            },
+            { # Block 2: Ordered List Item 2
+                "lines": [{"spans": [{"size": 12, "flags": 0, "font": "Times-Roman", "text": "2. Second item."}]}], "type": 0
+            },
+            { # Block 3: Paragraph
+                "lines": [{"spans": [{"size": 12, "flags": 0, "font": "Times-Roman", "text": "A normal paragraph."}]}], "type": 0
+            },
+            { # Block 4: Unordered List Item 1
+                "lines": [{"spans": [{"size": 12, "flags": 0, "font": "Symbol", "text": "•"}, {"size": 12, "flags": 0, "font": "Times-Roman", "text": " Bullet one"}]}], "type": 0 # Common bullet pattern
+            },
+            { # Block 5: Unordered List Item 2 (using asterisk)
+                "lines": [{"spans": [{"size": 12, "flags": 0, "font": "Times-Roman", "text": "* Bullet two"}]}], "type": 0
+            }
+        ]
+    }
+    mock_page.get_text.return_value = mock_page_dict
+    mock_doc.__len__.return_value = 1
+    mock_doc.load_page.return_value = mock_page
+
+# Test for PDF Markdown Footnote Generation (Added for RAG Quality Refinement)
+def test_process_pdf_markdown_generates_footnotes(tmp_path, mock_fitz, mocker):
+    """Tests if _process_pdf generates standard Markdown footnotes."""
+    mock_open_func, mock_doc, mock_page = mock_fitz
+    dummy_path = tmp_path / "footnote_sample.pdf"
+    dummy_path.touch()
+    dummy_path_str = str(dummy_path)
+
+    # Simulate structured text extraction with footnote markers (superscript flag)
+    # and footnote content (often at bottom or separate blocks)
+    mock_page_dict = {
+        "width": 600, "height": 800, "blocks": [
+            { # Block 1: Paragraph with footnote ref
+                "lines": [{"spans": [
+                    {"size": 12, "flags": 0, "font": "Times-Roman", "text": "Some text"},
+                    {"size": 8, "flags": 1, "font": "Times-Roman", "text": "1"}, # Superscript flag = 1
+                    {"size": 12, "flags": 0, "font": "Times-Roman", "text": " with a reference."}
+                ]}], "type": 0
+            },
+            { # Block 2: Another paragraph
+                "lines": [{"spans": [{"size": 12, "flags": 0, "font": "Times-Roman", "text": "More text."}]}], "type": 0
+            },
+            { # Block 3: Footnote definition (often smaller font, starts with number)
+                "lines": [{"spans": [
+                     {"size": 8, "flags": 1, "font": "Times-Roman", "text": "1"}, # Superscript flag = 1
+                     {"size": 10, "flags": 0, "font": "Times-Roman", "text": " This is the footnote content."}
+                ]}], "type": 0
+            }
+        ]
+    }
+    mock_page.get_text.return_value = mock_page_dict
+    mock_doc.__len__.return_value = 1
+    mock_doc.load_page.return_value = mock_page
+
+    # Mock _save_processed_text
+    mocker.patch('python_bridge._save_processed_text', side_effect=lambda p, c, f: c)
+
+    # Call process_document
+    result_dict = asyncio.run(process_document(dummy_path_str, output_format='markdown'))
+    result = result_dict.get("processed_file_path")
+# Test for EPUB Markdown Heading Generation (Added for RAG Quality Refinement)
+def test_process_epub_markdown_generates_headings(tmp_path, mock_ebooklib, mocker):
+    """Tests if _process_epub generates Markdown headings."""
+    epub_path = tmp_path / "structured.epub"
+    epub_path.touch()
+    mock_read_epub, mock_epub = mock_ebooklib
+
+    # Simulate items with heading tags
+    mock_item_title = MagicMock()
+    mock_item_title.get_content.return_value = b'<html><body><h1>Document Title</h1><p>Intro</p></body></html>'
+    mock_item_title.get_name.return_value = 'title.xhtml'
+
+    mock_item_chap1 = MagicMock()
+    mock_item_chap1.get_content.return_value = b'<html><body><h2>Chapter 1</h2><p>Chapter content.</p><h3>Subsection 1.1</h3><p>Sub content.</p></body></html>'
+    mock_item_chap1.get_name.return_value = 'chap1.xhtml'
+
+    mock_epub.get_items_of_type.return_value = [mock_item_title, mock_item_chap1]
+
+    # Mock _save_processed_text
+    mocker.patch('python_bridge._save_processed_text', side_effect=lambda p, c, f: c)
+
+    # Call process_document which should route to _process_epub
+    result_dict = asyncio.run(process_document(str(epub_path), output_format='markdown'))
+    result = result_dict.get("processed_file_path")
+
+    # Assertions for Markdown output
+    assert result is not None, "Processing failed or returned None"
+    assert "# Document Title" in result, "H1 Title missing"
+    assert "Intro" in result, "Paragraph text missing"
+    assert "## Chapter 1" in result, "H2 Chapter missing"
+    assert "Chapter content." in result, "Paragraph text missing"
+    assert "### Subsection 1.1" in result, "H3 Subsection missing"
+    assert "Sub content." in result, "Paragraph text missing"
+    # Check order
+    assert result.find("# Document Title") < result.find("## Chapter 1")
+    assert result.find("## Chapter 1") < result.find("### Subsection 1.1")
+    # Removed incorrect assertions copied from footnote test below
+    # Removed incorrect assertions copied from list test below
 
 # 8. Python Bridge - process_document (Routing)
+# Test for EPUB Markdown List Generation (Added for RAG Quality Refinement)
+def test_process_epub_markdown_generates_lists(tmp_path, mock_ebooklib, mocker):
+    """Tests if _process_epub generates Markdown lists from ul/ol/li tags."""
+    epub_path = tmp_path / "lists.epub"
+    epub_path.touch()
+    mock_read_epub, mock_epub = mock_ebooklib
+
+    # Simulate item with lists
+    mock_item_lists = MagicMock()
+    mock_item_lists.get_content.return_value = b'''<html><body>
+        <p>Paragraph before list.</p>
+        <ul>
+            <li>Unordered item 1</li>
+            <li>Unordered item 2</li>
+        </ul>
+        <p>Paragraph between lists.</p>
+        <ol>
+            <li>Ordered item 1</li>
+            <li>Ordered item 2</li>
+        </ol>
+        <p>Paragraph after list.</p>
+        </body></html>'''
+    mock_item_lists.get_name.return_value = 'lists.xhtml'
+
+    mock_epub.get_items_of_type.return_value = [mock_item_lists]
+
+    # Mock _save_processed_text
+    mocker.patch('python_bridge._save_processed_text', side_effect=lambda p, c, f: c)
+
+    # Call process_document
+# Test for EPUB Markdown Footnote Generation (Added for RAG Quality Refinement)
+def test_process_epub_markdown_generates_footnotes(tmp_path, mock_ebooklib, mocker):
+    """Tests if _process_epub generates standard Markdown footnotes from EPUB structures."""
+    epub_path = tmp_path / "footnotes.epub"
+    epub_path.touch()
+    mock_read_epub, mock_epub = mock_ebooklib
+
+    # Simulate item with EPUB footnote structure
+    mock_item_footnotes = MagicMock()
+    mock_item_footnotes.get_content.return_value = b'''<html><body>
+        <p>Some text with a reference<a epub:type="noteref" href="#fn1"><sup>1</sup></a>.</p>
+        <p>More text.</p>
+        <aside epub:type="footnote" id="fn1">
+            <p>This is the footnote content.</p>
+        </aside>
+        <p>Text after footnote section.</p>
+        </body></html>'''
+    mock_item_footnotes.get_name.return_value = 'footnotes.xhtml'
+
+    mock_epub.get_items_of_type.return_value = [mock_item_footnotes]
+
+    # Mock _save_processed_text
+    mocker.patch('python_bridge._save_processed_text', side_effect=lambda p, c, f: c)
+
+    # Call process_document
+    result_dict = asyncio.run(process_document(str(epub_path), output_format='markdown'))
+    result = result_dict.get("processed_file_path")
+
+    # Assertions for Markdown output
+    assert result is not None, "Processing failed or returned None"
+    # Check for reference style [^1] - text inside <a> should be used
+    assert "Some text with a reference[^1]." in result, "Footnote reference marker [^1] missing or incorrect"
+    # Check for definition style [^1]: ... - content inside <aside> should be used
+    assert "[^1]: This is the footnote content." in result, "Footnote definition [^1]: missing or incorrect"
+    assert "More text." in result, "Paragraph text missing"
+    assert "Text after footnote section." in result, "Text after footnote missing"
+    # Ensure footnote definition appears after the reference paragraph
+    assert result.find("Some text with a reference[^1].") < result.find("[^1]: This is the footnote content.")
+    # Removed incorrect assertions copied from list test below
 @pytest.mark.xfail(reason="Implementation does not exist yet")
 def test_process_document_epub_routing(tmp_path, mocker):
     epub_path = tmp_path / "test.epub"

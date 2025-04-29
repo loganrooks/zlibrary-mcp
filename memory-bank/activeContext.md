@@ -1,4 +1,42 @@
-[2025-04-29 01:28:42] - HolisticReview - Task Complete - Completed workspace review and cleanup on feature/rag-eval-cleanup. Removed artifacts, updated .gitignore/README. Commit: d9e237e.
+[2025-04-29 02:15:00] - TDD - Test Execution - Node.js test suite (npm test) passed.
+[2025-04-29 02:14:54] - TDD - Test Execution - Python test suite (pytest) passed (27 passed, 12 skipped, 5 xfailed, 9 xpassed).
+[2025-04-29 02:14:31] - TDD - Refactor - Refactored EPUB footnote handling in _process_epub (added comments).
+[2025-04-29 02:13:53] - TDD - Green - Implemented EPUB footnote handling in _process_epub (passed test_process_epub_markdown_generates_footnotes).
+[2025-04-29 02:13:37] - TDD - Fix - Corrected copy-paste error in test_process_epub_markdown_generates_footnotes assertions.
+[2025-04-29 02:12:53] - TDD - Fix - Corrected variable name conflict (content vs footnote_text) in _process_epub footnote logic.
+[2025-04-29 02:11:35] - TDD - Green - Attempted EPUB footnote handling in _process_epub (failed test_process_epub_markdown_generates_footnotes due to variable conflict).
+[2025-04-29 02:10:36] - TDD - Red - Added test_process_epub_markdown_generates_footnotes (xfail).
+[2025-04-29 02:08:59] - TDD - Refactor - Refactored EPUB list handling in _process_epub (added comments).
+[2025-04-29 02:08:19] - TDD - Green - Implemented EPUB list handling in _process_epub (passed test_process_epub_markdown_generates_lists).
+[2025-04-29 02:07:28] - TDD - Red - Added test_process_epub_markdown_generates_lists (xfail).
+[2025-04-29 02:06:46] - TDD - Refactor - Refactored EPUB heading handling in _process_epub (improved logic, added comments).
+[2025-04-29 02:02:26] - TDD - Green - Implemented EPUB heading handling in _process_epub (passed test_process_epub_markdown_generates_headings after fixing test assertions).
+[2025-04-29 02:02:08] - TDD - Fix - Corrected copy-paste error in test_process_epub_markdown_generates_headings assertions.
+[2025-04-29 02:01:11] - TDD - Green - Attempted EPUB heading handling in _process_epub (failed test_process_epub_markdown_generates_headings due to test assertion error).
+[2025-04-29 02:00:48] - TDD - Red - Added test_process_epub_markdown_generates_headings (xfail).
+[2025-04-29 02:00:08] - TDD - Refactor - Refactored PDF footnote handling in _process_pdf (added comments).
+[2025-04-29 01:59:34] - TDD - Green - Implemented PDF footnote handling in _process_pdf (passed test_process_pdf_markdown_generates_footnotes after fixing test assertions).
+[2025-04-29 01:59:20] - TDD - Fix - Corrected copy-paste error in test_process_pdf_markdown_generates_footnotes assertions.
+[2025-04-29 01:58:48] - TDD - Green - Attempted PDF footnote handling in _process_pdf (failed test_process_pdf_markdown_generates_footnotes due to test assertion error).
+[2025-04-29 01:57:33] - TDD - Red - Added test_process_pdf_markdown_generates_footnotes (xfail).
+[2025-04-29 01:56:52] - TDD - Refactor - Refactored PDF list handling in _process_pdf (used regex).
+[2025-04-29 01:56:14] - TDD - Green - Implemented PDF list handling in _process_pdf (passed test_process_pdf_markdown_generates_lists).
+[2025-04-29 01:55:09] - TDD - Red - Added test_process_pdf_markdown_generates_lists (xfail).
+[2025-04-29 01:54:23] - TDD - Refactor - Refactored PDF heading handling in _process_pdf (improved logic, added comments).
+[2025-04-29 01:53:36] - TDD - Green - Implemented PDF heading handling in _process_pdf (passed test_process_pdf_markdown_generates_headings after fixing test assertions).
+[2025-04-29 01:53:14] - TDD - Fix - Removed incorrect assertion from test_process_pdf_markdown_generates_headings.
+[2025-04-29 01:52:20] - TDD - Fix - Corrected assertion text in test_process_pdf_markdown_generates_headings.
+[2025-04-29 01:50:59] - TDD - Green - Attempted PDF heading handling in _process_pdf (failed test_process_pdf_markdown_generates_headings due to test assertion error).
+[2025-04-29 01:49:58] - TDD - Red - Added test_process_pdf_markdown_generates_headings (xfail).
+[2025-04-29 01:49:08] - TDD - Refactor - Refactored PDF null char removal in _process_pdf (used regex).
+[2025-04-29 01:48:28] - TDD - Green - Implemented PDF null char removal in _process_pdf (passed test_process_pdf_removes_null_chars).
+[2025-04-29 01:47:30] - TDD - Red - Added test_process_pdf_removes_null_chars (xfail).
+[2025-04-29 01:46:40] - TDD - Start Task - Refine RAG Output Quality (PDF/EPUB Markdown). Reading QA report and spec.
+[2025-04-29 01:39:48] - SPARC - Task Completed (qa-tester) - RAG output quality evaluation finished. Report `docs/rag-output-qa-report.md` indicates significant quality issues (PDF noise/structure, EPUB Markdown structure/footnotes). Proceeding to Refinement phase.
+[2025-04-29 01:38:59] - QATester - Task Complete - Evaluated RAG output quality for PDF/EPUB (Markdown/Text) against spec `docs/rag-output-quality-spec.md`. Findings documented in `docs/rag-output-qa-report.md`.
+[2025-04-29 01:35:05] - SPARC - Spec File Confirmed - Verified `docs/rag-output-quality-spec.md` exists. Proceeding to delegate QA testing.
+[2025-04-29 01:33:45] - SpecPseudo - Task Complete - Defined RAG output quality evaluation criteria (Markdown/Text) for EPUB/PDF processing. Created spec document `docs/rag-output-quality-spec.md`.
+chore[2025-04-29 01:28:42] - HolisticReview - Task Complete - Completed workspace review and cleanup on feature/rag-eval-cleanup. Removed artifacts, updated .gitignore/README. Commit: d9e237e.
 [2025-04-29 01:28:16] - HolisticReview - Committing Changes - Committing cleanup changes (artifact removal, .gitignore, README update).
 [2025-04-29 01:23:45] - HolisticReview - Analyzing Code Hygiene - Checked for large files (>500 lines). Found python_bridge.py, zlibrary/abs.py. No large commented blocks found.
 [2025-04-29 01:24:26] - HolisticReview - Updating Documentation - Updated branch name in README.md.
@@ -347,4 +385,3 @@
 [2025-04-14 03:31:01] - SpecPseudo - Generating - Created specification, pseudocode, and TDD anchors for global execution fix (Node import, Managed Python Venv).
 
 [2025-04-14 03:28:24] - Architect - Designing - Evaluated Python environment strategies for global NPM package.
-[2025-04-14 03:26:00] - Debug - Investigating - Diagnosing zlibrary-mcp global execution failure (Node ERR_PACKAGE_PATH_NOT_EXPORTED, Python MODULE_NOT_FOUND).

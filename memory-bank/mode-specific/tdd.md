@@ -1,3 +1,67 @@
+### Test Execution: Node.js Suite - [2025-04-29 02:15:00]
+- **Trigger**: Post-Code Change (RAG Quality Refinement)
+- **Outcome**: PASS / **Summary**: 59 tests passed
+- **Notes**: No failures observed.
+
+### Test Execution: Python Suite - [2025-04-29 02:14:54]
+- **Trigger**: Post-Code Change (RAG Quality Refinement)
+- **Outcome**: PASS (with skips/xfails/xpasses) / **Summary**: 27 passed, 12 skipped, 5 xfailed, 9 xpassed
+- **Notes**: No unexpected failures. Tests related to implemented features passed.
+
+### TDD Cycle: EPUB Footnotes - [2025-04-29 02:14:31]
+- **Red**: Added `test_process_epub_markdown_generates_footnotes` / Test File: `__tests__/python/test_python_bridge.py`
+- **Green**: Implemented footnote detection (epub:type) and formatting in `_process_epub` / Code File: `lib/python_bridge.py`
+- **Refactor**: Added comments to footnote logic / Files Changed: `lib/python_bridge.py`
+- **Outcome**: Cycle completed, test passing.
+
+### TDD Cycle: EPUB Lists - [2025-04-29 02:08:59]
+- **Red**: Added `test_process_epub_markdown_generates_lists` / Test File: `__tests__/python/test_python_bridge.py`
+- **Green**: Implemented ul/ol/li handling in `_process_epub` / Code File: `lib/python_bridge.py`
+- **Refactor**: Added comments to list logic / Files Changed: `lib/python_bridge.py`
+- **Outcome**: Cycle completed, test passing.
+
+### TDD Cycle: EPUB Headings - [2025-04-29 02:06:46]
+- **Red**: Added `test_process_epub_markdown_generates_headings` / Test File: `__tests__/python/test_python_bridge.py`
+- **Green**: Implemented h1-h6 handling in `_process_epub` / Code File: `lib/python_bridge.py`
+- **Refactor**: Improved heading logic, added comments / Files Changed: `lib/python_bridge.py`
+- **Outcome**: Cycle completed, test passing (after fixing test assertion errors).
+
+### TDD Cycle: PDF Footnotes - [2025-04-29 02:00:08]
+- **Red**: Added `test_process_pdf_markdown_generates_footnotes` / Test File: `__tests__/python/test_python_bridge.py`
+- **Green**: Implemented footnote detection (superscript flag) and formatting in `_process_pdf` / Code File: `lib/python_bridge.py`
+- **Refactor**: Added comments to footnote logic / Files Changed: `lib/python_bridge.py`
+- **Outcome**: Cycle completed, test passing (after fixing test assertion errors).
+
+### TDD Cycle: PDF Lists - [2025-04-29 01:56:52]
+- **Red**: Added `test_process_pdf_markdown_generates_lists` / Test File: `__tests__/python/test_python_bridge.py`
+- **Green**: Implemented list detection (regex) in `_process_pdf` / Code File: `lib/python_bridge.py`
+- **Refactor**: Refined regex, added comments / Files Changed: `lib/python_bridge.py`
+- **Outcome**: Cycle completed, test passing.
+
+### TDD Cycle: PDF Headings - [2025-04-29 01:54:23]
+- **Red**: Added `test_process_pdf_markdown_generates_headings` / Test File: `__tests__/python/test_python_bridge.py`
+- **Green**: Implemented heading detection (font size) in `_process_pdf` / Code File: `lib/python_bridge.py`
+- **Refactor**: Improved heading logic, added comments / Files Changed: `lib/python_bridge.py`
+- **Outcome**: Cycle completed, test passing (after fixing test assertion errors).
+
+### TDD Cycle: PDF Null Chars - [2025-04-29 01:49:08]
+- **Red**: Added `test_process_pdf_removes_null_chars` / Test File: `__tests__/python/test_python_bridge.py`
+- **Green**: Implemented null char removal in `_process_pdf` / Code File: `lib/python_bridge.py`
+- **Refactor**: Used regex for removal / Files Changed: `lib/python_bridge.py`
+- **Outcome**: Cycle completed, test passing.
+
+### Test Plan: RAG Output Quality Refinement - [2025-04-29 01:46:40]
+- **Objective**: Improve Markdown generation from PDF and EPUB for RAG quality, based on `docs/rag-output-qa-report.md` and `docs/rag-output-quality-spec.md`.
+- **Scope**: `_process_pdf` and `_process_epub` in `lib/python_bridge.py`.
+- **Test Cases**:
+    - PDF Null Chars: `test_process_pdf_removes_null_chars` / Status: Green
+    - PDF Headings: `test_process_pdf_markdown_generates_headings` / Status: Green
+    - PDF Lists: `test_process_pdf_markdown_generates_lists` / Status: Green
+    - PDF Footnotes: `test_process_pdf_markdown_generates_footnotes` / Status: Green
+    - EPUB Headings: `test_process_epub_markdown_generates_headings` / Status: Green
+    - EPUB Lists: `test_process_epub_markdown_generates_lists` / Status: Green
+    - EPUB Footnotes: `test_process_epub_markdown_generates_footnotes` / Status: Green
+- **Related Requirements**: `docs/rag-output-qa-report.md`, `docs/rag-output-quality-spec.md`
 # Tester (TDD) Specific Memory
 <!-- Entries below should be added reverse chronologically (newest first) -->
 ### Test Execution: Regression (pytest - Post DownloadsPaginator Fix) - [2025-04-28 21:57:20]

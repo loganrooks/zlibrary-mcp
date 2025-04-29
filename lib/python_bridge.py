@@ -214,229 +214,276 @@ async def get_recent_books(count=10, format=None):
 
 # --- PDF Markdown Helpers ---
 
-def _analyze_pdf_block(block):
-  """Analyzes a PyMuPDF text block to infer structure (heading level, list type)."""
-  # Heuristic logic based on font size, flags, position, text patterns
-  heading_level = 0
-  is_list_item = False
-  list_type = None # 'ul' or 'ol'
-  list_indent = 0 # Placeholder
-  text_content = ""
-  spans = []
+def _analyze_pdf_block(block: dict) -> dict:
+    """
+    Analyzes a PyMuPDF text block dictionary to infer structure.
 
-  if block.get('type') == 0: # Text block
-    # Aggregate text and span info
-    for line in block.get('lines', []):
-      for span in line.get('spans', []):
-        spans.append(span)
-        text_content += span.get('text', '')
+    Infers heading level, list item status/type based on font size, flags,
+    and text patterns. NOTE: These are heuristics and may require tuning.
 
-    if spans:
-      first_span = spans[0]
-      font_size = first_span.get('size', 10)
-      flags = first_span.get('flags', 0)
-      is_bold = flags & 2 # Font flag for bold
+    Args:
+        block: A dictionary representing a text block from page.get_text("dict").
 
-      # Heading heuristic (example, needs tuning)
-      if font_size > 18 or (font_size > 14 and is_bold): heading_level = 1
-      elif font_size > 14 or (font_size > 12 and is_bold): heading_level = 2
-      elif font_size > 12 or (font_size > 11 and is_bold): heading_level = 3
-      # ... more levels ...
+    Returns:
+        A dictionary containing analysis results:
+        'heading_level', 'is_list_item', 'list_type', 'list_indent', 'text', 'spans'.
+    """
+    # Heuristic logic based on font size, flags, position, text patterns
+    heading_level = 0
+    is_list_item = False
+    list_type = None # 'ul' or 'ol'
+    list_indent = 0 # Placeholder
+    text_content = ""
+    spans = []
 
-      # List heuristic (example, needs tuning)
-      trimmed_text = text_content.strip()
-      # Basic unordered list check
-      if trimmed_text.startswith(('•', '*', '-')):
-        is_list_item = True
-        list_type = 'ul'
-        # Indentation could be inferred from block['bbox'][0] (x-coordinate)
-      # Basic ordered list check
-      elif re.match(r"^\d+\.\s+", trimmed_text):
-        is_list_item = True
-        list_type = 'ol'
-      # ... more complex list detection (e.g., a), i.) ...
+    if block.get('type') == 0: # Text block
+        # Aggregate text and span info
+        for line in block.get('lines', []):
+            for span in line.get('spans', []):
+                spans.append(span)
+                text_content += span.get('text', '')
 
-  return {
-    'heading_level': heading_level,
-    'is_list_item': is_list_item,
-    'list_type': list_type,
-    'list_indent': list_indent, # Placeholder for future nesting use
-    'text': text_content.strip(),
-    'spans': spans # Pass spans for footnote detection
-  }
+        if spans:
+            first_span = spans[0]
+            font_size = first_span.get('size', 10)
+            flags = first_span.get('flags', 0)
+            is_bold = flags & 2 # Font flag for bold
 
-def _format_pdf_markdown(page):
-  """Generates Markdown string from a PyMuPDF page object."""
-  blocks = page.get_text("dict", flags=fitz.TEXTFLAGS_DICT).get("blocks", [])
-  markdown_lines = []
-  footnote_defs = {} # Store footnote definitions [^id]: content
-  current_list_type = None
-  # list_level = 0 # Basic nesting tracker - deferred
+            # --- Heading Heuristic (Example based on size/boldness) ---
+            # This is a simple heuristic and might misclassify text.
+            if font_size > 18 or (font_size > 14 and is_bold):
+                heading_level = 1
+            elif font_size > 14 or (font_size > 12 and is_bold):
+                heading_level = 2
+            elif font_size > 12 or (font_size > 11 and is_bold):
+                heading_level = 3
+            # TODO: Consider adding more levels or refining based on document analysis.
 
-  for block in blocks:
-    analysis = _analyze_pdf_block(block)
-    text = analysis['text']
-    spans = analysis['spans']
+            # --- List Heuristic (Example based on starting characters) ---
+            # This is basic and doesn't handle indentation/nesting reliably.
+            trimmed_text = text_content.strip()
+            # Basic unordered list check (common bullet characters)
+            if trimmed_text.startswith(('•', '*', '-', '–')): # Added en-dash
+                is_list_item = True
+                list_type = 'ul'
+                # Indentation could be inferred from block['bbox'][0] (x-coordinate)
+            # Basic ordered list check (e.g., "1. ", "2. ")
+            elif re.match(r"^\d+\.\s+", trimmed_text):
+                is_list_item = True
+                list_type = 'ol'
+            # TODO: Add more complex list detection (e.g., a), i.), Roman numerals).
+            # TODO: Use block['bbox'][0] (x-coordinate) to infer indentation/nesting.
 
-    if not text: continue
+    return {
+        'heading_level': heading_level,
+        'is_list_item': is_list_item,
+        'list_type': list_type,
+        'list_indent': list_indent, # Placeholder for future nesting use
+        'text': text_content.strip(),
+        'spans': spans # Pass spans for footnote detection
+    }
 
-    # Footnote Reference/Definition Detection (using superscript flag)
-    processed_text_parts = []
-    potential_def_id = None
-    first_span_in_block = True
-    for span in spans:
-        span_text = span.get('text', '')
-        flags = span.get('flags', 0)
-        is_superscript = flags & 1 # Superscript flag
+def _format_pdf_markdown(page: fitz.Page) -> str:
+    """
+    Generates a Markdown string from a PyMuPDF page object.
 
-        if is_superscript and span_text.isdigit():
-            fn_id = span_text
-            # Definition heuristic: superscript number at start of block
-            if first_span_in_block:
-                potential_def_id = fn_id
-                # Don't add the number itself to the text for definitions
-            else: # Reference
-                processed_text_parts.append(f"[^{fn_id}]")
-        else:
-            processed_text_parts.append(span_text)
-        first_span_in_block = False
+    Extracts text blocks, analyzes structure using _analyze_pdf_block,
+    and formats the output as Markdown, including basic headings, lists,
+    and footnote definitions.
 
-    processed_text = "".join(processed_text_parts).strip()
+    Args:
+        page: A fitz.Page object.
 
-    # Store definition if found, otherwise format content
-    if potential_def_id:
-        # The text following the superscript number is the definition
-        footnote_defs[potential_def_id] = processed_text
-        continue # Don't add definition block as regular content
+    Returns:
+        A string containing the generated Markdown.
+    """
+    blocks = page.get_text("dict", flags=fitz.TEXTFLAGS_DICT).get("blocks", [])
+    markdown_lines = []
+    footnote_defs = {} # Store footnote definitions [^id]: content
+    current_list_type = None
+    # list_level = 0 # Basic nesting tracker - deferred
 
-    # Format based on analysis
-    if analysis['heading_level'] > 0:
-      markdown_lines.append(f"{'#' * analysis['heading_level']} {processed_text}")
-      current_list_type = None # Reset list context after heading
-    elif analysis['is_list_item']:
-      # Basic list handling (needs refinement for nesting based on indent)
-      # Remove original list marker from text if present
-      if analysis['list_type'] == 'ul':
-          clean_text = re.sub(r"^[\*•-]\s*", "", processed_text).strip()
-          markdown_lines.append(f"* {clean_text}")
-      elif analysis['list_type'] == 'ol':
-          clean_text = re.sub(r"^\d+\.\s*", "", processed_text).strip()
-          markdown_lines.append(f"1. {clean_text}") # Simple numbering, needs context for correct sequence
-      current_list_type = analysis['list_type']
-    else: # Regular paragraph
-      # Only add if it's not empty after processing
-      if processed_text:
-          markdown_lines.append(processed_text)
-      current_list_type = None # Reset list context
+    for block in blocks:
+        analysis = _analyze_pdf_block(block)
+        text = analysis['text']
+        spans = analysis['spans']
 
-  # Append footnote definitions at the end
-  if footnote_defs:
-      markdown_lines.append("\n---") # Add separator
-      for fn_id, fn_text in sorted(footnote_defs.items()):
-          markdown_lines.append(f"[^{fn_id}]: {fn_text}")
+        if not text: continue
 
-  # Join lines with double newlines for paragraph breaks
-  return "\n\n".join(markdown_lines).strip()
+        # Footnote Reference/Definition Detection (using superscript flag)
+        processed_text_parts = []
+        potential_def_id = None
+        first_span_in_block = True
+        for span in spans:
+            span_text = span.get('text', '')
+            flags = span.get('flags', 0)
+            is_superscript = flags & 1 # Superscript flag
+
+            if is_superscript and span_text.isdigit():
+                fn_id = span_text
+                # Definition heuristic: superscript number at start of block
+                if first_span_in_block:
+                    potential_def_id = fn_id
+                    # Don't add the number itself to the text for definitions
+                else: # Reference
+                    processed_text_parts.append(f"[^{fn_id}]")
+            else:
+                processed_text_parts.append(span_text)
+            first_span_in_block = False
+
+        processed_text = "".join(processed_text_parts).strip()
+
+        # Store definition if found, otherwise format content
+        if potential_def_id:
+            # The text following the superscript number is the definition
+            footnote_defs[potential_def_id] = processed_text
+            continue # Don't add definition block as regular content
+
+        # Format based on analysis
+        if analysis['heading_level'] > 0:
+            markdown_lines.append(f"{'#' * analysis['heading_level']} {processed_text}")
+            current_list_type = None # Reset list context after heading
+        elif analysis['is_list_item']:
+            # Basic list handling (needs refinement for nesting based on indent)
+            # Remove original list marker from text if present
+            if analysis['list_type'] == 'ul':
+                clean_text = re.sub(r"^[\*•-]\s*", "", processed_text).strip()
+                markdown_lines.append(f"* {clean_text}")
+            elif analysis['list_type'] == 'ol':
+                clean_text = re.sub(r"^\d+\.\s*", "", processed_text).strip()
+                # NOTE: Using "1." for all ordered items. Correct numbering requires tracking list context.
+                markdown_lines.append(f"1. {clean_text}")
+            current_list_type = analysis['list_type']
+        else: # Regular paragraph
+            # Only add if it's not empty after processing (e.g., after footnote extraction)
+            if processed_text:
+                markdown_lines.append(processed_text)
+            current_list_type = None # Reset list context
+
+    # Append footnote definitions at the end
+    if footnote_defs:
+        markdown_lines.append("\n---") # Add separator
+        for fn_id, fn_text in sorted(footnote_defs.items()):
+            markdown_lines.append(f"[^{fn_id}]: {fn_text}")
+
+    # Join lines with double newlines for paragraph breaks
+    return "\n\n".join(markdown_lines).strip()
 
 
 # --- EPUB Markdown Helpers ---
 
-def _epub_node_to_markdown(node, footnote_defs, list_level=0):
-  """Recursively converts BeautifulSoup node to Markdown string."""
-  markdown_parts = []
-  node_name = getattr(node, 'name', None)
-  indent = "  " * list_level # Indentation for nested lists
+def _epub_node_to_markdown(node: BeautifulSoup, footnote_defs: dict, list_level: int = 0) -> str:
+    """
+    Recursively converts a BeautifulSoup node (from EPUB HTML) to Markdown.
 
-  if node_name == 'h1': prefix = '# '
-  elif node_name == 'h2': prefix = '## '
-  elif node_name == 'h3': prefix = '### '
-  elif node_name == 'h4': prefix = '#### '
-  elif node_name == 'h5': prefix = '##### '
-  elif node_name == 'h6': prefix = '###### '
-  elif node_name == 'p': prefix = ''
-  elif node_name == 'ul':
-      # Handle UL items recursively
-      for child in node.find_all('li', recursive=False):
-          item_text = _epub_node_to_markdown(child, footnote_defs, list_level + 1).strip()
-          if item_text: markdown_parts.append(f"{indent}* {item_text}")
-      return "\n".join(markdown_parts) # Return joined list items
-  elif node_name == 'ol':
-      # Handle OL items recursively
-      for i, child in enumerate(node.find_all('li', recursive=False)):
-          item_text = _epub_node_to_markdown(child, footnote_defs, list_level + 1).strip()
-          if item_text: markdown_parts.append(f"{indent}{i+1}. {item_text}")
-      return "\n".join(markdown_parts) # Return joined list items
-  elif node_name == 'li':
-      # Process content within LI, prefix handled by parent ul/ol
-      prefix = ''
-  elif node_name == 'blockquote': prefix = '> '
-  elif node_name == 'pre':
-      # Handle code blocks
-      code_content = node.get_text() # Keep formatting
-      return f"```\n{code_content}\n```"
-  elif node_name == 'a' and node.get('epub:type') == 'noteref':
-      # Handle footnote reference
-      ref_id_text = node.get_text(strip=True)
-      ref_id_href = node.get('href', '')
-      ref_id = None
-      if ref_id_text.isdigit():
-          ref_id = ref_id_text
-      elif '#' in ref_id_href:
-          match = re.search(r'(\d+)$', ref_id_href) # Look for digits at the end
-          if match: ref_id = match.group(1)
+    Handles common HTML tags (headings, p, lists, blockquote, pre) and
+    EPUB-specific footnote references/definitions (epub:type="noteref/footnote").
 
-      if ref_id: return f"[^{ref_id}]"
-      else: return "" # Ignore if ID not found
-  elif node_name == 'aside' and node.get('epub:type') == 'footnote':
-      # Store footnote definition and return empty (handled separately)
-      fn_id_attr = node.get('id', '')
-      fn_id_match = re.search(r'(\d+)$', fn_id_attr) # Look for digits at the end
-      fn_id = fn_id_match.group(1) if fn_id_match else None
-      # Process the *content* of the aside tag, not the tag itself recursively
-      fn_content_parts = []
-      for child in node.children:
-          if isinstance(child, str):
-              cleaned_text = child.strip()
-              if cleaned_text: fn_content_parts.append(cleaned_text)
-          elif getattr(child, 'name', None):
-              child_md = _epub_node_to_markdown(child, footnote_defs, list_level) # Process children
-              if child_md: fn_content_parts.append(child_md)
-      fn_text = " ".join(fn_content_parts).strip()
+    Args:
+        node: The BeautifulSoup node to convert.
+        footnote_defs: A dictionary to store collected footnote definitions.
+        list_level: The current nesting level for lists (used for indentation).
 
-      if fn_id and fn_text:
-          # Remove potential self-reference like '[^1]' if it's the start
-          fn_text = re.sub(r"^\[\^" + re.escape(fn_id) + r"\]\s*", "", fn_text).strip()
-          footnote_defs[fn_id] = fn_text
-      return "" # Don't include definition inline
-  else:
-      # Default: process children or get text
-      prefix = ''
+    Returns:
+        The generated Markdown string for the node and its children.
+    """
+    markdown_parts = []
+    node_name = getattr(node, 'name', None)
+    indent = "  " * list_level # Indentation for nested lists
 
-  # Process children recursively or get text content
-  content_parts = []
-  for child in getattr(node, 'children', []):
-      if isinstance(child, str):
-          # Keep significant whitespace, strip leading/trailing only
-          cleaned_text = child # Don't strip internal whitespace yet
-          if cleaned_text: content_parts.append(cleaned_text)
-      elif getattr(child, 'name', None): # It's another tag
-          child_md = _epub_node_to_markdown(child, footnote_defs, list_level)
-          if child_md: content_parts.append(child_md)
+    if node_name == 'h1': prefix = '# '
+    elif node_name == 'h2': prefix = '## '
+    elif node_name == 'h3': prefix = '### '
+    elif node_name == 'h4': prefix = '#### '
+    elif node_name == 'h5': prefix = '##### '
+    elif node_name == 'h6': prefix = '###### '
+    elif node_name == 'p': prefix = ''
+    elif node_name == 'ul':
+        # Handle UL items recursively
+        for child in node.find_all('li', recursive=False):
+            item_text = _epub_node_to_markdown(child, footnote_defs, list_level + 1).strip()
+            if item_text: markdown_parts.append(f"{indent}* {item_text}")
+        return "\n".join(markdown_parts) # Return joined list items
+    elif node_name == 'ol':
+        # Handle OL items recursively
+        for i, child in enumerate(node.find_all('li', recursive=False)):
+            item_text = _epub_node_to_markdown(child, footnote_defs, list_level + 1).strip()
+            if item_text: markdown_parts.append(f"{indent}{i+1}. {item_text}")
+        return "\n".join(markdown_parts) # Return joined list items
+    elif node_name == 'li':
+        # Process content within LI, prefix handled by parent ul/ol
+        prefix = ''
+    elif node_name == 'blockquote': prefix = '> '
+    elif node_name == 'pre':
+        # Handle code blocks
+        code_content = node.get_text() # Keep formatting
+        return f"```\n{code_content}\n```"
+    elif node_name == 'a' and node.get('epub:type') == 'noteref':
+        # Handle footnote reference
+        ref_id_text = node.get_text(strip=True)
+        ref_id_href = node.get('href', '')
+        ref_id = None
+        if ref_id_text.isdigit():
+            ref_id = ref_id_text
+        elif '#' in ref_id_href:
+            match = re.search(r'(\d+)$', ref_id_href) # Look for digits at the end
+            if match: ref_id = match.group(1)
 
-  # Join parts, handling whitespace carefully
-  full_content = "".join(content_parts)
-  # Collapse multiple whitespace chars but keep single newlines for structure
-  full_content = re.sub(r'\s+', ' ', full_content).strip()
+        if ref_id: return f"[^{ref_id}]"
+        else: return "" # Ignore if ID not found
+    elif node_name == 'aside' and node.get('epub:type') == 'footnote':
+        # Store footnote definition and return empty (handled separately)
+        footnote_id_attribute = node.get('id', '')
+        # Try to extract trailing digits from the 'id' attribute as the footnote number.
+        # This assumes IDs like "fn1", "note2", etc.
+        fn_id_match = re.search(r'(\d+)$', footnote_id_attribute)
+        fn_id = fn_id_match.group(1) if fn_id_match else None
+        # Process the *content* of the aside tag, not the tag itself recursively
+        # This avoids including the footnote marker (like '[1]') within the definition text.
+        fn_content_parts = []
+        for child in node.children:
+            if isinstance(child, str):
+                cleaned_text = child.strip()
+                if cleaned_text: fn_content_parts.append(cleaned_text)
+            elif getattr(child, 'name', None):
+                child_md = _epub_node_to_markdown(child, footnote_defs, list_level) # Process children
+                if child_md: fn_content_parts.append(child_md)
+        fn_text = " ".join(fn_content_parts).strip()
 
-  # Apply prefix if content exists
-  if full_content:
-      # Handle blockquotes needing prefix on each line (if content has newlines)
-      if prefix == '> ' and '\n' in full_content:
-          return '> ' + full_content.replace('\n', '\n> ')
-      else:
-          return prefix + full_content
-  else:
-      return ""
+        if fn_id and fn_text:
+            # Remove potential self-reference like '[^1]' if it's the start
+            fn_text = re.sub(r"^\[\^" + re.escape(fn_id) + r"\]\s*", "", fn_text).strip()
+            footnote_defs[fn_id] = fn_text
+        return "" # Don't include definition inline
+    else:
+        # Default: process children or get text
+        prefix = ''
+
+    # Process children recursively or get text content
+    content_parts = []
+    for child in getattr(node, 'children', []):
+        if isinstance(child, str):
+            # Keep significant whitespace, strip leading/trailing only
+            cleaned_text = child # Don't strip internal whitespace yet
+            if cleaned_text: content_parts.append(cleaned_text)
+        elif getattr(child, 'name', None): # It's another tag
+            child_md = _epub_node_to_markdown(child, footnote_defs, list_level)
+            if child_md: content_parts.append(child_md)
+
+    # Join parts, handling whitespace carefully
+    full_content = "".join(content_parts)
+    # Collapse multiple whitespace chars but keep single newlines for structure
+    full_content = re.sub(r'\s+', ' ', full_content).strip()
+
+    # Apply prefix if content exists
+    if full_content:
+        # Handle blockquotes needing prefix on each line (if content has newlines)
+        if prefix == '> ' and '\n' in full_content:
+            return '> ' + full_content.replace('\n', '\n> ')
+        else:
+            return prefix + full_content
+    else:
+        return ""
 
 
 # --- Main Processing Functions (Refactored) ---
@@ -557,8 +604,26 @@ def _process_pdf(file_path: str, output_format: str = 'text') -> str:
 
 # Helper function to save processed text
 def _save_processed_text(file_path_str: str, text_content: str, output_format: str = 'txt') -> Path:
-    """Saves the processed text content to a file."""
+    """
+    Saves the processed text content to a file in the './processed_rag_output' directory.
+
+    Constructs a filename based on the original file's stem, adding
+    '.processed.<output_format>'. Creates the output directory if it doesn't exist.
+
+    Args:
+        file_path_str: The original path of the document being processed.
+        text_content: The extracted/processed text content to save.
+        output_format: The desired file extension for the output file (default 'txt').
+
+    Returns:
+        A Path object representing the full path to the saved processed file.
+
+    Raises:
+        ValueError: If text_content is None.
+        FileSaveError: If any OS error occurs during directory creation or file writing.
+    """
     processed_output_dir = Path("./processed_rag_output")
+    output_path: Path | None = None # Define output_path before try block
 
     if text_content is None:
         raise ValueError("Cannot save None content.")
@@ -587,8 +652,10 @@ def _save_processed_text(file_path_str: str, text_content: str, output_format: s
             f.write(text_content)
         return output_path
     except OSError as e:
-        logging.exception(f"OS error saving processed file for {file_path_str}: {e}")
-        raise FileSaveError(f"Failed to save processed file due to OS error: {e}")
+        # Use f-string for the error message including output_path if defined
+        save_location = output_path if output_path else processed_output_dir
+        logging.exception(f"OS error saving processed file for {file_path_str} to {save_location}: {e}")
+        raise FileSaveError(f"Failed to save processed file due to OS error: {e}") from e
     except Exception as e:
         logging.exception(f"Unexpected error saving processed file for {file_path_str}")
         # Wrap unexpected errors

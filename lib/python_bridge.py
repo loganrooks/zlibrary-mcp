@@ -336,6 +336,7 @@ def _format_pdf_markdown(page: fitz.Page) -> str:
     markdown_lines = []
     footnote_defs = {} # Store footnote definitions [^id]: content
     current_list_type = None
+    list_marker = None # Initialize list_marker
     # list_level = 0 # Basic nesting tracker - deferred
 
     for block in blocks:
@@ -412,7 +413,7 @@ def _format_pdf_markdown(page: fitz.Page) -> str:
         # for fn_id, fn_text in sorted(footnote_defs.items()):
             # Apply regex cleaning directly here (Reverted to original regex as lstrip wasn't the issue)
             # cleaned_fn_text = re.sub(r"^[^\w]+", "", fn_text).strip()
-            markdown_lines.append(f"[^{fn_id}]: {cleaned_fn_text}")
+            # markdown_lines.append(f"[^{fn_id}]: {cleaned_fn_text}") # Corrected variable name
 
     # Join main content lines with double newlines
     main_content = "\n\n".join(md_line for md_line in markdown_lines if not md_line.startswith("[^")) # Exclude footnote defs for now
@@ -445,21 +446,13 @@ def _format_pdf_markdown(page: fitz.Page) -> str:
 def _epub_node_to_markdown(node: BeautifulSoup, footnote_defs: dict, list_level: int = 0) -> str:
     """
     Recursively converts a BeautifulSoup node (from EPUB HTML) to Markdown.
-
     Handles common HTML tags (headings, p, lists, blockquote, pre) and
     EPUB-specific footnote references/definitions (epub:type="noteref/footnote").
-
-    Args:
-        node: The BeautifulSoup node to convert.
-        footnote_defs: A dictionary to store collected footnote definitions.
-        list_level: The current nesting level for lists (used for indentation).
-
-    Returns:
-        The generated Markdown string for the node and its children.
     """
     markdown_parts = []
     node_name = getattr(node, 'name', None)
     indent = "  " * list_level # Indentation for nested lists
+    prefix = '' # Default prefix
 
     if node_name == 'h1': prefix = '# '
     elif node_name == 'h2': prefix = '## '
@@ -474,183 +467,190 @@ def _epub_node_to_markdown(node: BeautifulSoup, footnote_defs: dict, list_level:
             item_text = _epub_node_to_markdown(child, footnote_defs, list_level + 1).strip()
             if item_text: markdown_parts.append(f"{indent}* {item_text}")
         return "\n".join(markdown_parts) # Return joined list items
-    elif node_name == 'nav' and node.get('epub:type') == 'toc': # Corrected indentation
+    elif node_name == 'nav' and node.get('epub:type') == 'toc':
         # Handle Table of Contents (often uses nested <p><a>...</a></p> or similar)
-        # Treat descendant links as list items
         for child in node.descendants:
             if getattr(child, 'name', None) == 'a' and child.get_text(strip=True):
-                link_text = child.get_text(strip=True)
-                # Basic indentation/formatting for TOC items
-                markdown_parts.append(f"* {link_text}")
-        # Return immediately after processing TOC nav
+                 link_text = child.get_text(strip=True)
+                 markdown_parts.append(f"* {link_text}")
         return "\n".join(markdown_parts)
     elif node_name == 'ol':
         # Handle OL items recursively
         for i, child in enumerate(node.find_all('li', recursive=False)):
             item_text = _epub_node_to_markdown(child, footnote_defs, list_level + 1).strip()
             if item_text: markdown_parts.append(f"{indent}{i+1}. {item_text}")
-        return "\n".join(markdown_parts) # Return joined list items
+        return "\n".join(markdown_parts)
     elif node_name == 'li':
         # Process content within LI, prefix handled by parent ul/ol
         prefix = ''
-    elif node_name == 'blockquote': prefix = '> '
+    elif node_name == 'blockquote':
+        prefix = '> '
     elif node_name == 'pre':
         # Handle code blocks
-        code_content = node.get_text() # Keep formatting
+        code_content = node.get_text()
         return f"```\n{code_content}\n```"
     elif node_name == 'a' and node.get('epub:type') == 'noteref':
-        # Handle footnote reference
-        ref_id_text = node.get_text(strip=True)
-        ref_id_href = node.get('href', '')
-        ref_id = None
-        if ref_id_text.isdigit():
-            ref_id = ref_id_text
-        elif '#' in ref_id_href:
-            match = re.search(r'(\d+)$', ref_id_href) # Look for digits at the end
-            if match: ref_id = match.group(1)
-
-        if ref_id: return f"[^{ref_id}]"
-        else: return "" # Ignore if ID not found
-    elif node_name == 'aside' and node.get('epub:type') == 'footnote':
-        # Store footnote definition and return empty (handled separately)
-        footnote_id_attribute = node.get('id', '')
-        # Try to extract digits from the 'id' attribute (e.g., "fn1", "note_2", "ref-3")
-        fn_id_match = re.search(r'(\d+)', footnote_id_attribute) # More general digit search
-        fn_id = fn_id_match.group(1) if fn_id_match else None
-
-        # Fallback: Check if the text content starts with a number (e.g., "1. Footnote text")
-        node_text_content = node.get_text(" ", strip=True)
-        if not fn_id:
-            text_id_match = re.match(r'^(\d+)[\.\)]?\s+', node_text_content)
-            if text_id_match:
-                fn_id = text_id_match.group(1)
-
-        # Process the *content* of the aside tag, avoiding recursive calls on the aside itself
-        fn_content_parts = []
-        for child in node.children:
-            if isinstance(child, str):
-                cleaned_text = child.strip()
-                if cleaned_text: fn_content_parts.append(cleaned_text)
-            elif getattr(child, 'name', None):
-                 # Avoid processing the footnote reference link if it's inside the definition
-                if not (child.name == 'a' and child.get('epub:type') == 'noteref'):
-                    child_md = _epub_node_to_markdown(child, footnote_defs, list_level) # Process children
-                    if child_md: fn_content_parts.append(child_md)
-        fn_text = " ".join(fn_content_parts).strip()
-
-        if fn_id and fn_text:
-            # Clean the definition text (remove potential self-reference or starting number)
-            fn_text = re.sub(r"^\[\^" + re.escape(fn_id) + r"\]\s*", "", fn_text).strip()
-            fn_text = re.sub(r"^" + re.escape(fn_id) + r"[\.\)]?\s*", "", fn_text).strip()
-            footnote_defs[fn_id] = fn_text
-        return "" # Don't include definition inline
-    else:
-        # Default: process children or get text
-        prefix = ''
-
-    # Process children recursively or get text content
-    content_parts = []
-    for child in getattr(node, 'children', []):
-        if isinstance(child, str):
-            # Keep significant whitespace, strip leading/trailing only
-            cleaned_text = child # Don't strip internal whitespace yet
-            if cleaned_text: content_parts.append(cleaned_text)
-        elif getattr(child, 'name', None): # It's another tag
-            child_md = _epub_node_to_markdown(child, footnote_defs, list_level)
-            if child_md: content_parts.append(child_md)
-
-    # Join parts, handling whitespace carefully
-    full_content = "".join(content_parts)
-    # Collapse multiple whitespace chars but keep single newlines for structure
-    full_content = re.sub(r'\s+', ' ', full_content).strip()
-
-    # Apply prefix if content exists
-    if full_content:
-        # Handle blockquotes needing prefix on each line (if content has newlines)
-        if prefix == '> ' and '\n' in full_content:
-            return '> ' + full_content.replace('\n', '\n> ')
+        # Footnote reference
+        href = node.get('href', '')
+        fn_id_match = re.search(r'#ft(\d+)', href) # Example pattern, adjust if needed
+        if fn_id_match:
+            fn_id = fn_id_match.group(1)
+            # Return the reference marker, process siblings/children if any (unlikely for simple ref)
+            child_content = "".join(_epub_node_to_markdown(child, footnote_defs, list_level) for child in node.children).strip()
+            return f"{child_content}[^{fn_id}]" # Append ref marker
         else:
-            return prefix + full_content
+             # Fallback if pattern doesn't match, process children
+             pass # Continue to process children below
+    elif node.get('epub:type') == 'footnote':
+        # Footnote definition
+        fn_id = node.get('id', '')
+        fn_id_match = re.search(r'ft(\d+)', fn_id) # Example pattern
+        if fn_id_match:
+            num_id = fn_id_match.group(1)
+            # Extract definition text, excluding the backlink if present
+            content_node = node.find('p') or node # Assume content is in <p> or directly in the element
+            if content_node:
+                # Remove backlink if it exists (common pattern)
+                backlink = content_node.find('a', {'epub:type': 'backlink'})
+                if backlink: backlink.decompose()
+                # Get cleaned text content
+                fn_text = content_node.get_text(strip=True)
+                footnote_defs[num_id] = fn_text
+            return "" # Don't include definition inline
+        else:
+            # Fallback if ID pattern doesn't match
+            pass # Continue to process children below
+
+    # Process children recursively if not handled by specific tag logic above
+    child_content = "".join(_epub_node_to_markdown(child, footnote_defs, list_level) for child in node.children).strip()
+
+    # Apply prefix and return, handle block vs inline elements appropriately
+    if node_name in ['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'blockquote']:
+        # Block elements get prefix and potential double newline separation handled by caller
+        return f"{prefix}{child_content}"
     else:
-        return ""
+        # Inline elements just return their content
+        return child_content
 
 
-# --- Main Processing Functions (Refactored) ---
+# --- Helper Functions for Processing ---
 
-def _process_epub(file_path_str: str, output_format: str = 'text') -> str:
-    """Extracts text content from an EPUB file, optionally generating Markdown."""
+# Check if libraries are available (already present in file)
+try:
+    import ebooklib
+    from ebooklib import epub
+    from bs4 import BeautifulSoup
+    EBOOKLIB_AVAILABLE = True
+except ImportError:
+    EBOOKLIB_AVAILABLE = False
+
+try:
+    import fitz # PyMuPDF
+    PYMUPDF_AVAILABLE = True
+except ImportError:
+    PYMUPDF_AVAILABLE = False
+
+# Constants (already present in file)
+SUPPORTED_FORMATS = ['.epub', '.txt', '.pdf']
+PROCESSED_OUTPUT_DIR = Path("./processed_rag_output")
+
+def _html_to_text(html_content):
+    """Extracts plain text from HTML using BeautifulSoup."""
+    if not html_content: return ""
+    # Use lxml if available, fallback to html.parser
     try:
-        book = epub.read_epub(file_path_str)
-        all_content_parts = []
-        footnote_defs = {} # Collect across all items
+        soup = BeautifulSoup(html_content, 'lxml')
+    except:
+        soup = BeautifulSoup(html_content, 'html.parser')
+    for script_or_style in soup(["script", "style"]):
+        script_or_style.decompose()
+    lines = (line.strip() for line in soup.get_text().splitlines())
+    chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
+    text = '\n'.join(chunk for chunk in chunks if chunk)
+    return text
 
-        items = book.get_items_of_type(ebooklib.ITEM_DOCUMENT)
-        for item in items:
-            html_content = item.get_content().decode('utf-8', errors='ignore')
-            soup = BeautifulSoup(html_content, 'lxml')
+def _process_epub(file_path: Path, output_format: str = "txt") -> str:
+    """Processes an EPUB file to extract text or generate Markdown."""
+    if not EBOOKLIB_AVAILABLE:
+        raise ImportError("Required library 'ebooklib' is not installed.")
+    logging.info(f"Processing EPUB file: {file_path} for format: {output_format}")
+    book = epub.read_epub(str(file_path))
+    all_content = []
+    footnote_defs = {} # For Markdown
 
-            if output_format == 'markdown':
-                item_md_parts = []
-                # Process body content, collecting footnote defs
-                if soup.body:
-                    # Check for dedicated TOC nav first
-                    toc_nav = soup.body.find('nav', attrs={'epub:type': 'toc'})
-                    if toc_nav:
-                        # If TOC nav found, process only that and skip other body children for this item
-                        toc_md = _epub_node_to_markdown(toc_nav, footnote_defs)
-                        if toc_md: all_content_parts.append(toc_md)
-                        continue # Move to the next item in the EPUB
+    items = book.get_items_of_type(ebooklib.ITEM_DOCUMENT)
+    for item in items:
+        content = item.get_content()
+        if content:
+            try:
+                html_content = content.decode('utf-8', errors='ignore')
+                if output_format == 'markdown':
+                    # Use lxml if available, fallback to html.parser
+                    try:
+                        soup = BeautifulSoup(html_content, 'lxml')
+                    except:
+                        soup = BeautifulSoup(html_content, 'html.parser')
+                    # Process body content, skipping script/style
+                    body = soup.find('body')
+                    if body:
+                         # Pass footnote_defs dict to collect definitions
+                        markdown_text = _epub_node_to_markdown(body, footnote_defs) # Assumes _epub_node_to_markdown exists
+                        if markdown_text: all_content.append(markdown_text)
+                else: # Default to text
+                    text = _html_to_text(html_content)
+                    if text: all_content.append(text)
+            except Exception as e:
+                logging.warning(f"Could not decode/process item {item.get_name()} in {file_path}: {e}")
 
-                    # If no TOC nav, process children normally
-                    item_md_parts = []
-                    for element in soup.body.children: # Iterate direct children
-                         md_part = _epub_node_to_markdown(element, footnote_defs)
-                         if md_part: item_md_parts.append(md_part)
-                    item_markdown = "\n\n".join(item_md_parts).strip() # Join parts with double newline
-                if item_markdown: all_content_parts.append(item_markdown)
-            else: # Plain text
-                # Basic text extraction, could be improved
-                text = soup.get_text(separator='\n', strip=True) # Use newline separator
-                if text: all_content_parts.append(text)
+    # Join content with double newlines for paragraphs
+    full_content = "\n\n".join(all_content).strip()
 
-        # Append collected footnote definitions for Markdown
-        if output_format == 'markdown' and footnote_defs:
-            fn_section = ["\n\n---"] # Separator
-            for fn_id, fn_text in sorted(footnote_defs.items()):
-                fn_section.append(f"[^{fn_id}]: {fn_text}")
-            all_content_parts.append("\n".join(fn_section))
-
-        full_content = "\n\n".join(all_content_parts).strip()
-        if not full_content: raise ValueError("EPUB contains no extractable content")
-        return full_content
-    except Exception as e:
-        logging.exception(f"Error processing EPUB {file_path_str}") # Log full traceback
-        raise Exception(f"Error processing EPUB {file_path_str}: {e}") from e
+    # Append footnotes if generating Markdown
+    if output_format == 'markdown' and footnote_defs:
+        footnote_block_lines = ["---"]
+        for fn_id, fn_text in sorted(footnote_defs.items()):
+             # Basic cleaning for footnote definition text
+            cleaned_fn_text = re.sub(r"^[^\w]+", "", fn_text).strip()
+            footnote_block_lines.append(f"[^{fn_id}]: {cleaned_fn_text}")
+        # Add separator only if there's main content
+        if full_content:
+            full_content += "\n\n" + "\n".join(footnote_block_lines)
+        else:
+            full_content = "\n".join(footnote_block_lines)
 
 
-def _process_txt(file_path):
-    """Reads content from a TXT file."""
+    logging.info(f"Finished EPUB: {file_path}. Format: {output_format}. Length: {len(full_content)}")
+    return full_content
+
+def _process_txt(file_path: Path) -> str:
+    """Processes a TXT file. Returns text string."""
+    # Note: TXT processing doesn't have a separate Markdown path in the spec
+    logging.info(f"Processing TXT file: {file_path}")
     try:
-        # Using errors='ignore' as a simple strategy for RAG where perfect fidelity isn't critical.
-        # Consider 'replace' or more robust encoding detection if issues arise.
-        with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-            return f.read()
+        with open(file_path, 'r', encoding='utf-8') as f: text = f.read()
+        logging.info(f"Finished TXT (UTF-8): {file_path}. Length: {len(text)}")
+        return text
+    except UnicodeDecodeError:
+        logging.warning(f"UTF-8 failed for {file_path}. Trying 'latin-1'.")
+        try:
+            with open(file_path, 'r', encoding='latin-1') as f: text = f.read()
+            logging.info(f"Finished TXT (latin-1): {file_path}. Length: {len(text)}")
+            return text
+        except Exception as e:
+            logging.error(f"Failed to read TXT {file_path} even with latin-1: {e}")
+            raise RuntimeError(f"Failed to read TXT file {file_path}: {e}") from e
     except Exception as e:
-        raise Exception(f"Error processing TXT {file_path}: {e}")
+        logging.error(f"Failed to read TXT file {file_path}: {e}")
+        raise RuntimeError(f"Failed to read TXT file {file_path}: {e}") from e
 
-
-def _process_pdf(file_path: str, output_format: str = 'text') -> str:
-    """
-    Extracts text content from a PDF file using PyMuPDF (fitz), optionally
-    generating basic Markdown structure.
-    """
-    logging.info(f"Processing PDF: {file_path} (Format: {output_format})")
-    if not os.path.exists(file_path):
-        raise FileNotFoundError(f"File not found: {file_path}")
-
+def _process_pdf(file_path: Path, output_format: str = "txt") -> str:
+    """Processes a PDF file using PyMuPDF. Returns text or Markdown string."""
+    if not PYMUPDF_AVAILABLE:
+        raise ImportError("Required library 'PyMuPDF' is not installed.")
+    logging.info(f"Processing PDF: {file_path} for format: {output_format}")
     doc = None
     try:
-        doc = fitz.open(file_path)
+        doc = fitz.open(str(file_path))
         if doc.is_encrypted:
             logging.warning(f"PDF is encrypted: {file_path}")
             raise ValueError("PDF is encrypted")
@@ -660,367 +660,200 @@ def _process_pdf(file_path: str, output_format: str = 'text') -> str:
             try:
                 page = doc.load_page(page_num)
                 if output_format == 'markdown':
-                    page_content = _format_pdf_markdown(page) # Use the helper
-                else: # Default to text processing
-                    page_content = page.get_text("text")
-                    # Reverted: Cleaning is now handled in _analyze_pdf_block for markdown,
-                    # and plain text output should remain relatively raw.
-                    # If cleaning is needed for plain text, it should be a separate step/option.
-
-                if page_content:
-                    all_content.append(page_content)
-
+                    markdown_text = _format_pdf_markdown(page) # Assumes _format_pdf_markdown exists
+                    if markdown_text: all_content.append(markdown_text)
+                else: # Default to text
+                    text = page.get_text("text")
+                    if text:
+                         # Apply basic cleaning even for text output
+                        cleaned_text = text.replace('\x00', '').strip()
+                        # Basic header/footer removal for text output too
+                        header_footer_patterns = [
+                            re.compile(r"^(JSTOR.*|Downloaded from.*|Copyright ©.*)\n?", re.IGNORECASE | re.MULTILINE),
+                            re.compile(r"^Page \d+\s*\n?", re.MULTILINE),
+                            re.compile(r"^(.*\bPage \d+\b.*)\n?", re.IGNORECASE | re.MULTILINE)
+                        ]
+                        for pattern in header_footer_patterns:
+                            cleaned_text = pattern.sub('', cleaned_text)
+                        cleaned_text = re.sub(r'\n\s*\n', '\n\n', cleaned_text).strip()
+                        if cleaned_text: all_content.append(cleaned_text)
             except Exception as page_error:
                 logging.warning(f"Could not process page {page_num + 1} in {file_path}: {page_error}")
 
-        # Cleaning is now done within _format_pdf_markdown
+        # Join pages with double newlines
+        full_content = "\n\n".join(all_content).strip()
 
-        full_content = "\n\n".join(all_content).strip() # Join potentially already cleaned markdown/text
         if not full_content:
-            logging.warning(f"No extractable content found in PDF after cleaning: {file_path}")
-            raise ValueError("PDF contains no extractable content layer (possibly image-based)")
+            logging.warning(f"No extractable text in PDF (image-based?): {file_path}")
+            return "" # Return empty string for image PDFs or empty content
 
-        logging.info(f"Finished PDF: {file_path}. Extracted length: {len(full_content)}")
+        logging.info(f"Finished PDF: {file_path}. Format: {output_format}. Length: {len(full_content)}")
         return full_content
-
-    except RuntimeError as fitz_error:
+    except fitz.fitz.FitzError as fitz_error: # Correct exception type
         logging.error(f"PyMuPDF error processing {file_path}: {fitz_error}")
-        raise RuntimeError(f"Error opening or processing PDF: {file_path} - {fitz_error}") from fitz_error
+        raise RuntimeError(f"Error opening/processing PDF: {file_path} - {fitz_error}") from fitz_error
     except Exception as e:
-        logging.exception(f"Unexpected error processing PDF {file_path}") # Log traceback
-        # Re-raise specific errors if needed, otherwise wrap
-        if isinstance(e, (ValueError, FileNotFoundError)):
-             raise e
-        raise RuntimeError(f"Unexpected error processing PDF {file_path}: {e}") from e
+        if isinstance(e, (ValueError, FileNotFoundError)): raise e
+        logging.error(f"Unexpected error processing PDF {file_path}: {e}")
+        raise RuntimeError(f"Error opening/processing PDF: {file_path} - {e}") from e
     finally:
         if doc:
-            doc.close()
+            try: doc.close()
+            except Exception as close_error: logging.error(f"Error closing PDF {file_path}: {close_error}")
 
-# Helper function to save processed text
-def _save_processed_text(file_path_str: str, text_content: str, output_format: str = 'txt') -> Path:
-    """
-    Saves the processed text content to a file in the './processed_rag_output' directory.
 
-    Constructs a filename based on the original file's stem, adding
-    '.processed.<output_format>'. Creates the output directory if it doesn't exist.
-
-    Args:
-        file_path_str: The original path of the document being processed.
-        text_content: The extracted/processed text content to save.
-        output_format: The desired file extension for the output file (default 'txt').
-
-    Returns:
-        A Path object representing the full path to the saved processed file.
-
-    Raises:
-        ValueError: If text_content is None.
-        FileSaveError: If any OS error occurs during directory creation or file writing.
-    """
-    processed_output_dir = Path("./processed_rag_output")
-    output_path: Path | None = None # Define output_path before try block
-
-    if text_content is None:
-        raise ValueError("Cannot save None content.")
+async def _save_processed_text(original_file_path: Path, text_content: str, output_format: str = "txt") -> Path:
+    """Saves the processed text content to a file asynchronously."""
+    if text_content is None: # Allow empty string, but not None
+         raise ValueError("Cannot save None content.")
 
     try:
-        original_path = Path(file_path_str)
-        # Ensure the output directory exists
-        processed_output_dir.mkdir(parents=True, exist_ok=True)
-
-        # Generate filename: <original_name>.processed.<format>
-        # Use original stem + suffix if possible, otherwise just name
-        if original_path.suffix:
-            base_name = original_path.stem
-        else:
-            base_name = original_path.name # Use full name if no suffix
-
-        # Ensure output format is reasonable (default to txt)
-        safe_output_format = output_format if output_format in ['txt', 'md', 'markdown'] else 'txt'
-        if safe_output_format == 'markdown': safe_output_format = 'md' # Use shorter extension
-
-        output_filename = f"{base_name}.processed.{safe_output_format}"
-        output_path = processed_output_dir / output_filename
-
-        logging.info(f"Saving processed text to: {output_path}")
-        with open(output_path, 'w', encoding='utf-8') as f:
-            f.write(text_content)
-        return output_path
+        PROCESSED_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+        base_name = original_file_path.name
+        # Ensure output format is part of the extension
+        output_filename = f"{base_name}.processed.{output_format}"
+        output_file_path = PROCESSED_OUTPUT_DIR / output_filename
+        logging.info(f"Saving processed text to: {output_file_path}")
+        async with aiofiles.open(output_file_path, 'w', encoding='utf-8') as f:
+            await f.write(text_content)
+        logging.info(f"Successfully saved processed text for {original_file_path.name}")
+        return output_file_path
     except OSError as e:
-        # Use f-string for the error message including output_path if defined
-        save_location = output_path if output_path else processed_output_dir
-        logging.exception(f"OS error saving processed file for {file_path_str} to {save_location}: {e}")
+        logging.error(f"OS error saving processed file {output_file_path}: {e}")
         raise FileSaveError(f"Failed to save processed file due to OS error: {e}") from e
     except Exception as e:
-        logging.exception(f"Unexpected error saving processed file for {file_path_str}")
-        # Wrap unexpected errors
-        raise FileSaveError(f"An unexpected error occurred during file saving: {e}")
+        logging.error(f"Unexpected error saving processed file {output_file_path}: {e}")
+        raise FileSaveError(f"An unexpected error occurred while saving processed file: {e}") from e
 
-# Define supported formats (as per spec example)
-SUPPORTED_FORMATS = ['.epub', '.txt', '.pdf']
+# --- Core Bridge Functions (Updated) ---
 
-async def process_document(file_path_str: str, output_format='txt') -> dict:
+async def process_document(file_path_str: str, output_format: str = "txt") -> dict:
     """
-    Processes a document file (EPUB, TXT, PDF) to extract text content,
-    saves it to a file, and returns the path.
-    Accepts 'text' or 'markdown' for output_format.
+    Detects file type, calls the appropriate processing function, saves the result,
+    and returns a dictionary containing the processed file path (or null).
     """
+    file_path = Path(file_path_str)
+    if not file_path.exists():
+        raise FileNotFoundError(f"File not found: {file_path_str}")
+
+    _, ext = os.path.splitext(file_path.name) # Use os.path.splitext for reliability
+    ext = ext.lower()
+    processed_text = None
+    processed_file_path = None # Initialize
+
     try:
-        file_path = Path(file_path_str)
-        if not file_path.exists():
-             raise FileNotFoundError(f"File not found: {file_path_str}")
-
-        ext = file_path.suffix.lower()
-        # Normalize output format alias
-        normalized_output_format = 'markdown' if output_format == 'md' else output_format
-        if normalized_output_format not in ['text', 'markdown']:
-            normalized_output_format = 'text' # Default to text if invalid
-
-        processed_text = None
-
+        logging.info(f"Starting processing for: {file_path} with format {output_format}")
         if ext == '.epub':
-            processed_text = _process_epub(file_path_str, normalized_output_format) # Pass format
+            processed_text = _process_epub(file_path, output_format)
         elif ext == '.txt':
-            # TXT processing doesn't change based on output_format, but save format does
-            processed_text = _process_txt(file_path_str)
+            # TXT processing doesn't have a separate markdown path in spec
+            processed_text = _process_txt(file_path)
         elif ext == '.pdf':
-            processed_text = _process_pdf(file_path_str, normalized_output_format) # Pass format
+            processed_text = _process_pdf(file_path, output_format)
         else:
-            raise ValueError(f"Unsupported file format: {ext}. Supported: {SUPPORTED_FORMATS}")
+            raise ValueError(f"Unsupported file format: {ext}")
 
-        # _process_pdf raises ValueError if no text is extracted.
-        # Ensure other processors do too or handle None here if necessary.
-        if processed_text is None:
-             # This case should ideally not be reached if processors raise errors appropriately.
-             logging.warning(f"Processing yielded None content for {file_path_str}, expected an exception.")
-             raise ValueError(f"No text content could be extracted from {file_path_str}")
-
-        # Save the processed text
-        saved_path = _save_processed_text(file_path_str, processed_text, normalized_output_format)
-
-        # Return the path to the saved file
-        return {"processed_file_path": str(saved_path)}
-
-    except ImportError as imp_err:
-         logging.error(f"Missing dependency for processing {ext} file {file_path_str}: {imp_err}")
-         return {"error": f"Missing required library to process {ext} files. Please check installation."}
-    except (FileNotFoundError, ValueError, FileSaveError) as specific_err:
-        logging.error(f"Error processing document {file_path_str}: {specific_err}")
-        return {"error": str(specific_err)}
-    except Exception as e:
-        logging.exception(f"Failed to process document {file_path_str}")
-        # Propagate specific processing errors directly if they are RuntimeErrors
-        if isinstance(e, RuntimeError) and ("Error opening or processing PDF" in str(e)):
-             return {"error": str(e)}
-        return {"error": f"An unexpected error occurred during document processing: {e}"}
-
-def main():
-    # Configure basic logging
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-
-    # Argument parsing MUST happen *before* the main try block uses function_name
-    if len(sys.argv) < 3:
-        print(json.dumps({"error": "Missing arguments"}))
-        return 1
-
-    function_name = sys.argv[1]
-    args_json = sys.argv[2]
-
-    try:
-        args_dict = json.loads(args_json)
-    except json.JSONDecodeError:
-        print(json.dumps({"error": "Invalid JSON arguments"}))
-        return 1
-
-    response = None # Initialize response
-
-    try:
-        # --- Action Handling ---
-        if function_name == 'search':
-            response = asyncio.run(search(**args_dict))
-        elif function_name == 'get_by_id': # Renamed from get_book_details in spec example
-            book_id = args_dict.get('book_id')
-            if not book_id: raise ValueError("Missing 'book_id'")
-            response = asyncio.run(get_by_id(book_id))
-        elif function_name == 'get_download_info':
-            # This tool is deprecated and likely relies on faulty ID lookup.
-            # Consider removing or raising a specific error.
-            logging.warning("Deprecated tool 'get_download_info' called.")
-            raise NotImplementedError("Tool 'get_download_info' is deprecated.")
-            # book_id = args_dict.get('book_id')
-            # format_arg = args_dict.get('format') # Keep format if needed by caller
-            # if not book_id: raise ValueError("Missing 'book_id'")
-            # response = asyncio.run(get_download_info(book_id, format_arg))
-        elif function_name == 'full_text_search':
-            response = asyncio.run(full_text_search(**args_dict))
-        elif function_name == 'get_download_history':
-            response = asyncio.run(get_download_history(**args_dict))
-        elif function_name == 'get_download_limits':
-            response = asyncio.run(get_download_limits())
-        elif function_name == 'get_recent_books': # <<< CORRECTLY PLACED HANDLER
-            response = asyncio.run(get_recent_books(**args_dict)) # <<< CORRECTLY PLACED HANDLER
-        elif function_name == 'process_document':
-            # Get format from args, default to 'text'
-            output_format = args_dict.get('output_format', 'text')
-            args_dict['output_format'] = output_format # Ensure it's in the dict for **args_dict
-            response = asyncio.run(process_document(**args_dict))
-        elif function_name == 'download_book': # Handler for download_book
-            if 'book_details' not in args_dict:
-                 raise ValueError("Missing 'book_details' argument for download_book")
-            # Get format from args, default to 'text'
-            processed_output_format = args_dict.get('processed_output_format', 'text')
-            args_dict['processed_output_format'] = processed_output_format # Ensure it's in the dict
-            response = asyncio.run(download_book(**args_dict))
+        # Save the processed text if any was extracted
+        if processed_text is not None and processed_text != "":
+            processed_file_path = await _save_processed_text(file_path, processed_text, output_format)
         else:
-            print(json.dumps({"error": f"Unknown function: {function_name}"}))
-            return 1
+             logging.warning(f"No text extracted from {file_path}, processed file not saved.")
+             processed_file_path = None # Explicitly set to None
 
-        # Output the result as JSON if no error occurred during action handling
-        print(json.dumps(response))
-        return 0
+        return {"processed_file_path": str(processed_file_path) if processed_file_path else None}
 
-    # --- Exception Handling ---
-    except ValueError as ve:
-        logging.warning(f"ValueError during {function_name}: {ve}")
-        print(json.dumps({"error": str(ve)}))
-        return 1
-    except RuntimeError as re:
-        logging.error(f"RuntimeError during {function_name}: {re}")
-        print(json.dumps({"error": str(re)}))
-        return 1
-    except FileSaveError as fse:
-        logging.error(f"FileSaveError during {function_name}: {fse}")
-        print(json.dumps({"error": str(fse)}))
-        return 1
-    except NotImplementedError as nie:
-        logging.warning(f"NotImplementedError during {function_name}: {nie}")
-        print(json.dumps({"error": str(nie)}))
-        return 1
     except Exception as e:
-        print(traceback.format_exc(), file=sys.stderr)
-        print(json.dumps({"error": str(e)}))
-        logging.exception(f"Unexpected error during {function_name}")
-        # Re-added generic error message for unexpected errors
-        print(json.dumps({"error": f"An unexpected error occurred: {e}"}))
-        return 1
+        logging.exception(f"Error processing document {file_path_str}") # Log full traceback
+        # Re-raise to be caught by the main handler
+        raise RuntimeError(f"Error processing document {file_path_str}: {e}") from e
 
-# --- Internal Download/Scraping Helper (Spec v2.1) ---
-async def _scrape_and_download(book_page_url: str, output_path: str) -> str:
+# --- download_book function needs to be async ---
+async def download_book(book_details: dict, output_dir: str, process_for_rag: bool = False, processed_output_format: str = "txt"):
     """
-    Calls the zlibrary fork's download_book method which handles scraping and downloading.
-    Note: This function now expects the *book_page_url* and the full *output_path*.
+    Downloads a book using scraping, optionally processes it, and returns file paths.
     """
-    global zlib_client
     if not zlib_client:
         await initialize_client()
 
-    try:
-        # Construct a minimal book_details dict required by the library's download_book
-        try:
-            book_id_from_url = book_page_url.split('/book/')[1].split('/')[0] if '/book/' in book_page_url else 'unknown_from_url'
-        except IndexError:
-            book_id_from_url = 'unknown_from_url'
-
-        minimal_book_details = {
-            'url': book_page_url,
-            'id': book_id_from_url # Provide ID for potential logging within the library
-        }
-
-        # REMOVED Filename generation and directory creation - now handled by caller
-
-        # Call the library's download_book method
-        logging.info(f"Calling zlib_client.download_book for URL: {book_page_url}, Output Path: {output_path}")
-        await zlib_client.download_book(
-            book_details=minimal_book_details, # Pass minimal details containing the URL
-            output_path=output_path # Pass the full string path received from caller
-        )
-
-        # Library download_book returns None on success, so we return the expected output path
-        return output_path
-
-    except DownloadError as de:
-        logging.error(f"DownloadError during scrape/download for {book_page_url}: {de}")
-        raise RuntimeError(f"Download failed: {de}") from de # Wrap DownloadError
-    except Exception as e:
-        logging.exception(f"Unexpected error during scrape/download for {book_page_url}")
-        raise RuntimeError(f"An unexpected error occurred during download: {e}") from e # Wrap other errors
-
-
-async def download_book(book_details: dict, output_dir='./downloads', process_for_rag=False, processed_output_format='txt') -> dict:
-    """
-    Downloads a book using the provided details.
-    Optionally processes the downloaded file for RAG.
-    Accepts 'text' or 'markdown' for processed_output_format.
-    """
-    global zlib_client
-    if not zlib_client:
-        await initialize_client()
-
-    # Validate input
-    if not isinstance(book_details, dict):
-        raise TypeError("book_details must be a dictionary.")
-    if 'id' not in book_details or 'extension' not in book_details:
-         raise ValueError("book_details must contain 'id' and 'extension'.")
-    # Removed URL check here, as _scrape_and_download now uses zlib_client.download_book which takes book_details directly
+    book_page_url = book_details.get('url')
+    if not book_page_url:
+        raise ValueError("Missing 'url' key in bookDetails object.")
 
     downloaded_file_path_str = None
-    processed_file_path_str = None
-    processing_error_str = None
+    processed_file_path_str = None # Initialize
 
     try:
-        # Ensure output directory exists
-        output_dir_path = Path(output_dir)
-        output_dir_path.mkdir(parents=True, exist_ok=True)
+        # Use the scraping helper
+        downloaded_file_path_str = await _scrape_and_download(book_page_url, output_dir) # Assumes _scrape_and_download exists
 
-        # Construct the full output path
-        file_name = f"{book_details['id']}.{book_details['extension']}"
-        full_output_path = str(output_dir_path / file_name)
-        downloaded_file_path_str = full_output_path # Store the intended path
-
-        # Call the library's download method directly
-        logging.info(f"Initiating download for book ID {book_details['id']} to {full_output_path}")
-        await zlib_client.download_book(
-            book_details=book_details, # Pass the full details
-            output_path=full_output_path
-        )
-        logging.info(f"Download successful for book ID {book_details['id']}")
-
-        # --- RAG Processing (Optional) ---
-        if process_for_rag:
+        if process_for_rag and downloaded_file_path_str:
             logging.info(f"Processing downloaded file for RAG: {downloaded_file_path_str}")
-            try:
-                # Pass the desired format to process_document
-                processing_result = await process_document(downloaded_file_path_str, processed_output_format)
-                if "error" in processing_result:
-                    processing_error_str = processing_result["error"]
-                    logging.error(f"RAG processing failed for {downloaded_file_path_str}: {processing_error_str}")
-                else:
-                    processed_file_path_str = processing_result.get("processed_file_path")
-                    logging.info(f"RAG processing successful. Output: {processed_file_path_str}")
+            # Call the main process_document function
+            process_result = await process_document(downloaded_file_path_str, processed_output_format)
+            processed_file_path_str = process_result.get("processed_file_path") # Can be None
 
-            except Exception as proc_err:
-                # Catch unexpected errors during the process_document call itself
-                logging.exception(f"Unexpected error calling process_document for {downloaded_file_path_str}")
-                processing_error_str = f"Unexpected error during processing call: {proc_err}"
+        return {
+            "file_path": downloaded_file_path_str,
+            "processed_file_path": processed_file_path_str # Will be None if not processed or no text
+        }
 
-    except DownloadError as de:
-        logging.error(f"DownloadError for book ID {book_details['id']}: {de}")
-        # Re-raise as RuntimeError for the main handler
-        raise RuntimeError(f"Download failed: {de}") from de
     except Exception as e:
-        logging.exception(f"Failed during download process for book ID {book_details['id']}")
-        # Re-raise other critical errors (like ValueError from input validation)
-        if isinstance(e, (ValueError, TypeError)):
-             raise e
-        # Wrap other unexpected errors
-        raise RuntimeError(f"An unexpected error occurred during download: {e}") from e
+        logging.exception(f"Error in download_book for URL {book_page_url}")
+        # Re-raise the specific error type if possible, otherwise generic
+        raise e # Let main handler format the final error message
 
-    # Return structured result
-    return {
-        "file_path": downloaded_file_path_str,
-        "processed_file_path": processed_file_path_str,
-        "processing_error": processing_error_str
-    }
+# --- Main Execution Block ---
+async def main():
+    parser = argparse.ArgumentParser(description='Z-Library Python Bridge')
+    parser.add_argument('function_name', help='Name of the function to call')
+    parser.add_argument('args_json', help='JSON string of arguments for the function')
+    cli_args = parser.parse_args()
 
+    function_name = cli_args.function_name
+    try:
+        args_dict = json.loads(cli_args.args_json)
+    except json.JSONDecodeError:
+        print(json.dumps({"error": "Invalid JSON arguments provided."}), file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        # Ensure client is initialized if needed by the function
+        if function_name not in ['process_document']: # Add functions that DON'T need client
+             if not zlib_client:
+                await initialize_client()
+
+        # Call the requested function
+        if function_name == 'search':
+            result = await search(**args_dict)
+        elif function_name == 'get_by_id':
+            result = await get_by_id(**args_dict)
+        elif function_name == 'full_text_search':
+            result = await full_text_search(**args_dict)
+        elif function_name == 'get_download_history':
+            result = await get_download_history(**args_dict)
+        elif function_name == 'get_download_limits':
+            result = await get_download_limits(**args_dict)
+        elif function_name == 'get_recent_books':
+             result = await get_recent_books(**args_dict)
+        elif function_name == 'download_book': # Changed from download_book_to_file
+             result = await download_book(**args_dict)
+        elif function_name == 'process_document': # Changed from process_document_for_rag
+             result = await process_document(**args_dict)
+        else:
+            raise ValueError(f"Unknown function: {function_name}")
+
+        # Print result as JSON to stdout
+        print(json.dumps(result))
+
+    except Exception as e:
+        # Print error as JSON to stderr
+        error_info = {
+            "error": str(e),
+            "type": type(e).__name__,
+            "traceback": traceback.format_exc()
+        }
+        print(json.dumps(error_info), file=sys.stderr)
+        sys.exit(1)
 
 if __name__ == "__main__":
-    sys.exit(main())
+    asyncio.run(main())

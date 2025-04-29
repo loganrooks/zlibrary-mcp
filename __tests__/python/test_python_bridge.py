@@ -16,6 +16,7 @@ from zlibrary import Extension # Import Extension enum
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'lib')))
 
 import python_bridge # Import the module itself
+from lib import rag_processing # Import the new module
 
 # Import functions from the module under test
 # These imports will fail initially if the functions don't exist yet
@@ -274,7 +275,7 @@ def mock_process_document(mocker):
 def mock_save_text(mocker):
     """Mocks the _save_processed_text function."""
     # Mock the function directly within the python_bridge module
-    return mocker.patch('python_bridge._save_processed_text', AsyncMock(return_value=Path("/path/to/saved.txt")))
+    return mocker.patch('lib.rag_processing.save_processed_text', AsyncMock(return_value=Path("/path/to/saved.txt"))) # Updated path
 
 
     book_details = asyncio.run(get_by_id('12345')) # Use actual function name and asyncio.run
@@ -395,7 +396,7 @@ async def test_process_document_epub_success(tmp_path, mocker, mock_save_text):
     epub_path.touch()
     expected_content = "Chapter 1 content.\nChapter 2 content."
     # Mock the internal helper called by process_document
-    mock_internal_epub = mocker.patch('python_bridge._process_epub', return_value=expected_content)
+    mock_internal_epub = mocker.patch('lib.rag_processing.process_epub', return_value=expected_content) # Updated path
 
     result = await process_document(str(epub_path)) # Use await
 
@@ -421,7 +422,7 @@ async def test_process_document_epub_read_error(tmp_path, mocker, mock_save_text
     epub_path = tmp_path / "test.epub"
     epub_path.touch()
     # Mock the internal helper to raise an error
-    mock_internal_epub = mocker.patch('python_bridge._process_epub', side_effect=Exception("EPUB read failed"))
+    mock_internal_epub = mocker.patch('lib.rag_processing.process_epub', side_effect=Exception("EPUB read failed")) # Updated path
 
     # Assert that process_document wraps and raises the error
     with pytest.raises(RuntimeError, match=r"Error processing document .*test\.epub: EPUB read failed"): # Expect RuntimeError
@@ -438,7 +439,7 @@ async def test_process_document_txt_utf8(tmp_path, mocker, mock_save_text):
     content = "This is a UTF-8 file.\nWith multiple lines.\nAnd special chars: éàçü."
     txt_path.write_text(content, encoding='utf-8')
     # Mock the internal helper
-    mock_internal_txt = mocker.patch('python_bridge._process_txt', return_value=content)
+    mock_internal_txt = mocker.patch('lib.rag_processing.process_txt', return_value=content) # Updated path
 
     result = await process_document(str(txt_path)) # Use await
 
@@ -454,7 +455,7 @@ async def test_process_document_txt_latin1_fallback(tmp_path, mocker, mock_save_
     txt_path.write_text(content_latin1, encoding='latin-1')
     # Simulate the behavior of _process_txt with fallback
     expected_processed_content = "This is a Latin-1 file with chars like: ."
-    mock_internal_txt = mocker.patch('python_bridge._process_txt', return_value=expected_processed_content)
+    mock_internal_txt = mocker.patch('lib.rag_processing.process_txt', return_value=expected_processed_content) # Updated path
 
     result = await process_document(str(txt_path)) # Use await
 
@@ -468,7 +469,7 @@ async def test_process_document_txt_read_error(tmp_path, mocker, mock_save_text)
     txt_path = tmp_path / "no_permission.txt"
     txt_path.touch() # <<< ADDED: Create the file so exists() check passes
     # Mock the internal helper to raise the error
-    mock_internal_txt = mocker.patch('python_bridge._process_txt', side_effect=IOError("Permission denied"))
+    mock_internal_txt = mocker.patch('lib.rag_processing.process_txt', side_effect=IOError("Permission denied")) # Updated path
 
     # Assert that process_document wraps and raises the error
     with pytest.raises(RuntimeError, match=r"Error processing document .*no_permission\.txt: Permission denied"): # Expect RuntimeError
@@ -486,7 +487,7 @@ async def test_process_document_pdf_success(tmp_path, mocker, mock_save_text):
     pdf_path.touch()
     expected_content = "Sample PDF text content."
     # Mock the internal helper
-    mock_internal_pdf = mocker.patch('python_bridge._process_pdf', return_value=expected_content)
+    mock_internal_pdf = mocker.patch('lib.rag_processing.process_pdf', return_value=expected_content) # Updated path
 
     result = await process_document(str(pdf_path)) # Use await
 
@@ -500,7 +501,7 @@ async def test_process_document_pdf_encrypted(tmp_path, mocker, mock_save_text):
     pdf_path = tmp_path / "encrypted.pdf"
     pdf_path.touch()
     # Mock the internal helper to raise error
-    mock_internal_pdf = mocker.patch('python_bridge._process_pdf', side_effect=ValueError("PDF is encrypted"))
+    mock_internal_pdf = mocker.patch('lib.rag_processing.process_pdf', side_effect=ValueError("PDF is encrypted")) # Updated path
 
     with pytest.raises(RuntimeError, match=r"Error processing document .*encrypted\.pdf: PDF is encrypted"): # Expect RuntimeError wrapper
         await process_document(str(pdf_path)) # Use await
@@ -517,7 +518,7 @@ async def test_process_document_pdf_corrupted(tmp_path, mocker, mock_save_text):
     # Mock the internal helper to raise the error
     # Use fitz exception if available, otherwise generic RuntimeError
     fitz_error = getattr(sys.modules.get('fitz', None), 'FitzError', RuntimeError)
-    mock_internal_pdf = mocker.patch('python_bridge._process_pdf', side_effect=fitz_error("Corrupted PDF"))
+    mock_internal_pdf = mocker.patch('lib.rag_processing.process_pdf', side_effect=fitz_error("Corrupted PDF")) # Updated path
 
     with pytest.raises(RuntimeError, match=r"Error processing document .*corrupted\.pdf.*Corrupted PDF"): # Expect RuntimeError wrapper
         await process_document(str(pdf_path))
@@ -532,7 +533,7 @@ async def test_process_document_pdf_image_based(tmp_path, mocker, mock_save_text
     pdf_path = tmp_path / "image.pdf"
     pdf_path.touch()
     # Mock the internal helper to return empty string
-    mock_internal_pdf = mocker.patch('python_bridge._process_pdf', return_value="")
+    mock_internal_pdf = mocker.patch('lib.rag_processing.process_pdf', return_value="") # Updated path
 
     result = await process_document(str(pdf_path))
 
@@ -547,7 +548,7 @@ async def test_process_document_pdf_file_not_found(tmp_path, mocker, mock_save_t
     pdf_path = tmp_path / "nonexistent.pdf"
     # Don't create the file
     # Mock the internal helper (it won't be called, but patch is needed for consistency)
-    mock_internal_pdf = mocker.patch('python_bridge._process_pdf')
+    mock_internal_pdf = mocker.patch('lib.rag_processing.process_pdf') # Updated path
 
     with pytest.raises(FileNotFoundError):
         await process_document(str(pdf_path))
@@ -563,7 +564,7 @@ async def test_process_document_pdf_removes_noise(tmp_path, mocker, mock_save_te
     pdf_path.touch()
     # Simulate the expected clean text output from the internal helper
     expected_clean_content = "Real Content Line 1\n\nReal Content Line 2"
-    mock_internal_pdf = mocker.patch('python_bridge._process_pdf', return_value=expected_clean_content)
+    mock_internal_pdf = mocker.patch('lib.rag_processing.process_pdf', return_value=expected_clean_content) # Updated path
 
     result = await process_document(str(pdf_path)) # Test text output
 
@@ -591,7 +592,7 @@ Paragraph 1.
 Paragraph 2.
 
 ### Heading 3 Small"""
-    mock_internal_pdf = mocker.patch('python_bridge._process_pdf', return_value=expected_markdown)
+    mock_internal_pdf = mocker.patch('lib.rag_processing.process_pdf', return_value=expected_markdown) # Updated path
 
     result = await process_document(str(pdf_path), output_format='markdown')
 
@@ -612,7 +613,7 @@ async def test_process_document_pdf_markdown_lists(tmp_path, mocker, mock_save_t
 a. Item A.1
 
 Paragraph."""
-    mock_internal_pdf = mocker.patch('python_bridge._process_pdf', return_value=expected_markdown)
+    mock_internal_pdf = mocker.patch('lib.rag_processing.process_pdf', return_value=expected_markdown) # Updated path
 
     result = await process_document(str(pdf_path), output_format='markdown')
 
@@ -631,7 +632,7 @@ async def test_process_document_pdf_markdown_footnotes(tmp_path, mocker, mock_sa
 
 ---
 [^1]: The actual footnote text."""
-    mock_internal_pdf = mocker.patch('python_bridge._process_pdf', return_value=expected_markdown)
+    mock_internal_pdf = mocker.patch('lib.rag_processing.process_pdf', return_value=expected_markdown) # Updated path
 
     result = await process_document(str(pdf_path), output_format='markdown')
 
@@ -647,7 +648,7 @@ async def test_process_document_pdf_markdown_ignores_noise_heading(tmp_path, moc
     pdf_path.touch()
     # Simulate the expected Markdown output from the internal helper
     expected_markdown = """## Actual Chapter Title"""
-    mock_internal_pdf = mocker.patch('python_bridge._process_pdf', return_value=expected_markdown)
+    mock_internal_pdf = mocker.patch('lib.rag_processing.process_pdf', return_value=expected_markdown) # Updated path
 
     result = await process_document(str(pdf_path), output_format='markdown')
 
@@ -669,7 +670,7 @@ a. Sub item a.
 b. Sub item b.
 
 Not a list."""
-    mock_internal_pdf = mocker.patch('python_bridge._process_pdf', return_value=expected_markdown)
+    mock_internal_pdf = mocker.patch('lib.rag_processing.process_pdf', return_value=expected_markdown) # Updated path
 
     result = await process_document(str(pdf_path), output_format='markdown')
 
@@ -687,7 +688,7 @@ async def test_process_document_epub_markdown_toc_list(tmp_path, mocker, mock_sa
     expected_markdown = """* Chapter 1
 * Chapter 2
   * Section 2.1"""
-    mock_internal_epub = mocker.patch('python_bridge._process_epub', return_value=expected_markdown)
+    mock_internal_epub = mocker.patch('lib.rag_processing.process_epub', return_value=expected_markdown) # Updated path
 
     result = await process_document(str(epub_path), output_format='markdown')
 
@@ -708,7 +709,7 @@ async def test_process_document_epub_markdown_multi_footnotes(tmp_path, mocker, 
 ---
 [^1]: First footnote.
 [^2]: Second footnote."""
-    mock_internal_epub = mocker.patch('python_bridge._process_epub', return_value=expected_markdown)
+    mock_internal_epub = mocker.patch('lib.rag_processing.process_epub', return_value=expected_markdown) # Updated path
 
     result = await process_document(str(epub_path), output_format='markdown')
 
@@ -729,7 +730,7 @@ async def test_process_document_pdf_markdown_footnote_format(tmp_path, mocker, m
 
 ---
 [^1]: The actual footnote text."""
-    mock_internal_pdf = mocker.patch('python_bridge._process_pdf', return_value=expected_markdown)
+    mock_internal_pdf = mocker.patch('lib.rag_processing.process_pdf', return_value=expected_markdown) # Updated path
 
     result = await process_document(str(pdf_path), output_format='markdown') # Use await
 
@@ -746,7 +747,7 @@ async def test_process_document_epub_format_text(tmp_path, mocker, mock_save_tex
     epub_path.touch()
     # Simulate the expected text output from the internal helper
     expected_text = "Heading\nParagraph."
-    mock_internal_epub = mocker.patch('python_bridge._process_epub', return_value=expected_text)
+    mock_internal_epub = mocker.patch('lib.rag_processing.process_epub', return_value=expected_text) # Updated path
 
     result = await process_document(str(epub_path), output_format='text') # Explicitly 'text'
 
@@ -763,7 +764,7 @@ async def test_process_document_epub_format_markdown(tmp_path, mocker, mock_save
     epub_path.touch()
     # Simulate the expected Markdown output from the internal helper
     expected_markdown = "# Heading\n\nParagraph."
-    mock_internal_epub = mocker.patch('python_bridge._process_epub', return_value=expected_markdown)
+    mock_internal_epub = mocker.patch('lib.rag_processing.process_epub', return_value=expected_markdown) # Updated path
 
     result = await process_document(str(epub_path), output_format='markdown')
 
@@ -774,8 +775,8 @@ async def test_process_document_epub_format_markdown(tmp_path, mocker, mock_save
 def test_process_document_epub_routing(tmp_path, mocker):
     epub_path = tmp_path / "test.epub"
     epub_path.touch()
-    mock_process_epub = mocker.patch('python_bridge._process_epub', return_value="EPUB Content")
-    mock_save = mocker.patch('python_bridge._save_processed_text', return_value=Path("/path/test.epub.processed.txt"))
+    mock_process_epub = mocker.patch('lib.rag_processing.process_epub', return_value="EPUB Content") # Updated path
+    mock_save = mocker.patch('lib.rag_processing.save_processed_text', return_value=Path("/path/test.epub.processed.txt")) # Updated path
 
     result = asyncio.run(process_document(str(epub_path)))
 
@@ -786,8 +787,8 @@ def test_process_document_epub_routing(tmp_path, mocker):
 def test_process_document_txt_routing(tmp_path, mocker):
     txt_path = tmp_path / "test.txt"
     txt_path.write_text("TXT Content")
-    mock_process_txt = mocker.patch('python_bridge._process_txt', return_value="TXT Content")
-    mock_save = mocker.patch('python_bridge._save_processed_text', return_value=Path("/path/test.txt.processed.txt"))
+    mock_process_txt = mocker.patch('lib.rag_processing.process_txt', return_value="TXT Content") # Updated path
+    mock_save = mocker.patch('lib.rag_processing.save_processed_text', return_value=Path("/path/test.txt.processed.txt")) # Updated path
 
     result = asyncio.run(process_document(str(txt_path)))
 
@@ -798,8 +799,8 @@ def test_process_document_txt_routing(tmp_path, mocker):
 def test_process_document_pdf_routing(tmp_path, mocker):
     pdf_path = tmp_path / "test.pdf"
     pdf_path.touch()
-    mock_process_pdf = mocker.patch('python_bridge._process_pdf', return_value="PDF Content")
-    mock_save = mocker.patch('python_bridge._save_processed_text', return_value=Path("/path/test.pdf.processed.txt"))
+    mock_process_pdf = mocker.patch('lib.rag_processing.process_pdf', return_value="PDF Content") # Updated path
+    mock_save = mocker.patch('lib.rag_processing.save_processed_text', return_value=Path("/path/test.pdf.processed.txt")) # Updated path
 
     result = asyncio.run(process_document(str(pdf_path)))
 
@@ -812,7 +813,7 @@ async def test_process_document_pdf_error_propagation(mocker, mock_save_text, tm
     pdf_path = tmp_path / "error.pdf"
     pdf_path.touch()
     # Mock the underlying _process_pdf as that's where the error originates
-    mock_underlying_pdf = mocker.patch('python_bridge._process_pdf', side_effect=ValueError("PDF Error"))
+    mock_underlying_pdf = mocker.patch('lib.rag_processing.process_pdf', side_effect=ValueError("PDF Error")) # Updated path
 
     with pytest.raises(RuntimeError, match=r"Error processing document .*error\.pdf: PDF Error"): # Expect RuntimeError wrapper
         await process_document(str(pdf_path)) # Use await
@@ -824,7 +825,7 @@ async def test_process_document_pdf_error_propagation(mocker, mock_save_text, tm
 async def test_process_document_epub_error_propagation(mocker, mock_save_text, tmp_path):
     epub_path = tmp_path / "error.epub"
     epub_path.touch()
-    mock_underlying_epub = mocker.patch('python_bridge._process_epub', side_effect=ValueError("EPUB Error"))
+    mock_underlying_epub = mocker.patch('lib.rag_processing.process_epub', side_effect=ValueError("EPUB Error")) # Updated path
     with pytest.raises(RuntimeError, match=r"Error processing document .*error\.epub: EPUB Error"): # Expect RuntimeError wrapper
         await process_document(str(epub_path))
     mock_underlying_epub.assert_called_once_with(Path(epub_path), 'txt')
@@ -1088,8 +1089,8 @@ def test_process_document_calls_save(mock_path, mock_aio_open, mocker, tmp_path)
     txt_path = tmp_path / "test.txt"
     txt_path.write_text("TXT Content")
     # Mock the underlying _process_txt as process_document calls it
-    mock_underlying_txt = mocker.patch('python_bridge._process_txt', return_value="TXT Content")
-    mock_save = mocker.patch('python_bridge._save_processed_text', return_value=Path("/path/test.txt.processed.txt")) # Patch save directly
+    mock_underlying_txt = mocker.patch('lib.rag_processing.process_txt', return_value="TXT Content") # Updated path
+    mock_save = mocker.patch('lib.rag_processing.save_processed_text', return_value=Path("/path/test.txt.processed.txt")) # Updated path # Patch save directly
 
     result = asyncio.run(process_document(str(txt_path)))
 
@@ -1104,7 +1105,7 @@ async def test_process_document_returns_null_path_when_no_text(mocker, mock_save
     pdf_path = tmp_path / "empty.pdf"
     pdf_path.touch()
     # Mock the underlying _process_pdf
-    mock_underlying_pdf = mocker.patch('python_bridge._process_pdf', return_value="") # Simulate empty content
+    mock_underlying_pdf = mocker.patch('lib.rag_processing.process_pdf', return_value="") # Updated path # Simulate empty content
 
     result = await process_document(str(pdf_path))
 
@@ -1141,21 +1142,16 @@ async def test_process_document_saves_successfully(tmp_path, mocker, mock_aiofil
     txt_path.touch() # Create the input file
     content_to_process = "Content to save."
     # expected_output_path_str = str(txt_path) + ".processed.txt" # Old calculation
-    expected_output_path = python_bridge.PROCESSED_OUTPUT_DIR / f"{txt_path.name}.processed.txt"
+    expected_output_path = rag_processing.PROCESSED_OUTPUT_DIR / f"{txt_path.name}.processed.txt" # Updated path
 
 
     # Mock the internal processing function to return content
-    mocker.patch('python_bridge._process_txt', return_value=content_to_process)
+    mocker.patch('lib.rag_processing.process_txt', return_value=content_to_process) # Updated path
     # Get the mock file handle from the mock_aiofiles fixture
     mock_open_func, mock_file_handle = mock_aiofiles
-    # Mock _save_processed_text to check its internal calls
-    # Use wrap=True if _save_processed_text exists, otherwise just mock
-    save_target = 'python_bridge._save_processed_text'
-    original_save = getattr(python_bridge, '_save_processed_text', None)
-    if original_save:
-        mock_save = mocker.patch(save_target, wraps=original_save)
-    else:
-        mock_save = mocker.patch(save_target, return_value=expected_output_path) # Mock return if no original
+    # Get the mock file handle from the mock_aiofiles fixture
+    mock_open_func, mock_file_handle = mock_aiofiles
+    # REMOVED redundant mock of save_processed_text - mock_aiofiles handles the file interaction
 
     # Call process_document
     result = await process_document(str(txt_path))
@@ -1163,7 +1159,7 @@ async def test_process_document_saves_successfully(tmp_path, mocker, mock_aiofil
     # Assertions
     # Check that aiofiles.open was called with the correct output path
     # Correct the expected path to use the actual output directory
-    expected_save_path = python_bridge.PROCESSED_OUTPUT_DIR / f"{txt_path.name}.processed.txt"
+    expected_save_path = rag_processing.PROCESSED_OUTPUT_DIR / f"{txt_path.name}.processed.txt" # Updated path
     # Simplify assertion: Check if called with the path object
     mock_open_func.assert_called_once()
     assert mock_open_func.call_args[0][0] == expected_save_path
@@ -1181,7 +1177,7 @@ async def test_process_document_handles_save_io_error(tmp_path, mocker, mock_aio
     content_to_process = "Content that fails to save."
 
     # Mock the internal processing function
-    mocker.patch('python_bridge._process_txt', return_value=content_to_process)
+    mocker.patch('lib.rag_processing.process_txt', return_value=content_to_process) # Updated path
     # Mock the file write operation to raise an IOError
     mock_open_func, mock_file_handle = mock_aiofiles
     mock_file_handle.write.side_effect = IOError("Disk full")
@@ -1206,7 +1202,7 @@ async def test_process_document_raises_save_error(tmp_path, mocker): # Removed m
     txt_path.write_text("Content")
 
     # Mock the internal processing function
-    mocker.patch('python_bridge._process_txt', return_value="Content")
+    mocker.patch('lib.rag_processing.process_txt', return_value="Content") # Updated path
     # Mock aiofiles.open to raise an error during context management or write
     mocker.patch('aiofiles.open', side_effect=OSError("Cannot open for writing")) # Use OSError like in the traceback
 

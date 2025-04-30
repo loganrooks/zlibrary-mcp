@@ -32,6 +32,12 @@
   - Commit: `e943016` (documented)
   - Related Context: [activeContext.md 2025-04-29 09:48:39], [docs-writer.md Documentation Plan Update 2025-04-29 09:48:39]
 - **[2025-04-29 09:43:58] - Feature: RAG Markdown Generation - Final TDD Verification Complete**
+### [2025-04-29 21:16:57] Decision: Version Control for Delegated Tasks
+- **Decision:** Upon successful task completion and verification, delegated modes must create two separate commits:
+    1. Commit for the primary work (code, documentation, etc.).
+    2. Commit for the associated Memory Bank updates.
+- **Rationale:** Ensures atomicity and clear separation between functional changes and context logging. Facilitates easier review and rollback if necessary.
+- **Applies To:** All modes performing modifications that require version control.
   - Status: Completed
   - Mode: `tdd`
   - Details: Final verification pass completed for commit `e943016`. Test coverage and clarity deemed adequate. All tests pass. Feature ready for Completion phase.
@@ -44,6 +50,12 @@
 ### [2025-04-29 19:46:16] Milestone: Human-Readable File Slugs Implemented
 - **Status:** Completed by `code` mode.
 - **Commit:** `1f4f2c5` on `main`.
+### [2025-04-29 21:10:14] Milestone: RAG Robustness Specification Complete
+- **Status:** Completed by `spec-pseudocode` mode.
+- **Deliverable:** `docs/rag-robustness-enhancement-spec.md` (Commit: `d96a904`)
+- **Details:** Specification covers real-world testing, PDF quality analysis (PyMuPDF vs. alternatives, OCR integration), and EPUB review. Includes pseudocode and TDD anchors.
+- **Memory Bank Update Commit:** `5ad414c`
+- **Link to Delegation:** [Ref: SPARC MB Delegation Log 2025-04-29 19:47:12]
 - **Details:** Implemented `author-slug-title-slug-book_id.extension` format in `lib/rag_processing.py` and updated callers/tests.
 - **Link to Delegation:** [Ref: SPARC MB Delegation Log 2025-04-29 19:02:43]
   - Specification: `docs/rag-markdown-generation-spec.md`

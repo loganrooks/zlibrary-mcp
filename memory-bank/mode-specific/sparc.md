@@ -506,30 +506,51 @@
 ### [2025-04-29 18:11:20] Intervention: Delegate Clause Triggered (Handover)
 - **Trigger**: High Context Size (93%).
 - **Context**: Refinement phase orchestration completed. User provided final detailed summary report [Ref: User Message 2025-04-29 18:11:20].
+### [2025-04-29 21:16:57] Decision: Version Control for Delegated Tasks
+- **Decision:** Mandated two-commit process (work commit, MB commit) for successful task completion by delegated modes.
+- **Rationale:** Atomicity, separation of concerns, reviewability.
+- **Reference:** [Ref: GlobalContext 2025-04-29 21:16:57]
 # Workflow State (Current - Overwrite this section)
-- Current phase: Specification (Post-Refinement New Features)
-- Phase start: 2025-04-29 19:01:54
-- Current focus: Orchestrating implementation of new file naming convention and specification for RAG robustness enhancements.
-- Next actions: 
-    1. Delegate file naming task to `code`.
-    2. Delegate RAG robustness specification task to `spec-pseudocode`.
-- Last Updated: 2025-04-29 19:01:54
+- Current phase: Implementation (RAG Robustness)
+- Phase start: 2025-04-29 21:10:14
+- Current focus: Orchestrating implementation of RAG robustness enhancements based on the new specification.
+- Next actions:
+    1. Delegate RAG robustness implementation task (following TDD) to `tdd`.
+- Last Updated: 2025-04-29 21:18:09
 - **Action Taken**: Initiating handover to a new SPARC instance via `new_task`.
 - **Rationale**: Adherence to Delegate Clause to prevent context window issues and maintain performance.
 ### [2025-04-29 19:02:43] Task: Implement Human-Readable File Slugs
 - Assigned to: `code`
 - Description: Modify file saving logic (likely in `lib/rag_processing.py`) to use the format `author-title-id.extension`. Investigate how to obtain author/title metadata. Update tests.
 - Expected deliverable: Updated Python code, updated tests, commit with changes.
-- Status: pending
-- Link to GlobalContext Entry: [Ref: GlobalContext 2025-04-29 19:01:54]
-- Link to ActiveContext Entry: [Ref: ActiveContext 2025-04-29 19:01:54]
+- Status: completed
+- Completion time: 2025-04-29 19:46:16
+- Outcome: Successfully implemented slug format `author-slug-title-slug-book_id.extension`, updated callers and tests. Commit `1f4f2c5`.
+- Link to GlobalContext Entry: [Ref: GlobalContext 2025-04-29 19:01:54], [Ref: GlobalContext 2025-04-29 19:46:16]
+- Link to ActiveContext Entry: [Ref: ActiveContext 2025-04-29 19:01:54], [Ref: ActiveContext 2025-04-29 19:46:16]
 - **Outcome**: Pending handover task creation.
 - **Follow-up**: New SPARC instance to take over.
 ### [2025-04-29 17:17:35] Intervention: User Feedback on Completion Message
+### [2025-04-29 19:47:12] Task: Specify RAG Robustness Enhancements
+- Assigned to: `spec-pseudocode`
+- Description: Define requirements, constraints, edge cases, and pseudocode with TDD anchors for enhancing RAG robustness. Includes real-world testing strategy (philosophy texts), PDF quality analysis (PyMuPDF vs. alternatives), potential quality detection/preprocessing/OCR.
+- Expected deliverable: Detailed specification document (Markdown).
+- Status: completed
+- Completion time: 2025-04-29 21:10:14
+- Outcome: Successfully created specification document `docs/rag-robustness-enhancement-spec.md` (commit `d96a904`) and updated MB (commit `5ad414c`).
+- Link to GlobalContext Entry: [Ref: GlobalContext 2025-04-29 19:01:54], [Ref: GlobalContext 2025-04-29 21:10:14]
+- Link to ActiveContext Entry: [Ref: ActiveContext 2025-04-29 19:46:16], [Ref: ActiveContext 2025-04-29 21:10:14]
 - **Trigger**: User feedback ("more detail") on `attempt_completion` message [Ref: 2025-04-29 17:17:09].
 ### [2025-04-29 18:05:07] Intervention: User Correction on Completion Report
 - **Trigger**: User Feedback [Ref: Feedback 2025-04-29 18:03:22, 2025-04-29 18:05:07]
 - **Context**: Previous `attempt_completion` message lacked the required detail summarizing orchestrated tasks and did not include the instruction to propagate the reporting requirement up the delegation chain.
+### [2025-04-29 21:18:30] Task: Implement RAG Robustness Enhancements (TDD)
+- Assigned to: `tdd`
+- Description: Implement the RAG robustness enhancements following TDD methodology, based on the specification `docs/rag-robustness-enhancement-spec.md`. This includes the real-world testing framework, PDF quality detection/analysis, potential OCR integration, and EPUB handling review/updates.
+- Expected deliverable: Tested and implemented Python code, new/updated tests, passing test suite, separate commits for code and MB updates upon successful completion.
+- Status: pending
+- Link to Specification: `docs/rag-robustness-enhancement-spec.md` [Ref: GlobalContext 2025-04-29 21:10:14]
+- Link to ActiveContext Entry: [Ref: ActiveContext 2025-04-29 21:10:14]
 - **Action Taken**: Logged feedback [Ref: sparc-feedback.md 2025-04-29 18:03:22] and this intervention. Preparing revised, detailed `attempt_completion` message including propagation instruction.
 - **Rationale**: Adherence to user instructions and SPARC reporting protocols across delegation levels.
 - **Outcome**: Revised completion report will be generated.

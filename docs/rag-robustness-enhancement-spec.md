@@ -33,9 +33,9 @@ This specification builds upon existing work documented in:
 
 ### 2.3. Testing Methodology & Metrics
 
-*   **FR-TEST-08:** A testing framework/script shall be developed to automate the process: download (if needed), process (`process_document_for_rag` for both 'text' and 'markdown'), and evaluate outputs.
-*   **FR-TEST-09:** **Text Extraction Quality Metrics:**
-    *   **Completeness:** Estimated percentage of core text successfully extracted (manual sampling/comparison). Target: >95% for text-based PDFs/EPUBs.
+*   **FR-TEST-08:** A testing framework/script shall be developed to automate the process: download (if needed), preprocess (front matter removal, ToC extraction), process (`process_document_for_rag` for both 'text' and 'markdown'), and evaluate outputs using both quantitative metrics and AI-assisted quality assessment.
+*   **FR-TEST-09:** **Text Extraction Quality Metrics (Quantitative):**
+    *   **Completeness:** Estimated percentage of core text successfully extracted (manual sampling/comparison, post-preprocessing). Target: >95% for text-based PDFs/EPUBs.
     *   **Accuracy:** Character/Word Error Rate (CER/WER) on selected samples compared to ground truth (if available). Target: <5% CER for text-based.
     *   **Noise Level (Text Output):** Qualitative score (1-5, 1=Low, 5=High) assessing presence of headers/footers, artifacts. Target: <= 2.
     *   **Readability (Text Output):** Qualitative score (1-5, 1=Poor, 5=Excellent) assessing paragraph breaks and text flow. Target: >= 4.
@@ -44,19 +44,31 @@ This specification builds upon existing work documented in:
     *   **List Accuracy:** % lists correctly identified and formatted (ordered/unordered). Target: >85%.
     *   **Footnote Accuracy:** % footnotes captured and correctly formatted (ref + def). Target: >90%.
     *   **Overall Structure Score:** Qualitative score (1-5). Target: >= 3.5.
-*   **FR-TEST-11:** **RAG Output Quality Metrics (Post-Processing):**
-    *   *Initial Focus:* Evaluate the *processed* text/markdown quality itself using the metrics above.
-    *   *Future:* Define metrics for evaluating the final RAG output (e.g., answer relevance, hallucination rate) using the processed documents, but this is out of scope for the *initial* robustness enhancement.
+*   **FR-TEST-11:** **Processed Output Quality Metrics (Quantitative):**
+    *   Evaluate the *processed* text/markdown quality itself using the metrics above (FR-TEST-09, FR-TEST-10).
+*   **FR-TEST-11.5:** **Processed Output Quality Assessment (AI-Assisted):**
+    *   An automated process shall invoke an AI agent (e.g., a separate mode, an external LLM call) to evaluate the quality of the processed output (text and markdown) for a subset of real-world documents.
+    *   The AI agent shall assess:
+        *   Faithfulness to the original content (post-preprocessing).
+        *   Readability and coherence.
+        *   Correctness of Markdown formatting (structure, links).
+        *   Absence of significant artifacts or noise.
+        *   Successful removal of front matter (excluding Title/ToC).
+        *   Correct extraction and formatting of Title and ToC.
+    *   The AI agent shall provide a qualitative score (e.g., 1-5) and identify specific issues.
+    *   Identified issues shall be logged for review and potential creation of new targeted test cases or code adjustments.
 *   **FR-TEST-12:** **Pass/Fail Criteria:**
-    *   **Text-based PDF/EPUB:** Must meet target metrics for Completeness, Accuracy, Noise, Readability, and Markdown structure (if applicable).
-    *   **Image-based/Low-Quality PDF:** Must be correctly identified by the Quality Detection mechanism (FR-PDF-03). If OCR is applied, OCR output quality will be assessed (e.g., >70% Completeness, <20% CER target).
-    *   **Overall:** >80% of the test corpus documents must pass their respective criteria.
+    *   **Unit/Integration Tests (Samples):** Must pass standard test assertions.
+    *   **Real-World Corpus (Quantitative):** >80% of documents must meet target quantitative metrics (FR-TEST-09, FR-TEST-10).
+    *   **Real-World Corpus (AI Assessment):** >90% of AI-assessed documents must achieve a minimum quality score (e.g., >= 3.5/5) with no critical errors identified.
+    *   **Image-based/Low-Quality PDF:** Must be correctly identified (FR-PDF-03). If OCR is applied, OCR output quality will be assessed (e.g., >70% Completeness, <20% CER target, AI score >= 3/5).
+    *   **Overall:** The system passes if all above criteria related to the real-world corpus are met.
 
 ### 2.4. Results Documentation
 
 *   **FR-TEST-13:** Test results shall be stored in a structured format (e.g., JSON, CSV, Markdown report) within a dedicated output directory (e.g., `test_results/rag_robustness/`).
-*   **FR-TEST-14:** Reports shall include per-document metrics, pass/fail status, qualitative scores, and specific examples of failures or significant quality issues.
-*   **FR-TEST-15:** Comparison reports shall be generated to track improvements across different versions or library comparisons.
+*   **FR-TEST-14:** Reports shall include per-document quantitative metrics, AI assessment scores, AI feedback/identified issues, pass/fail status, and specific examples of failures.
+*   **FR-TEST-15:** Comparison reports shall be generated to track improvements across different versions, library comparisons, or preprocessing strategies.
 
 ## 3. PDF Quality Analysis & Improvement
 
@@ -114,6 +126,8 @@ This specification builds upon existing work documented in:
 
 ## 4. EPUB Handling Review
 
+*(Note: Preprocessing steps in Section 5 apply to EPUBs as well)*
+
 *   **FR-EPUB-01:** Review the current `process_epub` and `_epub_node_to_markdown` functions in `lib/rag_processing.py` using the real-world test corpus.
 *   **FR-EPUB-02:** Identify and document limitations in handling complex EPUB structures, such as:
     *   Deeply nested lists.
@@ -123,7 +137,17 @@ This specification builds upon existing work documented in:
     *   Unusual HTML tags or attributes affecting structure.
 *   **FR-EPUB-03:** Specify enhancements for `_epub_node_to_markdown` to improve handling of identified limitations (e.g., basic table-to-Markdown conversion, image placeholder generation `[Image: src/alt]`, support for more `epub:type` attributes).
 
-## 5. Non-Functional Requirements
+## 5. Preprocessing - Front Matter & ToC Handling
+
+*   **FR-PREPROC-01:** Implement a preprocessing step, applicable to both PDF and EPUB derived content, to identify and remove common front matter sections before RAG processing.
+    *   Examples: Title page elements (excluding the main title), copyright pages, dedication, acknowledgments, publisher information, series information, blank pages often found in front matter.
+    *   This step should operate on the initial extracted content (text or structured data like HTML from EPUB).
+*   **FR-PREPROC-02:** The main Title of the document shall be identified and preserved, potentially as metadata or at the very beginning of the processed content.
+*   **FR-PREPROC-03:** The Table of Contents (ToC), if present, shall be identified and extracted.
+*   **FR-PREPROC-04:** If the final output format is Markdown, the extracted ToC shall be formatted as a nested Markdown list with functional links pointing to the corresponding headers within the processed document. Header IDs/anchors may need to be generated during Markdown conversion if not inherently present.
+*   **FR-PREPROC-05:** The preprocessing logic should be robust against variations in front matter structure and ToC formatting commonly found in real-world documents. Heuristics and pattern matching will likely be required.
+
+## 6. Non-Functional Requirements
 
 *   **NFR-PERF-01:** PDF/EPUB processing time for average-sized books (e.g., 300-500 pages) should remain within acceptable limits (e.g., < 60 seconds without OCR, < 5 minutes with OCR, TBD based on testing).
 *   **NFR-ERR-01:** Clear error messages shall be provided for processing failures (e.g., encrypted PDF, corrupted file, OCR failure, unsupported format).
@@ -131,7 +155,7 @@ This specification builds upon existing work documented in:
 *   **NFR-LOG-01:** Key stages (detection, OCR trigger, library used, success/failure) shall be logged appropriately.
 *   **NFR-CONF-01:** OCR usage, preprocessing steps, and potentially quality detection thresholds should be configurable (e.g., via environment variables or a config file).
 
-## 6. Constraints & Assumptions
+## 7. Constraints & Assumptions
 
 *   **Constraint-SysDep-01:** OCR engines (like Tesseract) may require system-level installation by the user.
 *   **Constraint-LibLic-01:** Adherence to licenses of all used libraries (PyMuPDF: AGPL, Tesseract: Apache 2.0, etc.) is required.
@@ -140,7 +164,7 @@ This specification builds upon existing work documented in:
 *   **Assumption-OCRQual-01:** OCR will provide usable text for documents where direct text extraction fails, but perfect accuracy is not expected.
 *   **Assumption-Structure-01:** Heuristics for PDF structure detection (headings, lists) will be imperfect but provide a reasonable approximation for Markdown generation.
 
-## 7. Edge Cases
+## 8. Edge Cases
 
 *   **EC-PDF-01:** Encrypted/Password-protected PDFs. (Expected: `ValueError`)
 *   **EC-PDF-02:** Corrupted/Malformed PDF files. (Expected: `RuntimeError` from `fitz`)
@@ -156,8 +180,12 @@ This specification builds upon existing work documented in:
 *   **EC-OCR-03:** OCR produces nonsensical output for certain pages/documents. (Expected: Poor quality metrics, may require manual review)
 *   **EC-FS-01:** Insufficient disk space or permissions to save processed files or temporary OCR images. (Expected: `FileSaveError` or `OSError`)
 *   **EC-Lang-01:** Documents in languages not well-supported by OCR engine. (Expected: Poor OCR quality)
+*   **EC-PREPROC-01:** Documents with non-standard or missing front matter. (Expected: Preprocessing step identifies nothing to remove, proceeds gracefully)
+*   **EC-PREPROC-02:** Documents where ToC is formatted unusually or embedded within main text. (Expected: ToC extraction may fail or be incomplete, should not break processing)
+*   **EC-PREPROC-03:** Documents where front matter (e.g., preface) contains valuable content that shouldn't be removed. (Expected: Heuristics might incorrectly remove it; requires tuning or configuration)
+*   **EC-PREPROC-04:** Title is ambiguous or missing. (Expected: Title preservation might fail or use a placeholder)
 
-## 8. Pseudocode & TDD Anchors
+## 9. Pseudocode & TDD Anchors
 
 ### 8.1. PDF Quality Detection (`lib/rag_processing.py`)
 
@@ -330,7 +358,117 @@ END FUNCTION
 *   `test_run_ocr_on_pdf_success`: Mock `fitz.open`, `page.get_pixmap`, `pytesseract.image_to_string`. Verify aggregated text is returned.
 *   `test_run_ocr_on_pdf_tesseract_not_found`: Mock `pytesseract` call to raise error. Verify `RuntimeError` is raised or handled.
 
-### 8.3. Testing Framework (`scripts/run_rag_tests.py`)
+### 9.3. Preprocessing Logic (Conceptual - to be integrated into `rag_processing.py`)
+
+```pseudocode
+# File: lib/rag_processing.py (Conceptual additions)
+
+# --- Constants for Pattern Matching ---
+FRONT_MATTER_KEYWORDS = ["copyright", "dedication", "acknowledgments", "isbn", "published by", ...]
+TOC_KEYWORDS = ["contents", "table of contents", ...]
+
+FUNCTION identify_and_remove_front_matter(content_lines: List[str]) -> (List[str], str):
+  """Identifies title, removes front matter, returns cleaned content lines and title."""
+  cleaned_lines = []
+  title = "Unknown Title"
+  in_front_matter = True
+  potential_title_lines = content_lines[:20] # Heuristic: Title usually near the start
+
+  # --- Title Identification Heuristic ---
+  # Look for shortest, non-empty line, possibly all caps, near the beginning.
+  # More sophisticated logic needed (e.g., font size if available from PDF dict).
+  # title = find_title_heuristic(potential_title_lines)
+
+  # --- Front Matter Removal Heuristic ---
+  # Iterate through lines. Look for keywords, page numbers, excessive whitespace.
+  # Transition out of front_matter state when likely main content starts (e.g., "Chapter 1", "Introduction", consistent paragraph structure).
+  for line in content_lines:
+    line_lower = line.strip().lower()
+    is_likely_front_matter = False
+    if in_front_matter:
+       # Check keywords, check for roman numerals often used in front matter page numbers
+       if any(keyword in line_lower for keyword in FRONT_MATTER_KEYWORDS):
+           is_likely_front_matter = True
+       # Add more heuristics (e.g., short lines, centered text patterns)
+
+       # Heuristic to detect start of main content
+       if line_lower.startswith("chapter") or line_lower.startswith("part") or line_lower.startswith("introduction"):
+            in_front_matter = False
+
+    if not is_likely_front_matter:
+      cleaned_lines.append(line)
+
+  # Placeholder implementation - requires significant refinement
+  return cleaned_lines, title
+END FUNCTION
+
+FUNCTION extract_and_format_toc(content_lines: List[str], output_format: str) -> (List[str], str):
+  """Identifies ToC, formats it (if Markdown), returns remaining content lines and formatted ToC."""
+  toc_lines = []
+  remaining_lines = []
+  in_toc = False
+  toc_found = False
+
+  # --- ToC Identification Heuristic ---
+  # Look for keywords, specific formatting (e.g., lines with text followed by page numbers).
+  for line in content_lines:
+      line_lower = line.strip().lower()
+      if not toc_found and any(keyword in line_lower for keyword in TOC_KEYWORDS):
+          in_toc = True
+          toc_found = True
+          # Potentially skip the "Table of Contents" header itself
+          continue
+
+      if in_toc:
+          # Heuristic to detect end of ToC (e.g., start of main content, change in formatting)
+          if line_lower.startswith("chapter") or line_lower.startswith("part") or line_lower.startswith("introduction"):
+              in_toc = False
+              remaining_lines.append(line)
+          else:
+              # Basic check for ToC entry format (text ... number)
+              if re.search(r'.+\s+\.?\s*\d+$', line.strip()):
+                 toc_lines.append(line.strip())
+              else: # Assume end of ToC if format breaks
+                  in_toc = False
+                  remaining_lines.append(line)
+      else:
+          remaining_lines.append(line)
+
+  formatted_toc = ""
+  if toc_found and output_format == "markdown":
+      # --- Markdown Formatting Logic ---
+      # Parse toc_lines (extract text and page numbers/links)
+      # Create nested list structure based on indentation or numbering
+      # Generate Markdown links (#header-slug) - requires header slugs to be generated later
+      formatted_toc = format_toc_as_markdown(toc_lines) # Placeholder
+
+  # Placeholder implementation
+  return remaining_lines, formatted_toc
+END FUNCTION
+
+# --- Integration into process_pdf/process_epub ---
+# Before extracting main content or formatting markdown:
+# 1. Get initial text lines/structure.
+# 2. (cleaned_lines, title) = identify_and_remove_front_matter(initial_lines)
+# 3. (final_content_lines, formatted_toc) = extract_and_format_toc(cleaned_lines, output_format)
+# 4. Process final_content_lines for main text/markdown generation.
+# 5. Prepend title and formatted_toc (if any) to the final output.
+
+```
+
+**TDD Anchors (Preprocessing):**
+*   `test_remove_front_matter_basic`: Verify common copyright/dedication lines are removed.
+*   `test_remove_front_matter_preserves_title`: Verify the identified title remains (or is returned separately).
+*   `test_remove_front_matter_handles_no_front_matter`: Verify it works correctly on content without obvious front matter.
+*   `test_extract_toc_basic`: Verify simple ToC lines are extracted.
+*   `test_extract_toc_formats_markdown`: Verify extracted ToC is formatted correctly as Markdown list with placeholder links.
+*   `test_extract_toc_handles_no_toc`: Verify it works correctly when no ToC is found.
+*   `test_extract_toc_handles_non_standard_toc`: Test robustness against variations.
+*   `test_integration_pdf_preprocessing`: Verify `process_pdf` calls preprocessing steps and includes Title/ToC in output.
+*   `test_integration_epub_preprocessing`: Verify `process_epub` calls preprocessing steps and includes Title/ToC in output.
+
+
+### 9.4. Testing Framework (`scripts/run_rag_tests.py`)
 
 ```pseudocode
 # File: scripts/run_rag_tests.py
@@ -397,12 +535,13 @@ END FUNCTION
 
 FUNCTION evaluate_output(output_path, format_type, doc_metadata):
   # Load output file content
-  # Apply metrics based on format_type (Text: FR-TEST-09, Markdown: FR-TEST-10)
-  # Compare against ground truth if available, use heuristics/qualitative scores otherwise
+  content = read_file_content(output_path)
+
+  # Apply quantitative metrics based on format_type (Text: FR-TEST-09, Markdown: FR-TEST-10)
   metrics = {}
-  # ... calculate metrics ...
-  metrics['completeness_score'] = calculate_completeness(...)
-  metrics['accuracy_score'] = calculate_accuracy(...)
+  # ... calculate quantitative metrics ...
+  metrics['completeness_score'] = calculate_completeness(content, ...)
+  metrics['accuracy_score'] = calculate_accuracy(content, ...)
   if format_type == 'text':
     metrics['noise_score'] = score_noise(...)
     metrics['readability_score'] = score_readability(...)
@@ -411,14 +550,38 @@ FUNCTION evaluate_output(output_path, format_type, doc_metadata):
     metrics['list_accuracy'] = calculate_list_accuracy(...)
     metrics['footnote_accuracy'] = calculate_footnote_accuracy(...)
     metrics['structure_score'] = score_structure(...)
+  # Apply AI Quality Assessment (FR-TEST-11.5)
+  ai_assessment = evaluate_quality_with_ai(content, format_type, doc_metadata) # Placeholder call
+  metrics['ai_score'] = ai_assessment.get('score')
+  metrics['ai_feedback'] = ai_assessment.get('feedback')
+
   RETURN metrics
 END FUNCTION
 
+FUNCTION evaluate_quality_with_ai(content, format_type, doc_metadata):
+    """Placeholder: Calls an external AI agent/mode to assess quality."""
+    LOG info f"Requesting AI quality assessment for {doc_metadata['id']} ({format_type})"
+    # Prepare prompt for AI agent, including content, format, and expected checks
+    # prompt = f"Evaluate the following {format_type} content extracted from '{doc_metadata['title']}':\n\n{content}\n\nAssess faithfulness, readability, formatting, noise, front matter removal, and ToC handling. Provide a score (1-5) and detailed feedback."
+    # response = call_ai_agent(prompt) # This could be an MCP call or other mechanism
+    # Parse response to get score and feedback
+    # MOCK IMPLEMENTATION:
+    mock_score = random.uniform(3.0, 5.0)
+    mock_feedback = "AI assessment placeholder: Looks reasonable." if mock_score > 3.5 else "AI assessment placeholder: Minor formatting issues noted."
+    return {'score': mock_score, 'feedback': mock_feedback}
+END FUNCTION
+
 FUNCTION determine_pass_fail(results, doc_metadata):
-  # Implement logic based on FR-TEST-12
-  # Check if required metrics meet target thresholds
-  # ...
-  RETURN 'PASS' or 'FAIL'
+  # Implement logic based on FR-TEST-12, including AI score check
+  passed_quantitative = True # Check quantitative metrics against thresholds
+  passed_ai = True # Check AI score against threshold (e.g., results['text_metrics'].get('ai_score', 0) >= 3.5)
+
+  # ... detailed checks based on doc type (text, image, etc.) ...
+
+  if passed_quantitative and passed_ai:
+      return 'PASS'
+  else:
+      return 'FAIL'
 END FUNCTION
 
 FUNCTION main():
@@ -450,7 +613,7 @@ IF __name__ == "__main__":
 *   `test_evaluate_output_md_metrics`: Provide sample MD output, verify correct calculation/scoring for MD metrics.
 *   `test_determine_pass_fail`: Provide sample results dicts, verify correct 'PASS'/'FAIL' determination based on criteria.
 
-## 9. Definition of Done
+## 10. Definition of Done
 
 The RAG Robustness Enhancement implementation is considered complete when:
 
@@ -458,11 +621,13 @@ The RAG Robustness Enhancement implementation is considered complete when:
 2.  The testing framework script (`scripts/run_rag_tests.py` or similar) is implemented and functional.
 3.  PDF Quality Detection (`detect_pdf_quality`) is implemented and integrated into the PDF processing workflow.
 4.  OCR integration (`run_ocr_on_pdf`) is implemented, including conditional triggering based on quality detection and basic error handling.
-5.  Configurable options for OCR/preprocessing are implemented (NFR-CONF-01).
-6.  Enhancements identified for EPUB handling (FR-EPUB-03) are implemented.
-7.  All new code includes corresponding unit tests (following TDD principles where applicable).
-8.  The automated test suite (`npm test`, `pytest`) passes, including new tests for robustness features.
-9.  The RAG robustness testing framework passes with >80% of the defined test corpus meeting the pass criteria (FR-TEST-12).
-10. Performance meets defined NFRs (NFR-PERF-01).
-11. Documentation (this spec, README, installation notes for OCR) is updated.
-12. Code is reviewed, approved, and merged to the main branch.
+5.  Preprocessing for Front Matter removal and ToC extraction/formatting (`identify_and_remove_front_matter`, `extract_and_format_toc`) is implemented and integrated into PDF/EPUB processing.
+6.  Configurable options for OCR/preprocessing are implemented (NFR-CONF-01).
+7.  Enhancements identified for EPUB handling (FR-EPUB-03) are implemented.
+8.  The AI-assisted quality evaluation loop (FR-TEST-11.5) is integrated into the testing framework, including logging/reporting of AI feedback.
+9.  All new code includes corresponding unit tests (following TDD principles where applicable).
+10. The automated test suite (`npm test`, `pytest`) passes, including new tests for robustness and preprocessing features.
+11. The RAG robustness testing framework passes with the defined test corpus meeting the updated pass criteria (FR-TEST-12), including quantitative metrics and AI assessment scores.
+12. Performance meets defined NFRs (NFR-PERF-01).
+13. Documentation (this spec, README, installation notes for OCR) is updated.
+14. Code is reviewed, approved, and merged to the main branch.

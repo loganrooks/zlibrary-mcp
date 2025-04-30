@@ -5,7 +5,7 @@ from unittest.mock import patch, MagicMock, AsyncMock, call # Import call
 
 # Import functions to test from the rag_processing module
 # Assuming the test file is run from the project root
-from lib.rag_processing import _slugify, save_processed_text, FileSaveError, PROCESSED_OUTPUT_DIR
+from lib.rag_processing import _slugify, save_processed_text, FileSaveError, PROCESSED_OUTPUT_DIR, _analyze_pdf_quality # Added _analyze_pdf_quality
 
 # --- Tests for _slugify ---
 
@@ -306,3 +306,56 @@ async def test_save_processed_text_os_error_raises_filesaveerror(mock_aiofiles, 
         assert str(e) == expected_error_msg
     except Exception as e:
         pytest.fail(f"Raised unexpected exception type {type(e).__name__}: {e}")
+# --- Tests for RAG Robustness Fixtures ---
+
+# Define the fixture directory path relative to the test file
+FIXTURE_DIR = Path(__file__).parent / "fixtures" / "rag_robustness"
+
+# Helper function to load fixture content
+def load_fixture_content(filename: str) -> str:
+    """Reads and returns the content of a fixture file."""
+    file_path = FIXTURE_DIR / filename
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            return f.read()
+    except FileNotFoundError:
+        pytest.fail(f"Fixture file not found: {file_path}")
+    except Exception as e:
+        pytest.fail(f"Error reading fixture file {file_path}: {e}")
+def test_rag_fixture_files_exist():
+    """Verify that the basic RAG robustness fixture files exist."""
+    assert (FIXTURE_DIR / "sample.txt").is_file(), "sample.txt fixture missing"
+    assert (FIXTURE_DIR / "sample.pdf").is_file(), "sample.pdf fixture missing"
+    assert (FIXTURE_DIR / "sample.epub").is_file(), "sample.epub fixture missing"
+    assert (FIXTURE_DIR / "image_only_mock.pdf").is_file(), "image_only_mock.pdf fixture missing"
+def test_load_fixture_content_helper():
+    """Test the hypothetical helper function to load fixture content."""
+    # This test will fail initially because load_fixture_content doesn't exist
+    expected_content = "This is a sample text file for testing."
+    actual_content = load_fixture_content("sample.txt") # Hypothetical function
+    assert actual_content == expected_content
+# --- Tests for PDF Quality Analysis ---
+
+# Assuming _analyze_pdf_quality will be added to lib.rag_processing
+# We'll need to import it later. For now, define the test.
+# Import added above
+
+def test_analyze_pdf_quality_image_only():
+    """Test that _analyze_pdf_quality identifies an image-only PDF."""
+    # Get the path to the mock image-only PDF fixture
+    image_pdf_path = FIXTURE_DIR / "image_only_mock.pdf"
+    assert image_pdf_path.is_file(), "Image-only mock PDF fixture missing"
+
+    # This test will fail initially because _analyze_pdf_quality doesn't exist
+    # or doesn't have the correct logic.
+    # We expect a dictionary indicating the quality issue.
+    expected_result = {'quality': 'image_only', 'details': 'No significant text found'}
+
+    # Placeholder for the actual function call - this will cause NameError initially
+    # analysis_result = _analyze_pdf_quality(str(image_pdf_path))
+    # assert analysis_result == expected_result
+
+    # Call the actual (placeholder) function
+    analysis_result = _analyze_pdf_quality(str(image_pdf_path))
+    # Assert that the placeholder result does NOT match the expected result for an image-only PDF
+    assert analysis_result == expected_result

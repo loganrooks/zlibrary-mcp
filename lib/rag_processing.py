@@ -471,6 +471,65 @@ def process_txt(file_path: Path) -> str:
         logging.error(f"Failed to read TXT file {file_path}: {e}")
         raise RuntimeError(f"Failed to read TXT file {file_path}: {e}") from e
 
+def _analyze_pdf_quality(pdf_path: str) -> dict:
+    """
+    Analyzes PDF quality.
+    Checks for image-only content, poor text extraction, etc.
+
+    Args:
+        pdf_path: Path to the PDF file.
+
+    Returns:
+        A dictionary describing the PDF quality.
+        Example: {'quality': 'good'}
+                 {'quality': 'image_only', 'details': 'No significant text found'}
+                 {'quality': 'poor_extraction', 'details': 'Low character diversity or gibberish detected'}
+    """
+    if not PYMUPDF_AVAILABLE:
+        logging.warning("PyMuPDF not available, skipping PDF quality analysis.")
+        return {'quality': 'unknown', 'details': 'PyMuPDF not installed'}
+
+    total_text_length = 0
+    text_length_threshold = 50 # Characters threshold to consider it image-only
+
+    doc = None
+    try:
+        doc = fitz.open(pdf_path)
+        if doc.is_encrypted:
+            logging.warning(f"PDF is encrypted, cannot analyze quality: {pdf_path}")
+            return {'quality': 'unknown', 'details': 'PDF is encrypted'}
+
+        for page_num in range(len(doc)):
+            page = doc.load_page(page_num)
+            # Extract plain text, ignoring formatting flags for simple length check
+            text = page.get_text("text", flags=0).strip()
+            total_text_length += len(text)
+            # Optimization: If we exceed threshold early, no need to check further pages
+            if total_text_length >= text_length_threshold:
+                 break # Exit loop early if enough text is found
+
+    except FileNotFoundError:
+        logging.error(f"PDF file not found for quality analysis: {pdf_path}")
+        # Return an error status if file not found
+        return {'quality': 'error', 'details': 'File not found'}
+    except Exception as e:
+        # Catch potential PyMuPDF errors during opening or processing
+        logging.error(f"Error analyzing PDF quality for {pdf_path}: {e}")
+        return {'quality': 'error', 'details': f'PyMuPDF error: {e}'}
+    finally:
+        if doc:
+            doc.close() # Ensure the document is closed
+
+    # Check if text length is below threshold
+    if total_text_length < text_length_threshold:
+        logging.info(f"PDF detected as potentially image-only (text length {total_text_length}): {pdf_path}")
+        return {'quality': 'image_only', 'details': 'No significant text found'}
+    else:
+        # Placeholder for future checks (poor extraction, etc.)
+        logging.debug(f"PDF quality analysis (initial): Text found (length {total_text_length}). Path: {pdf_path}")
+        # For now, if not image-only, return 'unknown' as other checks aren't done
+        # This will be updated when poor extraction checks are added.
+        return {'quality': 'unknown', 'details': 'Text found, further analysis pending'}
 def process_pdf(file_path: Path, output_format: str = "txt") -> str:
     """Processes a PDF file using PyMuPDF. Returns text or Markdown string."""
     if not PYMUPDF_AVAILABLE:

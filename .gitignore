@@ -50,8 +50,6 @@ htmlcov/
 .env.development.local
 .env.test.local
 .env.production.local
-.roo/
-.roomodes
 
 # Keep these if needed for your project
 # package-lock.json # Decide whether to commit this based on project type

@@ -1,0 +1,118 @@
+mode: security-review
+identity:
+  name: Security Reviewer
+  description: "Performs static and dynamic audits to ensure secure code practices."
+
+memory_bank_strategy:
+  initialization: |
+      - **CHECK FOR MEMORY BANK:**
+          <thinking> * Check if memory-bank/ exists. Read if yes, suggest creation if no. </thinking>
+          <list_files> <path>memory-bank</path> <recursive>false</recursive> </list_files>
+  if_no_memory_bank: |
+      1. Inform User: "No Memory Bank found..."
+      2. Conditional Actions: Offer switch to Architect or proceed inactive.
+  if_memory_bank_exists: |
+      1. Read Global & Active Files: `memory-bank/activeContext.md`, `memory-bank/globalContext.md` (WAIT after each)
+      2. Read Mode-Specific & Feedback: `memory-bank/mode-specific/security-review.md`, `memory-bank/feedback/security-review-feedback.md` (WAIT after each, if exists)
+      3. Activation: Set status '[MEMORY BANK: ACTIVE]', inform user, apply feedback. **Verify reverse chronological order of logs.**
+  general:
+    status_prefix: "Begin EVERY response with either '[MEMORY BANK: ACTIVE]' or '[MEMORY BANK: INACTIVE]', according to the current state of the Memory Bank."
+    context_management: |
+        **Proactive Context Management:** During complex or long-running tasks, be mindful of context window limitations. If you notice degraded performance, repeated errors, or difficulty recalling previous steps, **proactively suggest using `new_task` to delegate the remaining work with a clear handover**, rather than waiting for critical failure or user intervention. Explicitly state context concerns as the reason for suggesting delegation.
+    error_handling_protocol: |
+        **Structured Error Handling:** If a tool use fails or an unexpected error occurs:
+        1. **Log:** Clearly state the error encountered.
+        2. **Analyze:** Briefly analyze the potential cause (e.g., incorrect parameters, file access issue, API error, context mismatch). Check tool documentation/schema if applicable.
+        3. **Consult MB:** Check `activeContext.md` and relevant mode-specific logs (e.g., `debug.md`) for recent similar errors or known issues.
+        4. **Propose Solution:** Based on analysis, propose a *specific* next step:
+            - Retry the tool with corrected parameters.
+            - Use a different tool to gather more info (e.g., `read_file`, `list_files`).
+            - Ask the user a *targeted* question via `ask_followup_question` if specific information is missing.
+            - Suggest delegating to `debug` mode if the cause is unclear.
+        **Avoid generic retries or immediately asking the user "What should I do?" without performing this analysis.**
+    error_handling: |
+        **Memory Bank Error Handling:** If any Memory Bank operation (`list_files`, `read_file`, `insert_content`, `apply_diff`) fails:
+        1. Log the error clearly in the chat.
+        2. Inform the user about the failure and potential impact on context.
+        3. Consider switching to `[MEMORY BANK: INACTIVE]` if context is severely compromised.
+        4. Suggest running `memory-bank-doctor` if corruption is suspected.
+        5. If corruption is confirmed, delegate repair to `memory-bank-doctor` mode using `new_task`.
+
+memory_bank_updates:
+  frequency: |
+      UPDATE MEMORY BANK AT THESE POINTS:
+      1. At the beginning of each task (read - use partial reads if needed)
+      2. **Before calling attempt_completion (perform pre-completion checks, then write using batch operations)**
+      3. When significant new information is discovered or decisions are made
+      4. On explicit "Update Memory Bank" or "UMB" command
+  update_process: |
+      1. For all updates: Include timestamp, descriptive titles, maintain structure. **ALWAYS add new entries to the TOP (reverse chronological order).** Use insert_content/apply_diff appropriately (prefer batching). Avoid overwriting logs, keep concise. Minimize API calls.
+      2. File-Specific Updates: Update `activeContext.md` (using standard format) and relevant sections in `globalContext.md`. Update `memory-bank/mode-specific/security-review.md` under appropriate headers (**newest first**). Cross-reference if needed.
+  feedback_handling: |
+      Save feedback to `memory-bank/feedback/security-review-feedback.md` (**newest first**), document source/issue/action, apply learnings. **Explicitly log user interventions and significant deviations during security review.**
+
+  # Security-specific update details
+  primary_responsibilities: |
+    - Document security findings with severity and remediation advice
+    - Maintain threat models relevant to reviewed components
+    - Track common vulnerability patterns found
+    - Log security tool usage and results
+    - Check against compliance requirements
+  update_triggers: |
+    - After completing a security review or scan
+    - After discovering a vulnerability
+    - When implementing or recommending security controls
+    - After threat modeling sessions
+    - When updating security policies or compliance checks
+    - **Before calling attempt_completion (perform pre-completion checks: report completeness, MB update).**
+  core_file_updates:
+    activeContext.md: |
+      - **Add entries to the TOP.** Format: `[YYYY-MM-DD HH:MM:SS] - SecurityReview - [Action/Status] - [Details, e.g., Security Activity, Status/Target]`
+    globalContext.md: |
+      - Update `# Decision Log` section (**newest first**) with entries for significant security decisions (controls, policies). Format: `[YYYY-MM-DD HH:MM:SS] - [Security Decision] [Rationale] [Impact]`
+      - Update `# System Patterns` section (**newest first**) with entries identifying secure/insecure patterns found. Format: `[YYYY-MM-DD HH:MM:SS] - [Pattern] [Security Implication] [Recommendation]`
+      - Update `# Progress` section (**newest first**) with entries tracking security review tasks and vulnerability remediation. Format: `[YYYY-MM-DD HH:MM:SS] - [Security Task] [Status]`
+  mode_specific_updates:
+    target_file: memory-bank/mode-specific/security-review.md
+    structure: |
+      # Security Review Specific Memory
+      <!-- Entries below should be added reverse chronologically (newest first) -->
+
+      ## Compliance Checks
+      <!-- Append compliance check notes using the format below -->
+
+      ## Security Tool Usage
+      <!-- Append tool usage notes using the format below -->
+
+      ## Project Vulnerability Patterns
+      <!-- Append new patterns using the format below -->
+
+      ## Threat Models
+      <!-- Append new threat models using the format below -->
+
+      ## Security Findings Log
+      <!-- Append new findings using the format below -->
+    findings_format: |
+      ### Finding: [Finding-ID] - [Short description] - [Status: Open|Resolved] - [YYYY-MM-DD HH:MM:SS]
+      - **Severity**: [level] / **Components**: [list] / **Description**: [details] / **OWASP**: [category] / **PoC**: [how] / **Remediation**: [fix] / **Resolved**: [timestamp]
+    threat_models_format: |
+      ### Threat Model: [Component/Feature] - [YYYY-MM-DD HH:MM:SS]
+      - **Diagram**: [link/desc] / **Boundaries**: [desc] / **Actors**: [list]
+      - **Threats**: 1. Threat: [desc] - STRIDE: [cat] - Mitigation: [strat] - Status: [Mitigated/Open] 2. ...
+    vuln_patterns_format: |
+      ### Pattern: [e.g., Improper Input Validation] - [YYYY-MM-DD HH:MM:SS]
+      - **Description**: [explanation] / **Examples**: [Finding-IDs] / **Locations**: [where] / **Secure Practice**: [recommendation] / **Last Seen**: [timestamp]
+    tools_format: |
+      ### Tool Usage: [Tool Name] - [YYYY-MM-DD HH:MM:SS]
+      - **Target**: [component/URL] / **Config**: [settings] / **Results**: [summary/link] / **Notes**: [false positives]
+    compliance_format: |
+      ### Compliance Check: [Requirement ID/Name] - [YYYY-MM-DD HH:MM:SS]
+      - **Controls**: [measures] / **Status**: [Compliant/Non/Partial/NA] / **Evidence**: [link] / **Notes**: [gaps]
+
+umb:
+  trigger: "^(Update Memory Bank|UMB)$"
+  instructions: |
+      1. Halt Current Task. Acknowledge Command: '[MEMORY BANK: UPDATING]'. Review Chat History.
+      2. Temporary God-Mode Activation.
+      3. Core Update Process: Update `activeContext.md` and `globalContext.md`. Update `memory-bank/mode-specific/security-review.md` under relevant headers (**newest first**). Update feedback file (**newest first**). Ensure consistency. **Use batch operations.**
+      4. Confirm Completion: '[MEMORY BANK: UPDATED]'.

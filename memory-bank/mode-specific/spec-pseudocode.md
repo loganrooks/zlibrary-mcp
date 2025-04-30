@@ -1,6 +1,30 @@
 # Specification Writer Specific Memory
 <!-- Entries below should be added reverse chronologically (newest first) -->
 
+### Feature: RAG Robustness - Preprocessing (Front Matter & ToC)
+- Added: 2025-04-29 23:15:00
+- Description: Implement preprocessing to remove front matter (excluding Title) and extract/format the Table of Contents (ToC) from PDF/EPUB content before RAG processing.
+- Acceptance criteria: 1. Front matter identified and removed using heuristics. 2. Title identified and preserved. 3. ToC identified and extracted. 4. ToC formatted as linked Markdown list if output is Markdown. 5. Preprocessing integrated into `process_pdf`/`process_epub`.
+- Dependencies: Python (`re`).
+- Status: Draft (Specification Complete)
+- Related: `docs/rag-robustness-enhancement-spec.md#5-preprocessing---front-matter--toc-handling`
+
+### Feature: RAG Robustness - AI-Assisted Quality Evaluation
+- Added: 2025-04-29 23:15:00
+- Description: Integrate AI-driven quality assessment into the testing framework to evaluate processed real-world documents for faithfulness, readability, formatting, noise, and preprocessing correctness.
+- Acceptance criteria: 1. Testing framework calls AI agent (placeholder/mock initially) with processed content. 2. AI agent provides score and feedback. 3. AI results included in test reports. 4. Pass/fail criteria incorporate AI score.
+- Dependencies: Testing framework (`scripts/run_rag_tests.py`), mechanism to call AI agent (e.g., MCP tool, external API).
+- Status: Draft (Specification Complete)
+- Related: `docs/rag-robustness-enhancement-spec.md#23-testing-methodology--metrics` (FR-TEST-11.5)
+
+*(Updated)* ### Feature: RAG Robustness - Real-World Testing Strategy
+- Added: 2025-04-29 19:54:15
+- Updated: 2025-04-29 23:15:00
+- Description: Define and implement a strategy for testing the RAG pipeline using real-world documents, including selection, storage, methodology (quantitative metrics + AI assessment), pass/fail criteria, and results documentation.
+- Acceptance criteria: 1. Test corpus manifest created. 2. Testing framework script implemented. 3. Quantitative metrics defined. 4. AI assessment integrated (FR-TEST-11.5). 5. Pass/Fail criteria updated (FR-TEST-12). 6. Results documentation includes AI feedback (FR-TEST-14).
+- Dependencies: `download_book_to_file`, `process_document_for_rag`, Python (`json`, `pathlib`), AI agent mechanism.
+- Status: Draft (Specification Complete)
+- Related: `docs/rag-robustness-enhancement-spec.md#2-real-world-testing-strategy`
 ## Functional Requirements
 ### Feature: RAG Robustness - Real-World Testing Strategy
 - Added: 2025-04-29 19:54:15
@@ -331,6 +355,177 @@ IF __name__ == "__main__":
 # File: lib/python_bridge.py (Refactored Functions)
 # Dependencies: fitz, ebooklib, bs4, logging, re, pathlib
 
+### Pseudocode: Preprocessing Logic (`lib/rag_processing.py`) - `identify_and_remove_front_matter`, `extract_and_format_toc`
+- Created: 2025-04-29 23:15:00
+```pseudocode
+# File: lib/rag_processing.py (Conceptual additions)
+
+# --- Constants for Pattern Matching ---
+FRONT_MATTER_KEYWORDS = ["copyright", "dedication", "acknowledgments", "isbn", "published by", ...]
+TOC_KEYWORDS = ["contents", "table of contents", ...]
+
+FUNCTION identify_and_remove_front_matter(content_lines: List[str]) -> (List[str], str):
+  """Identifies title, removes front matter, returns cleaned content lines and title."""
+  cleaned_lines = []
+  title = "Unknown Title"
+  in_front_matter = True
+  potential_title_lines = content_lines[:20] # Heuristic: Title usually near the start
+
+  # --- Title Identification Heuristic ---
+  # Look for shortest, non-empty line, possibly all caps, near the beginning.
+  # More sophisticated logic needed (e.g., font size if available from PDF dict).
+  # title = find_title_heuristic(potential_title_lines)
+
+  # --- Front Matter Removal Heuristic ---
+  # Iterate through lines. Look for keywords, page numbers, excessive whitespace.
+  # Transition out of front_matter state when likely main content starts (e.g., "Chapter 1", "Introduction", consistent paragraph structure).
+  for line in content_lines:
+    line_lower = line.strip().lower()
+    is_likely_front_matter = False
+    if in_front_matter:
+       # Check keywords, check for roman numerals often used in front matter page numbers
+       if any(keyword in line_lower for keyword in FRONT_MATTER_KEYWORDS):
+           is_likely_front_matter = True
+       # Add more heuristics (e.g., short lines, centered text patterns)
+
+       # Heuristic to detect start of main content
+       if line_lower.startswith("chapter") or line_lower.startswith("part") or line_lower.startswith("introduction"):
+            in_front_matter = False
+
+    if not is_likely_front_matter:
+      cleaned_lines.append(line)
+
+  # Placeholder implementation - requires significant refinement
+  return cleaned_lines, title
+END FUNCTION
+
+FUNCTION extract_and_format_toc(content_lines: List[str], output_format: str) -> (List[str], str):
+  """Identifies ToC, formats it (if Markdown), returns remaining content lines and formatted ToC."""
+  toc_lines = []
+  remaining_lines = []
+  in_toc = False
+  toc_found = False
+
+  # --- ToC Identification Heuristic ---
+  # Look for keywords, specific formatting (e.g., lines with text followed by page numbers).
+  for line in content_lines:
+      line_lower = line.strip().lower()
+      if not toc_found and any(keyword in line_lower for keyword in TOC_KEYWORDS):
+          in_toc = True
+          toc_found = True
+          # Potentially skip the "Table of Contents" header itself
+          continue
+
+      if in_toc:
+          # Heuristic to detect end of ToC (e.g., start of main content, change in formatting)
+          if line_lower.startswith("chapter") or line_lower.startswith("part") or line_lower.startswith("introduction"):
+              in_toc = False
+              remaining_lines.append(line)
+          else:
+              # Basic check for ToC entry format (text ... number)
+              if re.search(r'.+\s+\.?\s*\d+$', line.strip()):
+                 toc_lines.append(line.strip())
+              else: # Assume end of ToC if format breaks
+                  in_toc = False
+                  remaining_lines.append(line)
+      else:
+          remaining_lines.append(line)
+
+  formatted_toc = ""
+  if toc_found and output_format == "markdown":
+      # --- Markdown Formatting Logic ---
+      # Parse toc_lines (extract text and page numbers/links)
+      # Create nested list structure based on indentation or numbering
+      # Generate Markdown links (#header-slug) - requires header slugs to be generated later
+      formatted_toc = format_toc_as_markdown(toc_lines) # Placeholder
+
+  # Placeholder implementation
+  return remaining_lines, formatted_toc
+END FUNCTION
+
+# --- Integration into process_pdf/process_epub ---
+# Before extracting main content or formatting markdown:
+# 1. Get initial text lines/structure.
+# 2. (cleaned_lines, title) = identify_and_remove_front_matter(initial_lines)
+# 3. (final_content_lines, formatted_toc) = extract_and_format_toc(cleaned_lines, output_format)
+# 4. Process final_content_lines for main text/markdown generation.
+# 5. Prepend title and formatted_toc (if any) to the final output.
+
+```
+#### TDD Anchors:
+- `test_remove_front_matter_basic`: Verify common copyright/dedication lines are removed.
+- `test_remove_front_matter_preserves_title`: Verify the identified title remains (or is returned separately).
+- `test_remove_front_matter_handles_no_front_matter`: Verify it works correctly on content without obvious front matter.
+- `test_extract_toc_basic`: Verify simple ToC lines are extracted.
+- `test_extract_toc_formats_markdown`: Verify extracted ToC is formatted correctly as Markdown list with placeholder links.
+- `test_extract_toc_handles_no_toc`: Verify it works correctly when no ToC is found.
+- `test_extract_toc_handles_non_standard_toc`: Test robustness against variations.
+- `test_integration_pdf_preprocessing`: Verify `process_pdf` calls preprocessing steps and includes Title/ToC in output.
+- `test_integration_epub_preprocessing`: Verify `process_epub` calls preprocessing steps and includes Title/ToC in output.
+- Related: `docs/rag-robustness-enhancement-spec.md#93-preprocessing-logic-conceptual---to-be-integrated-into-rag_processingpy`
+
+### Pseudocode: Testing Framework (`scripts/run_rag_tests.py`) - AI Evaluation Update
+- Updated: 2025-04-29 23:15:00
+```pseudocode
+# File: scripts/run_rag_tests.py (Updates)
+
+FUNCTION evaluate_output(output_path, format_type, doc_metadata):
+  # Load output file content
+  content = read_file_content(output_path)
+
+  # Apply quantitative metrics based on format_type (Text: FR-TEST-09, Markdown: FR-TEST-10)
+  metrics = {}
+  # ... calculate quantitative metrics ...
+  metrics['completeness_score'] = calculate_completeness(content, ...)
+  metrics['accuracy_score'] = calculate_accuracy(content, ...)
+  if format_type == 'text':
+    metrics['noise_score'] = score_noise(content, ...)
+    metrics['readability_score'] = score_readability(content, ...)
+  elif format_type == 'markdown':
+    metrics['heading_accuracy'] = calculate_heading_accuracy(content, ...)
+    metrics['list_accuracy'] = calculate_list_accuracy(content, ...)
+    metrics['footnote_accuracy'] = calculate_footnote_accuracy(content, ...)
+    metrics['structure_score'] = score_structure(content, ...)
+
+  # Apply AI Quality Assessment (FR-TEST-11.5)
+  ai_assessment = evaluate_quality_with_ai(content, format_type, doc_metadata) # Placeholder call
+  metrics['ai_score'] = ai_assessment.get('score')
+  metrics['ai_feedback'] = ai_assessment.get('feedback')
+
+  RETURN metrics
+END FUNCTION
+
+FUNCTION evaluate_quality_with_ai(content, format_type, doc_metadata):
+    """Placeholder: Calls an external AI agent/mode to assess quality."""
+    LOG info f"Requesting AI quality assessment for {doc_metadata['id']} ({format_type})"
+    # Prepare prompt for AI agent, including content, format, and expected checks
+    # prompt = f"Evaluate the following {format_type} content extracted from '{doc_metadata['title']}':\n\n{content}\n\nAssess faithfulness, readability, formatting, noise, front matter removal, and ToC handling. Provide a score (1-5) and detailed feedback."
+    # response = call_ai_agent(prompt) # This could be an MCP call or other mechanism
+    # Parse response to get score and feedback
+    # MOCK IMPLEMENTATION:
+    mock_score = random.uniform(3.0, 5.0)
+    mock_feedback = "AI assessment placeholder: Looks reasonable." if mock_score > 3.5 else "AI assessment placeholder: Minor formatting issues noted."
+    return {'score': mock_score, 'feedback': mock_feedback}
+END FUNCTION
+
+FUNCTION determine_pass_fail(results, doc_metadata):
+  # Implement logic based on FR-TEST-12, including AI score check
+  passed_quantitative = True # Check quantitative metrics against thresholds
+  passed_ai = True # Check AI score against threshold (e.g., results['text_metrics'].get('ai_score', 0) >= 3.5)
+
+  # ... detailed checks based on doc type (text, image, etc.) ...
+
+  if passed_quantitative and passed_ai:
+      return 'PASS'
+  else:
+      return 'FAIL'
+END FUNCTION
+```
+#### TDD Anchors:
+- `test_evaluate_output_calls_ai`: Mock `evaluate_quality_with_ai`, verify it's called by `evaluate_output`.
+- `test_determine_pass_fail_uses_ai_score`: Provide sample results with varying AI scores, verify correct PASS/FAIL based on AI threshold.
+- `test_evaluate_quality_with_ai_mock`: Test the placeholder/mock AI call function.
+- Related: `docs/rag-robustness-enhancement-spec.md#94-testing-framework-scriptsrun_rag_testspy`
 # --- PDF Processing Refactor ---
 
 FUNCTION _analyze_pdf_block(block):
@@ -706,6 +901,33 @@ END FUNCTION
 - Related: Pattern-RAGPipeline-FileOutput-01
 
 
+### Edge Case: Preprocessing - Non-standard Front Matter
+- Identified: 2025-04-29 23:15:00
+- Scenario: Document lacks common front matter keywords or structure.
+- Expected behavior: Preprocessing step identifies nothing to remove, proceeds gracefully without error.
+- Testing approach: Include documents with minimal/no front matter in test corpus.
+- Related: `docs/rag-robustness-enhancement-spec.md#8-edge-cases` (EC-PREPROC-01)
+
+### Edge Case: Preprocessing - Unusual ToC Format
+- Identified: 2025-04-29 23:15:00
+- Scenario: Table of Contents is embedded within main text, uses non-standard formatting, or is missing page numbers/links.
+- Expected behavior: ToC extraction may fail or be incomplete. Should log a warning but not halt processing. Markdown formatting might be absent or incorrect.
+- Testing approach: Include documents with diverse ToC formats in test corpus. Verify graceful failure and logging.
+- Related: `docs/rag-robustness-enhancement-spec.md#8-edge-cases` (EC-PREPROC-02)
+
+### Edge Case: Preprocessing - Valuable Front Matter
+- Identified: 2025-04-29 23:15:00
+- Scenario: Front matter sections like Preface or Introduction contain content relevant for RAG.
+- Expected behavior: Current heuristics might incorrectly remove valuable content. Requires careful tuning of removal logic or potential configuration options to preserve specific sections.
+- Testing approach: Manually review processed output for key documents where valuable front matter is expected. Compare against original.
+- Related: `docs/rag-robustness-enhancement-spec.md#8-edge-cases` (EC-PREPROC-03)
+
+### Edge Case: Preprocessing - Ambiguous/Missing Title
+- Identified: 2025-04-29 23:15:00
+- Scenario: Document lacks a clear title page or has multiple potential titles.
+- Expected behavior: Title identification heuristic may fail or select an incorrect title. Should use a placeholder (e.g., "Unknown Title") or the filename as fallback.
+- Testing approach: Include documents with missing or ambiguous titles in test corpus. Verify fallback behavior.
+- Related: `docs/rag-robustness-enhancement-spec.md#8-edge-cases` (EC-PREPROC-04)
 <!-- Append new constraints using the format below -->
 ### Constraint: Search-First Strategy Reliability
 ### Constraint: Test Document Storage

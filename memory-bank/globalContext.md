@@ -104,6 +104,11 @@
 [2025-04-28 10:04:09] - Debug - Resolved Python test failures (`test_python_bridge.py`) related to PDF processing mocks during TDD Refactor phase. All Python and JS tests now pass. [See Debug Issue TDD-Refactor-Block-PyTest-20250428]
 - **[2025-04-28 04:00:05] - Debug - Resolved TDD Green Phase Blockage (Python Tests)** - Investigated and fixed issues in `lib/python_bridge.py` and `__tests__/python/test_python_bridge.py` that prevented TDD Green Phase completion. Refactored tests, corrected assertions, fixed return values, and marked obsolete tests as xfail. `pytest` now exits 0. [See Issue TDD-GREEN-BLOCK-20250428]
 # Product Context
+### Product: RAG Robustness Spec Update (v1.1) - [2025-04-29 23:15:00]
+- **Context**: Updated `docs/rag-robustness-enhancement-spec.md` based on user feedback.
+- **Changes**: Refined testing strategy to include AI-assisted quality evaluation. Added requirements and pseudocode for preprocessing (front matter removal, Title/ToC extraction and formatting). Updated pass/fail criteria and definition of done.
+- **Status**: Specification Updated (Draft).
+- **Related**: `docs/rag-robustness-enhancement-spec.md` (v1.1), [ActiveContext 2025-04-29 23:15:00]
 <!-- Entries below should be added reverse chronologically (newest first) -->
 
 ### Product: RAG Robustness Enhancement Specification - [2025-04-29 19:54:15]
@@ -290,6 +295,19 @@
 - **Related**: ADR-002, [Debug Report 2025-04-28 17:31:01]
 # Decision Log
 ### Decision-DeprecateGetBookByID-01 - [2025-04-29 15:37:14]
+### Decision-RAGPreprocessing-01 - [2025-04-29 23:15:00]
+- **Decision**: Implement preprocessing steps in the RAG pipeline to remove front matter (excluding Title) and extract/format the Table of Contents (ToC) before main content processing.
+- **Rationale**: User requirement to improve RAG input quality by removing irrelevant introductory sections and preserving key navigational elements (Title, ToC). Addresses potential negative impact of front matter on RAG performance.
+- **Alternatives Considered**: No preprocessing (current state, suboptimal quality), manual cleaning (not scalable).
+- **Implementation**: Add new functions/logic (e.g., `identify_and_remove_front_matter`, `extract_and_format_toc`) to `lib/rag_processing.py`, integrate into `process_pdf`/`process_epub`. Update specification and tests.
+- **Related**: `docs/rag-robustness-enhancement-spec.md#5-preprocessing---front-matter--toc-handling`, [ActiveContext 2025-04-29 23:15:00]
+
+### Decision-RAGTestingAI-01 - [2025-04-29 23:15:00]
+- **Decision**: Incorporate AI-assisted quality evaluation into the RAG robustness testing framework for real-world documents.
+- **Rationale**: User requirement for automated quality assessment beyond quantitative metrics, leveraging AI to evaluate aspects like faithfulness, readability, and correctness of complex formatting (e.g., ToC links) in processed output. Addresses limitations of purely metric-based evaluation for nuanced quality issues.
+- **Alternatives Considered**: Manual evaluation only (slow, subjective), purely quantitative metrics (misses nuances).
+- **Implementation**: Update testing framework (`scripts/run_rag_tests.py`) to include a step calling an AI agent (placeholder/mock initially) to evaluate processed text/markdown. Update reporting to include AI scores/feedback. Update pass/fail criteria.
+- **Related**: `docs/rag-robustness-enhancement-spec.md#23-testing-methodology--metrics` (FR-TEST-11.5), [ActiveContext 2025-04-29 23:15:00]
 - **Decision**: Deprecate the `get_book_by_id` MCP tool.
 - **Rationale**: External Z-Library website changes prevent reliable book lookup using only an ID. Both direct `/book/ID` fetches (missing slug) and `search(id:...)` workarounds fail externally. Continuing to support the tool implies functionality that cannot be delivered and adds maintenance overhead for brittle scraping code. ADR-002 workflow already relies on `search_books`.
 - **Alternatives Considered**: Refining internal scrapers (pointless if external source is broken), finding alternative library methods (unlikely), keeping tool marked as unreliable (less clear than deprecation).

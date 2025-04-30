@@ -525,11 +525,45 @@ def _analyze_pdf_quality(pdf_path: str) -> dict:
         logging.info(f"PDF detected as potentially image-only (text length {total_text_length}): {pdf_path}")
         return {'quality': 'image_only', 'details': 'No significant text found'}
     else:
-        # Placeholder for future checks (poor extraction, etc.)
-        logging.debug(f"PDF quality analysis (initial): Text found (length {total_text_length}). Path: {pdf_path}")
-        # For now, if not image-only, return 'unknown' as other checks aren't done
-        # This will be updated when poor extraction checks are added.
-        return {'quality': 'unknown', 'details': 'Text found, further analysis pending'}
+        # Text was found, proceed with further quality checks
+        logging.debug(f"PDF quality analysis: Text found (length {total_text_length}). Path: {pdf_path}")
+
+        # --- Poor Extraction Heuristics ---
+        # Re-open the document to get full text if needed (or pass text from initial check)
+        # For simplicity here, re-opening. Could be optimized.
+        full_text = ""
+        doc_reopened = None # Avoid reusing 'doc' from outer try/finally
+        try:
+            doc_reopened = fitz.open(pdf_path)
+            for page_num in range(len(doc_reopened)):
+                page = doc_reopened.load_page(page_num)
+                full_text += page.get_text("text")
+        except Exception as text_extract_error:
+             logging.error(f"Error extracting full text for quality analysis {pdf_path}: {text_extract_error}")
+             # If we can't extract text here, we can't analyze further
+             return {'quality': 'error', 'details': f'Failed to extract full text for analysis: {text_extract_error}'}
+        finally:
+            if doc_reopened:
+                doc_reopened.close()
+
+        # Basic Heuristic 1: Character Diversity
+        # Remove whitespace for diversity calculation
+        text_without_whitespace = "".join(full_text.split())
+        if len(text_without_whitespace) > 50: # Only apply if there's enough text
+            unique_chars = set(text_without_whitespace)
+            diversity_ratio = len(unique_chars) / len(text_without_whitespace)
+            # Low diversity threshold (e.g., less than 10% unique chars might indicate issues)
+            # This threshold is arbitrary and needs tuning based on real examples
+            low_diversity_threshold = 0.1
+            if diversity_ratio < low_diversity_threshold:
+                logging.warning(f"PDF quality potentially poor (low diversity: {diversity_ratio:.2f}): {pdf_path}")
+                # Ensure the return value matches the test expectation exactly
+                return {'quality': 'poor_extraction', 'details': 'Low character diversity or gibberish patterns detected'}
+
+        # TODO: Add more heuristics (e.g., gibberish patterns, layout analysis)
+
+        # If no poor quality issues detected
+        return {'quality': 'good'}
 def process_pdf(file_path: Path, output_format: str = "txt") -> str:
     """Processes a PDF file using PyMuPDF. Returns text or Markdown string."""
     if not PYMUPDF_AVAILABLE:

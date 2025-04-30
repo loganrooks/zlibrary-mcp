@@ -1,3 +1,8 @@
+### [2025-04-29 23:25:19] User Feedback: TDD Delegation Instructions
+- **Source:** User denial of `new_task` delegation to `tdd`.
+- **Issue:** Instructions for "Implement RAG Robustness Enhancements (TDD)" task were deemed insufficiently detailed ("more detailed and thorough instructions").
+- **Action:** Will refine the task instructions with more specific steps and guidance for each key area based on the specification (`docs/rag-robustness-enhancement-spec.md`) before re-delegating to `tdd`.
+- **Link to Delegation Attempt:** [Ref: SPARC MB Delegation Log 2025-04-29 21:18:30]
 ### [2025-04-29 18:12:50] User Feedback: Context Percentage Calculation
 - **Source:** User Input
 - **Issue:** SPARC incorrectly calculated context percentage, leading to an unnecessary Delegate Clause trigger and handover attempt. User provided correct calculation method (Tokens / 1,000,000 * 100).

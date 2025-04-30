@@ -359,3 +359,18 @@ def test_analyze_pdf_quality_image_only():
     analysis_result = _analyze_pdf_quality(str(image_pdf_path))
     # Assert that the placeholder result does NOT match the expected result for an image-only PDF
     assert analysis_result == expected_result
+# NEW TEST TO ADD
+@pytest.mark.xfail(reason="Poor extraction detection not yet implemented")
+def test_analyze_pdf_quality_poor_extraction():
+    """Test that _analyze_pdf_quality identifies a PDF with poor text extraction."""
+    # Assume a fixture file representing poor extraction exists
+    poor_extraction_pdf_path = FIXTURE_DIR / "poor_extraction_mock.pdf"
+    # We'll need the user to create this file or mock its content later
+    assert poor_extraction_pdf_path.is_file(), "Poor extraction mock PDF fixture missing"
+
+    # Expected result for poor quality text
+    expected_result = {'quality': 'poor_extraction', 'details': 'Low character diversity or gibberish patterns detected'}
+
+    # Call the function (will fail if not implemented or logic is missing)
+    analysis_result = _analyze_pdf_quality(str(poor_extraction_pdf_path))
+    assert analysis_result == expected_result

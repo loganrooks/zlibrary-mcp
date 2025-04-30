@@ -1,3 +1,5 @@
 pytest
 pytest-mock
 pytest-asyncio
+reportlab
+Pillow

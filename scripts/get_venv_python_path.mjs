@@ -2,7 +2,7 @@
 // Purpose: Get the path to the Python executable in the managed venv
 
 // Use dynamic import for ESM compatibility if needed, but assuming direct import works post-build
-import { getManagedPythonPath } from './dist/lib/venv-manager.js'; // Use compiled JS path
+import { getManagedPythonPath } from '../dist/lib/venv-manager.js'; // Use compiled JS path (Corrected)
 
 async function main() {
   try {

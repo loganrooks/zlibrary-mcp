@@ -41,6 +41,11 @@
 - **[2025-04-29 09:48:39] - Pattern: Configurable Output Format (RAG)**
   - Description: The RAG processing pipeline now supports configurable output formats (`txt`, `markdown`) via the `output_format` parameter in relevant functions (`process_document_for_rag`). Markdown output includes basic structural elements derived from the source document.
   - Implementation: `lib/python_bridge.py` (commit `e943016`)
+### [2025-04-29 19:46:16] Milestone: Human-Readable File Slugs Implemented
+- **Status:** Completed by `code` mode.
+- **Commit:** `1f4f2c5` on `main`.
+- **Details:** Implemented `author-slug-title-slug-book_id.extension` format in `lib/rag_processing.py` and updated callers/tests.
+- **Link to Delegation:** [Ref: SPARC MB Delegation Log 2025-04-29 19:02:43]
   - Specification: `docs/rag-markdown-generation-spec.md`
   - Documentation: `docs/rag-pipeline-implementation-spec.md`
   - Status: Completed
@@ -89,6 +94,12 @@
 # Product Context
 <!-- Entries below should be added reverse chronologically (newest first) -->
 
+### Product: RAG Robustness Enhancement Specification - [2025-04-29 19:54:15]
+- **Context**: Specification generated to address RAG pipeline reliability and quality issues, especially with real-world PDFs/EPUBs.
+- **Strategy**: Defines a real-world testing approach, PDF quality analysis (PyMuPDF investigation, quality detection, OCR integration), EPUB handling review, and includes pseudocode/TDD anchors for key components.
+- **Components**: New testing framework (`scripts/run_rag_tests.py`), modifications to `lib/rag_processing.py` (`detect_pdf_quality`, `run_ocr_on_pdf`, updated `process_pdf`, `_epub_node_to_markdown`), potential new dependencies (`pytesseract`, `Pillow`/`OpenCV`).
+- **Status**: Specification generated (Draft).
+- **Related**: `docs/rag-robustness-enhancement-spec.md`, [ActiveContext 2025-04-29 19:54:15]
 ### Product: RAG Spec Update (Download Workflow) - [2025-04-24 17:33:32]
 - **Context**: Updated `docs/rag-pipeline-implementation-spec.md` (to v2.1) to accurately reflect the download workflow defined in ADR-002.
 - **Changes**: Clarified the two-step process (search for `bookDetails`, pass details to `download_book_to_file`, internal scraping of book page URL using selector `a.btn.btn-primary.dlButton`). Updated tool schemas, Node/Python pseudocode, and TDD anchors accordingly. Input for `download_book_to_file` changed from `id` to `bookDetails`.

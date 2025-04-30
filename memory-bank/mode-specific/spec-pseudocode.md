@@ -2,6 +2,319 @@
 <!-- Entries below should be added reverse chronologically (newest first) -->
 
 ## Functional Requirements
+### Feature: RAG Robustness - Real-World Testing Strategy
+- Added: 2025-04-29 19:54:15
+- Description: Define and implement a strategy for testing the RAG pipeline using a diverse set of real-world documents (PDFs, EPUBs) focusing on philosophy texts, including selection, storage (metadata manifest + on-demand download), methodology, metrics (completeness, accuracy, noise, readability, structure), and results documentation.
+- Acceptance criteria: 1. Test corpus manifest (`test_files/rag_corpus/manifest.json`) created. 2. Small local sample set stored (if feasible). 3. Testing framework script (`scripts/run_rag_tests.py`) implemented. 4. Text extraction metrics defined and measurable. 5. Markdown structure metrics defined and measurable. 6. Pass/Fail criteria defined. 7. Results documentation format defined.
+- Dependencies: `download_book_to_file` tool, `process_document_for_rag` tool, Python (`json`, `pathlib`, potentially `subprocess` or MCP client lib).
+- Status: Draft (Specification Complete)
+- Related: `docs/rag-robustness-enhancement-spec.md#2-real-world-testing-strategy`
+
+### Feature: RAG Robustness - PDF Quality Analysis & Improvement
+### Pseudocode: PDF Quality Detection (`lib/rag_processing.py`) - `detect_pdf_quality`
+- Created: 2025-04-29 19:54:15
+```pseudocode
+# File: lib/rag_processing.py
+
+FUNCTION detect_pdf_quality(doc: fitz.Document) -> str:
+  """Analyzes a PyMuPDF document and returns a quality category."""
+  total_pages = len(doc)
+  if total_pages == 0: return "EMPTY"
+
+  text_char_count = 0
+  image_area_ratio_sum = 0
+  font_count = len(doc.get_fonts(full=False)) # Quick check for any fonts
+
+  for page_num in range(total_pages):
+    page = doc.load_page(page_num)
+
+    # Text Density Check
+    text = page.get_text("text", flags=0) # Basic text extraction
+    text_char_count += len(text.strip())
+
+    # Image Area Check
+    images = page.get_images(full=True)
+    page_rect = page.rect
+    page_area = page_rect.width * page_rect.height
+    if page_area > 0:
+      page_image_area = 0
+      for img_info in images:
+        xref = img_info[0]
+        img_rects = page.get_image_rects(xref) # Find where image is placed
+        for rect in img_rects:
+             page_image_area += rect.width * rect.height
+      image_area_ratio_sum += (page_image_area / page_area)
+
+  avg_chars_per_page = text_char_count / total_pages
+  avg_image_ratio = image_area_ratio_sum / total_pages
+
+  # Heuristics (Tunable Thresholds)
+  TEXT_DENSITY_THRESHOLD_LOW = 50 # Avg chars per page
+  IMAGE_RATIO_THRESHOLD_HIGH = 0.7 # Avg image area ratio
+
+  if avg_chars_per_page < TEXT_DENSITY_THRESHOLD_LOW and avg_image_ratio > IMAGE_RATIO_THRESHOLD_HIGH and font_count == 0:
+    return "IMAGE_ONLY"
+  elif avg_chars_per_page < TEXT_DENSITY_THRESHOLD_LOW:
+    # Low text, might be scanned or poorly extracted
+    return "TEXT_LOW"
+  elif avg_image_ratio > IMAGE_RATIO_THRESHOLD_HIGH:
+    # High image content, but some text present
+    return "MIXED"
+  else:
+    # Assume reasonable text content
+    return "TEXT_HIGH"
+
+END FUNCTION
+```
+#### TDD Anchors:
+- `test_detect_quality_text_high`: Verify a normal text PDF returns "TEXT_HIGH".
+- `test_detect_quality_image_only`: Verify a scanned PDF (mocked `get_text` empty, `get_images` large, `get_fonts` empty) returns "IMAGE_ONLY".
+- `test_detect_quality_text_low`: Verify a PDF with very little text (mocked `get_text` short) returns "TEXT_LOW".
+- `test_detect_quality_mixed`: Verify a PDF with significant images but also text returns "MIXED".
+- `test_detect_quality_empty_pdf`: Verify an empty PDF (0 pages) returns "EMPTY".
+- Related: `docs/rag-robustness-enhancement-spec.md#81-pdf-quality-detection-librag_processingpy`
+
+### Pseudocode: OCR Integration Workflow (`lib/rag_processing.py`) - `run_ocr_on_pdf` & `process_pdf` Update
+- Created: 2025-04-29 19:54:15
+```pseudocode
+# File: lib/rag_processing.py
+# Assumes pytesseract and Pillow/OpenCV are potentially available
+
+FUNCTION run_ocr_on_pdf(pdf_path_str: str, lang: str = 'eng') -> str:
+  """Runs OCR on a PDF, potentially page by page, returns aggregated text."""
+  # Check if pytesseract and an image library are available
+  # Check if tesseract executable is available
+  # Handle potential errors if dependencies are missing
+
+  aggregated_text = []
+  doc = None
+  try:
+    doc = fitz.open(pdf_path_str)
+    for page_num in range(len(doc)):
+      page = doc.load_page(page_num)
+      pix = page.get_pixmap(dpi=300) # Render page to image
+      img_bytes = pix.tobytes("png") # Get image bytes
+
+      # --- Optional Preprocessing ---
+      # image = Image.open(io.BytesIO(img_bytes))
+      # image = preprocess_image(image) # Deskew, enhance contrast etc.
+      # img_bytes = image_to_bytes(image)
+      # --- End Preprocessing ---
+
+      try:
+        # Use pytesseract to OCR the image bytes
+        page_text = pytesseract.image_to_string(Image.open(io.BytesIO(img_bytes)), lang=lang)
+        if page_text:
+          aggregated_text.append(page_text.strip())
+      except Exception as ocr_error:
+        LOG warning f"OCR failed for page {page_num+1} of {pdf_path_str}: {ocr_error}"
+        # Optionally: Add placeholder text like "[OCR Failed for Page]"
+
+  except Exception as e:
+    LOG error f"Error during OCR preparation for {pdf_path_str}: {e}"
+    raise RuntimeError(f"OCR preparation failed: {e}") from e
+  finally:
+    if doc: doc.close()
+
+  return "\n\n".join(aggregated_text).strip()
+END FUNCTION
+
+# --- Update process_pdf ---
+FUNCTION process_pdf(file_path: Path, output_format: str = "txt") -> str:
+  # ... (initial checks, open doc) ...
+  try:
+    quality_category = detect_pdf_quality(doc) # Call detection
+    logging.info(f"Detected PDF quality for {file_path}: {quality_category}")
+
+    processed_text = None
+    ocr_triggered = False
+
+    if quality_category == "TEXT_HIGH":
+      # Proceed with PyMuPDF extraction as before (call _format_pdf_markdown or get_text)
+      # ... (existing PyMuPDF extraction logic) ...
+      processed_text = # result from PyMuPDF extraction
+    elif quality_category in ["IMAGE_ONLY", "TEXT_LOW"]:
+      try:
+        logging.info(f"Triggering OCR for {file_path} due to quality: {quality_category}")
+        processed_text = run_ocr_on_pdf(str(file_path)) # Run OCR
+        ocr_triggered = True
+      except Exception as ocr_err:
+        logging.error(f"OCR failed for {file_path}: {ocr_err}. Falling back.")
+        # Fallback: Try PyMuPDF anyway for TEXT_LOW, or return empty for IMAGE_ONLY
+        if quality_category == "TEXT_LOW":
+           # ... (existing PyMuPDF extraction logic) ...
+           processed_text = # result from PyMuPDF extraction
+        else:
+           processed_text = "" # No text from image-only if OCR fails
+    elif quality_category == "MIXED":
+       # Hybrid approach: Try PyMuPDF first, consider OCR if yield is low?
+       # ... (existing PyMuPDF extraction logic) ...
+       processed_text = # result from PyMuPDF extraction
+       if len(processed_text) < SOME_THRESHOLD * total_pages: # Example threshold
+           try:
+               logging.info(f"Low text yield from PyMuPDF for MIXED quality {file_path}. Triggering OCR as fallback.")
+               ocr_text = run_ocr_on_pdf(str(file_path))
+               ocr_triggered = True
+               # Combine or replace? For now, let's prefer OCR if triggered.
+               processed_text = ocr_text
+           except Exception as ocr_err:
+               logging.error(f"Fallback OCR failed for {file_path}: {ocr_err}. Using PyMuPDF result.")
+               # Keep the potentially low-yield PyMuPDF text
+    elif quality_category == "EMPTY":
+        processed_text = ""
+    else: # Default fallback
+        # ... (existing PyMuPDF extraction logic) ...
+        processed_text = # result from PyMuPDF extraction
+
+    # Return the final processed text (could be from PyMuPDF or OCR)
+    # The calling function `process_document` will handle saving this text.
+    return processed_text if processed_text is not None else ""
+
+  # ... (rest of exception handling and finally block) ...
+END FUNCTION
+```
+#### TDD Anchors:
+- `test_process_pdf_triggers_ocr_for_image_only`: Mock `detect_pdf_quality` to return "IMAGE_ONLY", mock `run_ocr_on_pdf` to return text. Verify `run_ocr_on_pdf` is called and its text is returned.
+- `test_process_pdf_triggers_ocr_for_text_low`: Mock `detect_pdf_quality` to return "TEXT_LOW", mock `run_ocr_on_pdf`. Verify `run_ocr_on_pdf` is called.
+- `test_process_pdf_uses_pymupdf_for_text_high`: Mock `detect_pdf_quality` to return "TEXT_HIGH", mock `run_ocr_on_pdf`. Verify `run_ocr_on_pdf` is NOT called and PyMuPDF text is returned.
+- `test_process_pdf_handles_ocr_failure`: Mock `detect_pdf_quality` to return "IMAGE_ONLY", mock `run_ocr_on_pdf` to raise `RuntimeError`. Verify error is logged and empty string is returned.
+- `test_run_ocr_on_pdf_success`: Mock `fitz.open`, `page.get_pixmap`, `pytesseract.image_to_string`. Verify aggregated text is returned.
+- `test_run_ocr_on_pdf_tesseract_not_found`: Mock `pytesseract` call to raise error. Verify `RuntimeError` is raised or handled.
+- Related: `docs/rag-robustness-enhancement-spec.md#82-ocr-integration-workflow-librag_processingpy`
+
+### Pseudocode: Testing Framework (`scripts/run_rag_tests.py`)
+- Created: 2025-04-29 19:54:15
+```pseudocode
+# File: scripts/run_rag_tests.py
+# Dependencies: argparse, json, pathlib, subprocess (or MCP client if running via tool)
+# Assumes zlibrary-mcp server is running or can be called via python_bridge directly
+
+FUNCTION load_manifest(manifest_path):
+  # Load JSON manifest file
+END FUNCTION
+
+FUNCTION run_single_test(doc_metadata, output_dir, mcp_client):
+  # doc_metadata contains ID, format, URL, expected_challenges etc.
+  results = {'doc_id': doc_metadata['id'], 'format': doc_metadata['format']}
+  downloaded_path = None
+  processed_text_path = None
+  processed_md_path = None
+
+  TRY
+    # 1. Download (if not locally available sample)
+    if 'local_sample_path' in doc_metadata:
+      downloaded_path = doc_metadata['local_sample_path']
+    else:
+      # Use download_book_to_file tool via mcp_client or direct call
+      # download_result = mcp_client.call('download_book_to_file', {'bookDetails': {...}, 'outputDir': 'temp_downloads'}) # Need bookDetails! Requires search first.
+      # OR: Assume download happens externally, test needs path provided.
+      # For simplicity, assume path is available or downloaded externally for now.
+      downloaded_path = find_or_download_book(doc_metadata['id'], doc_metadata['format']) # Placeholder
+
+    # 2. Process for Text
+    # process_text_result = mcp_client.call('process_document_for_rag', {'file_path': downloaded_path, 'output_format': 'txt'})
+    process_text_result = call_python_bridge_directly('process_document', {'file_path': downloaded_path, 'output_format': 'txt'}) # Example direct call
+    processed_text_path = process_text_result.get('processed_file_path')
+    results['text_output_path'] = processed_text_path
+
+    # 3. Process for Markdown
+    # process_md_result = mcp_client.call('process_document_for_rag', {'file_path': downloaded_path, 'output_format': 'markdown'})
+    process_md_result = call_python_bridge_directly('process_document', {'file_path': downloaded_path, 'output_format': 'markdown'}) # Example direct call
+    processed_md_path = process_md_result.get('processed_file_path')
+    results['md_output_path'] = processed_md_path
+
+    # 4. Evaluate Outputs
+    if processed_text_path:
+      results['text_metrics'] = evaluate_output(processed_text_path, 'text', doc_metadata)
+    else:
+      results['text_metrics'] = {'error': 'Processing failed or no text extracted'}
+
+    if processed_md_path:
+      results['md_metrics'] = evaluate_output(processed_md_path, 'markdown', doc_metadata)
+    else:
+      results['md_metrics'] = {'error': 'Processing failed or no text extracted'}
+
+    # Determine overall pass/fail based on metrics and criteria (FR-TEST-12)
+    results['status'] = determine_pass_fail(results, doc_metadata)
+
+  CATCH Exception as e:
+    results['status'] = 'FAIL'
+    results['error'] = str(e)
+  FINALLY:
+    # Clean up temp downloads?
+    pass
+
+  RETURN results
+END FUNCTION
+
+FUNCTION evaluate_output(output_path, format_type, doc_metadata):
+  # Load output file content
+  # Apply metrics based on format_type (Text: FR-TEST-09, Markdown: FR-TEST-10)
+  # Compare against ground truth if available, use heuristics/qualitative scores otherwise
+  metrics = {}
+  # ... calculate metrics ...
+  metrics['completeness_score'] = calculate_completeness(...)
+  metrics['accuracy_score'] = calculate_accuracy(...)
+  if format_type == 'text':
+    metrics['noise_score'] = score_noise(...)
+    metrics['readability_score'] = score_readability(...)
+  elif format_type == 'markdown':
+    metrics['heading_accuracy'] = calculate_heading_accuracy(...)
+    metrics['list_accuracy'] = calculate_list_accuracy(...)
+    metrics['footnote_accuracy'] = calculate_footnote_accuracy(...)
+    metrics['structure_score'] = score_structure(...)
+  RETURN metrics
+END FUNCTION
+
+FUNCTION determine_pass_fail(results, doc_metadata):
+  # Implement logic based on FR-TEST-12
+  # Check if required metrics meet target thresholds
+  # ...
+  RETURN 'PASS' or 'FAIL'
+END FUNCTION
+
+FUNCTION main():
+  # Parse args: manifest_path, output_dir
+  manifest = load_manifest(manifest_path)
+  all_results = []
+  # Initialize MCP client or setup direct bridge call
+
+  for doc_metadata in manifest['documents']:
+    test_result = run_single_test(doc_metadata, output_dir, mcp_client)
+    all_results.append(test_result)
+
+  # Generate summary report
+  generate_report(all_results, output_dir)
+  # Print summary (pass/fail counts)
+END FUNCTION
+
+IF __name__ == "__main__":
+  main()
+```
+#### TDD Anchors:
+- `test_load_manifest_success`: Verify loading a valid JSON manifest.
+- `test_load_manifest_not_found`: Verify error handling for missing manifest.
+- `test_run_single_test_calls_process`: Mock `call_python_bridge_directly` (or MCP client), verify `process_document` is called for both 'text' and 'markdown'.
+- `test_run_single_test_calls_evaluate`: Mock `evaluate_output`, verify it's called for both formats if processing succeeds.
+- `test_run_single_test_handles_processing_error`: Mock `call_python_bridge_directly` to raise error, verify result status is 'FAIL' with error message.
+- `test_evaluate_output_text_metrics`: Provide sample text output, verify correct calculation/scoring for text metrics.
+- `test_evaluate_output_md_metrics`: Provide sample MD output, verify correct calculation/scoring for MD metrics.
+- `test_determine_pass_fail`: Provide sample results dicts, verify correct 'PASS'/'FAIL' determination based on criteria.
+- Related: `docs/rag-robustness-enhancement-spec.md#83-testing-framework-scriptsrun_rag_testspy`
+- Added: 2025-04-29 19:54:15
+- Description: Investigate current PyMuPDF limitations, implement PDF quality detection (`detect_pdf_quality`), integrate OCR (e.g., Tesseract) with conditional triggering based on quality, optionally add preprocessing, and evaluate alternative libraries (`pdfminer.six`).
+- Acceptance criteria: 1. PyMuPDF limitations documented. 2. `detect_pdf_quality` function implemented and categorizes PDFs (TEXT_HIGH, TEXT_LOW, IMAGE_ONLY, MIXED). 3. OCR engine integrated into `process_pdf` workflow. 4. OCR triggered correctly based on quality category. 5. OCR errors handled gracefully. 6. (Optional) Preprocessing steps implemented. 7. Alternative library comparison performed and documented.
+- Dependencies: Python (`PyMuPDF`, `pytesseract`, potentially `Pillow`/`OpenCV`, `pdfminer.six`), Tesseract system dependency.
+- Status: Draft (Specification Complete)
+- Related: `docs/rag-robustness-enhancement-spec.md#3-pdf-quality-analysis--improvement`
+
+### Feature: RAG Robustness - EPUB Handling Review & Enhancement
+- Added: 2025-04-29 19:54:15
+- Description: Review current EPUB processing (`process_epub`, `_epub_node_to_markdown`) using the real-world test corpus, identify limitations (nested lists, tables, images, non-standard footnotes), and implement specified enhancements.
+- Acceptance criteria: 1. Review completed and limitations documented. 2. Enhancements for tables (basic conversion), images (placeholders), and potentially footnotes implemented in `_epub_node_to_markdown`. 3. Improved handling reflected in test results.
+- Dependencies: Python (`ebooklib`, `beautifulsoup4`).
+- Status: Draft (Specification Complete)
+- Related: `docs/rag-robustness-enhancement-spec.md#4-epub-handling-review`
 ### Feature: RAG Markdown Structure Generation
 - Added: 2025-04-29 02:40:07
 - Description: Enhance `_process_pdf` and `_process_epub` in `lib/python_bridge.py` to generate structured Markdown (headings, lists, footnotes) when `output_format='markdown'`, meeting criteria in `docs/rag-output-quality-spec.md`. Strategy uses refined `PyMuPDF` heuristics and enhanced `BeautifulSoup` logic.
@@ -395,6 +708,33 @@ END FUNCTION
 
 <!-- Append new constraints using the format below -->
 ### Constraint: Search-First Strategy Reliability
+### Constraint: Test Document Storage
+- Added: 2025-04-29 19:54:15
+- Description: Due to size/copyright, the main test corpus will be a metadata manifest; documents downloaded on-demand. Only a small subset of public domain/anonymized samples stored locally.
+- Impact: Testing requires network access and depends on `download_book_to_file` functioning. Local tests limited.
+- Mitigation strategy: Use manifest file. Ensure download tool is stable. Select diverse local samples carefully.
+- Related: `docs/rag-robustness-enhancement-spec.md#22-test-document-storage--management`
+
+### Constraint: OCR System Dependency
+- Added: 2025-04-29 19:54:15
+- Description: OCR engines (e.g., Tesseract) require system-level installation by the user, which cannot be fully automated by the MCP server.
+- Impact: OCR functionality will fail if the dependency is not met. Adds setup complexity for users.
+- Mitigation strategy: Provide clear documentation and installation instructions. Implement checks and informative error messages if the OCR engine is not found.
+- Related: `docs/rag-robustness-enhancement-spec.md#33-preprocessing--ocr-integration`
+
+### Constraint: OCR Performance
+- Added: 2025-04-29 19:54:15
+- Description: OCR is computationally expensive and can significantly increase document processing time compared to direct text extraction.
+- Impact: May affect user experience for large documents or batch processing. Requires resource consideration.
+- Mitigation strategy: Trigger OCR conditionally based on quality detection. Log processing times. Inform user about potential delays. Optimize preprocessing if possible.
+- Related: `docs/rag-robustness-enhancement-spec.md#5-non-functional-requirements`
+
+### Constraint: Library Licenses
+- Added: 2025-04-29 19:54:15
+- Description: Must adhere to licenses of all libraries (e.g., PyMuPDF: AGPL, Tesseract: Apache 2.0).
+- Impact: Requires license compliance checks and awareness. AGPL for PyMuPDF is acceptable for server-side use but notable.
+- Mitigation strategy: Document licenses. Ensure usage complies with terms.
+- Related: `docs/rag-robustness-enhancement-spec.md#6-constraints--assumptions`
 - Added: 2025-04-16 18:14:41
 - Description: The 'Search-First' strategy depends entirely on the website's general search returning the correct book when queried with its ID. Previous investigations ([2025-04-16 07:27:22]) suggest this may be unreliable or non-functional.
 - Impact: If search-by-ID fails, the entire lookup process fails (`InternalBookNotFoundError`). The strategy is also vulnerable to changes in search result page structure and book detail page structure.
@@ -414,6 +754,103 @@ END FUNCTION
 - Added: 2025-04-14 14:08:30
 - Description: The project will depend on `PyMuPDF`. This library must be successfully installed into the managed Python environment. Its license is AGPL-3.0, which is deemed acceptable for this server-side use case but should be noted.
 - Impact: PDF processing will fail if `PyMuPDF` cannot be installed or imported. License compliance must be maintained.
+### Edge Case: PDF - Encrypted/Password
+- Identified: 2025-04-29 19:54:15
+- Scenario: Processing an encrypted PDF.
+- Expected behavior: `process_pdf` raises `ValueError`. Error propagated to user.
+- Testing approach: Test with an encrypted PDF. Verify `ValueError`.
+- Related: `docs/rag-robustness-enhancement-spec.md#7-edge-cases` (EC-PDF-01)
+
+### Edge Case: PDF - Corrupted/Malformed
+- Identified: 2025-04-29 19:54:15
+- Scenario: Processing a corrupted PDF file.
+- Expected behavior: `fitz` raises error, `process_pdf` catches and raises `RuntimeError`. Error propagated.
+- Testing approach: Test with a known corrupted PDF. Verify `RuntimeError`.
+- Related: `docs/rag-robustness-enhancement-spec.md#7-edge-cases` (EC-PDF-02)
+
+### Edge Case: PDF - Image Only
+- Identified: 2025-04-29 19:54:15
+- Scenario: Processing a PDF containing only images.
+- Expected behavior: `detect_pdf_quality` returns "IMAGE_ONLY". OCR is triggered. If OCR fails, empty text is returned/saved (resulting in `processed_file_path: None`).
+- Testing approach: Test with an image-only PDF. Verify quality detection, OCR trigger, and final output (OCR text or None).
+- Related: `docs/rag-robustness-enhancement-spec.md#7-edge-cases` (EC-PDF-03)
+
+### Edge Case: PDF - Mixed Text/Image
+- Identified: 2025-04-29 19:54:15
+- Scenario: Processing a PDF with both text layers and large images.
+- Expected behavior: `detect_pdf_quality` returns "MIXED". Hybrid processing attempts PyMuPDF first, potentially triggers OCR as fallback based on yield.
+- Testing approach: Test with a mixed PDF. Verify quality detection and processing path.
+- Related: `docs/rag-robustness-enhancement-spec.md#7-edge-cases` (EC-PDF-04)
+
+### Edge Case: PDF - Garbled Text/Encoding
+- Identified: 2025-04-29 19:54:15
+- Scenario: PDF text layer exists but is garbled due to font/encoding issues.
+- Expected behavior: `detect_pdf_quality` potentially returns "TEXT_LOW". OCR is triggered.
+- Testing approach: Test with a PDF known to have encoding issues. Verify quality detection and OCR trigger.
+- Related: `docs/rag-robustness-enhancement-spec.md#7-edge-cases` (EC-PDF-05)
+
+### Edge Case: PDF - Large File Memory
+- Identified: 2025-04-29 19:54:15
+- Scenario: Processing an extremely large PDF causing memory exhaustion.
+- Expected behavior: Process may fail with `MemoryError`. Needs graceful handling and logging.
+- Testing approach: Test with a very large PDF. Monitor memory usage. Verify error handling if failure occurs.
+- Related: `docs/rag-robustness-enhancement-spec.md#7-edge-cases` (EC-PDF-06)
+
+### Edge Case: EPUB - Corrupted/Malformed
+- Identified: 2025-04-29 19:54:15
+- Scenario: Processing a corrupted EPUB file.
+- Expected behavior: `ebooklib` raises error, caught as `RuntimeError`. Error propagated.
+- Testing approach: Test with a known corrupted EPUB. Verify `RuntimeError`.
+- Related: `docs/rag-robustness-enhancement-spec.md#7-edge-cases` (EC-EPUB-01)
+
+### Edge Case: EPUB - Complex/Non-standard HTML
+- Identified: 2025-04-29 19:54:15
+- Scenario: EPUB uses unusual HTML structures not handled by `_epub_node_to_markdown`.
+- Expected behavior: Markdown output may be incomplete or incorrectly formatted. Warnings logged.
+- Testing approach: Test with EPUBs containing complex tables, nested elements, non-standard tags. Review output quality.
+- Related: `docs/rag-robustness-enhancement-spec.md#7-edge-cases` (EC-EPUB-02)
+
+### Edge Case: EPUB - DRM
+- Identified: 2025-04-29 19:54:15
+- Scenario: Processing an EPUB with Digital Rights Management.
+- Expected behavior: `ebooklib` likely raises error, caught as `RuntimeError`. Error propagated.
+- Testing approach: Test with a DRM-protected EPUB (if legally possible). Verify `RuntimeError`.
+- Related: `docs/rag-robustness-enhancement-spec.md#7-edge-cases` (EC-EPUB-03)
+
+### Edge Case: OCR - Engine Not Found
+- Identified: 2025-04-29 19:54:15
+- Scenario: OCR is triggered, but the engine (e.g., Tesseract) is not installed or not in PATH.
+- Expected behavior: `run_ocr_on_pdf` raises `RuntimeError` or specific error. Error logged, fallback to PyMuPDF attempted if applicable.
+- Testing approach: Uninstall/rename Tesseract executable. Trigger OCR. Verify error handling and fallback.
+- Related: `docs/rag-robustness-enhancement-spec.md#7-edge-cases` (EC-OCR-01)
+
+### Edge Case: OCR - Processing Failure/Timeout
+- Identified: 2025-04-29 19:54:15
+- Scenario: OCR engine starts but fails internally or times out on a specific page/document.
+- Expected behavior: Error logged by `run_ocr_on_pdf`. Fallback to PyMuPDF attempted if applicable. Partial results may be returned.
+- Testing approach: Induce OCR failure (e.g., corrupted image input, low timeout). Verify logging and fallback.
+- Related: `docs/rag-robustness-enhancement-spec.md#7-edge-cases` (EC-OCR-02)
+
+### Edge Case: OCR - Nonsensical Output
+- Identified: 2025-04-29 19:54:15
+- Scenario: OCR runs but produces garbage text due to poor input quality or language mismatch.
+- Expected behavior: Output saved, but quality metrics will be very low. May require manual review flag.
+- Testing approach: Test with very low-quality scans or documents in unsupported languages. Review output and metrics.
+- Related: `docs/rag-robustness-enhancement-spec.md#7-edge-cases` (EC-OCR-03)
+
+### Edge Case: File System - Disk Full / Permissions
+- Identified: 2025-04-29 19:54:15
+- Scenario: Attempting to save processed file or temporary OCR images fails due to disk space or permissions.
+- Expected behavior: `_save_processed_text` raises `FileSaveError`. OCR may fail with `OSError`. Errors propagated.
+- Testing approach: Simulate disk full or permission denied errors (e.g., using filesystem mocks or restricted test environment). Verify error propagation.
+- Related: `docs/rag-robustness-enhancement-spec.md#7-edge-cases` (EC-FS-01)
+
+### Edge Case: Language Mismatch (OCR)
+- Identified: 2025-04-29 19:54:15
+- Scenario: Document language differs significantly from the language specified for OCR.
+- Expected behavior: OCR output quality will be very poor.
+- Testing approach: Test with documents in different languages, specifying incorrect language to OCR. Evaluate output quality.
+- Related: `docs/rag-robustness-enhancement-spec.md#7-edge-cases` (EC-Lang-01)
 - Mitigation strategy: Ensure `requirements.txt` includes `PyMuPDF`. `venv-manager.js` must handle installation. Implement checks for `fitz` import within `python-bridge.py`.
 
 

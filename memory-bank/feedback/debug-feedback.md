@@ -1,6 +1,16 @@
 [2025-04-28 10:16:25] - Debug - User denied `attempt_completion` for TDD Refactor test fix, requesting "more details". Will provide a more granular explanation in the next attempt.
 # Debugger Feedback
 <!-- Entries below should be added reverse chronologically (newest first) -->
+### Feedback [2025-04-30 23:20:34]
+- **Source**: User Feedback
+- **Issue**: Agent attempted to write MCP server configuration without including necessary authentication environment variables.
+- **Feedback**: User stated, "I believe you'll also need my login informattion in the environment, what does the README say?".
+- **Action**: Acknowledged feedback. Will read `README.md` to identify required environment variables, ask the user for them, and then update the MCP settings file correctly.
+### Feedback [2025-04-30 23:18:16]
+- **Source**: User Feedback
+- **Issue**: Agent attempted to run the MCP server directly using `npm start` instead of configuring it through RooCode's MCP settings.
+- **Feedback**: User stated, "You have to run this through an MCP server on RooCode. Search up how to create one and make it in the .roo directory".
+- **Action**: Acknowledged feedback. Will now configure the server in the RooCode MCP settings file (`/home/loganrooks/.config/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/mcp_settings.json`) as per the `create_mcp_server` instructions.
 ### Feedback [2025-04-16 07:27:22]
 - **Source**: User Feedback
 - **Issue**: Agent's initial `attempt_completion` message correctly identified the `id:` search failure but didn't fully connect it to the inability to get the correct book page URL (with slug), which was the underlying goal of the search workaround.

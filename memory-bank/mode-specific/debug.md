@@ -1,6 +1,20 @@
 ### Issue: TDD-GREEN-BLOCK-20250428 - Python Tests Blocking TDD Green Phase - Status: Resolved - [2025-04-28 04:00:22]
 - **Reported**: [2025-04-28 03:38:04] / **Severity**: High / **Symptoms**: `pytest __tests__/python/test_python_bridge.py` failing, blocking TDD Green Phase completion. Previous attempts by `code` mode failed due to `apply_diff` errors.
 - **Investigation**:
+### Issue: RAG-TOC-BASIC-FAIL - Persistent `test_extract_toc_basic` failure - [Status: Resolved] - [2025-04-30 23:27:43]
+- **Reported**: 2025-04-30 17:26:26 (via SPARC delegation) / **Severity**: High (Blocking TDD) / **Symptoms**: `AssertionError` in `__tests__/python/test_rag_processing.py::test_extract_toc_basic` indicating ToC lines were not removed from `remaining_lines`. [Ref: Task Description, `tdd-feedback.md` 2025-04-30 17:19:26]
+- **Investigation**:
+    1. Confirmed correct Python environment setup via MCP configuration. [Ref: Debug Log 2025-04-30 23:18:16 - 23:22:14]
+    2. Reproduced failure using correct venv Python executable. [Ref: Debug Log 2025-04-30 23:22:24]
+    3. Analyzed `_extract_and_format_toc` in `lib/rag_processing.py`; slicing logic appeared correct. [Ref: Debug Log 2025-04-30 23:22:36 - 23:22:48]
+    4. Added debug print before return; confirmed `remaining_lines` was incorrect despite seemingly correct slice logic. [Ref: Debug Log 2025-04-30 23:23:22 - 23:23:43]
+    5. Cleared pycache; failure persisted. [Ref: Debug Log 2025-04-30 23:24:06 - 23:24:33]
+    6. Isolated slicing logic in test; confirmed basic slice works. [Ref: Debug Log 2025-04-30 23:24:52 - 23:25:28]
+    7. Added debug print before slice operation; revealed incorrect `toc_end_index` calculation. [Ref: Debug Log 2025-04-30 23:25:49 - 23:26:23]
+- **Root Cause**: Logic to find the start of main content (lines 492-499 in `lib/rag_processing.py`) was too broad. It matched ToC entries starting with "Chapter" (e.g., "Chapter 1 ........ 5"), incorrectly setting `main_content_start_index` and `toc_end_index` too early. [Ref: Debug Log 2025-04-30 23:26:23]
+- **Fix Applied**: Modified line 496 in `lib/rag_processing.py` to check that a line starts with a main content keyword *AND* does not match the `TOC_LINE_PATTERN`. [Ref: Debug Log 2025-04-30 23:26:43 - 23:26:53]
+- **Verification**: `test_extract_toc_basic` passed successfully after fix. Full suite run (`test_rag_processing.py`) revealed 2 unrelated failures (`test_process_epub_function_exists`, `test_extract_toc_formats_markdown`) noted for future attention. [Ref: Debug Log 2025-04-30 23:27:15 - 23:27:43]
+- **Related Issues**: Potential follow-up tasks for missing `process_epub` and unimplemented Markdown ToC formatting.
 ### Issue: TDD-Refactor-Block-PyTest-20250428 - Pytest failures blocking TDD Refactor - [Status: Resolved] - [2025-04-28 10:04:24]
 - **Reported**: [2025-04-28 09:22:38] / **Severity**: High / **Symptoms**: `pytest` failures in `__tests__/python/test_python_bridge.py` (specifically `test_process_pdf_success`, `test_process_pdf_encrypted`) after Green phase commit `6746f13`. Errors included `FzErrorSystem`, `FileNotFoundError`, and `ValueError`. JS tests (`__tests__/index.test.js`) also reported schema/Zod issues.
 - **Investigation**:

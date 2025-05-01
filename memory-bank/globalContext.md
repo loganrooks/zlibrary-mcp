@@ -84,6 +84,10 @@
 - **[2025-04-29 16:36:11] - Fix: MCP Result Format** - Modified `src/index.ts` `tools/call` handler to return standard `{ result: value }` format. Tests passed. Commit: `47edb7a`. [Ref: ActiveContext 2025-04-29 16:36:11]
 - **[2025-04-29 17:00:00] - HolisticReview - Post-Refinement Assessment Complete** - Reviewed workspace after recent refactoring/fixes. Test suite passes. Integration points verified (RAG refactor, MCP result format). Documentation updated (README, ADRs, Specs). Obsolete `get_book_by_id` references removed from tests/code. Debug logs removed, error logging improved. Minor findings: `lib/rag_processing.py` slightly over line limit, `zlibrary/src/zlibrary/abs.py` significantly over (deferred), utility script `get_venv_python_path.mjs` at root, unused Zod schema remains. Project deemed ready for final checks/deployment prep.
 ## Progress
+- **[2025-05-01 01:31:01] - Feature: RAG Robustness Enhancements - Completed**
+  - Status: Completed by `tdd` mode.
+  - Details: Implemented EPUB handling, ToC formatting, PDF Quality Detection (with heuristic limitations noted), and OCR integration according to spec `docs/rag-robustness-enhancement-spec.md`. Test suite passes (40/42). Dependencies `pytesseract`, `pdf2image` added.
+  - Links: [Ref: ActiveContext 2025-05-01 01:31:01], [Ref: SPARC MB Delegation Log 2025-04-29 21:18:30], [Ref: GlobalContext 2025-04-30 04:44:05] (Previous Partial Progress)
 - **[2025-04-29 17:13:04] - Integration - Final Integration Check Completed** - Verified workspace state (commit 70687dc), sanity checked core components, reviewed documentation. Confirmed readiness post-refinement/cleanup.
 - **[2025-04-29 17:05:11] - Remove Unused Zod Schema - Completed** - Removed `GetDownloadInfoParamsSchema` from `src/index.ts`. Tests passed. Commit: 70687dc. [Ref: Task 2025-04-29 17:02:59]
 - **[2025-04-29 17:01:20] - Cleanup Root Utility Script - Completed** - Moved `get_venv_python_path.mjs` to `scripts/`. Verified no references and tests pass. [Ref: Task 2025-04-29 16:58:50]

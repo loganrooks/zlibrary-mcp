@@ -6,6 +6,15 @@ import unicodedata # Added for slugify
 import os # Ensure os is imported if needed for path manipulation later
 
 # Check if libraries are available
+# OCR Dependencies (Optional)
+try:
+    import pytesseract
+    from pdf2image import convert_from_path
+    OCR_AVAILABLE = True
+except ImportError:
+    OCR_AVAILABLE = False
+    pytesseract = None
+    convert_from_path = None
 try:
     import ebooklib
     from ebooklib import epub
@@ -458,6 +467,27 @@ def _identify_and_remove_front_matter(content_lines: list[str]) -> tuple[list[st
 
     return cleaned_lines, title
 
+def _format_toc_lines_as_markdown(toc_lines: list[str]) -> str:
+    """Formats extracted ToC lines into a Markdown list."""
+    markdown_toc_lines = []
+    for original_line in toc_lines: # Iterate over original lines
+        # Remove trailing dots/spaces and page number from the stripped version
+        line_strip = original_line.strip()
+        # Regex to remove trailing dots/spaces and page number
+        cleaned_line = re.sub(r'\s*[\.\s]+\s*\d+$', '', line_strip).strip()
+        if not cleaned_line: continue # Skip empty lines after cleaning
+
+        # Basic indentation check using the original line
+        indent_level = 0
+        if original_line.startswith('  '): # Check original line for indentation
+            indent_level = 1
+        # TODO: Add more robust indentation detection if needed (e.g., multiples of 2 spaces)
+
+        # Format as Markdown list item
+        indent_str = "  " * indent_level
+        markdown_toc_lines.append(f"{indent_str}* {cleaned_line}")
+
+    return "\n".join(markdown_toc_lines)
 # NEW _extract_and_format_toc implementation (V2 - Index Based)
 def _extract_and_format_toc(content_lines: list[str], output_format: str) -> tuple[list[str], str]:
     """
@@ -511,20 +541,22 @@ def _extract_and_format_toc(content_lines: list[str], output_format: str) -> tup
     if toc_end_index > toc_start_index + 1:
          # Filter lines within the identified range that match the pattern
          for i in range(toc_start_index + 1, toc_end_index):
-             line_strip = content_lines[i].strip()
+             original_line = content_lines[i] # Store original line
+             line_strip = original_line.strip()
              # Include blank lines within ToC block based on test case
+             # Store the original line to preserve indentation for formatting
              if TOC_LINE_PATTERN.match(line_strip) or not line_strip:
-                 toc_lines_extracted.append(line_strip)
+                 toc_lines_extracted.append(original_line) # Append original line
 
 
     # Construct remaining lines
     remaining_lines = content_lines[:toc_start_index] + content_lines[toc_end_index:]
 
-    # TODO: Implement actual Markdown formatting
+    # Format ToC using the helper function if requested and lines were extracted
     if output_format == 'markdown' and toc_lines_extracted:
-        pass # Keep formatted_toc as ""
+        formatted_toc = _format_toc_lines_as_markdown(toc_lines_extracted)
 
-    logging.debug(f"Finished ToC extraction (V2). Found {len(toc_lines_extracted)} ToC lines.")
+    logging.debug(f"Finished ToC extraction (V2). Found {len(toc_lines_extracted)} ToC lines. Formatted TOC length: {len(formatted_toc)}")
     return remaining_lines, formatted_toc
 
 # --- PDF Processing ---
@@ -534,7 +566,7 @@ def _analyze_pdf_quality(pdf_path: str) -> dict:
         logging.warning("PyMuPDF not available, skipping PDF quality analysis.")
         return {'quality': 'unknown', 'details': 'PyMuPDF not installed'}
     total_text_length = 0
-    text_length_threshold = 50
+    text_length_threshold = 50 # Reverting threshold
     doc = None
     full_text_content = ""
     try:
@@ -544,9 +576,10 @@ def _analyze_pdf_quality(pdf_path: str) -> dict:
             return {'quality': 'unknown', 'details': 'PDF is encrypted'}
         for page_num in range(len(doc)):
             page = doc.load_page(page_num)
-            text = page.get_text("text", flags=0).strip()
+            # Extract text and clean null chars immediately
+            text = page.get_text("text", flags=0).replace('\x00', '').strip()
             total_text_length += len(text)
-            full_text_content += text
+            full_text_content += text # Add cleaned text
             if total_text_length >= text_length_threshold: break
     except FileNotFoundError:
         logging.error(f"PDF file not found for quality analysis: {pdf_path}")
@@ -559,72 +592,231 @@ def _analyze_pdf_quality(pdf_path: str) -> dict:
     if total_text_length < text_length_threshold:
         logging.info(f"PDF detected as potentially image-only (text length {total_text_length}): {pdf_path}")
         return {'quality': 'image_only', 'details': 'No significant text found', 'ocr_recommended': True}
-    MIN_CHAR_DIVERSITY_RATIO = 0.3
+    # Using Spec thresholds with OR condition
+    MIN_CHAR_DIVERSITY_RATIO = 0.15
     MIN_SPACE_RATIO = 0.05
+    # MIN_AVG_WORD_LEN = 2.5 # Not using avg word length
+
     if full_text_content:
-        non_whitespace_chars = ''.join(full_text_content.split())
-        total_chars = len(full_text_content)
+        # Apply header/footer cleaning before analysis
+        cleaned_analysis_text = full_text_content
+        header_footer_patterns = [
+             re.compile(r"^(JSTOR.*|Downloaded from.*|Copyright ©.*)\n?", re.IGNORECASE | re.MULTILINE),
+             re.compile(r"^Page \d+\s*\n?", re.MULTILINE),
+             re.compile(r"^(.*\bPage \d+\b.*)\n?", re.IGNORECASE | re.MULTILINE), # Copied from process_pdf
+             # Commenting out more specific JSTOR/boilerplate patterns
+             # re.compile(r"^Source:.*\n?", re.IGNORECASE | re.MULTILINE),
+             # re.compile(r"^Published by:.*\n?", re.IGNORECASE | re.MULTILINE),
+             # re.compile(r"^Stable URL:.*\n?", re.IGNORECASE | re.MULTILINE),
+             # re.compile(r"^Your use of the JSTOR archive.*\n?", re.IGNORECASE | re.MULTILINE),
+             # re.compile(r"^is collaborating with JSTOR.*\n?", re.IGNORECASE | re.MULTILINE),
+             # re.compile(r"^The Massachusetts Review\n?", re.IGNORECASE | re.MULTILINE), # Already commented out
+        ]
+        for pattern in header_footer_patterns:
+            cleaned_analysis_text = pattern.sub('', cleaned_analysis_text)
+        # Commenting out specific cleaning for JSTOR download/terms lines
+        # download_pattern = re.compile(r"This content downloaded from.*?\n", re.IGNORECASE)
+        # cleaned_analysis_text = download_pattern.sub('', cleaned_analysis_text)
+        # terms_pattern = re.compile(r"All use subject to https://about.jstor.org/terms\n?", re.IGNORECASE)
+        # cleaned_analysis_text = terms_pattern.sub('', cleaned_analysis_text)
+        cleaned_analysis_text = re.sub(r'\n\s*\n', '\n\n', cleaned_analysis_text).strip() # Consolidate blank lines
+
+        # Perform analysis on cleaned text
+        non_whitespace_chars = ''.join(cleaned_analysis_text.split())
+        total_chars = len(cleaned_analysis_text) # Need total_chars for space_ratio
         total_non_whitespace = len(non_whitespace_chars)
         unique_non_whitespace = len(set(non_whitespace_chars))
-        space_count = full_text_content.count(' ')
+        space_count = cleaned_analysis_text.count(' ') # Use cleaned text for space count
         char_diversity_ratio = (unique_non_whitespace / total_non_whitespace) if total_non_whitespace > 0 else 0
         space_ratio = (space_count / total_chars) if total_chars > 0 else 0
-        if total_non_whitespace > 10:
+
+        # Check based on low diversity OR low space ratio (using spec thresholds)
+        if total_non_whitespace > 10: # Keep minimum text check
             if char_diversity_ratio < MIN_CHAR_DIVERSITY_RATIO or space_ratio < MIN_SPACE_RATIO:
-                details = f"Low character diversity ({char_diversity_ratio:.2f} < {MIN_CHAR_DIVERSITY_RATIO}) or low space ratio ({space_ratio:.2f} < {MIN_SPACE_RATIO})"
+                details = f"Low char diversity ({char_diversity_ratio:.2f} < {MIN_CHAR_DIVERSITY_RATIO}) or low space ratio ({space_ratio:.2f} < {MIN_SPACE_RATIO})" # Using spec thresholds
                 logging.info(f"PDF detected as potentially poor extraction ({details}): {pdf_path}")
-                return {'quality': 'poor_extraction', 'details': 'Low character diversity or gibberish patterns detected', 'ocr_recommended': True}
+                # Using updated details string consistent with the OR condition
+                return {'quality': 'poor_extraction', 'details': 'Low character diversity or low space ratio detected', 'ocr_recommended': True}
     logging.debug(f"PDF quality analysis: Passed checks. Path: {pdf_path}")
     return {'quality': 'good'}
 
 def process_pdf(file_path: Path, output_format: str = "txt") -> str:
-    # ... (implementation as before) ...
+    """Processes a PDF file, extracts text, applies preprocessing, and returns content."""
     if not PYMUPDF_AVAILABLE: raise ImportError("Required library 'PyMuPDF' is not installed.")
     logging.info(f"Processing PDF: {file_path} for format: {output_format}")
+
+    # --- Start: Quality Analysis and Conditional OCR ---
+    quality_analysis = _analyze_pdf_quality(str(file_path))
+    if quality_analysis.get('ocr_recommended'):
+        logging.info(f"Quality analysis ({quality_analysis.get('quality')}) recommends OCR for {file_path}. Running OCR...")
+        # Ensure run_ocr_on_pdf is called with the correct path object or string
+        return run_ocr_on_pdf(str(file_path))
+    # --- End: Quality Analysis ---
+
+    # If quality is good or unknown (and OCR not forced), proceed with normal extraction
+    logging.info(f"PDF quality ({quality_analysis.get('quality')}) deemed sufficient or OCR not recommended. Proceeding with standard extraction for {file_path}")
+
     doc = None
+    all_lines = []
     try:
         doc = fitz.open(str(file_path))
         if doc.is_encrypted:
             logging.warning(f"PDF is encrypted: {file_path}")
             raise ValueError("PDF is encrypted")
-        all_content = []
+
+        # 1. Extract all text lines first
         for page_num in range(len(doc)):
             try:
                 page = doc.load_page(page_num)
-                if output_format == 'markdown':
-                    markdown_text = _format_pdf_markdown(page)
-                    if markdown_text: all_content.append(markdown_text)
-                else:
-                    text = page.get_text("text")
-                    if text:
-                        cleaned_text = text.replace('\x00', '').strip()
-                        header_footer_patterns = [
-                            re.compile(r"^(JSTOR.*|Downloaded from.*|Copyright ©.*)\n?", re.IGNORECASE | re.MULTILINE),
-                            re.compile(r"^Page \d+\s*\n?", re.MULTILINE),
-                            re.compile(r"^(.*\bPage \d+\b.*)\n?", re.IGNORECASE | re.MULTILINE)
-                        ]
-                        for pattern in header_footer_patterns: cleaned_text = pattern.sub('', cleaned_text)
-                        cleaned_text = re.sub(r'\n\s*\n', '\n\n', cleaned_text).strip()
-                        if cleaned_text: all_content.append(cleaned_text)
-            except Exception as page_error: logging.warning(f"Could not process page {page_num + 1} in {file_path}: {page_error}")
-        full_content = "\n\n".join(all_content).strip()
-        if not full_content:
-            logging.warning(f"No extractable text in PDF (image-based?): {file_path}")
-            return ""
-        logging.info(f"Finished PDF: {file_path}. Format: {output_format}. Length: {len(full_content)}")
-        return full_content
-    except fitz.fitz.FitzError as fitz_error:
-        logging.error(f"PyMuPDF error processing {file_path}: {fitz_error}")
-        raise RuntimeError(f"Error opening/processing PDF: {file_path} - {fitz_error}") from fitz_error
+                text = page.get_text("text")
+                if text:
+                    # Basic cleaning and split into lines
+                    cleaned_page_text = text.replace('\x00', '')
+                    all_lines.extend(cleaned_page_text.splitlines())
+            except Exception as page_e:
+                logging.error(f"Error processing page {page_num} of PDF {file_path}: {page_e}")
+                # Continue processing other pages
+
+        if not all_lines:
+            logging.warning(f"No text could be extracted from PDF: {file_path}")
+            return "" # Return empty if no text extracted
+
+        # 2. Apply front matter removal
+        lines_after_fm, title = _identify_and_remove_front_matter(all_lines)
+        logging.debug(f"PDF Title identified: {title}")
+
+        # 3. Apply ToC extraction
+        remaining_lines, formatted_toc = _extract_and_format_toc(lines_after_fm, output_format)
+
+        # 4. Combine results
+        # NOTE: Current approach joins preprocessed lines. For 'markdown' output,
+        # this bypasses the detailed _format_pdf_markdown function which operates page-by-page.
+        # TODO: Refactor PDF processing to apply preprocessing *before* page-level Markdown formatting.
+        main_content = "\n".join(remaining_lines)
+
+        # Prepend ToC if it exists and format is markdown
+        if formatted_toc and output_format == 'markdown':
+            # Add separator between ToC and main content
+            final_output = f"## Table of Contents\n\n{formatted_toc}\n\n---\n\n{main_content}"
+        else:
+            final_output = main_content
+
+        return final_output.strip()
+
+    except fitz.fitz.FitzError as fitz_e: # Catch specific PyMuPDF errors
+        logging.error(f"PyMuPDF error processing PDF {file_path}: {fitz_e}")
+        raise RuntimeError(f"Failed to process PDF: {fitz_e}") from fitz_e
+    except ValueError as val_e: # Catch encryption error
+         logging.error(f"Value error processing PDF {file_path}: {val_e}")
+         raise val_e
     except Exception as e:
-        if isinstance(e, (ValueError, FileNotFoundError)): raise e
         logging.error(f"Unexpected error processing PDF {file_path}: {e}")
-        raise RuntimeError(f"Error opening/processing PDF: {file_path} - {e}") from e
+        raise RuntimeError(f"Unexpected error processing PDF: {e}") from e
     finally:
         if doc:
-            try: doc.close()
-            except Exception as close_error: logging.error(f"Error closing PDF {file_path}: {close_error}")
+            doc.close()
 
+# --- EPUB Processing ---
+
+def process_epub(file_path: Path, output_format: str = "txt") -> str:
+    """Processes an EPUB file, extracts text, applies preprocessing, and returns content."""
+    if not EBOOKLIB_AVAILABLE:
+        raise ImportError("Required library 'ebooklib' is not installed.")
+    logging.info(f"Processing EPUB: {file_path} for format: {output_format}")
+
+    try:
+        book = epub.read_epub(str(file_path))
+        all_lines = []
+        footnote_defs = {} # For Markdown footnote collection
+
+        # Basic text extraction (simplistic for integration step)
+        # TODO: Refine this to use _epub_node_to_markdown for proper formatting later
+        items = list(book.get_items_of_type(ebooklib.ITEM_DOCUMENT))
+        for item in items:
+            soup = BeautifulSoup(item.get_body_content(), 'html.parser')
+            # Extract text, split into lines
+            text = soup.get_text(separator='\n', strip=True)
+            if text:
+                all_lines.extend(text.splitlines())
+
+        # --- End of for item in items loop ---
+
+        if not all_lines:
+            logging.warning(f"No text could be extracted from EPUB: {file_path}")
+            return ""
+
+        # Apply front matter removal
+        lines_after_fm, title = _identify_and_remove_front_matter(all_lines)
+        logging.debug(f"EPUB Title identified: {title}")
+
+        # Apply ToC extraction
+        remaining_lines, formatted_toc = _extract_and_format_toc(lines_after_fm, output_format)
+
+        # Combine results (simple join for now)
+        # NOTE: Current approach joins preprocessed lines. For 'markdown' output,
+        # this bypasses the detailed _epub_node_to_markdown function which operates node-by-node.
+        # TODO: Refactor EPUB processing to apply preprocessing *before* node-level Markdown formatting.
+        main_content = "\n".join(remaining_lines)
+
+        # Prepend ToC if it exists and format is markdown
+        if formatted_toc and output_format == 'markdown':
+            final_output = f"## Table of Contents\n\n{formatted_toc}\n\n---\n\n{main_content}"
+        else:
+            final_output = main_content
+
+        return final_output.strip()
+
+    except FileNotFoundError: # Corrected indentation
+        logging.error(f"EPUB file not found: {file_path}")
+        raise
+    except Exception as e: # Corrected indentation
+        logging.error(f"Error processing EPUB {file_path}: {e}")
+        # Consider more specific exceptions from ebooklib if needed
+        raise RuntimeError(f"Failed to process EPUB: {e}") from e
+
+# --- OCR Processing ---
+
+def run_ocr_on_pdf(pdf_path: str) -> str:
+    """
+    Runs OCR on a given PDF file and returns the extracted text.
+    Requires pytesseract and pdf2image.
+    """
+    if not OCR_AVAILABLE:
+        logging.error("OCR dependencies (pytesseract, pdf2image) not installed. Cannot run OCR.")
+        return "" # Return empty string if dependencies are missing
+
+    logging.info(f"Running OCR on: {pdf_path}")
+    try:
+        # Convert PDF pages to images
+        images = convert_from_path(pdf_path)
+        
+        full_text = ""
+        # Process each image with pytesseract
+        for i, image in enumerate(images):
+            logging.debug(f"Running OCR on page {i+1} of {pdf_path}")
+            try:
+                page_text = pytesseract.image_to_string(image)
+                full_text += page_text + "\n\n" # Add page separator
+            except pytesseract.TesseractNotFoundError:
+                 logging.warning("Tesseract is not installed or not in your PATH. OCR failed.") # Changed to warning to match test mock
+                 # Return empty string as per test_run_ocr_on_pdf_handles_tesseract_not_found expectation
+                 return ""
+            except Exception as ocr_err:
+                 logging.error(f"Error during OCR processing on page {i+1} of {pdf_path}: {ocr_err}")
+                 # Optionally continue to next page or return partial result/error indicator
+                 # For now, continue to next page
+                 continue
+
+        logging.info(f"OCR completed for {pdf_path}. Extracted length: {len(full_text)}")
+        return full_text.strip()
+
+    except Exception as e:
+        logging.error(f"Error converting PDF to images for OCR ({pdf_path}): {e}")
+        # Handle pdf2image errors (e.g., file not found, poppler issues)
+        return "" # Return empty string on conversion error
+
+# Removed duplicated block
+# Removing duplicated except clauses
 async def save_processed_text(
     original_file_path: Path,
     text_content: str,

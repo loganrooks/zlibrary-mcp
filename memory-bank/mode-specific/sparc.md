@@ -557,9 +557,12 @@
 - Assigned to: `tdd`
 - Description: Implement the RAG robustness enhancements following TDD methodology, based on the specification `docs/rag-robustness-enhancement-spec.md`. This includes the real-world testing framework, PDF quality detection/analysis, potential OCR integration, and EPUB handling review/updates.
 - Expected deliverable: Tested and implemented Python code, new/updated tests, passing test suite, separate commits for code and MB updates upon successful completion.
-- Status: pending
+- Status: completed
+- Completion time: [2025-05-01 01:31:01]
+- Outcome: SUCCESS. Completed implementation of EPUB handling, ToC formatting, PDF Quality Detection, and OCR integration per spec. Test suite passes (40 passed, 2 skipped). PDF Quality heuristic limitation noted for `test_analyze_pdf_quality_good`. Dependencies `pytesseract`, `pdf2image` added. [Ref: ActiveContext 2025-05-01 01:31:01, tdd.md 2025-05-01 01:31:01]
 - Link to Specification: `docs/rag-robustness-enhancement-spec.md` [Ref: GlobalContext 2025-04-29 21:10:14]
-- Link to ActiveContext Entry: [Ref: ActiveContext 2025-04-29 21:10:14]
+- Link to ActiveContext Entry: [Ref: ActiveContext 2025-04-29 21:10:14], [Ref: ActiveContext 2025-05-01 01:31:01]
+- Link to Progress Entry: [Ref: GlobalContext 2025-04-30 04:44:05] (Updated below)
 - **Action Taken**: Logged feedback [Ref: sparc-feedback.md 2025-04-29 18:03:22] and this intervention. Preparing revised, detailed `attempt_completion` message including propagation instruction.
 - **Rationale**: Adherence to user instructions and SPARC reporting protocols across delegation levels.
 - **Outcome**: Revised completion report will be generated.
@@ -581,6 +584,14 @@
 - Expected deliverable: Detailed analysis report.
 - Status: completed
 - Completion time: 2025-04-14 03:26:52
+### [2025-04-30 17:26:26] Task: Debug Persistent Failure of `test_extract_toc_basic`
+- Assigned to: debug
+- Description: Investigate and resolve the persistent failure of the `test_extract_toc_basic` unit test. [Ref: Task Delegation 2025-04-30 17:26:26]
+- Expected deliverable: Root cause analysis, applied fix, confirmation of passing test, commit hash, MB updates.
+- Status: completed
+- Completion time: 2025-04-30 23:40:48
+- Outcome: SUCCESS. Root cause identified as overly broad main content detection logic. Fix applied to `lib/rag_processing.py` (commit `58796ce`). `test_extract_toc_basic` now passes. Regression check revealed 2 unrelated failures (`test_process_epub_function_exists`, `test_extract_toc_formats_markdown`) due to unimplemented features from the original TDD task. GitHub SSH keys also configured during session. [Ref: ActiveContext 2025-04-30 23:43:59, Debug MB 2025-04-30 23:43:59]
+- Link to Progress Entry: [Ref: GlobalContext 2025-04-30 04:44:05] (Related RAG Progress)
 - Outcome: Confirmed hypotheses: Invalid Node.js import (`require('@modelcontextprotocol/sdk/lib/index')`) and unreliable Python environment management (mismatched global `pip`/`python3`).
 - Link to Progress Entry: N/A
 

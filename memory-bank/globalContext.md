@@ -1,3 +1,11 @@
+- **[2025-05-01 19:28:40] - PDF Quality Heuristic Fix (Cycle 22)**
+  - Status: Completed by `debug` mode.
+  - Details: Resolved misclassification of `IMAGE_ONLY` PDFs in `lib/rag_processing.py::detect_pdf_quality`. Modified heuristic to prioritize very low text density. Target tests now pass.
+  - Links: [Ref: ActiveContext 2025-05-01 19:28:20], [Ref: Debug Issue PDF-QUALITY-HEURISTIC-01]
+- **[2025-05-01 1:54:35 PM] - TDD Cycle 22 Blockers Resolved**
+  - Status: Completed by `debug` mode.
+  - Details: Resolved function rename (`_analyze_pdf_quality` -> `detect_pdf_quality`) inconsistencies and Tesseract mocking issues (`TesseractNotFoundError`, `ImportError`, `TypeError`) in `lib/rag_processing.py` and `__tests__/python/test_rag_processing.py`. This unblocks TDD Cycle 22 (PDF Quality Detection).
+  - Links: [Ref: ActiveContext 2025-05-01 1:54:35 PM], [Ref: Debug Issue TDD-CYCLE22-BLOCKERS]
 ### [2025-04-29 19:34:03] - Code - Decision: Slugify Logic
 - **Decision**: Implemented `_slugify` function in `lib/rag_processing.py` to generate human-readable slugs (`author-title`) for filenames. Logic involves lowercasing, normalizing (ASCII/Unicode), replacing non-alphanumeric/non-word chars with spaces, collapsing spaces/hyphens to single hyphens, and stripping ends. Underscores are replaced in ASCII path, kept in Unicode path (`\w`).
 - **Rationale**: Provides user-friendly filenames while handling various characters. Iteratively refined based on test failures.
@@ -84,6 +92,48 @@
 - **[2025-04-29 16:36:11] - Fix: MCP Result Format** - Modified `src/index.ts` `tools/call` handler to return standard `{ result: value }` format. Tests passed. Commit: `47edb7a`. [Ref: ActiveContext 2025-04-29 16:36:11]
 - **[2025-04-29 17:00:00] - HolisticReview - Post-Refinement Assessment Complete** - Reviewed workspace after recent refactoring/fixes. Test suite passes. Integration points verified (RAG refactor, MCP result format). Documentation updated (README, ADRs, Specs). Obsolete `get_book_by_id` references removed from tests/code. Debug logs removed, error logging improved. Minor findings: `lib/rag_processing.py` slightly over line limit, `zlibrary/src/zlibrary/abs.py` significantly over (deferred), utility script `get_venv_python_path.mjs` at root, unused Zod schema remains. Project deemed ready for final checks/deployment prep.
 ## Progress
+- **[2025-05-02 03:26:27] - DevOps Task Completed (Commit Cycle 22)** - Investigated staging/committing TDD Cycle 22 (PDF Quality) changes. Found they were already included in commit `13c826b`. No new commit required. [Ref: Task 2025-05-02 03:23:10]
+- **[2025-05-02 03:19:43] - DevOps Task Completed** - Committed OCR refactor (TDD Cycle 21) changes to `lib/rag_processing.py` and `__tests__/python/test_rag_processing.py`. Commit: `13c826b`. [Ref: Task 2025-05-02 03:16:40]
+- **[2025-05-02 02:41:32] - TDD Cycle 23 (Garbled Text Detection) Completed**
+  - Status: Completed by `tdd` mode.
+  - Details: Implemented heuristics (non-alpha ratio, repetition) in `lib/rag_processing.py::detect_garbled_text` to pass tests added in Red phase. Also fixed unrelated bug in `detect_pdf_quality` (empty PDF check order).
+  - Links: [Ref: ActiveContext 2025-05-02 02:41:32]
+- **[2025-05-02 02:33:00] - TDD Cycle 23 (Garbled Text) - Green Phase Unblocked**
+  - Status: Unblocked by `debug` mode.
+  - Details: Investigation revealed `detect_garbled_text` function was already present in `lib/rag_processing.py`, contrary to reports of tool failures preventing its addition. Pytest confirmed function existence and relevant test execution (xfail/xpass). 6 unrelated test failures were noted for separate investigation.
+  - Links: [Ref: ActiveContext 2025-05-02 02:33:00], [Ref: Debug Issue TDD-CYCLE23-TOOL-FAILURE]
+- **[2025-05-01 11:18:10] - RAG Testing Framework - TDD Cycle 13 Completed**
+  - Status: Completed by `tdd` mode.
+  - Details: Completed Refactor phase for Cycle 13 (Determine Pass/Fail Noise Check) using `write_to_file` workaround for previous `apply_diff` issues. Refactored `determine_pass_fail` logic and updated tests. Pytest suite passes (19/19).
+  - Links: [Ref: ActiveContext 2025-05-01 11:18:10], [Ref: tdd.md TDD Cycle Log 2025-05-01 11:18:10]
+- **[2025-05-01 03:08:48] - RAG Testing Framework - Conflicting Definition Resolved**
+  - Status: Completed by `debug` mode.
+  - Details: Resolved persistent `AssertionError` in `test_evaluate_output_returns_expected_keys`. Root cause was conflicting definitions of `evaluate_output` in `scripts/run_rag_tests.py`. Removed the duplicate definition. Test now passes, unblocking TDD Cycle 6.
+  - Links: [Ref: ActiveContext 2025-05-01 03:08:28], [Ref: Debug Issue RAG-TEST-CONFLICT-01]
+- **[2025-05-01 03:03:23] - RAG Testing Framework Implementation - Blocked Again**
+  - Status: Blocked (Returned Early by `tdd` mode).
+  - Details: Resumed implementation after mocking fix. Completed TDD Cycle 5 Refactor. Blocked during TDD Cycle 6 (Green) by persistent `AssertionError` in `test_evaluate_output_returns_expected_keys`, suggesting test runner executing outdated code despite troubleshooting. Context size reached 83%, triggering Delegate Clause. Requires investigation into test environment/caching.
+  - Links: [Ref: ActiveContext 2025-05-01 03:03:51], [Ref: SPARC MB Delegation Log 2025-05-01 02:56:06], [Ref: tdd-feedback.md 2025-05-01 03:03:23]
+- **[2025-05-01 03:01:49] - RAG Testing Framework Implementation - Blocked (TDD Cycle 6)**
+  - Status: Blocked (Returned Early by `tdd` mode).
+  - Details: Implementation resumed after mocking fix. Cycle 5 completed (Refactor: Type hints). Cycle 6 (Placeholder Structure) blocked by persistent `AssertionError` in `test_evaluate_output_returns_expected_keys`. Test environment appears to be executing outdated code despite cache clearing and reload attempts. Requires deeper investigation into Python/pytest caching or import mechanisms.
+  - Links: [Ref: ActiveContext 2025-05-01 03:01:49], [Ref: tdd-feedback.md 2025-05-01 03:01:49]
+- **[2025-05-01 02:55:24] - RAG Test Framework Mocking Issue Resolved**
+  - Status: Completed by `debug` mode.
+  - Details: Investigated persistent `StopIteration`/`RuntimeError` in `test_run_single_test_calls_processing_and_eval`. Identified root cause as mock state leakage from a preceding test using `unittest.mock.patch`. Fixed by refactoring the preceding test to use `mocker.patch` (from `pytest-mock`) for proper isolation. Test suite `__tests__/python/test_run_rag_tests.py` now passes. Commit: `eb0494c`. Blocker for RAG testing framework implementation is resolved.
+  - Links: [Ref: ActiveContext 2025-05-01 02:55:24], [Ref: SPARC MB Delegation Log 2025-05-01 02:49:40], [Ref: debug.md 2025-05-01 02:55:24], [Ref: System Patterns 2025-05-01 02:55:24] (To be added)
+- **[2025-05-01 02:54:03] - RAG Testing Framework Mocking Error - Resolved**
+  - Status: Resolved by `debug` mode.
+  - Details: Fixed persistent `StopIteration`/`RuntimeError` in `__tests__/python/test_run_rag_tests.py` by refactoring the preceding test (`test_main_loads_manifest_and_runs_tests_revised`) to use `mocker.patch` instead of `unittest.mock.patch`, preventing mock state leakage. Commit: `eb0494c`.
+  - Links: [Ref: ActiveContext 2025-05-01 02:54:03], [Ref: Debug Issue RAG-MOCK-LEAK-01]
+- **[2025-05-01 02:37:29] - RAG Testing Framework Implementation - Blocked**
+  - Status: Blocked (Returned Early by `tdd` mode).
+  - Details: Implementation of `scripts/run_rag_tests.py` structure (Cycles 1-4) completed. Blocked by persistent mocking/patching errors (`StopIteration`/`RuntimeError`) during TDD Cycle 5 (`run_single_test`). Context size also reached 54%. Requires investigation into mocking strategy or alternative testing approach for `run_single_test`.
+  - Links: [Ref: ActiveContext 2025-05-01 02:37:29], [Ref: SPARC MB Delegation Log 2025-05-01 01:56:37], [Ref: tdd-feedback.md 2025-05-01 02:37:29]
+- **[2025-05-01 01:52:43] - Documentation Cleanup Completed**
+  - Status: Completed by `docs-writer` mode.
+  - Details: Reviewed documentation files. Archived 7 obsolete files (related to old ID lookup, QA reports, etc.) to `docs/archive/`. Commit: `d05c05b`. Identified 4 files needing updates (`rag-pipeline-implementation-spec.md`, `architecture/rag-pipeline.md`, `pdf-processing-implementation-spec.md`, `zlibrary_repo_overview.md`).
+  - Links: [Ref: ActiveContext 2025-05-01 01:52:43], [Ref: SPARC MB Delegation Log 2025-05-01 01:31:58]
 - **[2025-05-01 01:51:18] - DevOps Task Completed** - Archived obsolete documentation files (`docs/internal-id-lookup-spec.md`, `docs/search-first-id-lookup-spec.md`, `docs/rag-output-qa-report.md`, `docs/codebase-status-report-20250414.md`, `docs/mcp-client-tool-failure-analysis.md`, `docs/mcp-server-comparison-report.md`, `docs/migration-strategy-evaluation-INT001.md`) to `docs/archive/`. Commit: `d05c05b`. [Ref: Task 2025-05-01 01:46:00]
 - **[2025-05-01 01:31:01] - Feature: RAG Robustness Enhancements - Completed**
   - Status: Completed by `tdd` mode.
@@ -158,11 +208,25 @@
 - **Context**: Refactoring `lib/python_bridge.py` for modularity.
 - **Problem**: `lib/python_bridge.py` exceeded line limits due to inclusion of extensive RAG document processing logic (PDF/EPUB/TXT parsing, Markdown generation, file saving).
 - **Solution**: Extracted all RAG-specific functions (`process_epub`, `process_txt`, `process_pdf`, `save_processed_text`, and associated helpers like `_analyze_pdf_block`, `_format_pdf_markdown`, `_epub_node_to_markdown`, `_html_to_text`) into a new dedicated module: `lib/rag_processing.py`. The main `python_bridge.py` now imports and calls functions from this module.
+### Pattern: Mock State Leakage (unittest.mock vs pytest-mock) - [2025-05-01 02:54:03]
+- **Context**: Pytest suite with multiple tests using mocking (`unittest.mock`, `pytest-mock`).
+- **Problem**: A test (`test_run_single_test_calls_processing_and_eval`) failed with `StopIteration`/`RuntimeError` when run as part of the suite, but passed in isolation. The error occurred within `unittest.mock` machinery, indicating an exhausted iterator `side_effect`, even though the test used `return_value` or callable `side_effect`.
+- **Cause**: The preceding test (`test_main_loads_manifest_and_runs_tests_revised`) used `unittest.mock.patch` and manual mock assignment, including a list iterator `side_effect`. This state leaked into the subsequent test, corrupting the `side_effect` attribute of manually created `MagicMock` instances in that test, despite attempts to reset (`mocker.resetall`, explicit `side_effect=None`).
+- **Solution**: Refactor the *preceding* test (`test_main_loads_manifest_and_runs_tests_revised`) to use `mocker.patch` (from `pytest-mock`) exclusively. This ensures proper mock isolation and cleanup between tests managed by the `pytest-mock` fixture.
+- **Components**: `__tests__/python/test_run_rag_tests.py`
+- **Related**: [Debug Issue RAG-MOCK-LEAK-01]
 - **Components**: `lib/python_bridge.py` (modified), `lib/rag_processing.py` (new).
 - **Impact**: Improved modularity and maintainability. Reduced `lib/python_bridge.py` line count significantly.
 - **Related**: Task [Refactor Python Bridge (`lib/python_bridge.py`) 2025-04-29 15:43:24]
 # System Patterns
 ### Pattern: RAG Pipeline File Output - [2025-04-23 23:30:58]
+### Pattern: Conflicting Function Definitions - [2025-05-01 03:09:11]
+- **Context**: Python file (`scripts/run_rag_tests.py`) modified during TDD cycles.
+- **Problem**: A function (`evaluate_output`) was defined twice within the same file. The second definition, likely added during a refactoring step (e.g., adding type hints), unintentionally overwrote the first definition containing the correct logic for the current TDD cycle. This caused tests to fail by executing the incorrect (overwriting) function body.
+- **Cause**: Lack of awareness or check for existing function definitions before adding a new one, possibly during refactoring or merging code snippets.
+- **Solution**: Identify and remove the duplicate/overwriting function definition, ensuring only the intended version remains.
+- **Components**: `scripts/run_rag_tests.py`
+- **Related**: [Debug Issue RAG-TEST-CONFLICT-01]
 - **Context**: Processing documents (EPUB, TXT, PDF) for RAG workflows.
 - **Problem**: Returning large amounts of extracted text directly via MCP tool results causes agent instability and context overload.
 - **Solution**: Modify RAG processing tools (`process_document_for_rag`, combined `download_book_to_file`) to save the extracted/processed text to a dedicated file (e.g., `./processed_rag_output/<original_filename>.processed.txt`). The tools return the path (`processed_file_path`) to this output file instead of the content itself.

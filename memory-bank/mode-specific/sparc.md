@@ -1,5 +1,147 @@
 # SPARC Orchestrator Specific Memory
 <!-- Entries below should be added reverse chronologically (newest first) -->
+### [2025-05-02 05:12:40] Intervention: Incorrect Mode Usage (Debug instead of SPARC)
+- **Trigger**: User feedback
+- **Context**: Attempted file edits (`lib/rag_processing.py`) in Debug mode to fix test failures, instead of orchestrating from SPARC mode. Failed `apply_diff` and `write_to_file` attempts occurred.
+- **Action Taken**: Acknowledged error, logged intervention in activeContext and sparc.md. Preparing to revert any potential changes and reassess task.
+- **Rationale**: Debug mode is for troubleshooting specific issues; SPARC mode should orchestrate task delegation, including fixes. Direct edits in Debug were inappropriate for the workflow stage.
+- **Outcome**: Returned to SPARC mode. Incorrect edits were not applied due to tool failures.
+- **Follow-up**: Ensure `lib/rag_processing.py` is in its original state (check git status). Reassess original task (Git debt / test failure investigation) and delegate appropriately.
+### [2025-05-01 03:04:19] Intervention: Delegate Clause Triggered (Context 83%)
+- **Trigger**: Context window size reached 83%.
+- **Context**: Received early return from `tdd` mode for RAG testing framework implementation (Cycle 6). Task blocked by persistent test failure (`AssertionError` suggesting outdated code execution). Memory Bank updated. Preparing handover.
+- **Action Taken**: Halted task planning. Initiating handover process as per Delegate Clause.
+- **Rationale**: Proactively manage context window limitations to prevent performance degradation or failure, especially given the recurring blocking issues.
+- **Outcome**: Handover to new SPARC instance to be initiated via `new_task`.
+- **Follow-up**: New SPARC instance to take over orchestration, starting by delegating the investigation of the persistent test failure to `debug` mode. [Ref: ActiveContext 2025-05-01 03:03:51, GlobalContext 2025-05-01 03:04:04, tdd-feedback.md 2025-05-01 03:03:23]
+### [2025-05-02 03:28:09] Task: Stage and Commit Garbled Text Detection Changes (TDD Cycle 23)
+- Assigned to: devops
+- Description: Create patch, stage, and commit only the Garbled Text Detection changes (TDD Cycle 23). [Ref: ActiveContext 2025-05-02 03:27:35]
+- Expected deliverable: Committed changes for garbled text detection.
+- Status: failed (Early Return)
+- Completion time: [2025-05-02 03:39:15]
+- Outcome: FAILED. `devops` mode encountered persistent Git staging errors ("no changes added to commit") despite troubleshooting (index rebuild, etc.). Suspected repository state issue. Manual investigation recommended. Git debt cleanup blocked. [Ref: ActiveContext 2025-05-02 03:39:15, DevOps Completion 2025-05-02 03:39:15, devops-feedback.md 2025-05-02 03:39:15]
+- Link to Progress Entry: N/A
+### [2025-05-02 03:22:16] Task: Stage and Commit PDF Quality Detection Changes (TDD Cycle 22)
+- Assigned to: devops
+- Description: Create patch, stage, and commit only the PDF Quality Detection changes (TDD Cycle 22). [Ref: ActiveContext 2025-05-02 03:22:02]
+- Expected deliverable: Committed changes for PDF quality detection.
+- Status: completed
+- Completion time: [2025-05-02 03:27:12]
+- Outcome: SUCCESS (No Action Needed). `devops` mode confirmed Cycle 22 changes were already included in commit `13c826b`. No new commit required. MB updated by DevOps (commit `3587dba`). [Ref: ActiveContext 2025-05-02 03:27:12, DevOps Completion 2025-05-02 03:27:12]
+- Link to Progress Entry: [GlobalContext Progress 2025-05-02 03:27:12] (Added by DevOps)
+### [2025-05-02 03:11:52] Task: Stage and Commit OCR Refactor Changes (TDD Cycle 21)
+- Assigned to: devops
+- Description: Create patch, stage, and commit only the OCR refactor changes (TDD Cycle 21) due to SPARC mode restrictions. [Ref: ActiveContext 2025-05-02 03:06:00]
+- Expected deliverable: Committed changes for OCR refactor.
+- Status: completed
+- Completion time: [2025-05-02 03:21:23]
+- Outcome: SUCCESS. `devops` mode committed the OCR refactor changes. Commit: `13c826b`. [Ref: ActiveContext 2025-05-02 03:21:23, DevOps Completion 2025-05-02 03:21:23]
+- Link to Progress Entry: [GlobalContext Progress 2025-05-02 03:21:23] (Added by DevOps)
+### [2025-05-01 23:44:35] Task: Resolve Tool Failure & Add `detect_garbled_text` Function (Cycle 23 Green)
+- Assigned to: debug
+- Description: Investigate tool failures (`apply_diff`, `write_to_file`) blocking addition of `detect_garbled_text` function in `lib/rag_processing.py` for TDD Cycle 23 Green phase. [Ref: ActiveContext 2025-05-01 23:43:47]
+- Expected deliverable: Function added or analysis of tool failures.
+- Status: completed
+- Completion time: [2025-05-02 02:34:25]
+- Outcome: SUCCESS. `debug` mode found the `detect_garbled_text` function already existed in `lib/rag_processing.py`. Verified via pytest. Blocker for TDD Cycle 23 Green phase removed. Cause of original tool errors unclear but irrelevant now. Noted 6 unrelated test failures. [Ref: ActiveContext 2025-05-02 02:34:25, Debug Completion 2025-05-02 02:34:25]
+- Link to Progress Entry: [GlobalContext Progress 2025-05-02 02:34:25] (Added by Debug)
+### [2025-05-01 23:28:30] Task: Implement RAG Garbled Text Detection (TDD Cycle 23)
+- Assigned to: tdd
+- Description: Start TDD Cycle 23 for Garbled Text Detection. [Ref: ActiveContext 2025-05-01 23:27:57]
+- Expected deliverable: Completed Cycle 23 or detailed report on blockers.
+- Status: failed (Early Return)
+- Completion time: [2025-05-01 23:43:10]
+- Outcome: FAILED (Early Return). `tdd` mode completed Red phase. Blocked during Green phase by persistent `apply_diff` and `write_to_file` errors when adding `detect_garbled_text` function to `lib/rag_processing.py`. [Ref: ActiveContext 2025-05-01 23:43:47, TDD Early Return 2025-05-01 23:43:10]
+- Link to Progress Entry: [GlobalContext Progress 2025-05-01 23:43:10] (To be added by TDD)
+### [2025-05-01 23:28:30] Task: Implement RAG Garbled Text Detection (TDD Cycle 23)
+- Assigned to: tdd
+- Description: Start TDD Cycle 23 for Garbled Text Detection. [Ref: ActiveContext 2025-05-01 23:27:57]
+- Expected deliverable: Completed Cycle 23 or detailed report on blockers.
+- Status: failed (Early Return)
+- Completion time: [2025-05-01 23:43:10]
+- Outcome: FAILED (Early Return). `tdd` mode completed Red phase. Blocked during Green phase by persistent `apply_diff` and `write_to_file` errors when adding `detect_garbled_text` function to `lib/rag_processing.py`. [Ref: ActiveContext 2025-05-01 23:43:10, TDD Early Return 2025-05-01 23:43:10]
+- Link to Progress Entry: [GlobalContext Progress 2025-05-01 23:43:10] (To be added by TDD)
+### [2025-05-01 23:22:23] Task: Complete RAG TDD Cycle 22 Refactor (Import Cleanup - `write_to_file` Workaround)
+- Assigned to: tdd
+- Description: Complete Cycle 22 Refactor by removing commented imports in `__tests__/python/test_rag_processing.py` using `write_to_file`. [Ref: ActiveContext 2025-05-01 23:19:38]
+- Expected deliverable: Cleaned test file, passing pytest, Cycle 22 complete.
+- Status: completed
+- Completion time: [2025-05-01 23:27:57]
+- Outcome: SUCCESS. `tdd` mode used `write_to_file` to remove commented imports. `pytest` confirmed no regressions (43 passed, 1 xfailed). Cycle 22 is complete. [Ref: ActiveContext 2025-05-01 23:27:57, TDD Completion 2025-05-01 23:27:57]
+- Link to Progress Entry: [GlobalContext Progress 2025-05-01 23:27:57] (Added by TDD)
+### [2025-05-01 19:30:26] Task: Resume RAG Testing Framework Implementation (TDD Cycle 22 - Green Phase)
+- Assigned to: tdd
+- Description: Resume TDD Cycle 22 Green phase after debug fix for PDF quality heuristic. [Ref: ActiveContext 2025-05-01 19:29:38]
+- Expected deliverable: Completed Cycle 22 or detailed report on blockers.
+- Status: failed (Early Return)
+- Completion time: [2025-05-01 23:18:41]
+- Outcome: FAILED (Early Return). `tdd` mode verified debug fix, fixed regressions, completed part of Cycle 22 Refactor (constants, helper function). Blocked by persistent `apply_diff` failures during import cleanup in `__tests__/python/test_rag_processing.py`. Context reported as 45%. [Ref: ActiveContext 2025-05-01 23:19:38, TDD Early Return 2025-05-01 23:18:41]
+- Link to Progress Entry: [GlobalContext Progress 2025-05-01 23:18:41] (To be added by TDD)
+### [2025-05-01 19:24:53] Task: Debug PDF Quality Detection Heuristic (Cycle 22 Green Phase)
+- Assigned to: debug
+- Description: Debug heuristic logic in `detect_pdf_quality` causing misclassification of IMAGE_ONLY PDFs. [Ref: ActiveContext 2025-05-01 19:24:19, tdd-feedback.md 2025-05-01 17:43:47]
+- Expected deliverable: Corrected heuristic logic, passing tests for `IMAGE_ONLY` classification.
+- Status: completed
+- Completion time: [2025-05-01 19:28:40]
+- Outcome: SUCCESS. `debug` mode fixed the heuristic by prioritizing low text density for `IMAGE_ONLY` classification. Tests `test_detect_quality_image_only` and `test_detect_quality_suggests_ocr_for_image_only` now pass. Blocker removed. [Ref: ActiveContext 2025-05-01 19:29:38, Debug Completion 2025-05-01 19:28:40]
+- Link to Progress Entry: [GlobalContext Progress 2025-05-01 19:28:40] (Added by Debug)
+### [2025-05-01 13:56:26] Task: Resume RAG Testing Framework Implementation (TDD Cycle 22 - PDF Quality)
+- Assigned to: tdd
+- Description: Resume TDD Cycle 22 (PDF Quality Detection) from Red phase after debug fixes. [Ref: ActiveContext 2025-05-01 13:55:58]
+- Expected deliverable: Completed Cycle 22 or detailed report on blockers.
+- Status: failed (Interrupted - Context Limit)
+- Completion time: [2025-05-01 19:24:19]
+- Outcome: FAILED (Interrupted). Task halted due to context limit during Cycle 22 Green phase. Persistent test failures in `detect_pdf_quality` heuristic (IMAGE_ONLY vs TEXT_LOW). [Ref: ActiveContext 2025-05-01 19:24:19, TDD Early Return 2025-05-01 19:24:19]
+- Link to Progress Entry: [GlobalContext Progress 2025-05-01 19:24:19] (To be added by TDD)
+### [2025-05-01 13:37:57] Task: Resolve Blockers for TDD Cycle 22 (RAG PDF Quality Detection)
+- Assigned to: debug
+- Description: Investigate and resolve function rename, test update, and Tesseract mocking issues blocking TDD Cycle 22. [Ref: ActiveContext 2025-05-01 13:37:11, tdd-feedback.md 2025-05-01 12:45:00]
+- Expected deliverable: Corrected code/tests, `pytest` passing without rename/mocking errors.
+- Status: completed
+- Completion time: [2025-05-01 13:55:58]
+- Outcome: SUCCESS. `debug` mode resolved rename issues (`detect_pdf_quality`), updated test mocks/assertions, and fixed Tesseract mocking strategy. `pytest __tests__/python/test_rag_processing.py` passes (37 passed, 7 xfailed). Blockers removed. [Ref: ActiveContext 2025-05-01 13:55:58, Debug Completion 2025-05-01 13:55:58]
+- Link to Progress Entry: [GlobalContext Progress 2025-05-01 13:55:58] (Added by Debug)
+### [2025-05-01 11:40:57] Task: Implement Advanced Features for RAG Testing Framework (TDD Cycle 19+)
+- Assigned to: tdd
+- Description: Implement advanced features (download, eval, preprocessing) starting Cycle 19. [Ref: ActiveContext 2025-05-01 11:40:37]
+- Expected deliverable: Implemented features or detailed report on blockers.
+- Status: failed (Early Return)
+- Completion time: [2025-05-01 13:37:11]
+- Outcome: FAILED (Early Return). `tdd` mode completed Cycles 19-21. Blocked during Cycle 22 (PDF Quality) due to persistent `apply_diff` errors, subsequent `AttributeError`/`NameError`, mocking complexity (`TesseractNotFoundError`), and high context (79%). [Ref: ActiveContext 2025-05-01 13:37:11, tdd-feedback.md 2025-05-01 13:37:11]
+- Link to Progress Entry: [GlobalContext Progress 2025-05-01 13:37:11] (To be added by TDD)
+### [2025-05-01 11:22:34] Task: Continue RAG Testing Framework Implementation (TDD Cycle 14+)
+- Assigned to: tdd
+- Description: Continue TDD implementation from Cycle 14 Red. [Ref: ActiveContext 2025-05-01 11:22:09]
+- Expected deliverable: Completed core implementation or detailed report on blockers.
+- Status: completed
+- Completion time: [2025-05-01 11:40:37]
+- Outcome: SUCCESS. `tdd` mode completed Cycles 14-18, implementing core script structure (`generate_report`, `main`). All 25 tests pass. Recommended delegation for next phase due to context size (46%). [Ref: ActiveContext 2025-05-01 11:40:37]
+- Link to Progress Entry: [GlobalContext Progress 2025-05-01 11:40:37] (To be added by TDD)
+### [2025-05-01 11:15:06] Task: Complete RAG Testing Framework TDD Cycle 13 Refactor (Using `write_to_file`)
+- Assigned to: tdd
+- Description: Complete Cycle 13 Refactor using `write_to_file` due to previous `apply_diff` failures. [Ref: ActiveContext 2025-05-01 11:14:30]
+- Expected deliverable: Refactored code, passing tests.
+- Status: completed
+- Completion time: [2025-05-01 11:22:09]
+- Outcome: SUCCESS. `tdd` mode successfully refactored `determine_pass_fail` and removed xfail marker using `write_to_file`. Tests pass. Ready for Cycle 14. [Ref: ActiveContext 2025-05-01 11:22:09]
+- Link to Progress Entry: [GlobalContext Progress 2025-05-01 11:22:09] (To be added by TDD)
+### [2025-05-01 03:10:26] Task: Resume RAG Testing Framework Implementation (TDD Cycle 6+)
+- Assigned to: tdd
+- Description: Resume TDD implementation from Cycle 6 Green after debug fix. [Ref: ActiveContext 2025-05-01 03:10:15]
+- Expected deliverable: Completed implementation or detailed report on blockers.
+- Status: failed (Early Return)
+- Completion time: [2025-05-01 11:14:30]
+- Outcome: FAILED (Early Return). `tdd` mode completed Cycles 6-12 and Cycle 13 Green. Blocked during Cycle 13 Refactor due to persistent `apply_diff` failures. Context reported as 53% (manual calc: 13.6%). [Ref: ActiveContext 2025-05-01 11:14:30, tdd-feedback.md 2025-05-01 11:14:30]
+- Link to Progress Entry: [GlobalContext Progress 2025-05-01 11:14:30] (To be added by TDD)
+### [2025-05-01 03:06:00] Task: Debug Persistent `AssertionError` in RAG Test Framework
+- Assigned to: debug
+- Description: Investigate root cause of persistent `AssertionError` in `test_evaluate_output_returns_expected_keys`, likely due to outdated code execution in test environment. [Ref: ActiveContext 2025-05-01 03:03:51, tdd-feedback.md 2025-05-01 03:03:23]
+- Expected deliverable: Root cause analysis, applied fix, confirmation of passing test.
+- Status: completed
+- Completion time: [2025-05-01 03:09:58]
+- Outcome: SUCCESS. Root cause identified as conflicting function definition in `scripts/run_rag_tests.py`. Conflicting definition removed. Test now passes. [Ref: Debug Completion 2025-05-01 03:09:58]
+- Link to Progress Entry: [GlobalContext Progress 2025-05-01 03:09:58] (To be added by Debug)
 ### [2025-04-29 11:14:22] Intervention: Delegate Clause Triggered (Context 106%)
 - **Trigger**: Context window size reached 106%.
 - **Context**: Received successful completion from `debug` mode for RAG PDF footnote logic fix. Memory Bank updated. Preparing handover before regression testing.
@@ -595,6 +737,38 @@
 - Outcome: Confirmed hypotheses: Invalid Node.js import (`require('@modelcontextprotocol/sdk/lib/index')`) and unreliable Python environment management (mismatched global `pip`/`python3`).
 - Link to Progress Entry: N/A
 
+### [2025-05-01 02:56:06] Task: Resume RAG Testing Framework Implementation (TDD Cycle 5+)
+- Assigned to: tdd
+- Description: Resume implementation of `scripts/run_rag_tests.py` from TDD Cycle 5 (Green) after mocking issue resolution. [Ref: Task Delegation 2025-05-01 02:56:06]
+- Expected deliverable: Further implemented script, updated tests, passing suite, commit hash, MB updates.
+- Status: blocked (Returned Early)
+- Completion time: [2025-05-01 03:03:23]
+- Outcome: PARTIAL. Verified previous mocking fix. Completed TDD Cycle 5 Refactor (type hints). BLOCKED during TDD Cycle 6 (Green) by persistent `AssertionError` in `test_evaluate_output_returns_expected_keys`, indicating test runner executing outdated code despite troubleshooting (cache clearing, `conftest.py`, `importlib.reload`). [Ref: ActiveContext 2025-05-01 03:03:23, tdd-feedback.md 2025-05-01 03:03:23]
+- Link to Progress Entry: [Ref: GlobalContext 2025-05-01 03:03:23] (To be added)
+### [2025-05-01 02:49:40] Task: Debug Persistent Mocking Error in RAG Test Framework
+- Assigned to: debug
+- Description: Investigate and resolve persistent mocking error (`StopIteration`/`RuntimeError`) in `__tests__/python/test_run_rag_tests.py::test_run_single_test_calls_processing_and_eval`. [Ref: Task Delegation 2025-05-01 02:49:40]
+- Expected deliverable: Root cause analysis, applied fix, confirmation of passing tests, commit hash, MB updates.
+- Status: completed
+- Completion time: [2025-05-01 02:55:24]
+- Outcome: SUCCESS. Root cause identified as mock state leakage from preceding test (`test_main_loads_manifest_and_runs_tests_revised`) using `unittest.mock.patch`. Fixed by refactoring the preceding test to use `mocker.patch` for proper isolation. Test suite `__tests__/python/test_run_rag_tests.py` now passes. Commit: `eb0494c`. [Ref: ActiveContext 2025-05-01 02:55:24, debug.md 2025-05-01 02:55:24]
+- Link to Progress Entry: [Ref: GlobalContext 2025-05-01 02:55:24] (To be added)
+### [2025-05-01 01:56:37] Task: Implement RAG Real-World Testing Framework Script (TDD)
+- Assigned to: tdd
+- Description: Implement the core structure and execution flow of `scripts/run_rag_tests.py` per spec `docs/rag-robustness-enhancement-spec.md` (Sections 2 & 9.4). [Ref: Task Delegation 2025-05-01 01:56:37]
+- Expected deliverable: Implemented script, unit tests, sample manifest, passing test suite, commit hash, MB updates.
+- Status: blocked (Returned Early)
+- Completion time: [2025-05-01 02:37:29]
+- Outcome: PARTIAL. Implemented basic script structure, arg parsing, manifest loading, and main loop structure (TDD Cycles 1-4). Created `scripts/run_rag_tests.py`, `__tests__/python/test_run_rag_tests.py`, `scripts/sample_manifest.json`. BLOCKED by persistent mocking/patching errors (`StopIteration`/`RuntimeError`) when attempting TDD Cycle 5 (Red) for `run_single_test`. Context size reached 54%. [Ref: ActiveContext 2025-05-01 02:37:29, tdd-feedback.md 2025-05-01 02:37:29]
+- Link to Progress Entry: [Ref: GlobalContext 2025-05-01 02:37:29] (To be added)
+### [2025-05-01 01:31:58] Task: Clean Up Documentation Files (Holistic Review Follow-up)
+- Assigned to: docs-writer
+- Description: Review existing documentation files, identify obsolete/superseded documents, and propose/execute actions (archive, update, delete). [Ref: Task Delegation 2025-05-01 01:31:58]
+- Expected deliverable: Report, archived files (if applicable), commit hash, MB updates.
+- Status: completed
+- Completion time: [2025-05-01 01:52:43]
+- Outcome: SUCCESS. Reviewed docs, archived 7 obsolete files (`internal-id-lookup-spec.md`, `search-first-id-lookup-spec.md`, `rag-output-qa-report.md`, etc.) to `docs/archive/`. Commit: `d05c05b`. Identified 4 files needing updates (`rag-pipeline-implementation-spec.md`, `architecture/rag-pipeline.md`, `pdf-processing-implementation-spec.md`, `zlibrary_repo_overview.md`). [Ref: ActiveContext 2025-05-01 01:52:43, docs-writer.md 2025-05-01 01:52:43]
+- Link to Progress Entry: [Ref: GlobalContext 2025-05-01 01:52:43] (To be added)
 ## Delegations Log
 ### [2025-04-29 17:10:29] Task: Final Integration Check & Completion Summary
 - Assigned to: integration

@@ -69,3 +69,6 @@ processed_rag_output/
 test_dl/
 test_out/
 test_output/
+
+# Ignore MagicMock outputs
+MagicMock/

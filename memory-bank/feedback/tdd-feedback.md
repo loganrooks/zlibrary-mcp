@@ -1,3 +1,130 @@
+### [2025-05-01 23:42:36] - TDD - Early Return: Persistent Tool Failures during Cycle 23 Green Phase
+- **Trigger**: Tool error (`write_to_file`) after previous `apply_diff` failures.
+- **Context**: Attempting Green phase for TDD Cycle 23 (Garbled Text Detection). Added failing tests successfully. Attempted to add `detect_garbled_text` function to `lib/rag_processing.py`.
+- **Issue**:
+    - `apply_diff` failed twice with "No sufficiently similar match found" errors, even after re-reading the file, due to significant content mismatch around the target line (745).
+    - Attempted `write_to_file` workaround with the full file content plus the new function. This failed with `Error: Illegal value for \`line\``, which is unexpected for this tool and may indicate an internal issue or problem handling the large file size (~1121 lines).
+- **Attempted Steps**:
+    - Added failing tests using `apply_diff` (Success).
+    - Attempted to add function using `apply_diff` (Failed - content mismatch).
+    - Re-read source file.
+    - Attempted to add function using `apply_diff` again (Failed - content mismatch).
+    - Re-read source file.
+    - Attempted to add function using `write_to_file` with full content (Failed - "Illegal value for `line`").
+- **Action**: Returning early due to intractable tool issues (`apply_diff`, `write_to_file`) preventing completion of the Green phase. Context size is also increasing (~25%).
+- **Recommendation**: Delegate task continuation to a new instance or `debug` mode via `new_task`. Focus should be on diagnosing the tool failures (`apply_diff` similarity, `write_to_file` line error) or manually adding the `detect_garbled_text` function to `lib/rag_processing.py`. Provide current file states (`__tests__/python/test_rag_processing.py`, `lib/rag_processing.py`) and this feedback.
+### [2025-05-01 23:18:41] - TDD - Early Return: Persistent `apply_diff` Failures during Cycle 22 Refactor
+- **Trigger**: User feedback and persistent tool errors.
+- **Context**: Attempting Refactor phase for TDD Cycle 22 (PDF Quality Detection). Successfully moved constants in `lib/rag_processing.py` and extracted heuristic logic into `_determine_pdf_quality_category`. Tests passed after these steps. Attempted to refactor `__tests__/python/test_rag_processing.py` to move local imports to the top level.
+- **Issue**: Encountered repeated `apply_diff` failures when trying to remove commented-out local import lines after successfully adding the top-level imports. Errors included "No sufficiently similar match found" and "Unexpected end of sequence: Expected '=======' was not found", even after re-reading the file to ensure correct line numbers and content. This prevented the completion of the import refactoring step. Context size reached 44%.
+- **Attempted Steps**:
+    - Moved constants in `lib/rag_processing.py` (Success).
+    - Extracted helper function in `lib/rag_processing.py` (Success).
+    - Ran tests (Passed).
+    - Attempted multi-block `apply_diff` to add top-level imports and remove local imports in `__tests__/python/test_rag_processing.py` (Partial success - imports added, removals failed).
+    - Re-read test file.
+    - Attempted `apply_diff` again to remove remaining commented-out local imports (Failed - similarity/format error).
+- **Action**: Returning early due to intractable `apply_diff` tool issues preventing completion of the refactoring phase.
+- **Recommendation**: Delegate task continuation to a new instance or `debug` mode via `new_task`. Focus should be on resolving the `apply_diff` issue or manually completing the import refactoring in `__tests__/python/test_rag_processing.py` (removing commented-out local imports). Provide current file states and this feedback.
+### [2025-05-01 23:27:27] - Info: `write_to_file` Workaround Successful for Cycle 22 Refactor
+*   **Source**: Task: Complete RAG TDD Cycle 22 Refactor (Import Cleanup - `write_to_file` Workaround) [Ref: Task 2025-05-01 23:22:40]
+*   **Issue**: Previous attempt at Cycle 22 Refactor failed due to persistent `apply_diff` errors when removing commented-out local imports [Ref: tdd-feedback.md 2025-05-01 23:18:41].
+*   **Action**: Used `write_to_file` tool as instructed to apply the import cleanup changes to `__tests__/python/test_rag_processing.py`. Read the full file content, removed the redundant local imports and comment, and wrote the complete modified content back.
+*   **Outcome**: `write_to_file` operation succeeded. Subsequent `pytest __tests__/python/test_rag_processing.py` run confirmed tests passed (43 passed, 1 xfailed). The workaround successfully completed the final step of the refactoring phase for Cycle 22.
+*   **Learning**: Confirmed `write_to_file` is a viable workaround for persistent `apply_diff` issues, provided the full file content is carefully managed.
+### [2025-05-01 17:43:47] - TDD - Early Return: Context Limit Exceeded during Cycle 22 (PDF Quality)
+- **Trigger**: User instruction due to context window limit.
+- **Context**: Attempting Green phase for TDD Cycle 22 (PDF Quality Detection). Multiple attempts (Attempts 11-17) made to refine heuristics in `lib/rag_processing.py::detect_pdf_quality`.
+- **Action Taken**: Halted task execution.
+- **Rationale**: Context window limit exceeded, preventing further effective work.
+- **Outcome**: Task incomplete. `detect_pdf_quality` still fails tests `test_detect_quality_image_only` and `test_detect_quality_suggests_ocr_for_image_only` (incorrectly classifying as `TEXT_LOW`). `test_detect_quality_text_high` also fails (known limitation). 4 unrelated tests also failing.
+- **Follow-up**: Requires a new task with reduced context or a different debugging strategy for the `detect_pdf_quality` heuristics. The logic distinguishing `IMAGE_ONLY` based on density and image ratio needs review.
+### [2025-05-01 12:45:00] - Early Return: TDD Cycle 22 (PDF Quality Detection)
+- **Task:** Implement Advanced Features for RAG Testing Framework (TDD Cycle 19+)
+- **Issue:** Encountered persistent `apply_diff` failures when renaming `_analyze_pdf_quality` to `detect_pdf_quality` and updating related tests (`test_integration_pdf_preprocessing`, `test_process_pdf_triggers_ocr_*`, `test_process_pdf_skips_ocr_on_good_quality`). Subsequent `pytest` runs showed `AttributeError` or `NameError` related to the renamed function or its mocks, indicating the diffs were not fully applied or reverted inconsistently. Also encountered `ModuleNotFoundError` and `AssertionError` in OCR tests (`test_run_ocr_on_pdf_handles_tesseract_not_found`) due to complex mocking interactions with conditionally imported libraries. Context window usage reached 78%, hindering further effective debugging.
+- **Attempted Steps:**
+    - Renamed `_analyze_pdf_quality` -> `detect_pdf_quality` in `lib/rag_processing.py`.
+    - Attempted multiple `apply_diff` calls to update mock targets in `__tests__/python/test_rag_processing.py`.
+    - Attempted `apply_diff` to fix mocking strategy for `TesseractNotFoundError` in `test_run_ocr_on_pdf_handles_tesseract_not_found`.
+    - Used `read_file` multiple times to verify file state before retrying diffs.
+- **Status:** Returning early due to context limits and persistent tool/mocking issues preventing reliable progress on TDD Cycle 22 (Red Phase - establishing failing tests for `detect_pdf_quality`).
+### [2025-05-01 11:21:33] - Info: `write_to_file` Workaround Successful for Cycle 13 Refactor
+*   **Source**: Task: Complete RAG Testing Framework TDD Cycle 13 Refactor (Using `write_to_file`) [Ref: Task 2025-05-01 11:15:18]
+*   **Issue**: Previous attempt at Cycle 13 Refactor failed due to persistent `apply_diff` errors [Ref: tdd-feedback.md 2025-05-01 03:41:06].
+*   **Action**: Used `write_to_file` tool as instructed to apply refactoring changes to `scripts/run_rag_tests.py` (logic order, comments) and `__tests__/python/test_run_rag_tests.py` (removed xfail marker).
+*   **Outcome**: `write_to_file` operations succeeded. Subsequent `pytest` run confirmed all tests passed (19/19). The workaround was successful in completing the refactor phase.
+*   **Learning**: `write_to_file` can be a viable, albeit less surgical, alternative when `apply_diff` fails persistently, but requires careful provision of the complete file content.
+### [2025-05-01 03:41:06] - Early Return: RAG Testing Framework - Persistent `apply_diff` Failures (Cycle 13)
+*   **Source**: Task: Resume RAG Testing Framework Implementation (TDD Cycle 6+) [Ref: ActiveContext 2025-05-01 03:10:15]
+*   **Issue**: Encountered persistent `apply_diff` failures when attempting to refactor `scripts/run_rag_tests.py` and `__tests__/python/test_run_rag_tests.py` during TDD Cycles 12 and 13. Errors consistently indicated "No sufficiently similar match found" despite re-reading the file immediately before attempting the diff. This suggests issues with the diff tool's ability to handle the specific changes or potential subtle inconsistencies introduced by previous edits (including `write_to_file`). Context size also reached 53%.
+*   **Context Size**: ~53%
+*   **Attempted Steps**:
+    *   Completed TDD Cycles 6-12 (Red, Green, Refactor) for `evaluate_output` and `determine_pass_fail` basic logic.
+    *   Attempted Cycle 13 Red: Added test `test_determine_pass_fail_fails_on_noise`. Confirmed xfail.
+    *   Attempted Cycle 13 Green: Added noise check logic to `determine_pass_fail`. Test `test_determine_pass_fail_fails_on_noise` xpassed.
+    *   Attempted Cycle 13 Refactor:
+        *   Tried `apply_diff` to reorder logic in `determine_pass_fail` (failed - similarity).
+        *   Re-read file `scripts/run_rag_tests.py`.
+        *   Tried `apply_diff` again with updated line numbers (failed - similarity).
+        *   User invoked Early Return Clause.
+*   **Action**: Returning early due to intractable tool issues (`apply_diff`) and high context size, preventing completion of Cycle 13 Refactor.
+*   **Recommendation**: Delegate task continuation to a new instance or `debug` mode via `new_task`. Focus should be on resolving the `apply_diff` issue or using `write_to_file` cautiously for the remaining refactoring steps (removing xfail marker from `test_determine_pass_fail_fails_on_noise`). Provide current file states and this feedback.
+### [2025-05-01 03:01:49] - Early Return: RAG Testing Framework - Persistent Test Failure (Cycle 6)
+*   **Source**: Task: Resume RAG Testing Framework Implementation (TDD Cycle 5+) [Ref: ActiveContext 2025-05-01 02:56:06]
+*   **Issue**: Persistent `AssertionError` in `test_evaluate_output_returns_expected_keys`. The test runner consistently executes an outdated version of the `evaluate_output` function (returning `{}`) despite file content showing the correct implementation (`{"placeholder_metric": 0.0}`) and multiple attempts to clear caches/force reloads.
+*   **Context Size**: ~21%
+*   **Attempted Steps**:
+    *   Verified fix for Cycle 5 mocking issue (`pytest` passed).
+    *   Completed Cycle 5 Refactor (Type hints).
+    *   Started Cycle 6 Red: Added `test_evaluate_output_returns_expected_keys` (xfail confirmed).
+    *   Attempted Cycle 6 Green: Modified `evaluate_output` to return `{"placeholder_metric": 0.0}`.
+    *   Troubleshooting:
+        *   Ran `pytest` (failed).
+        *   Confirmed code change with `read_file`.
+        *   Ran `pytest -cc` (failed with `ModuleNotFoundError`).
+        *   Created `__tests__/python/conftest.py` to fix path.
+        *   Ran `pytest` (failed with original `AssertionError`).
+        *   Ran `pytest -cc` again (failed with original `AssertionError`).
+        *   Deleted `.pyc` files (`find . -name "*.pyc" -delete`).
+        *   Ran `pytest` (failed with original `AssertionError`).
+        *   Added `importlib.reload()` to test (failed with original `AssertionError`).
+        *   Reverted `importlib.reload()` change.
+*   **Action**: Returning early due to intractable test environment issue as per EARLY RETURN CLAUSE. The discrepancy between file content and test execution prevents further TDD progress.
+*   **Recommendation**: Delegate task continuation to `debug` mode via `new_task`. Focus should be on diagnosing the root cause of the persistent test failure, likely related to Python/pytest import caching, environment configuration, or potentially VS Code/tool interactions affecting test execution. Provide current file state (`scripts/run_rag_tests.py`, `__tests__/python/test_run_rag_tests.py`, `__tests__/python/conftest.py`) and this feedback.
+### [2025-05-01 02:48:59] - Early Return: RAG Testing Framework - Mocking Issue (Retry)
+*   **Source**: Task: Continue RAG Testing Framework Implementation & Resolve Mocking Issue (TDD) [Ref: ActiveContext 2025-05-01 02:37:42]
+*   **Issue**: Persistent `StopIteration` / `RuntimeError` originating from `unittest.mock` within `test_run_single_test_calls_processing_and_eval` when running the full test suite (`pytest __tests__/python/test_run_rag_tests.py`), despite the test passing when run individually. The error occurs even when using dependency injection instead of patching, suggesting a deep issue with mock state or test interactions.
+*   **Context Size**: ~33%
+*   **Attempted Steps**:
+    *   Initialized Memory Bank.
+    *   Confirmed test failure (`NameError` initially, fixed import).
+    *   Confirmed `StopIteration` error when running full suite.
+    *   Attempted troubleshooting:
+        *   Reverted `autospec=True` addition (no effect).
+        *   Refactored test from `@patch` to `with patch` (no effect).
+        *   Explicitly set `mock.side_effect = None` (no effect).
+        *   Refactored test and `run_single_test` function for dependency injection (test passed individually, but suite still failed with `StopIteration`).
+        *   Refactored `main` to pass dependencies.
+        *   Fixed `NameError` in other tests caused by removing `patch` import.
+        *   Ran suite with `pytest --stepwise` (confirmed `test_run_single_test_calls_processing_and_eval` is first failure).
+        *   Refactored test to use `mocker` fixture (removed `unittest.mock.patch` import, kept `MagicMock`). Suite still failed with `StopIteration`.
+*   **Action**: Returning early due to intractable mocking issue as per EARLY RETURN CLAUSE. The root cause seems related to test interactions or `unittest.mock` state management when running the full suite, and standard solutions have failed.
+*   **Recommendation**: Delegate task continuation to a new instance or `debug` mode via `new_task`. Focus should be on diagnosing the root cause of the `StopIteration` error during suite execution, potentially exploring pytest fixtures for setup/teardown, alternative mocking libraries, or deeper investigation into `unittest.mock` interactions. Provide current file state (`scripts/run_rag_tests.py`, `__tests__/python/test_run_rag_tests.py`) and this feedback.
+### [2025-05-01 02:18:00] - Early Return: RAG Testing Framework - TDD Cycle 5 (`run_single_test`)
+*   **Source**: Task: Implement RAG Real-World Testing Framework Script (TDD)
+*   **Issue**: Persistent test failure (`StopIteration` / `RuntimeError`) in `test_run_single_test_calls_processing_and_eval` when attempting to mock functions (`process_pdf`, `evaluate_output`, `determine_pass_fail`) within `scripts/run_rag_tests.py`. Standard patching methods (`@patch`, `with patch`, manual assignment) combined with removing `importlib.reload` and simplifying mocks (`return_value`) failed to resolve the issue. The traceback consistently indicates an unexpected attempt to iterate over a mock's `side_effect` within `unittest.mock`, even when `side_effect` was not configured as an iterator.
+*   **Context Size**: 54%
+*   **Attempted Steps**:
+    *   Created test file `__tests__/python/test_run_rag_tests.py`.
+    *   Implemented TDD cycles 1-4 successfully (script existence, arg parsing, manifest loading, main loop structure).
+    *   Attempted TDD cycle 5 for `run_single_test`.
+    *   Wrote test `test_run_single_test_calls_processing_and_eval`.
+    *   Corrected initial `AttributeError` by changing patch target from `lib.rag_processing.process_document` to `lib.rag_processing.process_pdf`.
+    *   Attempted various patching strategies (`@patch`, `with patch`, manual assignment) to resolve subsequent `StopIteration`/`RuntimeError`.
+    *   Removed `importlib.reload` calls.
+    *   Simplified mock configuration from `side_effect` list/callable to `return_value`.
+*   **Action**: Returning early due to intractable mocking/patching issues and high context size.
+*   **Recommendation**: Delegate task continuation to a new instance via `new_task`, providing the current file state (`scripts/run_rag_tests.py`, `__tests__/python/test_run_rag_tests.py`, `scripts/sample_manifest.json`) and this feedback entry as context. Focus should be on resolving the patching issue for `test_run_single_test_calls_processing_and_eval` or finding an alternative testing strategy for `run_single_test`.
 ### [2025-04-30 16:47:54] - Issue: Persistent Test Failure (test_extract_toc_basic) - RESOLUTION ATTEMPTED
 *   **Source**: Test Execution Error [2025-04-30 16:47:54]
 *   **Issue**: The test `test_extract_toc_basic` continues to fail with the same `AssertionError`, indicating ToC lines are not removed from `remaining_lines`. This persists even after multiple code corrections, clearing pycache, and a full file rewrite using `write_to_file`. The code logic appears correct based on `read_file` outputs.

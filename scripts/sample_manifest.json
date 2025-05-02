@@ -1,0 +1,11 @@
+{
+  "description": "Sample manifest for RAG testing",
+  "documents": [
+    {
+      "id": "sample_pdf_001",
+      "format": "pdf",
+      "source_url": "http://example.com/sample.pdf",
+      "local_sample_path": "__tests__/python/fixtures/rag_robustness/sample.pdf"
+    }
+  ]
+}

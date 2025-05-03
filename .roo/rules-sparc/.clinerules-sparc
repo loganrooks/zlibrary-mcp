@@ -64,18 +64,22 @@ memory_bank_strategy:
   general:
     status_prefix: "Begin EVERY response with either '[MEMORY BANK: ACTIVE]' or '[MEMORY BANK: INACTIVE]', according to the current state of the Memory Bank."
     context_management: |
-        **Proactive Context Management:** During complex or long-running tasks, be mindful of context window limitations. If you notice degraded performance, repeated errors, or difficulty recalling previous steps, **proactively suggest using `new_task` to delegate the remaining work with a clear handover**, rather than waiting for critical failure or user intervention. Explicitly state context concerns as the reason for suggesting delegation.
+      # --- DELEGATE CLAUSE (Handover Trigger - For SPARC Mode Self-Monitoring - V2) ---
+    Monitor **your own** context window size and performance. Calculate the context percentage manually (`Current Context Size (Tokens) / 1,000,000 = Context Percentage`). If **this manually calculated percentage** consistently exceeds 40-50%, OR **you** notice repeated errors or difficulty recalling steps, **you** must proactively initiate handover to a *new SPARC instance* using the `new_task` tool. Log the context concern (including the manual percentage), ensure the Memory Bank is updated, and provide a comprehensive handover message like this one. Do not wait for critical failure. **STRICTLY IGNORE the system-reported percentage for this decision.**
+
     error_handling_protocol: |
-        **Structured Error Handling:** If a tool use fails or an unexpected error occurs:
-        1. **Log:** Clearly state the error encountered.
-        2. **Analyze:** Briefly analyze the potential cause (e.g., incorrect parameters, file access issue, API error, context mismatch). Check tool documentation/schema if applicable.
-        3. **Consult MB:** Check `activeContext.md` and relevant mode-specific logs (e.g., `debug.md`) for recent similar errors or known issues.
-        4. **Propose Solution:** Based on analysis, propose a *specific* next step:
-            - Retry the tool with corrected parameters.
-            - Use a different tool to gather more info (e.g., `read_file`, `list_files`).
-            - Ask the user a *targeted* question via `ask_followup_question` if specific information is missing.
-            - Suggest delegating to `debug` mode if the cause is unclear.
-        **Avoid generic retries or immediately asking the user "What should I do?" without performing this analysis.**
+      # --- EARLY RETURN CLAUSE (Enhanced Detail - V6) ---
+      If intractable issues arise (e.g., specific test 'X' fails assertion 'Y' despite state 'Z', tool 'A' fails with error 'B', logic conflict between file 'C' and spec 'D') OR context limits (~40-50%) are approached, **STOP IMMEDIATELY**.
+      1.  **Document Thoroughly in `memory-bank/feedback/[mode]-feedback.md`:**
+          *   **Blocker:** Exact test name(s) / file / function. Exact error message(s). Relevant code snippet(s) (mock setup, implementation logic, assertion).
+          *   **Progress:** Last successful commit hash? Current test status (if applicable)? List specific implementation steps completed or tests fixed/rewritten in *this session*. Which step was being worked on?
+          *   **Attempts:** Detail specific code changes tried, mock states/contexts used, events simulated, assertions attempted, tool commands used and their *exact* outcomes (including failure messages). "Tried changing line X to Y in file Z using `apply_diff`. Diff failed: 'Could not find match'. Verified file content with `read_file` lines A-B."
+          *   **Analysis:** Detailed hypothesis for the failure. "Hypothesis: The Supabase `upsert` call in `saveAnswerService` fails because the `answers` JSONB structure doesn't match the expected input for `jsonb_set`." OR "Hypothesis: The XState machine guard 'canProceed' incorrectly evaluates context property 'P'." Reference specific lines/logic in code/specs/ADRs.
+          *   **Self-Correction/Questioning:** What was verified? Assumptions made? Alternatives considered? "Verified Supabase function definition matches DAL call." "Assumed `context.currentQuestionIndex` was sufficient for guard, but maybe `context.answers` length is also needed?" "Considered using `insert_content` + `search_and_replace` instead of `apply_diff` but didn't attempt due to..."
+          *   **Context:** Report current context window percentage.
+          *   **Detailed Recommendations:** Specific, actionable steps for the next agent. "Recommend next agent debug the `saveAnswerService` invocation in the machine, focusing on the `answers` payload structure." OR "Advise adding `context.answers` to the 'canProceed' guard condition in the machine definition." OR "Suggest manually applying the change for the `review` command test setup in `RegistrationDialog.test.tsx` as tools failed."
+      2.  **Use `attempt_completion`:** Summarize the blocker, state Early Return invoked, and explicitly reference the detailed feedback log entry.
+      3.  **Return Control:** Await instructions from SPARC.
     error_handling: |
         **Memory Bank Error Handling:** If any Memory Bank operation (`list_files`, `read_file`, `insert_content`, `apply_diff`) fails:
         1. Log the error clearly in the chat.
@@ -173,3 +177,16 @@ umb:
       2. Temporary God-Mode Activation.
       3. Core Update Process: Update `activeContext.md` and `globalContext.md`. Update `memory-bank/mode-specific/sparc.md` under relevant headers (**newest first**, except Workflow State). Update feedback file (**newest first**). Ensure consistency. **Use batch operations.**
       4. Confirm Completion: '[MEMORY BANK: UPDATED]'.
+
+
+# --- CONTEXT MONITORING & RECOVERY (V[Next Version]) ---
+# Addresses known bug in system-reported context percentage and potential context truncation.
+
+1.  **Mandatory Manual Calculation:** ALWAYS calculate the context percentage manually using the formula: `Current Context Size (Tokens) / 1,000,000 = Context Percentage`. Log this calculated percentage in thinking tags.
+2.  **Ignore System Percentage:** STRICTLY IGNORE the system-reported percentage value in `environment_details` when evaluating the `DELEGATE CLAUSE` (40-50% threshold). Base handover decisions *only* on the manually calculated percentage.
+3.  **Token Drop Detection:** Before proceeding with any new action, compare the current `Current Context Size (Tokens)` with the value from the *previous* turn (if available).
+4.  **Recovery on Token Drop:** If a significant, unexplained drop in the *token count* is detected (e.g., >10% decrease without a corresponding large file removal or handover), assume potential context truncation has occurred.
+    *   **Log:** Log the detected drop and the initiation of the recovery procedure in `activeContext.md` and the Intervention Log.
+    *   **Re-Initialize Memory Bank:** Immediately re-execute the full Memory Bank initialization procedure (Steps 1 & 2 of `if_memory_bank_exists`: read active, global, mode-specific, feedback files).
+    *   **Re-Read Key Documents:** Re-read the most recently relevant project documents (e.g., current architecture doc, plan doc, spec doc) identified in the recent chat history or Memory Bank.
+    *   **Proceed Cautiously:** Continue with the planned task only after successful re-initialization and document review.

@@ -1,5 +1,12 @@
 # SPARC Orchestrator Specific Memory
 <!-- Entries below should be added reverse chronologically (newest first) -->
+### [2025-05-02 12:03:16] Intervention: Delegate Clause Triggered (Context 83%)
+- **Trigger**: Context window size reached 83%.
+- **Context**: Received blocked completion from `debug` mode for RAG test failures. Blockers identified: missing `process_pdf` function and suspected environment/caching issues. Memory Bank updated. Preparing handover.
+- **Action Taken**: Halted task planning. Initiating handover process as per Delegate Clause.
+- **Rationale**: Proactively manage context window limitations to prevent performance degradation or failure, especially given the identified blockers requiring potentially complex investigation.
+- **Outcome**: Handover to new SPARC instance to be initiated via `new_task`.
+- **Follow-up**: New SPARC instance to take over orchestration, starting by delegating the investigation of the missing `process_pdf` function and the environment/caching issue to `debug` mode. [Ref: Debug Completion 2025-05-02 12:02:33, Delegation Log 2025-05-02 05:16:50]
 ### [2025-05-02 05:12:40] Intervention: Incorrect Mode Usage (Debug instead of SPARC)
 - **Trigger**: User feedback
 - **Context**: Attempted file edits (`lib/rag_processing.py`) in Debug mode to fix test failures, instead of orchestrating from SPARC mode. Failed `apply_diff` and `write_to_file` attempts occurred.
@@ -14,6 +21,14 @@
 - **Rationale**: Proactively manage context window limitations to prevent performance degradation or failure, especially given the recurring blocking issues.
 - **Outcome**: Handover to new SPARC instance to be initiated via `new_task`.
 - **Follow-up**: New SPARC instance to take over orchestration, starting by delegating the investigation of the persistent test failure to `debug` mode. [Ref: ActiveContext 2025-05-01 03:03:51, GlobalContext 2025-05-01 03:04:04, tdd-feedback.md 2025-05-01 03:03:23]
+### [2025-05-02 05:16:50] Task: Debug RAG Test Failures (Post Git Cleanup)
+- Assigned to: debug
+- Description: Investigate and fix 8 failing tests in `__tests__/python/test_rag_processing.py` identified after Git cleanup. [Ref: Pytest output 2025-05-02 05:04:03]
+- Expected deliverable: Root cause analysis, applied fixes, confirmation of passing tests via `pytest __tests__/python/test_rag_processing.py`.
+- Status: failed (Blocked)
+- Completion time: [2025-05-02 12:02:33]
+- Outcome: FAILED (Blocked). Debug mode resolved 1/8 failures (Tesseract mock). Remaining 7 failures blocked by missing `process_pdf` function and suspected environment/caching issues preventing test verification for `detect_garbled_text` and `_extract_and_format_toc`. [Ref: Debug Completion 2025-05-02 12:02:33]
+- Link to Progress Entry: N/A
 ### [2025-05-02 03:28:09] Task: Stage and Commit Garbled Text Detection Changes (TDD Cycle 23)
 - Assigned to: devops
 - Description: Create patch, stage, and commit only the Garbled Text Detection changes (TDD Cycle 23). [Ref: ActiveContext 2025-05-02 03:27:35]

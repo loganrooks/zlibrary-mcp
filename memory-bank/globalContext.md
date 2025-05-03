@@ -1,3 +1,16 @@
+### Progress - [2025-05-02 18:30:06]
+- **RAG Test Failures (ToC, PDF Integration):** Resolved externally via TDD session. Fix involved updating `is_toc_like` regex in `lib/rag_processing.py::_extract_and_format_toc`. All tests in `__tests__/python/test_rag_processing.py` now pass (49 passed, 1 xfail). [See Debug Session 2025-05-02 12:15:44 - 18:30:06]
+---
+### Decision Log - 2025-05-02 13:41:00
+- **Decision**: Updated RooCode `mcp_settings.json` to use full paths for `node` and `npx` executables managed by NVM.
+- **Rationale**: MCP servers launched via RooCode UI were failing with `SyntaxError` due to using an older system Node.js version (v12) instead of the NVM-managed v18. The RooCode execution environment did not inherit the NVM-modified `PATH`. Specifying the full path (`/home/loganrooks/.nvm/versions/node/v18.20.8/bin/node` and `/home/loganrooks/.nvm/versions/node/v18.20.8/bin/npx`) forces RooCode to use the correct version. [Related to Issue-ID: MCP-NODE-VERSION]
+- **Alternatives**: Attempted sourcing `.bashrc`/`.zshrc`, downgrading dependencies (reverted).
+- **Outcome**: `zlibrary-mcp` server now starts successfully. Other servers using `npx` should also use the correct version.
+
+---
+### Progress - 2025-05-02 13:41:00
+- **Update**: Resolved prerequisite environment issue preventing `zlibrary-mcp` server startup within RooCode. The root cause was RooCode not using the NVM-managed Node.js version. Fix involved specifying full paths in `mcp_settings.json`. [See Decision Log - 2025-05-02 13:41:00]
+- **Next Step**: Resume debugging the original RAG test failures.
 - **[2025-05-01 19:28:40] - PDF Quality Heuristic Fix (Cycle 22)**
   - Status: Completed by `debug` mode.
   - Details: Resolved misclassification of `IMAGE_ONLY` PDFs in `lib/rag_processing.py::detect_pdf_quality`. Modified heuristic to prioritize very low text density. Target tests now pass.
@@ -92,6 +105,7 @@
 - **[2025-04-29 16:36:11] - Fix: MCP Result Format** - Modified `src/index.ts` `tools/call` handler to return standard `{ result: value }` format. Tests passed. Commit: `47edb7a`. [Ref: ActiveContext 2025-04-29 16:36:11]
 - **[2025-04-29 17:00:00] - HolisticReview - Post-Refinement Assessment Complete** - Reviewed workspace after recent refactoring/fixes. Test suite passes. Integration points verified (RAG refactor, MCP result format). Documentation updated (README, ADRs, Specs). Obsolete `get_book_by_id` references removed from tests/code. Debug logs removed, error logging improved. Minor findings: `lib/rag_processing.py` slightly over line limit, `zlibrary/src/zlibrary/abs.py` significantly over (deferred), utility script `get_venv_python_path.mjs` at root, unused Zod schema remains. Project deemed ready for final checks/deployment prep.
 ## Progress
+- **[2025-05-02 05:15:30] - DevOps Task Completed (Git Debt Cleanup)** - Staged and committed remaining RAG test framework changes and MB updates. Commit: `5d156d3`. [Ref: Task 2025-05-02 05:14:35]
 - **[2025-05-02 04:42:28] - DevOps Task Completed (Commit Cycle 23)** - Investigated staging/committing TDD Cycle 23 (Garbled Text). Confirmed via `git log` that changes were included in commit `13c826b` (TDD Cycle 21). No separate commit required. [Ref: Task 2025-05-02 03:16:40, ActiveContext 2025-05-02 04:42:02]
 - **[2025-05-02 03:26:27] - DevOps Task Completed (Commit Cycle 22)** - Investigated staging/committing TDD Cycle 22 (PDF Quality) changes. Found they were already included in commit `13c826b`. No new commit required. [Ref: Task 2025-05-02 03:23:10]
 - **[2025-05-02 03:19:43] - DevOps Task Completed** - Committed OCR refactor (TDD Cycle 21) changes to `lib/rag_processing.py` and `__tests__/python/test_rag_processing.py`. Commit: `13c826b`. [Ref: Task 2025-05-02 03:16:40]

@@ -1,3 +1,17 @@
+### Test Execution: Unit (`__tests__/python/test_rag_processing.py`) - [2025-05-02 18:27:08]
+- **Trigger**: Post-Code Change (Fixed `_extract_and_format_toc` regex)
+- **Outcome**: PASS (with xfail)
+- **Summary**: 49 passed, 1 xfailed
+- **Xfailed Tests**:
+    - `test_run_ocr_on_pdf_calls_pytesseract` (Needs update for `pdf2image` implementation - unrelated)
+- **Notes**: Confirmed fix for `test_extract_toc_basic` by updating the `is_toc_like` regex. All previously failing tests related to this task now pass.
+### Test Execution: Unit (`__tests__/python/test_rag_processing.py`) - [2025-05-02 16:02:02]
+- **Trigger**: Post-Code Change (Reverted logic change in `_extract_and_format_toc`)
+- **Outcome**: FAIL
+- **Summary**: 48 passed, 1 failed, 1 xfailed
+- **Failed Tests**:
+    - `__tests__/python/test_rag_processing.py::test_extract_toc_basic`: AssertionError: assert ['Some intro ...ontent here.'] == ['Some intro ...ontent here.'] (First line after ToC missing)
+- **Notes**: Reverted logic change in `_extract_and_format_toc`. The test failure persists, suggesting a subtle bug. Other fixes for `test_integration_pdf_preprocessing` were successful.
 ### Test Execution: Unit (`__tests__/python/test_rag_processing.py`) - [2025-05-02 02:40:54]
 - **Trigger**: Post-Code Change (Cycle 23 Green/Refactor - Garbled Text Detection)
 - **Outcome**: PASS (Ignoring unrelated failures)

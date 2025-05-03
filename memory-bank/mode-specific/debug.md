@@ -1,3 +1,12 @@
+### Issue: RAG-TEST-TOC-PDF - RAG Test Failures (ToC, PDF Integration) - [Status: Resolved] - [2025-05-02 18:30:35]
+- **Reported**: 2025-05-02 12:15:44 / **Severity**: Medium / **Symptoms**: `test_extract_toc_basic`, `test_extract_toc_formats_markdown`, `test_integration_pdf_preprocessing` failing in `__tests__/python/test_rag_processing.py`.
+- **Investigation**:
+    1. Initial attempts to fix `_extract_and_format_toc` logic and test mocks were insufficient or hampered by file state inconsistencies. [See Debug Session 2025-05-02 12:15:44 - 12:44:21]
+    2. Context size exceeded 50%, leading to delegation recommendation. [See Debug Message 2025-05-02 12:44:21]
+- **Root Cause**: Incorrect regex `r'.+(\s|\.)+\d+$'` in `is_toc_like` check within `_extract_and_format_toc` incorrectly identified non-ToC lines. (Identified in external TDD session)
+- **Fix Applied**: Updated regex in `_extract_and_format_toc` to `r'^(.*?)[\s.]{2,}(\d+)$'`. (Applied in external TDD session)
+- **Verification**: User reported all tests in `__tests__/python/test_rag_processing.py` pass (49 passed, 1 xfail). [See User Report 2025-05-02 18:29:35]
+- **Related Issues**: Debug Completion 2025-05-02 12:14:07, Debug Completion 2025-05-02 12:02:33
 ### Issue: TDD-GREEN-BLOCK-20250428 - Python Tests Blocking TDD Green Phase - Status: Resolved - [2025-04-28 04:00:22]
 - **Reported**: [2025-04-28 03:38:04] / **Severity**: High / **Symptoms**: `pytest __tests__/python/test_python_bridge.py` failing, blocking TDD Green Phase completion. Previous attempts by `code` mode failed due to `apply_diff` errors.
 - **Investigation**:

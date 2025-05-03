@@ -3,9 +3,14 @@ import sys
 import os
 import json
 import traceback
+# Add project root to sys.path to allow importing 'lib'
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
 import asyncio
 from zlibrary import AsyncZlib, Extension, Language
-from zlibrary.exception import DownloadError
+# DownloadError import removed as it's likely unnecessary here and causing import issues
+import aiofiles
 from zlibrary.const import OrderOptions # Need this import
 
 import httpx
@@ -214,6 +219,7 @@ async def process_document(
     ext = ext.lower()
     processed_text = None
     processed_file_path = None # Initialize
+    content_lines = [] # Initialize content list
 
     try:
         logging.info(f"Starting processing for: {file_path} with format {output_format}")
@@ -242,7 +248,12 @@ async def process_document(
              logging.warning(f"No text extracted from {file_path}, processed file not saved.")
              processed_file_path = None # Explicitly set to None
 
-        return {"processed_file_path": str(processed_file_path) if processed_file_path else None}
+        # Read content if file was created
+        if processed_file_path and Path(processed_file_path).exists():
+            async with aiofiles.open(processed_file_path, mode='r', encoding='utf-8') as f:
+                content_lines = await f.readlines() # Read all lines into a list
+
+        return {"processed_file_path": str(processed_file_path) if processed_file_path else None, "content": content_lines}
 
     except Exception as e:
         logging.exception(f"Error processing document {file_path_str}") # Log full traceback

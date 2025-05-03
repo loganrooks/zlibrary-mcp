@@ -97,7 +97,7 @@ describe('Z-Library API', () => {
       expect(mockPythonShellRun).toHaveBeenCalledWith('python_bridge.py', expect.objectContaining({ // Corrected script name
           mode: 'json',
           pythonPath: '/fake/python',
-          scriptPath: '/home/rookslog/zlibrary-mcp/lib', // Corrected script path
+          scriptPath: '/home/loganrooks/Code/zlibrary-mcp/lib', // Corrected script path
           args: ['search', JSON.stringify({
               query: searchArgs.query, exact: searchArgs.exact, from_year: searchArgs.fromYear, to_year: searchArgs.toYear,
               languages: searchArgs.languages, extensions: searchArgs.extensions, count: searchArgs.count
@@ -115,7 +115,7 @@ describe('Z-Library API', () => {
 
       await expect(zlibApi.searchBooks({ query: 'test' })).rejects.toThrow(`Python bridge execution failed for search: ${apiError.message}`);
   // Test suite for the internal callPythonFunction logic
-      expect(mockPythonShellRun).toHaveBeenCalledWith('python_bridge.py', expect.objectContaining({ scriptPath: '/home/rookslog/zlibrary-mcp/lib', args: ['search', JSON.stringify({ query: 'test', exact: false, from_year: null, to_year: null, languages: [], extensions: [], count: 10 })] })); // Corrected script name and path
+      expect(mockPythonShellRun).toHaveBeenCalledWith('python_bridge.py', expect.objectContaining({ scriptPath: '/home/loganrooks/Code/zlibrary-mcp/lib', args: ['search', JSON.stringify({ query: 'test', exact: false, from_year: null, to_year: null, languages: [], extensions: [], count: 10 })] })); // Corrected script name and path
     });
 
     describe('callPythonFunction (Internal Logic)', () => {
@@ -242,7 +242,7 @@ describe('Z-Library API', () => {
         result = await zlibApi.searchBooks({ query: 'empty test' });
 
         expect(mockPythonShellRun).toHaveBeenCalledWith('python_bridge.py', expect.objectContaining({ // Corrected script name
-            scriptPath: '/home/rookslog/zlibrary-mcp/lib', // Corrected script path
+            scriptPath: '/home/loganrooks/Code/zlibrary-mcp/lib', // Corrected script path
             args: ['search', JSON.stringify({ query: 'empty test', exact: false, from_year: null, to_year: null, languages: [], extensions: [], count: 10 })] // Default args
         }));
         expect(result).toEqual(mockApiResultEmpty);
@@ -261,7 +261,7 @@ describe('Z-Library API', () => {
         result = await zlibApi.fullTextSearch(searchArgs);
 
         expect(mockPythonShellRun).toHaveBeenCalledWith('python_bridge.py', expect.objectContaining({ // Corrected script name
-            scriptPath: '/home/rookslog/zlibrary-mcp/lib', // Corrected script path
+            scriptPath: '/home/loganrooks/Code/zlibrary-mcp/lib', // Corrected script path
             args: ['full_text_search', JSON.stringify({
                 query: searchArgs.query, exact: searchArgs.exact, phrase: searchArgs.phrase, words: searchArgs.words,
                 languages: searchArgs.languages, extensions: searchArgs.extensions, count: searchArgs.count
@@ -277,7 +277,7 @@ describe('Z-Library API', () => {
 
       await expect(zlibApi.fullTextSearch({ query: 'fail text' })).rejects.toThrow(`Python bridge execution failed for full_text_search: ${apiError.message}`);
       // Check default args passed to python
-      expect(mockPythonShellRun).toHaveBeenCalledWith('python_bridge.py', expect.objectContaining({ scriptPath: '/home/rookslog/zlibrary-mcp/lib', args: ['full_text_search', JSON.stringify({ query: 'fail text', exact: false, phrase: true, words: false, languages: [], extensions: [], count: 10 })] })); // Corrected script name and path
+      expect(mockPythonShellRun).toHaveBeenCalledWith('python_bridge.py', expect.objectContaining({ scriptPath: '/home/loganrooks/Code/zlibrary-mcp/lib', args: ['full_text_search', JSON.stringify({ query: 'fail text', exact: false, phrase: true, words: false, languages: [], extensions: [], count: 10 })] })); // Corrected script name and path
     });
   });
 
@@ -297,7 +297,7 @@ describe('Z-Library API', () => {
 
         expect(mockPythonShellRun).toHaveBeenCalledTimes(1);
         expect(mockPythonShellRun).toHaveBeenCalledWith('python_bridge.py', expect.objectContaining({
-            scriptPath: '/home/rookslog/zlibrary-mcp/lib',
+            scriptPath: '/home/loganrooks/Code/zlibrary-mcp/lib',
             args: ['download_book', JSON.stringify({
                 book_details: mockBookDetails, // Pass bookDetails object
                 output_dir: './downloads',
@@ -327,7 +327,7 @@ describe('Z-Library API', () => {
 
         expect(mockPythonShellRun).toHaveBeenCalledTimes(1);
         expect(mockPythonShellRun).toHaveBeenCalledWith('python_bridge.py', expect.objectContaining({
-            scriptPath: '/home/rookslog/zlibrary-mcp/lib',
+            scriptPath: '/home/loganrooks/Code/zlibrary-mcp/lib',
             args: ['download_book', JSON.stringify({
                 book_details: mockBookDetails, // Pass bookDetails object
                 output_dir: './rag_out',
@@ -411,7 +411,7 @@ describe('Z-Library API', () => {
 
       const mockBookDetails = { id: 'failDownload', url: 'http://example.com/book/failDownload/slug' };
       await expect(zlibApi.downloadBookToFile({ bookDetails: mockBookDetails })).rejects.toThrow(`Python bridge execution failed for download_book: ${apiError.message}`);
-      expect(mockPythonShellRun).toHaveBeenCalledWith('python_bridge.py', expect.objectContaining({ scriptPath: '/home/rookslog/zlibrary-mcp/lib', args: ['download_book', JSON.stringify({ book_details: mockBookDetails, output_dir: './downloads', process_for_rag: false, processed_output_format: 'txt' })] }));
+      expect(mockPythonShellRun).toHaveBeenCalledWith('python_bridge.py', expect.objectContaining({ scriptPath: '/home/loganrooks/Code/zlibrary-mcp/lib', args: ['download_book', JSON.stringify({ book_details: mockBookDetails, output_dir: './downloads', process_for_rag: false, processed_output_format: 'txt' })] }));
     });
 
   });
@@ -426,7 +426,7 @@ describe('Z-Library API', () => {
         result = await zlibApi.getDownloadHistory(historyArgs);
 
         expect(mockPythonShellRun).toHaveBeenCalledWith('python_bridge.py', expect.objectContaining({ // Corrected script name
-            scriptPath: '/home/rookslog/zlibrary-mcp/lib', // Corrected script path
+            scriptPath: '/home/loganrooks/Code/zlibrary-mcp/lib', // Corrected script path
             args: ['get_download_history', JSON.stringify({ count: historyArgs.count })]
         }));
         expect(result).toEqual(mockApiResult);
@@ -438,7 +438,7 @@ describe('Z-Library API', () => {
       mockPythonShellRun.mockRejectedValue(apiError);
 
       await expect(zlibApi.getDownloadHistory({ count: 5 })).rejects.toThrow(`Python bridge execution failed for get_download_history: ${apiError.message}`);
-      expect(mockPythonShellRun).toHaveBeenCalledWith('python_bridge.py', expect.objectContaining({ scriptPath: '/home/rookslog/zlibrary-mcp/lib', args: ['get_download_history', JSON.stringify({ count: 5 })] })); // Corrected script name and path
+      expect(mockPythonShellRun).toHaveBeenCalledWith('python_bridge.py', expect.objectContaining({ scriptPath: '/home/loganrooks/Code/zlibrary-mcp/lib', args: ['get_download_history', JSON.stringify({ count: 5 })] })); // Corrected script name and path
     });
   });
 
@@ -451,7 +451,7 @@ describe('Z-Library API', () => {
         result = await zlibApi.getDownloadLimits();
 
         expect(mockPythonShellRun).toHaveBeenCalledWith('python_bridge.py', expect.objectContaining({ // Corrected script name
-            scriptPath: '/home/rookslog/zlibrary-mcp/lib', // Corrected script path
+            scriptPath: '/home/loganrooks/Code/zlibrary-mcp/lib', // Corrected script path
             args: ['get_download_limits', JSON.stringify({})] // Empty args object
         }));
         expect(result).toEqual(mockApiResult);
@@ -463,7 +463,7 @@ describe('Z-Library API', () => {
       mockPythonShellRun.mockRejectedValue(apiError);
 
       await expect(zlibApi.getDownloadLimits()).rejects.toThrow(`Python bridge execution failed for get_download_limits: ${apiError.message}`);
-      expect(mockPythonShellRun).toHaveBeenCalledWith('python_bridge.py', expect.objectContaining({ scriptPath: '/home/rookslog/zlibrary-mcp/lib', args: ['get_download_limits', JSON.stringify({})] })); // Corrected script name and path
+      expect(mockPythonShellRun).toHaveBeenCalledWith('python_bridge.py', expect.objectContaining({ scriptPath: '/home/loganrooks/Code/zlibrary-mcp/lib', args: ['get_download_limits', JSON.stringify({})] })); // Corrected script name and path
     });
   });
 
@@ -477,7 +477,7 @@ describe('Z-Library API', () => {
         result = await zlibApi.getRecentBooks(recentArgs);
 
         expect(mockPythonShellRun).toHaveBeenCalledWith('python_bridge.py', expect.objectContaining({ // Corrected script name
-            scriptPath: '/home/rookslog/zlibrary-mcp/lib', // Corrected script path
+            scriptPath: '/home/loganrooks/Code/zlibrary-mcp/lib', // Corrected script path
             args: ['get_recent_books', JSON.stringify({ count: recentArgs.count, format: recentArgs.format })]
         }));
         expect(result).toEqual(mockApiResult);
@@ -489,7 +489,7 @@ describe('Z-Library API', () => {
       mockPythonShellRun.mockRejectedValue(apiError);
 
       await expect(zlibApi.getRecentBooks({ count: 3 })).rejects.toThrow(`Python bridge execution failed for get_recent_books: ${apiError.message}`);
-      expect(mockPythonShellRun).toHaveBeenCalledWith('python_bridge.py', expect.objectContaining({ scriptPath: '/home/rookslog/zlibrary-mcp/lib', args: ['get_recent_books', JSON.stringify({ count: 3, format: null })] })); // Corrected script name and path, Default format null
+      expect(mockPythonShellRun).toHaveBeenCalledWith('python_bridge.py', expect.objectContaining({ scriptPath: '/home/loganrooks/Code/zlibrary-mcp/lib', args: ['get_recent_books', JSON.stringify({ count: 3, format: null })] })); // Corrected script name and path, Default format null
     });
   });
 
@@ -510,7 +510,7 @@ describe('Z-Library API', () => {
         // Assert Python call
         expect(mockPythonShellRun).toHaveBeenCalledTimes(1);
         expect(mockPythonShellRun).toHaveBeenCalledWith('python_bridge.py', expect.objectContaining({
-            scriptPath: '/home/rookslog/zlibrary-mcp/lib',
+            scriptPath: '/home/loganrooks/Code/zlibrary-mcp/lib',
             args: ['process_document', JSON.stringify({
                 file_path_str: expectedPythonFilePath, // Correct arg name
                 output_format: 'txt'
@@ -577,7 +577,7 @@ describe('Z-Library API', () => {
         await expect(zlibApi.processDocumentForRag(processArgs)).rejects.toThrow(`Python bridge execution failed for process_document: ${apiError.message}`);
 
         // Correct the expected args based on implementation (file_path_str) - Retrying diff
-        expect(mockPythonShellRun).toHaveBeenCalledWith('python_bridge.py', expect.objectContaining({ scriptPath: '/home/rookslog/zlibrary-mcp/lib', args: ['process_document', JSON.stringify({ file_path_str: expectedPythonFilePath, output_format: 'txt' })] }));
+        expect(mockPythonShellRun).toHaveBeenCalledWith('python_bridge.py', expect.objectContaining({ scriptPath: '/home/loganrooks/Code/zlibrary-mcp/lib', args: ['process_document', JSON.stringify({ file_path_str: expectedPythonFilePath, output_format: 'txt' })] }));
     });
   });
 });

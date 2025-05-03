@@ -320,11 +320,8 @@ async function start(opts: StartOptions = {}): Promise<{ server: Server; transpo
            return { content: [{ type: 'text', text: `Error from tool "${toolName}": ${result.error.message || result.error}` }], isError: true }; // Use toolName in error
         }
         console.log(`Handler for tool "${toolName}" completed successfully.`); // Use toolName in log
-        // Wrap the successful result in the expected content structure
-        // Return just the content array, as expected by the client Zod schema
-        // Cast to 'any' to bypass TS error, assuming the structure is correct for runtime
-        // Return result as stringified JSON within a "text" content block
-        return { result: result } as any; // Return the actual result object directly, cast to any to bypass TS error
+        // Return the actual result object directly, assuming SDK handles wrapping
+        return result as any; // Return the actual result object directly
       } catch (error: any) {
         // Catch errors thrown by the handler
         console.error(`Error calling tool "${toolName}":`, error); // Use toolName in error

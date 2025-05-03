@@ -28,7 +28,7 @@ async function callPythonFunction(functionName: string, args: Record<string, any
     // Serialize arguments as JSON *before* creating options
     const serializedArgs = JSON.stringify(args);
     const options: PythonShellOptions = {
-      mode: 'json',
+      mode: 'text', // Switch to text mode
       pythonPath: venvPythonPath, // Use the Python from our managed venv
       scriptPath: BRIDGE_SCRIPT_PATH, // Use the calculated path to the source lib dir
       args: [functionName, serializedArgs] // Pass serialized string directly
@@ -38,18 +38,24 @@ async function callPythonFunction(functionName: string, args: Record<string, any
     // PythonShell.run returns Promise<string[] | undefined>
     // We expect JSON, so results[0] should be the JSON string if successful
     // PythonShell with mode: 'json' should return an array of parsed JSON objects (or throw an error)
-    const results = await PythonShell.run(BRIDGE_SCRIPT_NAME, options); // Run the script name relative to scriptPath
+    const results = await PythonShell.run(BRIDGE_SCRIPT_NAME, options); // results will be string[] | undefined
 
     // Check if results exist and contain at least one element
     if (!results || results.length === 0) {
-        throw new Error(`No valid results received from Python script. Raw: ${results}`);
+        throw new Error(`No output received from Python script.`);
     }
 
-    // Assume the first element is the parsed JSON result
-    const resultData = results[0];
+    // Join the lines and parse manually
+    const stdoutString = results.join('\n');
+    let resultData: any;
+    try {
+        resultData = JSON.parse(stdoutString);
+    } catch (parseError: any) {
+        throw new Error(`Failed to parse JSON output from Python script: ${parseError.message}. Raw output: ${stdoutString}`);
+    }
+
 
     // Check if the Python script itself returned an error structure
-    // Assumes python-shell in json mode provides a parsed object or throws/rejects
     if (resultData && typeof resultData === 'object' && 'error' in resultData && resultData.error) {
         throw new Error(resultData.error);
     }
@@ -177,7 +183,7 @@ export async function getRecentBooks({ count = 10, format = null }: GetRecentBoo
 /**
  * Process a downloaded document for RAG
  */
-export async function processDocumentForRag({ filePath, outputFormat = 'txt' }: ProcessDocumentForRagArgs): Promise<{ processed_file_path: string }> {
+export async function processDocumentForRag({ filePath, outputFormat = 'txt' }: ProcessDocumentForRagArgs): Promise<{ processed_file_path: string | null; content?: string[] }> { // Updated return type
   if (!filePath) {
     throw new Error("Missing required argument: filePath");
   }
@@ -199,8 +205,8 @@ export async function processDocumentForRag({ filePath, outputFormat = 'txt' }: 
        throw new Error(`Invalid response from Python bridge during processing. Missing processed_file_path key.`);
    }
   // No error thrown if key exists, even if value is null.
-  // Return only the processed file path object
-  return { processed_file_path: result.processed_file_path };
+  // Return the full result object from Python
+  return result; // Return the whole object { processed_file_path: ..., content: ... }
 }
 
 // Removed unused generateSafeFilename function
@@ -217,7 +223,7 @@ export async function downloadBookToFile({
     processed_output_format = 'txt'
 }: DownloadBookToFileArgs): Promise<{ file_path: string; processed_file_path?: string | null; processing_error?: string }> {
   try {
-    const logId = bookDetails?.id || 'unknown_id'; // Use ID from details for logging
+    const logId = (bookDetails && bookDetails.id) ? bookDetails.id : 'unknown_id'; // Use ID from details for logging (compat check)
     // console.log(`[downloadBookToFile - ${logId}] Calling Python bridge... process_for_rag=${process_for_rag}`); // Removed debug log
     // Call the Python function, passing the bookDetails object
     const result = await callPythonFunction('download_book', {
@@ -235,7 +241,7 @@ export async function downloadBookToFile({
     }
 
     // Validate the response structure
-    if (!result?.file_path) {
+    if (!result || !result.file_path) { // Compat check
         throw new Error("Invalid response from Python bridge: Missing original file_path.");
     }
 

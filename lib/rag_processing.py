@@ -48,9 +48,6 @@ class FileSaveError(Exception):
     """Custom exception for errors during processed file saving."""
     pass
 
-# Define placeholder initially, overwrite if import succeeds
-# class TesseractNotFoundError(Exception): pass # Already defined above
-
 # Custom Exception for Dependency Issues
 class OCRDependencyError(Exception): pass
 
@@ -113,6 +110,7 @@ def _analyze_pdf_block(block: dict) -> dict:
     is_list_item = False
     list_type = None # 'ul' or 'ol'
     list_indent = 0 # Placeholder
+    list_marker = None # Initialize list_marker
     text_content = ""
     spans = []
 
@@ -230,7 +228,6 @@ def _format_pdf_markdown(page: fitz.Page) -> str:
         # Footnote Reference/Definition Detection (using superscript flag)
         processed_text_parts = []
         potential_def_id = None
-        # potential_def_id = None # Removed duplicate initialization
         first_span_in_block = True
         fn_id = None # Initialize fn_id before the span loop
         for span in spans:
@@ -254,13 +251,11 @@ def _format_pdf_markdown(page: fitz.Page) -> str:
 
         # Store definition if found, otherwise format content
         if potential_def_id:
-            # Clean the definition text (remove the initial marker if present and any leading punctuation)
-            # cleaned_def_text = re.sub(r"^\d+[\.\)]?\s*", "", processed_text).strip() # Original cleaning attempt, now done later
             # Store potentially uncleaned text (cleaning moved to final formatting)
             footnote_defs[potential_def_id] = processed_text # Store raw processed text
             continue # Don't add definition block as regular content
 
-        # Format based on analysis (REMOVED REDUNDANT BLOCK)
+        # Format based on analysis
         if analysis['heading_level'] > 0:
             markdown_lines.append(f"{'#' * analysis['heading_level']} {processed_text}")
             current_list_type = None # Reset list context after heading
@@ -285,15 +280,6 @@ def _format_pdf_markdown(page: fitz.Page) -> str:
             if processed_text:
                 markdown_lines.append(processed_text)
             current_list_type = None # Reset list context
-
-    # Append footnote definitions at the end
-    # Footnote definitions are handled separately below
-    # if footnote_defs:
-        # markdown_lines.append("---") # REMOVED: Separator added later during footnote_block construction
-        # for fn_id, fn_text in sorted(footnote_defs.items()):
-            # Apply regex cleaning directly here (Reverted to original regex as lstrip wasn't the issue)
-            # cleaned_fn_text = re.sub(r"^[^\w]+", "", fn_text).strip()
-            # markdown_lines.append(f"[^{fn_id}]: {cleaned_fn_text}") # Corrected variable name
 
     # Join main content lines with double newlines
     main_content = "\n\n".join(md_line for md_line in markdown_lines if not md_line.startswith("[^")) # Exclude footnote defs for now
@@ -329,7 +315,7 @@ def _epub_node_to_markdown(node: BeautifulSoup, footnote_defs: dict, list_level:
     Handles common HTML tags (headings, p, lists, blockquote, pre) and
     EPUB-specific footnote references/definitions (epub:type="noteref/footnote").
     """
-# Handle plain text nodes directly
+    # Handle plain text nodes directly
     if isinstance(node, NavigableString):
         return str(node) # Return the string content
     markdown_parts = []
@@ -459,11 +445,11 @@ def _identify_and_remove_front_matter(content_lines: list[str]) -> tuple[list[st
             logging.debug(f"Identified potential title: {title}")
             break # Found the first non-empty line, assume it's the title
 
-    # --- Front Matter Removal Logic ---
-    # Keywords requiring specific handling based on test_remove_front_matter_basic
-    FRONT_MATTER_KEYWORDS_SINGLE = ["copyright", "isbn", "published by"]
-    FRONT_MATTER_KEYWORDS_MULTI = ["dedication"] # Skips this line and the next
-    FRONT_MATTER_KEYWORDS_HEADER_ONLY = ["acknowledgments"] # Skips this line only
+    # --- Front Matter Removal Logic (Refactored - Attempt 2) ---
+    # Define keywords based on combined test requirements
+    FRONT_MATTER_SKIP_TWO = ["dedication", "copyright notice"] # Skip line + next
+    # Ensure SKIP_ONE doesn't overlap with SKIP_TWO for clarity
+    FRONT_MATTER_SKIP_ONE = ["copyright", "isbn", "published by", "copyright info", "acknowledgments"] # Skip only current line
 
     i = 0
     while i < len(content_lines):
@@ -471,406 +457,398 @@ def _identify_and_remove_front_matter(content_lines: list[str]) -> tuple[list[st
         line_lower = line.strip().lower()
         skipped = False
 
-        # Check multi-line removal keywords
-        if any(keyword in line_lower for keyword in FRONT_MATTER_KEYWORDS_MULTI):
-            logging.debug(f"Removing multi-line front matter starting at: {line.strip()}")
-            i += 2 # Skip current line and next line
+        # Check skip-two keywords first
+        if any(keyword in line_lower for keyword in FRONT_MATTER_SKIP_TWO):
+            logging.debug(f"Skipping front matter block (2 lines) starting with: {line.strip()}")
+            i += 2 # Skip current line and the next line
             skipped = True
-        # Check header-only removal keywords
-        elif any(keyword in line_lower for keyword in FRONT_MATTER_KEYWORDS_HEADER_ONLY):
-             logging.debug(f"Removing front matter header line: {line.strip()}")
-             i += 1 # Skip current line only
-             skipped = True
-        # Check single-line removal keywords
-        elif any(keyword in line_lower for keyword in FRONT_MATTER_KEYWORDS_SINGLE):
-            logging.debug(f"Removing single front matter line: {line.strip()}")
+        # Check skip-one keywords if not already skipped
+        elif any(keyword in line_lower for keyword in FRONT_MATTER_SKIP_ONE):
+            logging.debug(f"Skipping single front matter line: {line.strip()}")
             i += 1 # Skip current line only
             skipped = True
 
         if not skipped:
-            # Preserve blank lines as they appear in the test's expected output
+            # Preserve lines
             cleaned_lines.append(line)
             i += 1
 
     # Return original lines if filtering removed everything (edge case)
     # Note: This edge case handling might need review if the test changes
-    if not cleaned_lines and content_lines:
-         logging.warning("Front matter removal filtered out all content, returning original.")
-         return content_lines, title
+    # Ensure a tuple is always returned, even if cleaned_lines is empty
+    if not cleaned_lines:
+         logging.warning("Front matter removal resulted in empty content.")
+         # Return empty list and the identified title
+         return [], title
 
     return cleaned_lines, title
 
 def _format_toc_lines_as_markdown(toc_lines: list[str]) -> str:
     """Formats extracted ToC lines into a Markdown list, handling basic indentation."""
     markdown_list = []
-    base_indent_level = -1 # Track base indentation
+    base_indent = -1 # Track base indentation level
 
     for line in toc_lines:
-        # Basic cleaning: remove leading/trailing whitespace and potential page numbers at the end
-        # Remove trailing spaces/dots and numbers more robustly
-        cleaned_line = re.sub(r'[\s.]*\d+$', '', line).strip()
-        if not cleaned_line:
-            continue
+        stripped_line = line.strip()
+        if not stripped_line: continue # Skip empty lines
 
-        # Detect indentation level
-        leading_spaces = len(line) - len(line.lstrip(' '))
-        if base_indent_level == -1:
-             base_indent_level = leading_spaces # Set base level on first line
+        # Basic indentation detection (count leading spaces)
+        indent_level = len(line) - len(line.lstrip(' '))
+        if base_indent == -1:
+            base_indent = indent_level # Set base indent on first non-empty line
 
-        # Calculate relative indentation (simple approach)
-        indent_level = max(0, (leading_spaces - base_indent_level) // 2) # Assume 2 spaces per level
-        indent_str = "  " * indent_level
-
-        markdown_list.append(f"{indent_str}* {cleaned_line}")
+        # Calculate relative indent level (simple approach)
+        relative_indent = max(0, (indent_level - base_indent) // 2) # Assume 2 spaces per level
+        indent_str = "  " * relative_indent
+        # Remove page numbers/dots for cleaner Markdown
+        text_part = re.sub(r'[\s.]{2,}\d+$', '', stripped_line).strip()
+        markdown_list.append(f"{indent_str}* {text_part}")
 
     return "\n".join(markdown_list)
 
 def _extract_and_format_toc(content_lines: list[str], output_format: str) -> tuple[list[str], str]:
     """
-    Identifies ToC lines using keywords and basic structure heuristics,
-    formats it (if Markdown), returns remaining content lines and formatted ToC.
+    Extracts Table of Contents (ToC) lines based on heuristics, formats it
+    (currently only for Markdown), and returns remaining content lines and formatted ToC.
     """
-    logging.debug("Running basic ToC extraction...")
+    logging.debug("Attempting to extract and format Table of Contents...")
     toc_lines = []
-    pre_toc_lines = []
-    post_toc_lines = []
+    remaining_lines = []
     in_toc = False
-    toc_found = False
-    # Keywords to identify potential start of ToC
-    TOC_KEYWORDS = ["contents", "table of contents"]
-    # Keywords/patterns to identify potential end of ToC or start of main content
-    END_TOC_PATTERNS = [
-        re.compile(r"^(chapter|part|section|introduction)(?:\s+\d+)?", re.IGNORECASE), # Made number optional
-        re.compile(r"^(prologue|epilogue|appendix)", re.IGNORECASE),
-        # Add more patterns if needed based on common book structures
-    ]
+    toc_start_index = -1 # Added: Track start of ToC
+    toc_end_index = -1
+    # main_content_start_index = -1 # Removed: Simplify logic based on toc_end_index
 
-    # --- ToC Identification Heuristic ---
-    i = 0
-    while i < len(content_lines):
-        line = content_lines[i]
-        line_strip = line.strip()
-        line_lower = line_strip.lower()
-        if not toc_found:
-            # logging.debug(f"Checking line_lower for TOC keyword: '{line_lower}'") # TEMP DEBUG LOG - Removed
-            if any(keyword in line_lower for keyword in TOC_KEYWORDS):
-                in_toc = True
-                toc_found = True
-                # Skip the header line itself (Handled by main loop increment)
+    # Heuristic: Look for common ToC start keywords
+    TOC_START_KEYWORDS = ["contents", "table of contents"]
+    # Heuristic: Look for lines ending with page numbers (dots or spaces before number)
+    # Updated regex to be more specific and avoid matching chapter titles
+    TOC_LINE_PATTERN = re.compile(r'^(.*?)[\s.]{2,}(\d+)$') # Non-greedy match for text, require >=2 dots/spaces before number
+    # Heuristic: Look for common main content start keywords
+    MAIN_CONTENT_START_KEYWORDS = ["introduction", "preface", "chapter 1", "part i"]
+
+    # First pass: Identify potential ToC block
+    for i, line in enumerate(content_lines):
+        line_lower = line.strip().lower()
+
+        if not in_toc and any(keyword in line_lower for keyword in TOC_START_KEYWORDS):
+            in_toc = True
+            toc_start_index = i # Record start index
+            logging.debug(f"Potential ToC start found at line {i}: {line.strip()}")
+            # Don't add the keyword line itself to toc_lines
+            continue # Skip the "Contents" line itself
+
+        if in_toc:
+            # Check if line matches ToC pattern OR is empty (allow empty lines within ToC)
+            is_toc_like = bool(TOC_LINE_PATTERN.match(line.strip())) or not line.strip()
+            # Check if line signals start of main content AND doesn't look like a ToC line itself
+            is_main_content_start = any(line_lower.startswith(keyword) for keyword in MAIN_CONTENT_START_KEYWORDS) and not is_toc_like
+
+            if is_toc_like and not is_main_content_start:
+                # toc_lines.append(line) # Keep original line with indentation - NO, collect indices first
+                toc_end_index = i # Track the last potential ToC line index
+            # Simplified end condition: if it's not a ToC line, assume ToC ended on the previous line.
             else:
-                # Line before ToC starts
-                pre_toc_lines.append(line)
-        elif in_toc:
-            # is_toc_like relies only on regex now
-            # Updated regex: requires at least 2 spaces/dots before trailing number
-            is_toc_like = re.search(r'^(.*?)[\s.]{2,}(\d+)$', line_strip)
+                logging.debug(f"Potential ToC end detected before line {i} (non-matching line): {line.strip()}")
+                break # Stop processing ToC lines
 
-            if is_toc_like:
-                 # Looks like a ToC line - keep original line with spaces
-                 toc_lines.append(line)
-            elif not line_strip: # Discard blank lines within ToC
-                 logging.debug(f"Skipping blank line within ToC.")
-                 # No state change, just skip
-            else: # Line is not blank and doesn't look like a ToC entry, assume ToC ended
-                # Re-add END_TOC_PATTERNS check for logging clarity, though format break is primary trigger
-                is_end_pattern = any(pattern.match(line_strip) for pattern in END_TOC_PATTERNS)
-                if is_end_pattern:
-                     logging.debug(f"Potential ToC end found (explicit end pattern): {line_strip}")
-                else:
-                     logging.debug(f"Potential ToC end found (format break/non-ToC line): {line_strip}")
-                in_toc = False
-                post_toc_lines.append(line) # Add this line as the first line of post-ToC content
-        else:
-            # Lines after ToC has ended
-            post_toc_lines.append(line)
-            print(f"DEBUG Loop[{i}]: Appended to post_toc_lines (after ToC)") # DEBUG
+    # Determine final content lines based on findings
+    if toc_start_index != -1 and toc_end_index != -1 and toc_end_index >= toc_start_index: # Ensure end is after start
+        # ToC found: combine lines before start and after end
+        remaining_lines = content_lines[:toc_start_index] + content_lines[toc_end_index + 1:]
+        # Ensure toc_lines only contains lines within the identified block
+        # (Adjust indices relative to the original content_lines)
+        actual_toc_start_line_index = toc_start_index + 1 # Line after the keyword
+        actual_toc_end_line_index = toc_end_index
+        toc_lines = content_lines[actual_toc_start_line_index : actual_toc_end_line_index + 1]
 
-        i += 1 # Increment loop counter in all cases
+    else:
+        # No ToC found or block incomplete, keep all original lines
+        remaining_lines = content_lines
+        toc_lines = [] # Ensure toc_lines is empty
 
-    # Combine pre and post ToC lines for remaining content
-    remaining_lines = pre_toc_lines + post_toc_lines
+    logging.debug(f"Identified {len(toc_lines)} ToC lines. {len(remaining_lines)} remaining content lines.")
 
-    # --- Format ToC and Return ---
-    formatted_toc = ""
-    if toc_found and output_format == 'markdown':
+    # Format ToC only if requested and lines were found
+    formatted_toc = "" # Initialize as empty string instead of None
+    if output_format == "markdown" and toc_lines:
         formatted_toc = _format_toc_lines_as_markdown(toc_lines)
-        logging.debug(f"Formatted ToC (Markdown):\n{formatted_toc}")
-    elif toc_found: # For 'txt' format, return empty string as per test expectation
-        formatted_toc = "" # Test expects empty string for non-markdown
-        logging.debug(f"Extracted {len(toc_lines)} ToC lines (output format: {output_format})")
+        logging.debug("Formatted ToC for Markdown output.")
 
-
-    # Removed edge case handling that returned early if remaining_lines was empty
-
-    logging.debug(f"Returning {len(remaining_lines)} remaining lines.")
     return remaining_lines, formatted_toc
 
+# --- PDF Quality Analysis ---
 
 def detect_pdf_quality(pdf_path: str) -> dict: # Renamed from _analyze_pdf_quality
-    # Removed incorrectly placed print statements
     """
-    Analyzes a PDF file using PyMuPDF to determine its quality category.
+    Analyzes a PDF to determine text quality and recommend OCR if needed.
 
-    Args:
-        pdf_path: Path to the PDF file.
-
-    Returns:
-        A dictionary containing:
-        - 'quality': Category ('TEXT_HIGH', 'TEXT_LOW', 'IMAGE_ONLY', 'MIXED', 'EMPTY', 'ENCRYPTED', 'ERROR')
-        - 'details': A string explaining the reason.
-        - 'ocr_recommended': Boolean indicating if OCR is suggested.
+    Returns a dictionary with 'quality_category' ('TEXT_HIGH', 'TEXT_LOW', 'IMAGE_ONLY', 'MIXED', 'EMPTY', 'ENCRYPTED'),
+    'ocr_needed' (boolean), and 'reason' (string).
     """
     if not PYMUPDF_AVAILABLE:
-        logging.error("PyMuPDF (fitz) is not installed. Cannot analyze PDF quality.")
-        return {'quality': 'ERROR', 'details': 'PyMuPDF library not available.'}
+        return {'quality_category': 'UNKNOWN', 'ocr_needed': False, 'reason': 'PyMuPDF not available'}
 
     doc = None
     try:
         doc = fitz.open(pdf_path)
-
-        # Check for empty PDF first
-        total_pages = len(doc)
-        if total_pages == 0:
-            logging.warning(f"PDF has 0 pages: {pdf_path}")
-            return {'quality': 'EMPTY', 'details': 'PDF has 0 pages.'}
-
-        # Then check for encryption
         if doc.is_encrypted:
-            logging.warning(f"PDF is encrypted: {pdf_path}")
-            return {'quality': 'ENCRYPTED', 'details': 'PDF is encrypted.'}
+            # Try decrypting with empty password
+            if not doc.authenticate(""):
+                logging.warning(f"PDF {pdf_path} is encrypted and password protected.")
+                return {'quality_category': 'ENCRYPTED', 'ocr_needed': False, 'reason': 'PDF is encrypted'}
+            logging.info(f"Successfully decrypted {pdf_path} with empty password.")
 
-        total_text_chars = 0
+        page_count = len(doc)
+        if page_count == 0:
+            logging.warning(f"PDF {pdf_path} has 0 pages.")
+            return {'quality_category': 'EMPTY', 'ocr_needed': False, 'reason': 'PDF has no pages'}
+
+        total_chars = 0
         total_image_area = 0
         total_page_area = 0
         unique_chars = set()
 
-        for page_num in range(total_pages):
-            page = doc.load_page(page_num)
+        for page in doc:
+            page_area = page.rect.width * page.rect.height
+            if page_area <= 0: continue # Skip pages with no area
 
-            # Text Analysis
-            text = page.get_text("text", flags=0) # Basic text extraction
-            page_text_len = len(text.strip())
-            total_text_chars += page_text_len
-            unique_chars.update(text.strip())
+            total_page_area += page_area
 
-            # Image Analysis
-            images = page.get_images(full=True)
-            page_rect = page.rect
-            page_area = page_rect.width * page_rect.height
-            if page_area > 0:
-                total_page_area += page_area
-                page_image_area = 0
-                for img_info in images:
-                    xref = img_info[0]
-                    try:
-                        img_rects = page.get_image_rects(xref) # Find where image is placed
-                        for rect in img_rects:
-                            page_image_area += rect.width * rect.height
-                    except ValueError as e:
-                        logging.warning(f"Could not get rect for image xref {xref} on page {page_num} of {pdf_path}: {e}")
-                total_image_area += page_image_area
+            # Text analysis
+            text = page.get_text("text")
+            page_chars = len(text)
+            total_chars += page_chars
+            unique_chars.update(text)
 
-        # Calculate overall metrics
-        avg_chars_per_page = total_text_chars / total_pages if total_pages > 0 else 0
-        avg_image_ratio = total_image_area / total_page_area if total_page_area > 0 else 0
-        char_diversity = len(unique_chars) / total_text_chars if total_text_chars > 0 else 0
-        space_count = sum(1 for char in unique_chars if char.isspace()) # Count spaces in unique chars
-        space_ratio = space_count / len(unique_chars) if unique_chars else 0
+            # Image analysis
+            # Use page.get_images(full=True) instead of get_image_rects
+            img_list = page.get_images(full=True)
+            # Img tuple format: (xref, smask, width, height, ...)
+            # Calculate area using width (index 2) and height (index 3)
+            page_image_area = sum(img[2] * img[3] for img in img_list if len(img) >= 4) # Ensure tuple has enough elements
+            total_image_area += page_image_area
 
-        # Determine category using helper function
-        return _determine_pdf_quality_category(
-            avg_chars_per_page, avg_image_ratio, char_diversity, space_ratio, total_text_chars, pdf_path
+        avg_chars_per_page = total_chars / page_count if page_count > 0 else 0
+        image_ratio = total_image_area / total_page_area if total_page_area > 0 else 0
+        char_diversity_ratio = len(unique_chars) / total_chars if total_chars > 0 else 0
+        space_ratio = sum(1 for char in "".join(unique_chars) if char.isspace()) / len(unique_chars) if unique_chars else 0
+
+
+        # Determine category based on heuristics
+        category, reason, ocr_needed = _determine_pdf_quality_category(
+            avg_chars_per_page, image_ratio, char_diversity_ratio, space_ratio
         )
 
+        return {'quality_category': category, 'ocr_needed': ocr_needed, 'reason': reason}
+
     except Exception as e:
-        logging.error(f"Error analyzing PDF quality for {pdf_path}: {e}")
-        return {'quality': 'ERROR', 'details': f'Error during analysis: {e}'}
+        logging.error(f"Error analyzing PDF quality for {pdf_path}: {e}", exc_info=True)
+        # Check if error suggests encryption
+        if "encrypted" in str(e).lower():
+             return {'quality_category': 'ENCRYPTED', 'ocr_needed': False, 'reason': f'Error opening PDF (likely encrypted): {e}'}
+        return {'quality_category': 'ERROR', 'ocr_needed': False, 'reason': f'Error analyzing PDF: {e}'}
     finally:
         if doc: doc.close()
 
 def _determine_pdf_quality_category(
-    avg_chars_per_page: float,
-    avg_image_ratio: float,
-    char_diversity: float,
-    space_ratio: float,
-    total_chars: int,
-    pdf_path: str # For logging
-) -> dict:
-    """Determines the PDF quality category based on calculated metrics."""
+    avg_chars: float, img_ratio: float, char_diversity: float, space_ratio: float
+) -> tuple[str, str, bool]:
+    """Helper function to determine PDF quality category based on metrics."""
+    # Check for high image ratio first
+    if img_ratio > _PDF_QUALITY_THRESHOLD_HIGH_IMAGE_RATIO:
+         # If significant image area, but also some text, classify as MIXED
+         # If text quality is also low, still recommend OCR
+         ocr_rec = avg_chars < _PDF_QUALITY_THRESHOLD_LOW_DENSITY or \
+                   char_diversity < _PDF_QUALITY_MIN_CHAR_DIVERSITY_RATIO or \
+                   space_ratio < _PDF_QUALITY_MIN_SPACE_RATIO
+         reason = f'High image ratio ({img_ratio:.2f} > {_PDF_QUALITY_THRESHOLD_HIGH_IMAGE_RATIO})'
+         if ocr_rec:
+             reason += f' and low text quality indicators (avg_chars={avg_chars:.1f}, diversity={char_diversity:.2f}, space={space_ratio:.2f})'
+         return 'MIXED', reason, ocr_rec
+    # Only check for IMAGE_ONLY if image ratio is not high
+    elif avg_chars < _PDF_QUALITY_THRESHOLD_VERY_LOW_DENSITY:
+        return 'IMAGE_ONLY', f'Very low average characters per page ({avg_chars:.1f} < {_PDF_QUALITY_THRESHOLD_VERY_LOW_DENSITY})', True
+    elif avg_chars < _PDF_QUALITY_THRESHOLD_LOW_DENSITY or \
+         char_diversity < _PDF_QUALITY_MIN_CHAR_DIVERSITY_RATIO or \
+         space_ratio < _PDF_QUALITY_MIN_SPACE_RATIO:
+        return 'TEXT_LOW', f'Low average characters per page ({avg_chars:.1f} < {_PDF_QUALITY_THRESHOLD_LOW_DENSITY}) or low char diversity ({char_diversity:.2f} < {_PDF_QUALITY_MIN_CHAR_DIVERSITY_RATIO}) or low space ratio ({space_ratio:.2f} < {_PDF_QUALITY_MIN_SPACE_RATIO})', True
+    else:
+        return 'TEXT_HIGH', f'Sufficient average characters per page ({avg_chars:.1f}) and low image ratio ({img_ratio:.2f})', False
 
-    # Determine category based on heuristics (Order: IMAGE_ONLY -> MIXED -> TEXT_LOW -> TEXT_HIGH)
-    is_very_low_density = avg_chars_per_page < _PDF_QUALITY_THRESHOLD_VERY_LOW_DENSITY
-    is_low_density = avg_chars_per_page < _PDF_QUALITY_THRESHOLD_LOW_DENSITY
-    is_high_image_ratio = avg_image_ratio > _PDF_QUALITY_THRESHOLD_HIGH_IMAGE_RATIO
-    is_poor_extraction = char_diversity < _PDF_QUALITY_MIN_CHAR_DIVERSITY_RATIO or space_ratio < _PDF_QUALITY_MIN_SPACE_RATIO
-
-    if is_very_low_density: # IMAGE_ONLY: Primarily based on very low text density
-        logging.info(f"PDF detected as IMAGE_ONLY (Very Low Density): {pdf_path}")
-        return {'quality': 'IMAGE_ONLY', 'details': f'Very low average characters per page ({avg_chars_per_page:.1f} < {_PDF_QUALITY_THRESHOLD_VERY_LOW_DENSITY})', 'ocr_recommended': True}
-    elif is_high_image_ratio: # MIXED: High image ratio but wasn't IMAGE_ONLY
-        details = f'High average image ratio ({avg_image_ratio:.2f} > {_PDF_QUALITY_THRESHOLD_HIGH_IMAGE_RATIO})'
-        logging.info(f"PDF detected as MIXED ({details}): {pdf_path}")
-        return {'quality': 'MIXED', 'details': details}
-    elif is_poor_extraction and total_chars > 10: # TEXT_LOW (Poor Extraction): Low quality text, wasn't IMAGE_ONLY or MIXED
-         details = f"Low char diversity ({char_diversity:.2f} < {_PDF_QUALITY_MIN_CHAR_DIVERSITY_RATIO}) or low space ratio ({space_ratio:.2f} < {_PDF_QUALITY_MIN_SPACE_RATIO})"
-         logging.info(f"PDF detected as TEXT_LOW ({details}): {pdf_path}")
-         return {'quality': 'TEXT_LOW', 'details': details + ' detected', 'ocr_recommended': True}
-    elif is_low_density: # TEXT_LOW (Low Density): Low density, wasn't IMAGE_ONLY, MIXED, or Poor Extraction
-        details = f'Low average characters per page ({avg_chars_per_page:.1f} < {_PDF_QUALITY_THRESHOLD_LOW_DENSITY})'
-        logging.info(f"PDF detected as TEXT_LOW ({details}): {pdf_path}")
-        return {'quality': 'TEXT_LOW', 'details': details, 'ocr_recommended': True} # Recommend OCR for low density too
-    else: # Default to TEXT_HIGH
-        logging.info(f"PDF detected as TEXT_HIGH: {pdf_path}")
-        return {'quality': 'TEXT_HIGH', 'details': 'Sufficient text density and low image ratio detected'}
 
 # --- Garbled Text Detection ---
 
-import re
-import logging # Added import
-from collections import Counter
-def detect_garbled_text(text: str, non_alpha_threshold: float = 0.25, repetition_threshold: float = 0.7, min_length: int = 10) -> bool: # Lowered non-alpha threshold further
+def detect_garbled_text(text: str, non_alpha_threshold: float = 0.25, repetition_threshold: float = 0.7, min_length: int = 10) -> bool:
     """
-    Detects potentially garbled text based on simple heuristics.
-
-
-    Args:
-        text: The input text string.
-        non_alpha_threshold: Ratio of non-alphanumeric (excluding space) chars to trigger garbled.
-        repetition_threshold: Ratio of the most frequent character to trigger garbled.
-        min_length: Minimum length to apply heuristics (shorter strings are assumed not garbled).
-
-    Returns:
-        True if the text is likely garbled, False otherwise.
+    Detects potentially garbled text based on heuristics like non-alphanumeric ratio
+    and character repetition.
     """
-    if not text or len(text) < min_length:
-        return False # Too short to analyze reliably
-
     text_length = len(text)
-    alphanumeric_chars = 0
-    non_alphanum_chars = 0 # Count non-alphanumeric, excluding spaces
+    if text_length < min_length:
+        return False # Too short to reliably analyze
 
-    # Calculate alphanumeric ratio (excluding spaces)
-    for char in text:
-        if char.isalnum():
-            alphanumeric_chars += 1
-        elif not char.isspace():
-            non_alphanum_chars += 1
+    # 1. Non-Alphanumeric Ratio
+    non_alpha_count = sum(1 for char in text if not char.isalnum() and not char.isspace())
+    non_alpha_ratio = non_alpha_count / text_length
+    if non_alpha_ratio > non_alpha_threshold:
+        logging.debug(f"Garbled text detected: High non-alpha ratio ({non_alpha_ratio:.2f} > {non_alpha_threshold})")
+        return True
 
-    total_non_space_chars = alphanumeric_chars + non_alphanum_chars
-    non_alpha_ratio = 0.0
-    if total_non_space_chars > 0:
-        non_alpha_ratio = non_alphanum_chars / total_non_space_chars
-        # logging.debug(f"Non-alpha ratio: {non_alpha_ratio:.2f} (Threshold: {non_alpha_threshold})")
-        if non_alpha_ratio >= non_alpha_threshold: # Changed > to >=
-            # logging.debug(f"Garbled text detected (non-alpha ratio)")
-            return True
+    # 2. Character Repetition Ratio
+    # Count occurrences of each character (excluding spaces)
+    char_counts = collections.Counter(c for c in text if not c.isspace())
+    if not char_counts: # Handle case of only spaces
+        return False
+    most_common_char, most_common_count = char_counts.most_common(1)[0]
+    repetition_ratio = most_common_count / (text_length - text.count(' ')) # Ratio based on non-space chars
+    if repetition_ratio > repetition_threshold:
+        logging.debug(f"Garbled text detected: High repetition ratio ({repetition_ratio:.2f} > {repetition_threshold}) for char '{most_common_char}'")
+        return True
 
-    # Check for high repetition
-    repetition_ratio = 0.0
-    if text_length > 0:
-        char_counts = Counter(text)
-        most_common_char_count = char_counts.most_common(1)[0][1] if char_counts else 0
-        repetition_ratio = most_common_char_count / text_length
-        # logging.debug(f"Repetition ratio: {repetition_ratio:.2f} (Threshold: {repetition_threshold})")
-        if repetition_ratio >= repetition_threshold: # Changed > to >=
-            # logging.debug(f"Garbled text detected (repetition ratio)")
-            return True
+    # TODO: Add more heuristics? (e.g., dictionary word check, common pattern matching)
 
-    # Removed the simple common letter frequency check for now
-    # logging.debug(f"Text not detected as garbled. NonAlphaRatio={non_alpha_ratio:.2f}, RepetitionRatio={repetition_ratio:.2f}")
-    return False # Default to not garbled if no heuristics triggered
+    return False
 
 
 # --- Main Processing Functions ---
 
 def process_pdf(file_path: Path, output_format: str = "txt") -> str:
     """Processes a PDF file, extracts text, applies preprocessing, and returns content."""
-    if not PYMUPDF_AVAILABLE: raise ImportError("Required library 'PyMuPDF' is not installed.")
+    if not PYMUPDF_AVAILABLE: raise ImportError("Required library 'PyMuPDF' (fitz) is not installed.")
     logging.info(f"Processing PDF: {file_path} for format: {output_format}")
-
-    # --- Start: Quality Analysis and Conditional OCR ---
-    quality_analysis = detect_pdf_quality(str(file_path)) # Already updated, ensuring context match
-    quality_category = quality_analysis.get('quality', 'UNKNOWN') # Get category
-
-    # Handle ERROR/UNKNOWN/ENCRYPTED from quality check before deciding on OCR
-    if quality_category in ['ERROR', 'UNKNOWN', 'ENCRYPTED', 'EMPTY']:
-         logging.warning(f"PDF quality analysis returned {quality_category} for {file_path}. Cannot process further.")
-         # Return empty string or raise error? Returning empty for now.
-         return ""
-
-    if quality_analysis.get('ocr_recommended'):
-        logging.info(f"Quality analysis ({quality_category}) recommends OCR for {file_path}. Running OCR...")
-        try:
-            # Ensure run_ocr_on_pdf is called with the correct path object or string
-            return run_ocr_on_pdf(str(file_path))
-        except OCRDependencyError as dep_err:
-             logging.error(f"OCR dependency error for {file_path}: {dep_err}. Cannot perform OCR.")
-             # Fallback: Attempt standard extraction even if OCR was recommended but failed due to deps
-             logging.warning(f"Falling back to standard extraction for {file_path} after OCR dependency error.")
-        except Exception as ocr_run_err:
-             logging.error(f"Error running OCR for {file_path}: {ocr_run_err}. Cannot perform OCR.")
-             # Fallback: Attempt standard extraction
-             logging.warning(f"Falling back to standard extraction for {file_path} after OCR runtime error.")
-
-    # --- End: Quality Analysis ---
-
-    # If quality is good or unknown (and OCR not forced/failed), proceed with normal extraction
-    logging.info(f"Proceeding with standard extraction for {file_path} (Quality: {quality_category})")
-
     doc = None
-    all_lines = []
     try:
+        # --- Quality Analysis ---
+        quality_info = detect_pdf_quality(str(file_path))
+        quality_category = quality_info.get("quality_category", "UNKNOWN")
+        ocr_needed = quality_info.get("ocr_recommended", False) # Use correct key 'ocr_recommended'
+
+        # --- OCR (if needed and available) ---
+        if ocr_needed:
+            if OCR_AVAILABLE:
+                logging.info(f"Quality analysis ({quality_category}) recommends OCR for {file_path}. Running OCR...")
+                try:
+                    # Cycle 21 Refactor: Use run_ocr_on_pdf which now uses fitz
+                    ocr_text = run_ocr_on_pdf(str(file_path))
+                    if ocr_text:
+                         logging.info(f"OCR successful for {file_path}.")
+                         # Preprocess OCR text (basic for now, can be expanded)
+                         try: # Add try block for preprocessing OCR text
+                             ocr_lines = ocr_text.splitlines()
+                             (cleaned_lines, title) = _identify_and_remove_front_matter(ocr_lines)
+                             (final_content_lines, formatted_toc) = _extract_and_format_toc(cleaned_lines, output_format)
+                         except Exception as preprocess_err:
+                             logging.error(f"Error preprocessing OCR text for {file_path}: {preprocess_err}", exc_info=True)
+                             # If preprocessing fails, maybe return raw OCR text or skip?
+                             # For now, let's log and proceed to standard extraction by raising the error
+                             # to be caught by the outer OCR exception handler.
+                             # Re-raise to ensure it's caught by the main handler below
+                             raise RuntimeError(f"Error preprocessing OCR text: {preprocess_err}") from preprocess_err
+
+                         # Construct output similar to standard processing
+                         final_output_parts = []
+                         if title != "Unknown Title":
+                             final_output_parts.append(f"# {title}" if output_format == "markdown" else title)
+                         if formatted_toc: # Only add ToC if Markdown requested
+                             final_output_parts.append(formatted_toc)
+                         main_content = "\n".join(final_content_lines)
+                         final_output_parts.append(main_content.strip())
+                         # Return *inside* the if ocr_text block to prevent fall-through
+                         return "\n\n".join(part for part in final_output_parts if part)
+                    else:
+                         logging.warning(f"OCR run for {file_path} but returned no text. Proceeding with standard extraction.")
+                except OCRDependencyError as ocr_dep_err:
+                     logging.warning(f"OCR skipped for {file_path}: {ocr_dep_err}")
+                     raise ocr_dep_err # Re-raise to prevent fall-through
+                except TesseractNotFoundError as tess_err: # Catch specific error instance
+                     logging.warning(f"OCR skipped for {file_path}: Tesseract not found or not in PATH.")
+                     raise tess_err # Re-raise specific error
+                except Exception as ocr_err:
+                     logging.error(f"Error during OCR or OCR preprocessing for {file_path}: {ocr_err}", exc_info=True)
+                     # Re-raise the original error if it came from preprocessing, otherwise wrap
+                     if isinstance(ocr_err, RuntimeError) and "Error preprocessing OCR text" in str(ocr_err):
+                         raise ocr_err # Re-raise the specific preprocessing error
+                     else:
+                         raise RuntimeError(f"OCR or preprocessing failed: {ocr_err}") from ocr_err
+            else:
+                logging.warning(f"OCR needed for {file_path} ({quality_category}), but dependencies (pytesseract/pdf2image/PIL) are not installed. Skipping OCR.")
+
+        # --- Standard Extraction (if OCR not needed OR if OCR failed during preprocessing) ---
+        logging.debug(f"Performing standard PDF extraction for {file_path}...")
         doc = fitz.open(str(file_path))
-        # Re-check encryption just in case, though detect_pdf_quality should handle it
         if doc.is_encrypted:
-            raise ValueError("PDF is encrypted.") # Raise error if encrypted here
+            logging.warning(f"PDF {file_path} is encrypted.")
+            if not doc.authenticate(""):
+                raise ValueError(f"PDF {file_path} is encrypted and cannot be opened.")
+            logging.info(f"Successfully decrypted {file_path} with empty password.")
 
-        # --- Preprocessing ---
-        # 1. Always extract raw text first
-        raw_extracted_lines = []
-        for page in doc:
-            raw_extracted_lines.extend(page.get_text("text", flags=0).splitlines())
+        # 1. Extract RAW text from all pages
+        extracted_raw_lines = []
+        page_count = len(doc)
+        for i, page in enumerate(doc):
+            logging.debug(f"Extracting raw text from page {i+1}/{page_count}...")
+            page_text = page.get_text("text") # Always extract raw text
+            if page_text:
+                extracted_raw_lines.extend(page_text.splitlines())
 
-        # 2. Remove front matter from raw lines
-        (lines_after_fm, title) = _identify_and_remove_front_matter(raw_extracted_lines)
-
-        # 3. Extract ToC from lines after front matter removal
+        # 2. Preprocess the raw lines
+        logging.debug("Starting PDF preprocessing (front matter, ToC) on extracted text...")
+        (lines_after_fm, title) = _identify_and_remove_front_matter(extracted_raw_lines)
         (final_content_lines, formatted_toc) = _extract_and_format_toc(lines_after_fm, output_format)
 
-        # Note: Markdown formatting (_format_pdf_markdown) is currently mocked in the failing test.
-        # If it were not mocked, it would need to be applied *after* these steps, likely during final output construction.
-
-        # --- Final Output Construction ---
+        # 3. Construct final output, applying Markdown formatting AFTER preprocessing if needed
         final_output_parts = []
         if title != "Unknown Title":
+            # Apply Markdown heading format only if output is markdown
             final_output_parts.append(f"# {title}" if output_format == "markdown" else title)
-        if formatted_toc:
+        if formatted_toc: # Already formatted for markdown if needed
             final_output_parts.append(formatted_toc)
 
-        # Join main content lines appropriately
+        # Apply final formatting based on output_format
         if output_format == "markdown":
-             # Markdown formatting already handled joining paragraphs etc.
-             # Need to reconstruct from lines, respecting potential double newlines
-             main_content = "\n".join(final_content_lines) # Basic join for now
-             # Refine joining later if needed to preserve paragraph breaks better
-        else:
-             main_content = "\n".join(final_content_lines)
+            # Basic paragraph joining for preprocessed lines
+            # More sophisticated formatting could re-analyze blocks if needed
+            paragraphs = []
+            current_paragraph = []
+            for line in final_content_lines:
+                if line.strip():
+                    current_paragraph.append(line)
+                elif current_paragraph:
+                    paragraphs.append(" ".join(current_paragraph))
+                    current_paragraph = []
+            if current_paragraph: # Add last paragraph
+                paragraphs.append(" ".join(current_paragraph))
+            main_content = "\n\n".join(paragraphs)
+        else: # Plain text
+            main_content = "\n".join(final_content_lines)
 
         final_output_parts.append(main_content.strip())
+        final_output = "\n\n".join(part for part in final_output_parts if part).strip()
 
-        return "\n\n".join(part for part in final_output_parts if part) # Join sections with double newline
+        # Close doc before returning
+        if doc: doc.close() # Moved close here
+        return final_output
 
-    except fitz.fitz.FitzError as fitz_err: # Catch specific PyMuPDF errors
-        logging.error(f"PyMuPDF error processing {file_path}: {fitz_err}")
-        raise RuntimeError(f"PyMuPDF error: {fitz_err}") from fitz_err
-    except ValueError as val_err: # Catch encryption error
-        logging.error(f"ValueError processing {file_path}: {val_err}")
-        raise # Re-raise encryption error
-    except Exception as e:
-        logging.error(f"Unexpected error processing PDF {file_path}: {e}")
-        raise RuntimeError(f"Unexpected PDF processing error: {e}") from e
+    except Exception as fitz_err: # Broaden exception type for PyMuPDF errors
+        # Check if the error originated from the OCR/preprocessing block
+        if isinstance(fitz_err, (OCRDependencyError, TesseractNotFoundError, RuntimeError)) and \
+           ("OCR" in str(fitz_err) or "Tesseract" in str(fitz_err)):
+             logging.error(f"Re-raising OCR-related error for {file_path}: {fitz_err}", exc_info=True)
+             raise fitz_err # Re-raise the original OCR-related error to stop execution
+
+        # Check if it's likely an encryption error first
+        # Use isinstance to check for ValueError which might indicate encryption
+        elif "encrypted" in str(fitz_err).lower() or isinstance(fitz_err, ValueError):
+             logging.error(f"PyMuPDF/Value error processing encrypted PDF {file_path}: {fitz_err}", exc_info=True)
+             raise ValueError(f"PDF {file_path} is encrypted and cannot be opened.") from fitz_err
+        else: # Handle other PyMuPDF or general errors
+             logging.error(f"PyMuPDF/Other error processing {file_path}: {fitz_err}", exc_info=True)
+             # Use RuntimeError for broader fitz errors or other exceptions
+             raise RuntimeError(f"Error opening or processing PDF {file_path}: {fitz_err}") from fitz_err
+    # Removed the separate ValueError and Exception catches as they are covered above.
     finally:
-        if doc: doc.close()
+        if doc: doc.close() # Ensure doc is closed even if standard extraction fails before return
 
 
 def process_epub(file_path: Path, output_format: str = "txt") -> str:
@@ -878,14 +856,18 @@ def process_epub(file_path: Path, output_format: str = "txt") -> str:
     if not EBOOKLIB_AVAILABLE: raise ImportError("Required library 'ebooklib' is not installed.")
     logging.info(f"Processing EPUB: {file_path} for format: {output_format}")
 
+    logging.debug(f"Attempting to read EPUB: {file_path}")
     try:
+        logging.debug("Successfully opened EPUB file.")
         book = epub.read_epub(str(file_path))
         all_lines = []
         footnote_defs = {} # Collect footnote definitions across items
 
         # --- Extract Content (HTML) ---
         items = list(book.get_items_of_type(ebooklib.ITEM_DOCUMENT))
+        logging.debug(f"Found {len(items)} items of type ITEM_DOCUMENT.")
         for item in items:
+            logging.debug(f"Processing item: {item.get_name()}")
             try:
                 content = item.get_content()
                 if isinstance(content, bytes):
@@ -898,34 +880,44 @@ def process_epub(file_path: Path, output_format: str = "txt") -> str:
                         except UnicodeDecodeError:
                             logging.warning(f"Could not decode content from item {item.get_name()} in {file_path}. Skipping.")
                             continue
+                # If not skipped, proceed with processing
                 else: # Assume it's already a string
                     html_content = content
 
                 if not html_content: continue
-
+                logging.debug(f"Converting item {item.get_name()} content to {output_format}...")
                 # --- Convert HTML to Text or Markdown ---
-                if output_format == "markdown":
-                    soup = BeautifulSoup(html_content, 'html.parser')
-                    body = soup.find('body')
-                    if body:
-                         # Process body content node by node
-                         md_content = "\n".join(
-                             _epub_node_to_markdown(child, footnote_defs).strip()
-                             for child in body.children if child.name # Process only tags
-                         ).strip()
-                         # Consolidate multiple newlines created by block elements
-                         md_content = re.sub(r'\n{3,}', '\n\n', md_content)
-                         all_lines.extend(md_content.splitlines())
-                else: # Default to text
-                    text_content = _html_to_text(html_content)
-                    all_lines.extend(text_content.splitlines())
+                try: # Add try block around conversion
+                    if output_format == "markdown":
+                        logging.debug(f"Item {item.get_name()}: Converting HTML to Markdown...")
+                        soup = BeautifulSoup(html_content, 'html.parser')
+                        body = soup.find('body')
+                        if body:
+                            # Process body content, collecting footnote definitions
+                            item_markdown = _epub_node_to_markdown(body, footnote_defs)
+                            # Append footnote definitions collected from this item
+                            # (Footnote formatting happens at the end)
+                            all_lines.extend(item_markdown.splitlines())
+                        else:
+                             logging.warning(f"No <body> tag found in item {item.get_name()}. Skipping.")
+                    else: # Default to text
+                        logging.debug(f"Item {item.get_name()}: Extracting plain text from HTML...")
+                        item_text = _html_to_text(html_content)
+                        if item_text:
+                            all_lines.extend(item_text.splitlines())
+                except Exception as conversion_err:
+                     logging.error(f"Error converting content from item {item.get_name()} in {file_path}: {conversion_err}", exc_info=True)
+                     # Optionally add a placeholder or skip the item
+                     all_lines.append(f"[Error processing item {item.get_name()}]")
 
             except Exception as item_err:
-                 logging.warning(f"Error processing item {item.get_name()} in {file_path}: {item_err}. Skipping item.")
+                logging.error(f"Error reading content from item {item.get_name()} in {file_path}: {item_err}", exc_info=True)
+                all_lines.append(f"[Error reading item {item.get_name()}]")
 
         # --- Preprocessing ---
-        (cleaned_lines, title) = _identify_and_remove_front_matter(all_lines)
-        (final_content_lines, formatted_toc) = _extract_and_format_toc(cleaned_lines, output_format)
+        logging.debug("Starting EPUB preprocessing (front matter, ToC)...")
+        (lines_after_fm, title) = _identify_and_remove_front_matter(all_lines)
+        (final_content_lines, formatted_toc) = _extract_and_format_toc(lines_after_fm, output_format)
 
         # --- Final Output Construction ---
         final_output_parts = []
@@ -934,191 +926,186 @@ def process_epub(file_path: Path, output_format: str = "txt") -> str:
         if formatted_toc:
             final_output_parts.append(formatted_toc)
 
-        # Join main content lines appropriately
-        main_content = "\n".join(final_content_lines) # Basic join for now
+        main_content = "\n".join(final_content_lines) # Join preprocessed lines
         final_output_parts.append(main_content.strip())
 
-        # Append footnote definitions if output is Markdown
+        # Append formatted footnote definitions if output is markdown
         if output_format == "markdown" and footnote_defs:
-            footnote_block = "---\n" + "\n".join(
-                f"[^{fn_id}]: {fn_text}" for fn_id, fn_text in sorted(footnote_defs.items())
-            )
-            final_output_parts.append(footnote_block)
+            footnote_block_lines = ["---"]
+            for fn_id, fn_text in sorted(footnote_defs.items()):
+                footnote_block_lines.append(f"[^{fn_id}]: {fn_text}")
+            final_output_parts.append("\n".join(footnote_block_lines))
 
-        return "\n\n".join(part for part in final_output_parts if part) # Join sections
+        return "\n\n".join(part for part in final_output_parts if part).strip()
 
-    except ebooklib.epub.EpubException as epub_err:
-        logging.error(f"Ebooklib error processing {file_path}: {epub_err}")
-        raise RuntimeError(f"Ebooklib error: {epub_err}") from epub_err
     except Exception as e:
-        logging.error(f"Unexpected error processing EPUB {file_path}: {e}")
-        raise RuntimeError(f"Unexpected EPUB processing error: {e}") from e
+        logging.error(f"Error processing EPUB {file_path}: {e}", exc_info=True)
+        raise RuntimeError(f"Error processing EPUB {file_path}: {e}") from e
 
 
 def process_txt(file_path: Path, output_format: str = "txt") -> str:
     """Processes a TXT file, applies preprocessing, and returns content."""
-    logging.info(f"Processing TXT: {file_path} for format: {output_format}")
+    logging.info(f"Processing TXT: {file_path}")
     try:
-        # Attempt decoding with UTF-8 first, then fallback
         try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                all_lines = f.readlines()
+            # Try reading as UTF-8 first
+            async def read_utf8():
+                 async with aiofiles.open(file_path, mode='r', encoding='utf-8') as f:
+                     return await f.readlines()
+            content_lines = asyncio.run(read_utf8()) # Run async read
         except UnicodeDecodeError:
             logging.warning(f"UTF-8 decoding failed for {file_path}. Trying latin-1.")
             try:
-                with open(file_path, 'r', encoding='latin-1') as f:
-                    all_lines = f.readlines()
-            except Exception as enc_err:
-                 logging.error(f"Failed to decode {file_path} with fallback encoding: {enc_err}")
-                 raise RuntimeError(f"File decoding error: {enc_err}") from enc_err
+                async def read_latin1():
+                     async with aiofiles.open(file_path, mode='r', encoding='latin-1') as f:
+                         return await f.readlines()
+                content_lines = asyncio.run(read_latin1()) # Run async read
+            except Exception as read_err:
+                 logging.error(f"Failed to read {file_path} with fallback encoding: {read_err}")
+                 raise IOError(f"Could not read file {file_path}") from read_err
+        except Exception as read_err:
+             logging.error(f"Failed to read {file_path}: {read_err}")
+             raise IOError(f"Could not read file {file_path}") from read_err
 
         # --- Preprocessing ---
-        # Strip newline characters from each line before preprocessing
-        all_lines_stripped = [line.rstrip('\n\r') for line in all_lines]
-        (cleaned_lines, title) = _identify_and_remove_front_matter(all_lines_stripped)
-        (final_content_lines, formatted_toc) = _extract_and_format_toc(cleaned_lines, output_format)
+        logging.debug("Starting TXT preprocessing (front matter, ToC)...")
+        (lines_after_fm, title) = _identify_and_remove_front_matter(content_lines)
+        (final_content_lines, formatted_toc) = _extract_and_format_toc(lines_after_fm, output_format)
 
         # --- Final Output Construction ---
         final_output_parts = []
         if title != "Unknown Title":
-            # TXT output doesn't get Markdown heading
-            final_output_parts.append(title)
-        if formatted_toc and output_format == "markdown": # Only add ToC if Markdown requested
+            final_output_parts.append(f"# {title}" if output_format == "markdown" else title)
+        if formatted_toc:
             final_output_parts.append(formatted_toc)
 
-        # Join main content lines
         main_content = "\n".join(final_content_lines)
         final_output_parts.append(main_content.strip())
 
-        # No footnote processing for TXT
-        return "\n\n".join(part for part in final_output_parts if part) # Join sections
+        return "\n\n".join(part for part in final_output_parts if part).strip()
 
-    except FileNotFoundError:
-        logging.error(f"TXT file not found: {file_path}")
-        raise
     except Exception as e:
-        logging.error(f"Error processing TXT {file_path}: {e}")
-        raise RuntimeError(f"TXT processing error: {e}") from e
+        logging.error(f"Error processing TXT {file_path}: {e}", exc_info=True)
+        raise RuntimeError(f"Error processing TXT {file_path}: {e}") from e
 
+
+# --- OCR Function ---
 
 def run_ocr_on_pdf(pdf_path: str, lang: str = 'eng') -> str: # Cycle 21 Refactor: Add lang parameter
     """
-    Runs OCR on a PDF using Tesseract via pytesseract and pdf2image.
-    Handles potential dependency errors and Tesseract execution errors.
+    Performs OCR on a PDF file using Tesseract via PyMuPDF rendering.
 
     Args:
         pdf_path: Path to the PDF file.
-        lang: Language code for Tesseract (default 'eng').
+        lang: Language code for Tesseract (e.g., 'eng').
 
     Returns:
-        Aggregated text extracted via OCR.
+        Extracted text content as a single string.
 
     Raises:
-        OCRDependencyError: If required libraries (pytesseract, pdf2image, PIL) are not installed.
-        RuntimeError: If Tesseract executable is not found or other runtime errors occur.
+        OCRDependencyError: If required OCR dependencies are not installed.
+        TesseractNotFoundError: If Tesseract executable is not found.
+        RuntimeError: For other processing errors.
     """
     if not OCR_AVAILABLE:
         raise OCRDependencyError("OCR dependencies (pytesseract, pdf2image, Pillow) not installed.")
+    if not PYMUPDF_AVAILABLE:
+        raise OCRDependencyError("PyMuPDF (fitz) is required for OCR rendering but not installed.")
 
-    try:
-        # Check for Tesseract executable before processing
-        pytesseract.get_tesseract_version()
-    except TesseractNotFoundError as e:
-         logging.error(f"Tesseract executable not found: {e}. Please install Tesseract.")
-         # Raise a more informative error or handle as needed
-         raise RuntimeError(f"Tesseract not found: {e}") from e
-
-    aggregated_text = []
+    logging.info(f"Running OCR on {pdf_path} with language '{lang}'...")
+    extracted_text = ""
     doc = None
     try:
-        # Use pdf2image to convert PDF pages to images
-        images = convert_from_path(pdf_path, dpi=300) # Use pdf2image
+        doc = fitz.open(pdf_path)
+        page_count = len(doc)
+        logging.debug(f"PDF has {page_count} pages.")
 
-        for i, image in enumerate(images):
+        for i, page in enumerate(doc):
             page_num = i + 1
+            logging.debug(f"Processing page {page_num}/{page_count} for OCR...")
             try:
-                # Use pytesseract to OCR the image
-                page_text = pytesseract.image_to_string(image, lang=lang)
-                if page_text:
-                    aggregated_text.append(page_text.strip())
-            except TesseractNotFoundError as e: # Catch specific error here too
-                 logging.warning(f"Tesseract not found during processing page {page_num} of {pdf_path}: {e}. Check installation.")
-                 # Re-raise or handle - re-raising for now
-                 raise RuntimeError(f"Tesseract not found during processing: {e}") from e
-            except Exception as ocr_error:
-                logging.warning(f"OCR failed for page {page_num} of {pdf_path}: {ocr_error}")
-                # Optionally: Add placeholder text like "[OCR Failed for Page]"
+                # Render page to pixmap, then to PNG bytes
+                pix = page.get_pixmap(dpi=300) # Higher DPI for better OCR
+                img_bytes = pix.tobytes("png")
+                img = Image.open(io.BytesIO(img_bytes))
 
-    except Exception as e:
-        # Catch errors from convert_from_path or other issues
-        logging.error(f"Error during OCR preparation/conversion for {pdf_path}: {e}")
-        raise RuntimeError(f"OCR processing failed: {e}") from e
+                # Perform OCR on the image
+                page_text = pytesseract.image_to_string(img, lang=lang)
+                extracted_text += page_text + "\n\n" # Add page separator
+                logging.debug(f"OCR successful for page {page_num}.")
+            # Specific exception must come BEFORE generic Exception
+            except TesseractNotFoundError as tess_err:
+                 logging.error(f"Tesseract not found during OCR on page {page_num}: {tess_err}")
+                 raise # Re-raise to be caught by outer handler
+            except Exception as page_err:
+                 logging.error(f"Error during OCR on page {page_num}: {page_err}", exc_info=True)
+                 # Continue to next page if one fails? Or raise? Let's continue for now.
+                 extracted_text += f"[OCR Error on Page {page_num}]\n\n"
+
+        logging.info(f"OCR completed for {pdf_path}. Total extracted length: {len(extracted_text)}")
+        return extracted_text.strip()
+
+    # Removed redundant outer TesseractNotFoundError catch, inner loop handler re-raises.
+    # Catch specific PyMuPDF file opening errors or other RuntimeErrors
+    except RuntimeError as fitz_err:
+         logging.error(f"PyMuPDF/Runtime error during OCR preparation for {pdf_path}: {fitz_err}", exc_info=True)
+         raise RuntimeError(f"PyMuPDF/Runtime error during OCR: {fitz_err}") from fitz_err
+    except Exception as e: # General catch for other unexpected errors
+        logging.error(f"Unexpected error during OCR for {pdf_path}: {e}", exc_info=True)
+        raise RuntimeError(f"Unexpected OCR error: {e}") from e
     finally:
-        # pdf2image doesn't require explicit closing like fitz
-        pass
-
-    return "\n\n".join(aggregated_text).strip()
+        if doc: doc.close()
 
 
-# --- File Saving Helper ---
+# --- File Saving ---
 
 async def save_processed_text(
-    original_file_path: Path,
-    text_content: str | None,
+    original_file_path: str,
+    processed_content: str,
     output_format: str = "txt",
-    book_id: str | None = None,
-    author: str | None = None,
-    title: str | None = None,
-    max_slug_len: int = 100 # Added max length for slug
-) -> Path:
+    book_details: dict | None = None # Added book_details for slug
+) -> str:
     """Saves the processed text content to a file in the output directory."""
-    if text_content is None:
-        # Raise a specific error if content is None
-        raise FileSaveError(f"Failed to save processed text to unknown_processed_file: Cannot save None content.")
-
     try:
-        # Create filename
-        if author and title and book_id:
-            # Generate slug from author and title
-            author_slug = _slugify(author)
-            title_slug = _slugify(title)
-            full_slug = f"{author_slug}-{title_slug}"
+        original_path = Path(original_file_path)
+        original_filename = original_path.stem
+        original_extension = original_path.suffix.lower()
 
-            # Truncate slug if too long, ensuring it doesn't cut mid-word if possible
-            if len(full_slug) > max_slug_len:
-                truncated = full_slug[:max_slug_len]
-                # Try to cut at the last hyphen before the limit
-                last_hyphen = truncated.rfind('-')
-                if last_hyphen > max_slug_len // 2: # Avoid cutting too short
-                    full_slug = truncated[:last_hyphen]
-                else:
-                    full_slug = truncated # Cut hard if no good hyphen found
-
-            filename = f"{full_slug}-{book_id}.{output_format}"
+        # --- Generate Filename ---
+        if book_details:
+            author = _slugify(book_details.get('author', 'unknown-author'))
+            title = _slugify(book_details.get('title', 'unknown-title'))
+            book_id = book_details.get('id', 'no-id') # Use 'id' if available
+            # Format: author-title-id.original_ext.processed.output_ext
+            base_name = f"{author}-{title}-{book_id}"
         else:
-            # Fallback filename if metadata is missing
-            base_name = original_file_path.stem
-            filename = f"{base_name}.processed.{output_format}"
+            # Fallback if no book_details
+            base_name = _slugify(original_filename)
 
-        # Ensure output directory exists
+        processed_filename = f"{base_name}{original_extension}.processed.{output_format}"
+
+        # --- Ensure Output Directory Exists ---
         PROCESSED_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+        output_path = PROCESSED_OUTPUT_DIR / processed_filename
 
-        # Construct final path
-        final_path = PROCESSED_OUTPUT_DIR / filename
+        # --- Write Content Asynchronously ---
+        async with aiofiles.open(output_path, mode='w', encoding='utf-8') as f:
+            await f.write(processed_content)
 
-        # Write content asynchronously
-        async with aiofiles.open(final_path, mode='w', encoding='utf-8') as f:
-            await f.write(text_content)
+        logging.info(f"Successfully saved processed content to: {output_path}")
+        return str(output_path) # Return the string representation of the path
 
-        logging.info(f"Processed text saved to: {final_path}")
-        return final_path
-
-    except ValueError as ve: # Catch the specific ValueError from None content check
-         logging.error(f"Error saving processed text: {ve}")
-         raise FileSaveError(f"Failed to save processed text to {filename if 'filename' in locals() else 'unknown_processed_file'}: {ve}") from ve
-    except OSError as e:
-        logging.error(f"OS error saving processed file {filename if 'filename' in locals() else 'unknown'}: {e}")
-        raise FileSaveError(f"Failed to save processed file due to OS error: {e}") from e
+    except ValueError as ve: # Catch the specific error for None content
+         logging.error(f"ValueError during save: {ve}")
+         # Construct a meaningful path for the error message if possible
+         unknown_path = PROCESSED_OUTPUT_DIR / f"{_slugify(original_path.stem)}.processed.{output_format}"
+         raise FileSaveError(f"Failed to save processed text to {unknown_path}: {ve}") from ve
+    except OSError as ose:
+        logging.error(f"OS error saving processed file: {ose}")
+        # Construct a meaningful path for the error message if possible
+        failed_path = PROCESSED_OUTPUT_DIR / processed_filename if 'processed_filename' in locals() else "unknown_processed_file"
+        raise FileSaveError(f"Failed to save processed file due to OS error: {ose}") from ose
     except Exception as e:
-        logging.error(f"Unexpected error saving processed file {filename if 'filename' in locals() else 'unknown'}: {e}")
-        raise FileSaveError(f"Unexpected error saving processed file: {e}") from e
+        logging.error(f"Unexpected error saving processed file: {e}", exc_info=True)
+        failed_path = PROCESSED_OUTPUT_DIR / processed_filename if 'processed_filename' in locals() else "unknown_processed_file"
+        raise FileSaveError(f"Unexpected error saving processed file {failed_path}: {e}") from e

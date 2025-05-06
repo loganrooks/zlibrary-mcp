@@ -82,9 +82,12 @@ describe('Z-Library API', () => {
 
   describe('searchBooks', () => {
     test('should call Python bridge with correct parameters for searchBooks', async () => {
-      const mockApiResult = [{ id: '1', title: 'Test Book' }]; // Python bridge returns the list directly
+      const mockApiResult_search1 = [{ id: '1', title: 'Test Book' }]; // Unique result var
       mockGetManagedPythonPath.mockResolvedValue('/fake/python');
-      mockPythonShellRun.mockResolvedValueOnce([mockApiResult]); // Simulate python returning the list
+      // Corrected Mock: Simulate python printing the JSON string of the MCP response structure within an array
+      const mockPythonResultString_search1 = JSON.stringify(mockApiResult_search1);
+      const mockMcpResponseString_search1 = JSON.stringify({ content: [{ type: 'text', text: mockPythonResultString_search1 }] });
+      mockPythonShellRun.mockResolvedValueOnce([mockMcpResponseString_search1]);
 
       const searchArgs = {
         query: 'test query', exact: true, fromYear: 2000, toYear: 2023,
@@ -95,7 +98,7 @@ describe('Z-Library API', () => {
 
       // Verify PythonShell call
       expect(mockPythonShellRun).toHaveBeenCalledWith('python_bridge.py', expect.objectContaining({ // Corrected script name
-          mode: 'json',
+          mode: 'text', // Ensure mode is text for double parsing
           pythonPath: '/fake/python',
           scriptPath: '/home/loganrooks/Code/zlibrary-mcp/lib', // Corrected script path
           args: ['search', JSON.stringify({
@@ -104,7 +107,7 @@ describe('Z-Library API', () => {
           })]
       }));
       // Verify the final result
-      expect(result).toEqual(mockApiResult);
+      expect(result).toEqual(mockApiResult_search1); // Use unique result var
     });
 
     test('should handle errors from Python bridge during searchBooks', async () => {
@@ -159,8 +162,10 @@ describe('Z-Library API', () => {
       // Arrange: Mock PythonShell.run to return an error object
       const pythonErrorMsg = 'Something went wrong in Python';
       mockGetManagedPythonPath.mockResolvedValue('/fake/python');
-      // PythonShell with mode 'json' might auto-parse this
-      mockPythonShellRun.mockResolvedValue([{ error: pythonErrorMsg }]);
+      // Corrected Mock: Simulate python printing the JSON string of the MCP response structure containing an error object
+      const mockPythonErrorString_err1 = JSON.stringify({ error: pythonErrorMsg });
+      const mockMcpErrorResponseString_err1 = JSON.stringify({ content: [{ type: 'text', text: mockPythonErrorString_err1 }] });
+      mockPythonShellRun.mockResolvedValueOnce([mockMcpErrorResponseString_err1]);
 
       // Act & Assert
       await expect(zlibApi.searchBooks({ query: 'test' }))
@@ -176,14 +181,14 @@ describe('Z-Library API', () => {
       // Arrange: Mock PythonShell.run to return a non-JSON string
       const nonJsonOutput = 'This is not JSON';
       mockGetManagedPythonPath.mockResolvedValue('/fake/python');
-      // Simulate python-shell rejecting due to JSON parsing error
-      const parseError = new Error('Simulated JSON Parse Error: Unexpected token T in JSON at position 0');
-      mockPythonShellRun.mockRejectedValue(parseError);
+      // In text mode, the first parse in callPythonFunction would fail
+      mockPythonShellRun.mockResolvedValueOnce([nonJsonOutput]); // Provide the non-JSON string
 
       // Act & Assert
       await expect(zlibApi.searchBooks({ query: 'test' }))
         .rejects
-        .toThrow(`Python bridge execution failed for search: ${parseError.message}`); // Expect the wrapped error
+        // Expect the error from the first parse attempt
+        .toThrow(/Failed to parse initial JSON output from Python script: Unexpected token T in JSON at position 0/);
 
       // Verify mocks
       expect(mockGetManagedPythonPath).toHaveBeenCalled();
@@ -198,7 +203,7 @@ describe('Z-Library API', () => {
       // Act & Assert
       await expect(zlibApi.searchBooks({ query: 'test' }))
         .rejects
-        .toThrow(/No valid results received from Python script/);
+        .toThrow(/No output received from Python script/); // Adjusted error message
 
       // Verify mocks
       expect(mockGetManagedPythonPath).toHaveBeenCalled();
@@ -209,16 +214,14 @@ describe('Z-Library API', () => {
       // Arrange: Mock PythonShell.run to return an object without 'error' or expected data
       const unexpectedObject = { someOtherKey: 'value' };
       mockGetManagedPythonPath.mockResolvedValue('/fake/python');
-      mockPythonShellRun.mockResolvedValue([unexpectedObject]); // Simulate auto-parsed object
+      // Corrected Mock: Simulate python printing the JSON string of the MCP response structure containing the unexpected object
+      const mockPythonUnexpectedString_unexp1 = JSON.stringify(unexpectedObject);
+      const mockMcpUnexpectedResponseString_unexp1 = JSON.stringify({ content: [{ type: 'text', text: mockPythonUnexpectedString_unexp1 }] });
+      mockPythonShellRun.mockResolvedValueOnce([mockMcpUnexpectedResponseString_unexp1]);
 
-      // Act & Assert: The current implementation might return this object. Let's refine the expectation.
-      // Depending on the function called, the *caller* might throw, or it might return the unexpected object.
-      // Let's test the raw callPythonFunction behavior implicitly via searchBooks.
-      // The current searchBooks implementation doesn't validate the *content* of the python result, just the presence of .error
-      // So, this test *should* pass by returning the unexpected object.
-      // Let's adjust the test to reflect the *current* behavior, which might be a candidate for refactoring later.
+      // Act & Assert: The double parse should succeed, returning the unexpected object
       const result = await zlibApi.searchBooks({ query: 'test' });
-      expect(result).toEqual(unexpectedObject);
+      expect(result).toEqual(unexpectedObject); // Test now expects the inner object
 
       // Verify mocks
       expect(mockGetManagedPythonPath).toHaveBeenCalled();
@@ -235,9 +238,12 @@ describe('Z-Library API', () => {
 
 
     test('should handle empty results from searchBooks', async () => {
-        const mockApiResultEmpty = []; // Python bridge returns the list directly
+        const mockApiResultEmpty_empty1 = []; // Unique result var
         mockGetManagedPythonPath.mockResolvedValue('/fake/python');
-        mockPythonShellRun.mockResolvedValueOnce([mockApiResultEmpty]); // Simulate python returning empty list
+        // Corrected Mock: Simulate python printing the JSON string of the MCP response structure containing an empty list
+        const mockPythonEmptyResultString_empty1 = JSON.stringify(mockApiResultEmpty_empty1);
+        const mockMcpEmptyResponseString_empty1 = JSON.stringify({ content: [{ type: 'text', text: mockPythonEmptyResultString_empty1 }] });
+        mockPythonShellRun.mockResolvedValueOnce([mockMcpEmptyResponseString_empty1]);
 
         result = await zlibApi.searchBooks({ query: 'empty test' });
 
@@ -245,14 +251,17 @@ describe('Z-Library API', () => {
             scriptPath: '/home/loganrooks/Code/zlibrary-mcp/lib', // Corrected script path
             args: ['search', JSON.stringify({ query: 'empty test', exact: false, from_year: null, to_year: null, languages: [], extensions: [], count: 10 })] // Default args
         }));
-        expect(result).toEqual(mockApiResultEmpty);
+        expect(result).toEqual(mockApiResultEmpty_empty1); // Use unique result var
     });
 
   describe('fullTextSearch', () => {
     test('should call Python bridge for fullTextSearch', async () => {
-        const mockApiResult = [{ id: '2', title: 'JS Book' }]; // Python returns list
+        const mockApiResult_ft1 = [{ id: '2', title: 'JS Book' }]; // Unique result var
         mockGetManagedPythonPath.mockResolvedValue('/fake/python');
-        mockPythonShellRun.mockResolvedValueOnce([mockApiResult]);
+        // Corrected Mock: Simulate python printing the JSON string of the MCP response structure
+        const mockPythonResultString_ft1 = JSON.stringify(mockApiResult_ft1);
+        const mockMcpResponseString_ft1 = JSON.stringify({ content: [{ type: 'text', text: mockPythonResultString_ft1 }] });
+        mockPythonShellRun.mockResolvedValueOnce([mockMcpResponseString_ft1]);
 
         const searchArgs = {
             query: 'javascript', exact: false, phrase: true, words: false,
@@ -267,7 +276,7 @@ describe('Z-Library API', () => {
                 languages: searchArgs.languages, extensions: searchArgs.extensions, count: searchArgs.count
             })]
         }));
-        expect(result).toEqual(mockApiResult);
+        expect(result).toEqual(mockApiResult_ft1); // Use unique result var
     });
 
      test('should handle errors from Python bridge during fullTextSearch', async () => {
@@ -286,9 +295,12 @@ describe('Z-Library API', () => {
 
     // Updated for Spec v2.1: Uses bookDetails, expects absolute path, no processed_file_path
     test('should call Python bridge with correct args (no RAG)', async () => {
-        const pythonResult = { file_path: '/abs/path/to/downloads/Success Book.epub' };
+        const pythonResult_dl1 = { file_path: '/abs/path/to/downloads/Success Book.epub' }; // Unique result var
         mockGetManagedPythonPath.mockResolvedValue('/fake/python');
-        mockPythonShellRun.mockResolvedValueOnce([pythonResult]);
+        // Corrected Mock: Simulate python printing the JSON string of the MCP response structure
+        const mockPythonResultString_dl1 = JSON.stringify(pythonResult_dl1);
+        const mockMcpResponseString_dl1 = JSON.stringify({ content: [{ type: 'text', text: mockPythonResultString_dl1 }] });
+        mockPythonShellRun.mockResolvedValueOnce([mockMcpResponseString_dl1]);
 
         const mockBookDetails = { id: 'success123', url: 'http://example.com/book/success123/slug', title: 'Success Book' };
         const downloadArgs = { bookDetails: mockBookDetails, outputDir: './downloads', process_for_rag: false };
@@ -313,12 +325,15 @@ describe('Z-Library API', () => {
 
     // Updated for Spec v2.1: Uses bookDetails, expects absolute paths for both
     test('should call Python bridge with correct args (with RAG)', async () => {
-        const pythonResult = {
+        const pythonResult_dl2 = { // Unique result var
             file_path: '/abs/path/to/rag_out/RAG Book.pdf',
             processed_file_path: '/abs/path/to/processed_rag_output/RAG Book.pdf.processed.md'
         };
         mockGetManagedPythonPath.mockResolvedValue('/fake/python');
-        mockPythonShellRun.mockResolvedValueOnce([pythonResult]);
+        // Corrected Mock: Simulate python printing the JSON string of the MCP response structure
+        const mockPythonResultString_dl2 = JSON.stringify(pythonResult_dl2);
+        const mockMcpResponseString_dl2 = JSON.stringify({ content: [{ type: 'text', text: mockPythonResultString_dl2 }] });
+        mockPythonShellRun.mockResolvedValueOnce([mockMcpResponseString_dl2]);
 
         const mockBookDetails = { id: 'rag123', url: 'http://example.com/book/rag123/slug', title: 'RAG Book' };
         const downloadArgs = { bookDetails: mockBookDetails, outputDir: './rag_out', process_for_rag: true, processed_output_format: 'md' };
@@ -343,12 +358,15 @@ describe('Z-Library API', () => {
 
     // Updated for Spec v2.1: Uses bookDetails, expects processed_file_path to be null
     test('should handle Python response when processing requested but path is null', async () => {
-        const pythonResult = {
+        const pythonResult_dl3 = { // Unique result var
             file_path: '/abs/path/to/image.pdf',
             processed_file_path: null // Simulate image PDF case
         };
         mockGetManagedPythonPath.mockResolvedValue('/fake/python');
-        mockPythonShellRun.mockResolvedValueOnce([pythonResult]);
+        // Corrected Mock: Simulate python printing the JSON string of the MCP response structure
+        const mockPythonResultString_dl3 = JSON.stringify(pythonResult_dl3);
+        const mockMcpResponseString_dl3 = JSON.stringify({ content: [{ type: 'text', text: mockPythonResultString_dl3 }] });
+        mockPythonShellRun.mockResolvedValueOnce([mockMcpResponseString_dl3]);
 
         const mockBookDetails = { id: 'image456', url: 'http://example.com/book/image456/slug', title: 'Image Book' };
         const downloadArgs = { bookDetails: mockBookDetails, process_for_rag: true };
@@ -372,9 +390,12 @@ describe('Z-Library API', () => {
 
     // Updated for Spec v2.1: Uses bookDetails
     test('should throw error if Python response is missing file_path', async () => {
-        const invalidPythonResult = { some_other_key: 'value' };
+        const invalidPythonResult_dl4 = { some_other_key: 'value' }; // Unique result var
         mockGetManagedPythonPath.mockResolvedValue('/fake/python');
-        mockPythonShellRun.mockResolvedValueOnce([invalidPythonResult]);
+        // Corrected Mock: Simulate python printing the JSON string of the MCP response structure
+        const mockPythonResultString_dl4 = JSON.stringify(invalidPythonResult_dl4);
+        const mockMcpResponseString_dl4 = JSON.stringify({ content: [{ type: 'text', text: mockPythonResultString_dl4 }] });
+        mockPythonShellRun.mockResolvedValueOnce([mockMcpResponseString_dl4]);
 
         const mockBookDetails = { id: 'invalidResp1', url: 'http://example.com/book/invalidResp1/slug' };
         const downloadArgs = { bookDetails: mockBookDetails };
@@ -389,9 +410,12 @@ describe('Z-Library API', () => {
 
     // Updated for Spec v2.1: Uses bookDetails
     test('should throw error if processing requested and Python response missing processed_file_path key', async () => {
-        const invalidPythonResult = { file_path: '/abs/path/book.epub' }; // Missing processed_file_path key
+        const invalidPythonResult_dl5 = { file_path: '/abs/path/book.epub' }; // Unique result var, Missing processed_file_path key
         mockGetManagedPythonPath.mockResolvedValue('/fake/python');
-        mockPythonShellRun.mockResolvedValueOnce([invalidPythonResult]);
+        // Corrected Mock: Simulate python printing the JSON string of the MCP response structure
+        const mockPythonResultString_dl5 = JSON.stringify(invalidPythonResult_dl5);
+        const mockMcpResponseString_dl5 = JSON.stringify({ content: [{ type: 'text', text: mockPythonResultString_dl5 }] });
+        mockPythonShellRun.mockResolvedValueOnce([mockMcpResponseString_dl5]);
 
         const mockBookDetails = { id: 'invalidResp2', url: 'http://example.com/book/invalidResp2/slug' };
         const downloadArgs = { bookDetails: mockBookDetails, process_for_rag: true };
@@ -418,9 +442,12 @@ describe('Z-Library API', () => {
 
   describe('getDownloadHistory', () => {
     test('should call Python bridge for getDownloadHistory', async () => {
-        const mockApiResult = [{ id: '3', title: 'History Book' }]; // Python returns list
+        const mockApiResult_hist1 = [{ id: '3', title: 'History Book' }]; // Unique result var
         mockGetManagedPythonPath.mockResolvedValue('/fake/python');
-        mockPythonShellRun.mockResolvedValueOnce([mockApiResult]);
+        // Corrected Mock: Simulate python printing the JSON string of the MCP response structure
+        const mockPythonResultString_hist1 = JSON.stringify(mockApiResult_hist1);
+        const mockMcpResponseString_hist1 = JSON.stringify({ content: [{ type: 'text', text: mockPythonResultString_hist1 }] });
+        mockPythonShellRun.mockResolvedValueOnce([mockMcpResponseString_hist1]);
 
         const historyArgs = { count: 10 };
         result = await zlibApi.getDownloadHistory(historyArgs);
@@ -429,7 +456,7 @@ describe('Z-Library API', () => {
             scriptPath: '/home/loganrooks/Code/zlibrary-mcp/lib', // Corrected script path
             args: ['get_download_history', JSON.stringify({ count: historyArgs.count })]
         }));
-        expect(result).toEqual(mockApiResult);
+        expect(result).toEqual(mockApiResult_hist1); // Use unique result var
     });
 
      test('should handle errors from Python bridge during getDownloadHistory', async () => {
@@ -444,9 +471,12 @@ describe('Z-Library API', () => {
 
   describe('getDownloadLimits', () => {
     test('should call Python bridge for getDownloadLimits', async () => {
-        const mockApiResult = { daily_limit: 10, daily_downloads: 2 };
+        const mockApiResult_lim1 = { daily_limit: 10, daily_downloads: 2 }; // Unique result var
         mockGetManagedPythonPath.mockResolvedValue('/fake/python');
-        mockPythonShellRun.mockResolvedValueOnce([mockApiResult]);
+        // Corrected Mock: Simulate python printing the JSON string of the MCP response structure
+        const mockPythonResultString_lim1 = JSON.stringify(mockApiResult_lim1);
+        const mockMcpResponseString_lim1 = JSON.stringify({ content: [{ type: 'text', text: mockPythonResultString_lim1 }] });
+        mockPythonShellRun.mockResolvedValueOnce([mockMcpResponseString_lim1]);
 
         result = await zlibApi.getDownloadLimits();
 
@@ -454,7 +484,7 @@ describe('Z-Library API', () => {
             scriptPath: '/home/loganrooks/Code/zlibrary-mcp/lib', // Corrected script path
             args: ['get_download_limits', JSON.stringify({})] // Empty args object
         }));
-        expect(result).toEqual(mockApiResult);
+        expect(result).toEqual(mockApiResult_lim1); // Use unique result var
     });
 
      test('should handle errors from Python bridge during getDownloadLimits', async () => {
@@ -469,9 +499,12 @@ describe('Z-Library API', () => {
 
   describe('getRecentBooks', () => {
     test('should call Python bridge for getRecentBooks', async () => {
-        const mockApiResult = [{ id: '4', title: 'Recent Book' }]; // Python returns list
+        const mockApiResult_rec1 = [{ id: '4', title: 'Recent Book' }]; // Unique result var
         mockGetManagedPythonPath.mockResolvedValue('/fake/python');
-        mockPythonShellRun.mockResolvedValueOnce([mockApiResult]);
+        // Corrected: Ensure mock provides the stringified MCP response in an array (Unique Vars)
+        const mockPythonResultString_rec1 = JSON.stringify(mockApiResult_rec1);
+        const mockMcpResponseString_rec1 = JSON.stringify({ content: [{ type: 'text', text: mockPythonResultString_rec1 }] });
+        mockPythonShellRun.mockResolvedValueOnce([mockMcpResponseString_rec1]);
 
         const recentArgs = { count: 5, format: 'epub' };
         result = await zlibApi.getRecentBooks(recentArgs);
@@ -480,7 +513,7 @@ describe('Z-Library API', () => {
             scriptPath: '/home/loganrooks/Code/zlibrary-mcp/lib', // Corrected script path
             args: ['get_recent_books', JSON.stringify({ count: recentArgs.count, format: recentArgs.format })]
         }));
-        expect(result).toEqual(mockApiResult);
+        expect(result).toEqual(mockApiResult_rec1); // Use unique result var
     });
 
      test('should handle errors from Python bridge during getRecentBooks', async () => {
@@ -497,9 +530,12 @@ describe('Z-Library API', () => {
     // test.todo('[FAILING] should call Python bridge with correct args and return processed_file_path'); // Remove todo
     test('should call Python bridge with correct args and return processed_file_path', async () => { // Uncomment test
         // Arrange: Mock python bridge success
-        const pythonResult = { processed_file_path: '/abs/path/to/processed_rag_output/doc.txt.processed.txt' };
+        const pythonResult_rag1 = { processed_file_path: '/abs/path/to/processed_rag_output/doc.txt.processed.txt' }; // Unique result var
         mockGetManagedPythonPath.mockResolvedValue('/fake/python');
-        mockPythonShellRun.mockResolvedValueOnce([pythonResult]); // Python returns the object
+        // Corrected: Ensure mock provides the stringified MCP response in an array (Unique Vars)
+        const mockPythonResultString_rag1 = JSON.stringify(pythonResult_rag1);
+        const mockMcpResponseString_rag1 = JSON.stringify({ content: [{ type: 'text', text: mockPythonResultString_rag1 }] });
+        mockPythonShellRun.mockResolvedValueOnce([mockMcpResponseString_rag1]);
 
         const processArgs = { filePath: './local/doc.txt', outputFormat: 'txt' };
         const expectedPythonFilePath = path.resolve('./local/doc.txt'); // Node resolves path
@@ -524,9 +560,12 @@ describe('Z-Library API', () => {
 
      test('should handle null processed_file_path from Python', async () => { // Add test for null path
         // Arrange: Mock python bridge success with null path
-        const pythonResult = { processed_file_path: null };
+        const pythonResult_rag2 = { processed_file_path: null }; // Unique result var
         mockGetManagedPythonPath.mockResolvedValue('/fake/python');
-        mockPythonShellRun.mockResolvedValueOnce([pythonResult]);
+        // Corrected: Ensure mock provides the stringified MCP response in an array (Unique Vars)
+        const mockPythonResultString_rag2 = JSON.stringify(pythonResult_rag2);
+        const mockMcpResponseString_rag2 = JSON.stringify({ content: [{ type: 'text', text: mockPythonResultString_rag2 }] });
+        mockPythonShellRun.mockResolvedValueOnce([mockMcpResponseString_rag2]);
 
         const processArgs = { filePath: './local/image.pdf' };
         const expectedPythonFilePath = path.resolve('./local/image.pdf');
@@ -551,9 +590,12 @@ describe('Z-Library API', () => {
     // test.todo('[FAILING] should throw error if Python response is missing processed_file_path'); // Remove todo
     test('should throw error if Python response is missing processed_file_path key', async () => { // Uncomment test and update description
         // Arrange: Mock python bridge returning invalid object
-        const invalidPythonResult = { some_other_key: 'value' }; // Missing processed_file_path key
+        const invalidPythonResult_rag3 = { some_other_key: 'value' }; // Unique result var, Missing processed_file_path key
         mockGetManagedPythonPath.mockResolvedValue('/fake/python');
-        mockPythonShellRun.mockResolvedValueOnce([invalidPythonResult]);
+        // Corrected: Ensure mock provides the stringified MCP response in an array (Unique Vars)
+        const mockPythonResultString_rag3 = JSON.stringify(invalidPythonResult_rag3);
+        const mockMcpResponseString_rag3 = JSON.stringify({ content: [{ type: 'text', text: mockPythonResultString_rag3 }] });
+        mockPythonShellRun.mockResolvedValueOnce([mockMcpResponseString_rag3]);
 
         const processArgs = { filePath: './local/doc.txt' };
 
@@ -571,13 +613,12 @@ describe('Z-Library API', () => {
         mockGetManagedPythonPath.mockResolvedValue('/fake/python');
         mockPythonShellRun.mockRejectedValue(apiError);
 
-        const processArgs = { filePath: '/path/to/fail.epub' }; // outputFormat defaults to 'txt'
-        const expectedPythonFilePath = path.resolve(processArgs.filePath);
+        const processArgs = { filePath: '/path/to/fail.epub' };
+        const expectedPythonFilePath = path.resolve('/path/to/fail.epub');
 
         await expect(zlibApi.processDocumentForRag(processArgs)).rejects.toThrow(`Python bridge execution failed for process_document: ${apiError.message}`);
-
-        // Correct the expected args based on implementation (file_path_str) - Retrying diff
         expect(mockPythonShellRun).toHaveBeenCalledWith('python_bridge.py', expect.objectContaining({ scriptPath: '/home/loganrooks/Code/zlibrary-mcp/lib', args: ['process_document', JSON.stringify({ file_path_str: expectedPythonFilePath, output_format: 'txt' })] }));
     });
   });
-});
+
+}); // End describe('Z-Library API')

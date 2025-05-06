@@ -196,7 +196,10 @@ async function installDependencies(deps: VenvManagerDependencies, venvPythonPath
         }
         // console.log(`Installing packages from ${absolutePath} using ${venvPythonPath}...`); // Removed debug log
         try {
-            const { stderr, code } = await runCommand(deps, venvPythonPath, ['-m', 'pip', 'install', '--no-cache-dir', '--force-reinstall', '--upgrade', '-r', absolutePath]);
+            // Explicitly set cwd for the pip install command
+            const projectRoot = path.resolve(__dirname, '..', '..'); // Assumes src/lib/venv-manager.ts structure
+            const options = { cwd: projectRoot };
+            const { stderr, code } = await runCommand(deps, venvPythonPath, ['-m', 'pip', 'install', '--no-cache-dir', '--force-reinstall', '--upgrade', '-r', absolutePath], options);
             if (code === 0) {
                 // console.log(`Packages from ${filePath} installed successfully.`); // Removed debug log
             } else {

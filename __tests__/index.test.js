@@ -398,9 +398,7 @@ describe('Tool Handlers (Direct)', () => {
         validatedArgs // Handler should pass the validated object directly now
      );
      // Update expectation to use 'content' key as returned by the handler
-     expect(response).toEqual({
-        content: mockResult, total: mockResult.length, query: validatedArgs.query
-      });
+     expect(response).toEqual(mockResult); // Expect direct result
 
      // Error case
      const error = new Error('API Failed');
@@ -483,9 +481,7 @@ describe('Tool Handlers (Direct)', () => {
 
        expect(mockFullTextSearch).toHaveBeenCalledWith(validatedArgs); // Check the specific mock function
         // Update expectation to use 'content' key as returned by the handler
-        expect(response).toEqual({
-           content: mockResult, total: mockResult.length, query: validatedArgs.query
-         });
+        expect(response).toEqual(mockResult); // Expect direct result
 
        const error = new Error('FullText Error');
        mockFullTextSearch.mockRejectedValueOnce(error); // Use the specific mock function
@@ -524,7 +520,7 @@ describe('Tool Handlers (Direct)', () => {
 
        expect(mockGetDownloadHistory).toHaveBeenCalledWith(validatedArgs); // Check the specific mock function
        // Update expectation to match the handler's return structure
-       expect(response).toEqual({ content: mockResult, total: mockResult.length });
+       expect(response).toEqual(mockResult); // Expect direct result
 
        const error = new Error('History Error');
        mockGetDownloadHistory.mockRejectedValueOnce(error); // Use the specific mock function
@@ -601,9 +597,7 @@ describe('Tool Handlers (Direct)', () => {
 
        expect(mockGetRecentBooks).toHaveBeenCalledWith(validatedArgs); // Check the specific mock function
        // Update expectation to use 'content' key as returned by the handler
-       expect(response).toEqual({
-           content: mockResult, total: mockResult.length
-       });
+       expect(response).toEqual(mockResult); // Expect direct result
 
        const error = new Error('Recent Error');
        mockGetRecentBooks.mockRejectedValueOnce(error); // Use the specific mock function

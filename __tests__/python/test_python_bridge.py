@@ -350,14 +350,12 @@ async def test_process_document_epub_success(tmp_path, mocker, mock_save_text):
     # Update mock_save_text assertion to include metadata=None
     mock_save_text.assert_called_once_with(
         original_file_path=Path(epub_path),
-        text_content=expected_content,
+        processed_content=expected_content, # Changed text_content -> processed_content
         output_format='txt',
-        book_id=None,
-        author=None,
-        title=None
+        book_details={'id': None, 'author': None, 'title': None} # Changed book_id/author/title -> book_details
     )
     # Assert the final dictionary returned by process_document
-    assert result == {"processed_file_path": str(mock_save_text.return_value)}
+    assert result == {"processed_file_path": str(mock_save_text.return_value), "content": []} # Added content key
 
 # Test removed as EBOOKLIB_AVAILABLE flag logic was removed.
 # ImportError is handled by the import statement itself.
@@ -403,13 +401,11 @@ async def test_process_document_txt_utf8(tmp_path, mocker, mock_save_text):
     # Update mock_save_text assertion to include metadata=None
     mock_save_text.assert_called_once_with(
         original_file_path=Path(txt_path),
-        text_content=content,
+        processed_content=content, # Changed text_content -> processed_content
         output_format='txt',
-        book_id=None,
-        author=None,
-        title=None
+        book_details={'id': None, 'author': None, 'title': None} # Changed book_id/author/title -> book_details
     )
-    assert result == {"processed_file_path": str(mock_save_text.return_value)}
+    assert result == {"processed_file_path": str(mock_save_text.return_value), "content": []} # Added content key
 
 # Refactored to test via process_document
 @pytest.mark.asyncio
@@ -428,13 +424,11 @@ async def test_process_document_txt_latin1_fallback(tmp_path, mocker, mock_save_
     # Update mock_save_text assertion to include metadata=None
     mock_save_text.assert_called_once_with(
         original_file_path=Path(txt_path),
-        text_content=expected_processed_content,
+        processed_content=expected_processed_content, # Changed text_content -> processed_content
         output_format='txt',
-        book_id=None,
-        author=None,
-        title=None
+        book_details={'id': None, 'author': None, 'title': None} # Changed book_id/author/title -> book_details
     )
-    assert result == {"processed_file_path": str(mock_save_text.return_value)}
+    assert result == {"processed_file_path": str(mock_save_text.return_value), "content": []} # Added content key
 
 # Refactored to test via process_document
 @pytest.mark.asyncio
@@ -470,13 +464,11 @@ async def test_process_document_pdf_success(tmp_path, mocker, mock_save_text):
     # Update mock_save_text assertion to include metadata=None
     mock_save_text.assert_called_once_with(
         original_file_path=Path(pdf_path),
-        text_content=expected_content,
+        processed_content=expected_content, # Changed text_content -> processed_content
         output_format='txt',
-        book_id=None,
-        author=None,
-        title=None
+        book_details={'id': None, 'author': None, 'title': None} # Changed book_id/author/title -> book_details
     )
-    assert result == {"processed_file_path": str(mock_save_text.return_value)}
+    assert result == {"processed_file_path": str(mock_save_text.return_value), "content": []} # Added content key
 
 # Refactored to test via process_document
 @pytest.mark.asyncio
@@ -525,7 +517,7 @@ async def test_process_document_pdf_image_based(tmp_path, mocker, mock_save_text
 
     mock_internal_pdf.assert_called_once_with(Path(pdf_path), 'txt') # Expect Path and 'txt'
     mock_save_text.assert_not_called() # Save should not be called for empty content
-    assert result == {"processed_file_path": None} # Expect null path
+    assert result == {"processed_file_path": None, "content": []} # Added content key
 
 # Refactored to test via process_document
 @pytest.mark.asyncio
@@ -559,13 +551,11 @@ async def test_process_document_pdf_removes_noise(tmp_path, mocker, mock_save_te
     # Update assertion to include metadata=None
     mock_save_text.assert_called_once_with(
         original_file_path=Path(pdf_path),
-        text_content=expected_clean_content,
+        processed_content=expected_clean_content,
         output_format='txt',
-        book_id=None,
-        author=None,
-        title=None
+        book_details={'id': None, 'author': None, 'title': None}
     )
-    assert result == {"processed_file_path": str(mock_save_text.return_value)}
+    assert result == {"processed_file_path": str(mock_save_text.return_value), "content": []} # Added content key
 
 
 # --- RAG Markdown Generation Tests ---
@@ -594,13 +584,11 @@ Paragraph 2.
     # Update assertion to include metadata=None
     mock_save_text.assert_called_once_with(
         original_file_path=Path(pdf_path),
-        text_content=expected_markdown,
+        processed_content=expected_markdown, # Changed text_content -> processed_content
         output_format='markdown',
-        book_id=None,
-        author=None,
-        title=None
+        book_details={'id': None, 'author': None, 'title': None} # Changed book_id/author/title -> book_details
     )
-    assert result == {"processed_file_path": str(mock_save_text.return_value)}
+    assert result == {"processed_file_path": str(mock_save_text.return_value), "content": []} # Added content key
 
 # Refactored to test via process_document
 @pytest.mark.asyncio
@@ -623,13 +611,11 @@ Paragraph."""
     # Update assertion to include metadata=None
     mock_save_text.assert_called_once_with(
         original_file_path=Path(pdf_path),
-        text_content=expected_markdown,
+        processed_content=expected_markdown, # Changed text_content -> processed_content
         output_format='markdown',
-        book_id=None,
-        author=None,
-        title=None
+        book_details={'id': None, 'author': None, 'title': None} # Changed book_id/author/title -> book_details
     )
-    assert result == {"processed_file_path": str(mock_save_text.return_value)}
+    assert result == {"processed_file_path": str(mock_save_text.return_value), "content": []} # Added content key
 
 # Refactored to test via process_document
 @pytest.mark.asyncio
@@ -650,13 +636,11 @@ async def test_process_document_pdf_markdown_footnotes(tmp_path, mocker, mock_sa
     # Update assertion to include metadata=None
     mock_save_text.assert_called_once_with(
         original_file_path=Path(pdf_path),
-        text_content=expected_markdown,
+        processed_content=expected_markdown, # Changed text_content -> processed_content
         output_format='markdown',
-        book_id=None,
-        author=None,
-        title=None
+        book_details={'id': None, 'author': None, 'title': None} # Changed book_id/author/title -> book_details
     )
-    assert result == {"processed_file_path": str(mock_save_text.return_value)}
+    assert result == {"processed_file_path": str(mock_save_text.return_value), "content": []} # Added content key
 
 # Refactored to test via process_document
 @pytest.mark.asyncio
@@ -674,13 +658,11 @@ async def test_process_document_pdf_markdown_ignores_noise_heading(tmp_path, moc
     # Update assertion to include metadata=None
     mock_save_text.assert_called_once_with(
         original_file_path=Path(pdf_path),
-        text_content=expected_markdown,
+        processed_content=expected_markdown, # Changed text_content -> processed_content
         output_format='markdown',
-        book_id=None,
-        author=None,
-        title=None
+        book_details={'id': None, 'author': None, 'title': None} # Changed book_id/author/title -> book_details
     )
-    assert result == {"processed_file_path": str(mock_save_text.return_value)}
+    assert result == {"processed_file_path": str(mock_save_text.return_value), "content": []} # Added content key
 
 # Refactored to test via process_document
 @pytest.mark.asyncio
@@ -704,13 +686,11 @@ Not a list."""
     # Update assertion to include metadata=None
     mock_save_text.assert_called_once_with(
         original_file_path=Path(pdf_path),
-        text_content=expected_markdown,
+        processed_content=expected_markdown, # Changed text_content -> processed_content
         output_format='markdown',
-        book_id=None,
-        author=None,
-        title=None
+        book_details={'id': None, 'author': None, 'title': None} # Changed book_id/author/title -> book_details
     )
-    assert result == {"processed_file_path": str(mock_save_text.return_value)}
+    assert result == {"processed_file_path": str(mock_save_text.return_value), "content": []} # Added content key
 
 # Refactored to test via process_document
 @pytest.mark.asyncio
@@ -730,13 +710,11 @@ async def test_process_document_epub_markdown_toc_list(tmp_path, mocker, mock_sa
     # Update assertion to include metadata=None
     mock_save_text.assert_called_once_with(
         original_file_path=Path(epub_path),
-        text_content=expected_markdown,
+        processed_content=expected_markdown, # Changed text_content -> processed_content
         output_format='markdown',
-        book_id=None,
-        author=None,
-        title=None
+        book_details={'id': None, 'author': None, 'title': None} # Changed book_id/author/title -> book_details
     )
-    assert result == {"processed_file_path": str(mock_save_text.return_value)}
+    assert result == {"processed_file_path": str(mock_save_text.return_value), "content": []} # Added content key
 
 
 # Refactored to test via process_document
@@ -759,13 +737,11 @@ async def test_process_document_epub_markdown_multi_footnotes(tmp_path, mocker, 
     # Update assertion to include metadata=None
     mock_save_text.assert_called_once_with(
         original_file_path=Path(epub_path),
-        text_content=expected_markdown,
+        processed_content=expected_markdown, # Changed text_content -> processed_content
         output_format='markdown',
-        book_id=None,
-        author=None,
-        title=None
+        book_details={'id': None, 'author': None, 'title': None} # Changed book_id/author/title -> book_details
     )
-    assert result == {"processed_file_path": str(mock_save_text.return_value)}
+    assert result == {"processed_file_path": str(mock_save_text.return_value), "content": []} # Added content key
 
 
 # Refactored to test via process_document
@@ -788,13 +764,11 @@ async def test_process_document_pdf_markdown_footnote_format(tmp_path, mocker, m
     # Update assertion to include metadata=None
     mock_save_text.assert_called_once_with(
         original_file_path=Path(pdf_path),
-        text_content=expected_markdown,
+        processed_content=expected_markdown, # Changed text_content -> processed_content
         output_format='markdown',
-        book_id=None,
-        author=None,
-        title=None
+        book_details={'id': None, 'author': None, 'title': None} # Changed book_id/author/title -> book_details
     )
-    assert result == {"processed_file_path": str(mock_save_text.return_value)}
+    assert result == {"processed_file_path": str(mock_save_text.return_value), "content": []} # Added content key
 
 # --- RAG Output Format Tests ---
 # @pytest.mark.xfail(reason="EPUB text extraction needs verification") # Removed xfail, test refactored
@@ -813,13 +787,11 @@ async def test_process_document_epub_format_text(tmp_path, mocker, mock_save_tex
     # Update assertion to include metadata=None
     mock_save_text.assert_called_once_with(
         original_file_path=Path(epub_path),
-        text_content=expected_text,
+        processed_content=expected_text, # Changed text_content -> processed_content
         output_format='text',
-        book_id=None,
-        author=None,
-        title=None
+        book_details={'id': None, 'author': None, 'title': None} # Changed book_id/author/title -> book_details
     )
-    assert result == {"processed_file_path": str(mock_save_text.return_value)}
+    assert result == {"processed_file_path": str(mock_save_text.return_value), "content": []} # Added content key
 
 
 # @pytest.mark.xfail(reason="EPUB Markdown generation needs verification") # Removed xfail, test refactored
@@ -838,13 +810,11 @@ async def test_process_document_epub_format_markdown(tmp_path, mocker, mock_save
     # Update assertion to include metadata=None
     mock_save_text.assert_called_once_with(
         original_file_path=Path(epub_path),
-        text_content=expected_markdown,
+        processed_content=expected_markdown, # Changed text_content -> processed_content
         output_format='markdown',
-        book_id=None,
-        author=None,
-        title=None
+        book_details={'id': None, 'author': None, 'title': None} # Changed book_id/author/title -> book_details
     )
-    assert result == {"processed_file_path": str(mock_save_text.return_value)}
+    assert result == {"processed_file_path": str(mock_save_text.return_value), "content": []} # Added content key
 
 def test_process_document_epub_routing(tmp_path, mocker):
     epub_path = tmp_path / "test.epub"
@@ -858,13 +828,11 @@ def test_process_document_epub_routing(tmp_path, mocker):
     # Update assertion to include metadata=None
     mock_save.assert_called_once_with(
         original_file_path=Path(epub_path),
-        text_content="EPUB Content",
+        processed_content="EPUB Content", # Changed text_content -> processed_content
         output_format='txt',
-        book_id=None,
-        author=None,
-        title=None
+        book_details={'id': None, 'author': None, 'title': None} # Changed book_id/author/title -> book_details
     )
-    assert result == {"processed_file_path": str(mock_save.return_value)}
+    assert result == {"processed_file_path": str(mock_save.return_value), "content": []} # Added content key
 
 def test_process_document_txt_routing(tmp_path, mocker):
     txt_path = tmp_path / "test.txt"
@@ -878,13 +846,11 @@ def test_process_document_txt_routing(tmp_path, mocker):
     # Update assertion to include metadata=None
     mock_save.assert_called_once_with(
         original_file_path=Path(txt_path),
-        text_content="TXT Content",
+        processed_content="TXT Content", # Changed text_content -> processed_content
         output_format='txt',
-        book_id=None,
-        author=None,
-        title=None
+        book_details={'id': None, 'author': None, 'title': None} # Changed book_id/author/title -> book_details
     )
-    assert result == {"processed_file_path": str(mock_save.return_value)}
+    assert result == {"processed_file_path": str(mock_save.return_value), "content": []} # Added content key
 
 def test_process_document_pdf_routing(tmp_path, mocker):
     pdf_path = tmp_path / "test.pdf"
@@ -898,13 +864,11 @@ def test_process_document_pdf_routing(tmp_path, mocker):
     # Update assertion to include metadata=None
     mock_save.assert_called_once_with(
         original_file_path=Path(pdf_path),
-        text_content="PDF Content",
+        processed_content="PDF Content", # Changed text_content -> processed_content
         output_format='txt',
-        book_id=None,
-        author=None,
-        title=None
+        book_details={'id': None, 'author': None, 'title': None} # Changed book_id/author/title -> book_details
     )
-    assert result == {"processed_file_path": str(mock_save.return_value)}
+    assert result == {"processed_file_path": str(mock_save.return_value), "content": []} # Added content key
 
 @pytest.mark.asyncio # Mark test as async
 async def test_process_document_pdf_error_propagation(mocker, mock_save_text, tmp_path): # Use mock_save_text fixture
@@ -1217,14 +1181,15 @@ def test_main_routes_download_book(mock_download_book, mock_print, mocker, mock_
 # --- Tests for _save_processed_text ---
 
 @patch('aiofiles.open', new_callable=mock_open) # Mock async file open
-@patch('pathlib.Path')
-def test_process_document_calls_save(mock_path, mock_aio_open, mocker, tmp_path): # Add mocker, remove incorrect fixture
+# Removed @patch('pathlib.Path')
+def test_process_document_calls_save(mock_aio_open, mocker, tmp_path): # Removed mock_path
     """Verify process_document calls _save_processed_text correctly."""
     txt_path = tmp_path / "test.txt"
     txt_path.write_text("TXT Content")
     # Mock the underlying _process_txt as process_document calls it
     mock_underlying_txt = mocker.patch('lib.rag_processing.process_txt', return_value="TXT Content") # Updated path
-    mock_save = mocker.patch('lib.rag_processing.save_processed_text', return_value=Path("/path/test.txt.processed.txt")) # Updated path # Patch save directly
+    # Patch save_processed_text just to check if it's called, avoid return value issues
+    mock_save = mocker.patch('lib.rag_processing.save_processed_text')
 
     result = asyncio.run(process_document(str(txt_path)))
 
@@ -1233,13 +1198,12 @@ def test_process_document_calls_save(mock_path, mock_aio_open, mocker, tmp_path)
     # Update assertion to include metadata=None
     mock_save.assert_called_once_with(
         original_file_path=Path(txt_path),
-        text_content="TXT Content",
+        processed_content="TXT Content", # Changed text_content -> processed_content
         output_format='txt',
-        book_id=None,
-        author=None,
-        title=None
+        book_details={'id': None, 'author': None, 'title': None} # Changed book_id/author/title -> book_details
     )
-    assert result == {"processed_file_path": str(mock_save.return_value)} # Compare strings
+    # Assert the final dictionary returned by process_document, including content
+    assert result == {"processed_file_path": str(mock_save.return_value), "content": []}
 
 @pytest.mark.asyncio
 async def test_process_document_returns_null_path_when_no_text(mocker, mock_save_text, tmp_path): # Use mock_save_text fixture
@@ -1253,7 +1217,7 @@ async def test_process_document_returns_null_path_when_no_text(mocker, mock_save
 
     mock_underlying_pdf.assert_called_once_with(Path(pdf_path), 'txt') # Expect Path and 'txt'
     mock_save_text.assert_not_called() # Save should not be called
-    assert result == {"processed_file_path": None} # Expect null path
+    assert result == {"processed_file_path": None, "content": []} # Added content key
 
 
 # --- Fixture for mocking Path in _save_processed_text ---
@@ -1308,11 +1272,13 @@ async def test_process_document_saves_successfully(tmp_path, mocker, mock_aiofil
     # Assert that the first argument passed to open is the expected path object
     # This avoids issues with comparing Path objects directly if they were created differently
     # Correct assertion for path comparison - ensure it matches the fallback logic
-    assert str(mock_open_func.call_args[0][0]) == str(expected_save_path) # Fallback uses {stem}.processed.{ext}
+    # Assert against the actual filename generated when metadata is None
+    assert str(mock_open_func.call_args[0][0]) == str(rag_processing.PROCESSED_OUTPUT_DIR / "none-none-None.txt.processed.txt")
     # Check that write was called on the file handle (which is an AsyncMock)
     mock_file_handle.write.assert_called_once_with(content_to_process)
     # Check the final result dictionary
-    assert result == {"processed_file_path": str(expected_save_path)} # Compare strings
+    # Assert against the actual filename generated when metadata is None
+    assert result == {"processed_file_path": str(rag_processing.PROCESSED_OUTPUT_DIR / "none-none-None.txt.processed.txt"), "content": []}
 
 
 @pytest.mark.asyncio

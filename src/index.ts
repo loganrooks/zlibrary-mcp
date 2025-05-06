@@ -93,42 +93,45 @@ type HandlerMap = {
 const handlers: HandlerMap = {
   searchBooks: async (args: z.infer<typeof SearchBooksParamsSchema>) => {
     try {
-      const results = await zlibraryApi.searchBooks(args);
-      // Assuming searchBooks returns the array directly
-      return { content: results, total: results.length, query: args.query };
+      // Return the result directly, tools/call handler will stringify
+      return await zlibraryApi.searchBooks(args);
     } catch (error: any) { return { error: { message: error.message || 'Failed to search books' } }; }
   },
 
   fullTextSearch: async (args: z.infer<typeof FullTextSearchParamsSchema>) => {
     try {
-      const results = await zlibraryApi.fullTextSearch(args);
-      return { content: results, total: results.length, query: args.query };
+      // Return the result directly
+      return await zlibraryApi.fullTextSearch(args);
     } catch (error: any) { return { error: { message: error.message || 'Failed to perform full text search' } }; }
   },
 
   getDownloadHistory: async (args: z.infer<typeof GetDownloadHistoryParamsSchema>) => {
     try {
-        const results = await zlibraryApi.getDownloadHistory(args);
-        return { content: results, total: results.length };
+        // Return the result directly
+        return await zlibraryApi.getDownloadHistory(args);
     }
     catch (error: any) { return { error: { message: error.message || 'Failed to get download history' } }; }
   },
 
   getDownloadLimits: async () => { // No args expected
-    try { return await zlibraryApi.getDownloadLimits(); }
+    try {
+        // Return the result directly
+        return await zlibraryApi.getDownloadLimits();
+    }
     catch (error: any) { return { error: { message: error.message || 'Failed to get download limits' } }; }
   },
 
   getRecentBooks: async (args: z.infer<typeof GetRecentBooksParamsSchema>) => {
     try {
-      const results = await zlibraryApi.getRecentBooks(args);
-      return { content: results, total: results.length };
+      // Return the result directly
+      return await zlibraryApi.getRecentBooks(args);
     } catch (error: any) { return { error: { message: error.message || 'Failed to get recent books' } }; }
   },
 
   downloadBookToFile: async (args: z.infer<typeof DownloadBookToFileParamsSchema>) => {
     try {
       // Pass all args directly
+      // Return the result directly
       return await zlibraryApi.downloadBookToFile(args);
     } catch (error: any) {
       return { error: { message: error.message || 'Failed to download book' } };
@@ -139,6 +142,7 @@ const handlers: HandlerMap = {
     try {
       // Pass args object directly
       // Map snake_case arg from request to camelCase expected by function
+      // Return the result directly
       return await zlibraryApi.processDocumentForRag({ filePath: args.file_path, outputFormat: args.output_format });
     } catch (error: any) {
       return { error: { message: error.message || 'Failed to process document for RAG' } };
@@ -321,7 +325,10 @@ async function start(opts: StartOptions = {}): Promise<{ server: Server; transpo
         }
         console.log(`Handler for tool "${toolName}" completed successfully.`); // Use toolName in log
         // Return the actual result object directly, assuming SDK handles wrapping
-        return result as any; // Return the actual result object directly
+        // Wrap the successful result to ensure 'content' is always an array
+        // matching the structure expected by the client (based on ZodError)
+        // Note: Stringifying the result prevents ZodError but might require client-side parsing.
+        return { content: [{ type: 'text', text: JSON.stringify(result) }] };
       } catch (error: any) {
         // Catch errors thrown by the handler
         console.error(`Error calling tool "${toolName}":`, error); // Use toolName in error

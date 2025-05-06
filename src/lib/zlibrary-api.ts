@@ -28,7 +28,7 @@ async function callPythonFunction(functionName: string, args: Record<string, any
     // Serialize arguments as JSON *before* creating options
     const serializedArgs = JSON.stringify(args);
     const options: PythonShellOptions = {
-      mode: 'text', // Switch to text mode
+      mode: 'text', // Revert back to text mode
       pythonPath: venvPythonPath, // Use the Python from our managed venv
       scriptPath: BRIDGE_SCRIPT_PATH, // Use the calculated path to the source lib dir
       args: [functionName, serializedArgs] // Pass serialized string directly
@@ -47,20 +47,34 @@ async function callPythonFunction(functionName: string, args: Record<string, any
 
     // Join the lines and parse manually
     const stdoutString = results.join('\n');
+    let mcpResponseData: any;
+    try {
+        // First parse: Get the MCP response object { content: [{ type: 'text', text: '...' }] }
+        mcpResponseData = JSON.parse(stdoutString);
+    } catch (parseError: any) {
+        throw new Error(`Failed to parse initial JSON output from Python script: ${parseError.message}. Raw output: ${stdoutString}`);
+    }
+
+    // Validate the MCP response structure and extract the nested JSON string
+    if (!mcpResponseData || !Array.isArray(mcpResponseData.content) || mcpResponseData.content.length === 0 || typeof mcpResponseData.content[0].text !== 'string') {
+        throw new Error(`Invalid MCP response structure received from Python script. Raw output: ${stdoutString}`);
+    }
+
+    const nestedJsonString = mcpResponseData.content[0].text;
     let resultData: any;
     try {
-        resultData = JSON.parse(stdoutString);
+        // Second parse: Get the actual result object from the nested string
+        resultData = JSON.parse(nestedJsonString);
     } catch (parseError: any) {
-        throw new Error(`Failed to parse JSON output from Python script: ${parseError.message}. Raw output: ${stdoutString}`);
+        throw new Error(`Failed to parse nested JSON result from Python script: ${parseError.message}. Nested string: ${nestedJsonString}`);
     }
 
-
-    // Check if the Python script itself returned an error structure
+    // Check if the *actual* Python result contained an error structure
     if (resultData && typeof resultData === 'object' && 'error' in resultData && resultData.error) {
-        throw new Error(resultData.error);
+        throw new Error(resultData.error); // Throw the specific Python error
     }
 
-    // Return the successful result from Python
+    // Return the successful result object from Python
     return resultData;
   } catch (err: any) {
     // Log the full error object from python-shell

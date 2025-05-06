@@ -1,3 +1,8 @@
+### Feedback [2025-05-06 00:28:20]
+- **Source**: Agent Error (`apply_diff` / `write_to_file`)
+- **Issue**: Multiple attempts to correct mocks in `__tests__/zlibrary-api.test.js` using `apply_diff` failed due to partial application and resulting duplicate variable declarations (`SyntaxError`). Attempt to use `write_to_file` also failed due to missing `line_count` and overwriting existing file.
+- **Feedback**: Tool errors indicated issues with diff application and `write_to_file` usage.
+- **Action**: Corrected `apply_diff` usage by reading the file content again after partial applications and fixing duplicate variable declarations. Successfully applied all mock corrections. Will use `insert_content` for future MB updates.
 [2025-04-28 10:16:25] - Debug - User denied `attempt_completion` for TDD Refactor test fix, requesting "more details". Will provide a more granular explanation in the next attempt.
 # Debugger Feedback
 <!-- Entries below should be added reverse chronologically (newest first) -->

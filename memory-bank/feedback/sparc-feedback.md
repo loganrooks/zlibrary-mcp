@@ -1,3 +1,8 @@
+### [2025-05-05 22:08:16] User Correction: MCP Acronym
+- **Source:** User Input
+- **Issue:** SPARC incorrectly expanded MCP as "Meta-Controller Protocol".
+- **Correction:** User stated MCP stands for "Model Context Protocol".
+- **Action:** Acknowledged correction, updated understanding, logged in activeContext and feedback.
 ### [2025-04-29 23:25:19] User Feedback: TDD Delegation Instructions
 - **Source:** User denial of `new_task` delegation to `tdd`.
 - **Issue:** Instructions for "Implement RAG Robustness Enhancements (TDD)" task were deemed insufficiently detailed ("more detailed and thorough instructions").

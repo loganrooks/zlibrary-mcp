@@ -1,5 +1,40 @@
 # SPARC Orchestrator Specific Memory
 <!-- Entries below should be added reverse chronologically (newest first) -->
+### [2025-05-05 22:10:51] Intervention: User Request for Internal INT-001 Investigation
+- **Trigger**: User feedback requesting internal log search for previous INT-001 solutions.
+- **Context**: SPARC had halted work pending external investigation, based on previous diagnosis of INT-001 as likely client-side.
+- **Action Taken**: Acknowledged request. Planned delegation to `debug` mode to search Memory Bank for past occurrences/solutions related to INT-001 or similar Zod/content errors.
+- **Rationale**: Address user request to re-examine internal history before relying solely on external investigation.
+- **Outcome**: Workflow focus shifted to internal log investigation.
+- **Follow-up**: Delegate Memory Bank search task to `debug`. Update Workflow State.
+### [2025-05-05 22:09:10] Intervention: User Feedback on Research Prompt Explicitness
+- **Trigger**: User feedback following provision of research prompt for INT-001.
+- **Context**: SPARC provided a research prompt that implicitly relied on local context.
+- **Action Taken**: Acknowledged feedback. Provided a revised, more explicit, self-contained research prompt including the corrected MCP acronym ("Model Context Protocol").
+- **Rationale**: Ensure the research prompt is usable by an external agent without access to local context. Incorporate user corrections.
+- **Outcome**: Corrected research prompt provided. Workflow remains halted.
+- **Follow-up**: Await user feedback from research or new instructions.
+### [2025-05-05 22:04:33] Intervention: User Feedback on Zod/INT-001 & Research Prompt
+- **Trigger**: User feedback requesting clarification on Zod and feedback on research prompt explicitness.
+- **Context**: SPARC had halted work pending external investigation of INT-001 (ZodError).
+- **Action Taken**: Clarified Zod's role in schema validation and the nature of the INT-001 error (client expecting array for 'content', receiving undefined). Provided a revised, more explicit research prompt for external AI investigation.
+- **Rationale**: Address user's question about Zod. Improve research prompt based on feedback regarding external agent context limitations.
+- **Outcome**: Workflow remains halted pending external research results or new instructions.
+- **Follow-up**: Await user feedback from research or new instructions.
+### [2025-05-05 22:01:45] Intervention: User Confirmed INT-001 Persistence
+- **Trigger**: User feedback with error details and image.
+- **Context**: SPARC had halted work pending external investigation of INT-001 (ZodError: "Expected array, received undefined" at path 'content'). User confirmed the error still occurs when calling `search_books` externally.
+- **Action Taken**: Acknowledged confirmation. Reaffirmed previous diagnosis (likely client-side) and referred user back to research prompt. Maintained halted workflow state.
+- **Rationale**: User confirmation validates the persistence of the blocker. Sticking to the plan to await external resolution/instructions.
+- **Outcome**: Workflow remains halted.
+- **Follow-up**: Await user feedback from research or new instructions.
+### [2025-05-05 21:52:23] Intervention: User Feedback on INT-001 (ZodError) Handling
+- **Trigger**: User feedback on `attempt_completion` [Ref: 2025-05-05 21:52:23].
+- **Context**: SPARC concluded RAG feature work, halting due to INT-001 being deemed external/client-side based on previous debugging. User questioned lack of attempt to resolve.
+- **Action Taken**: Acknowledged feedback. Explained previous conclusion based on MB history. Provided a structured research prompt for the user to investigate external solutions for INT-001.
+- **Rationale**: Address user query while respecting the previous diagnosis that the issue lies outside the direct scope of this project's codebase. Empower user with information for external research.
+- **Outcome**: Workflow remains halted pending external research results or new instructions.
+- **Follow-up**: Await user feedback from research or further instructions. Update Workflow State.
 ### [2025-05-02 12:03:16] Intervention: Delegate Clause Triggered (Context 83%)
 - **Trigger**: Context window size reached 83%.
 - **Context**: Received blocked completion from `debug` mode for RAG test failures. Blockers identified: missing `process_pdf` function and suspected environment/caching issues. Memory Bank updated. Preparing handover.
@@ -1254,6 +1289,14 @@
 - **Action Taken**: Halted the `tdd` task. Acknowledged the need to redesign the download workflow based on scraping the book's *page URL* (obtained via search/details) to find the download link.
 - **Rationale**: Align with user's correct diagnosis that the fundamental problem is obtaining the download URL, requiring architectural replanning.
 - **Outcome**: TDD task halted. Will delegate redesign to `architect` mode.
+### [2025-05-05 23:54:20] Task: Regression Testing for INT-001 Fix
+- Assigned to: tdd
+- Description: Run `npm test` to check for regressions after INT-001 fix in `src/index.ts`.
+- Expected deliverable: Confirmation of passing tests or failure details.
+- Status: failed
+- Completion time: [2025-05-05 23:54:20]
+- Outcome: FAILED. `npm test` failed with 17 errors in `__tests__/zlibrary-api.test.js` (JSON parsing errors), indicating a regression in Node.js/Python bridge result handling. [Ref: TDD Completion 2025-05-05 23:54:20]
+- Link to Progress Entry: N/A
 - **Follow-up**: Delegate redesign task to `architect`. [See Feedback 2025-04-24 16:41:02]
 
 ### [2025-04-24 16:41:02] Intervention: User Corrected Download Strategy & Halted TDD Task
@@ -1322,11 +1365,11 @@
 - Outcome: SUCCESS. Logic implemented and refactored in `lib/rag_processing.py`. `__tests__/python/test_rag_processing.py` suite passes (50 passed, 1 xfailed). [Ref: User Message 2025-05-05 00:37:04, MB tdd.md 2025-05-04 21:05:16]
 - Link to Progress Entry: N/A
 # Workflow State (Current - Overwrite this section)
-- Current phase: Completion (Halted)
-- Phase start: 2025-05-05 03:57:31 (Documentation Complete)
-- Current focus: RAG robustness enhancement feature complete. Further work halted pending resolution of external client issue INT-001.
-- Next actions: Await resolution of INT-001 or new user instructions.
-- Last Updated: 2025-05-05 21:48:01
+- Current phase: Refinement (Debugging Regression)
+- Phase start: 2025-05-05 23:54:20 (TDD Regression Failure)
+- Current focus: Addressing regression in `__tests__/zlibrary-api.test.js` (17 failures, JSON parsing errors) introduced by the INT-001 fix in `src/index.ts`.
+- Next actions: Delegate debugging task to `debug` mode. Initiate handover due to context limit (46.1%).
+- Last Updated: 2025-05-05 23:54:40
 
 - Assigned to: system-refiner
 - Description: Analyze feedback, logs, and mode memories to propose improvements to Roo system rules (.clinerules-*), ensuring generalizability.

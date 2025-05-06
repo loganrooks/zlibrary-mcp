@@ -1,3 +1,24 @@
+### Progress - [2025-05-06 01:22:30]
+- **Final Verification Pass Completed:** Ran full test suite (`npm test`) after debug fixes for post-INT-001-REG-01 regressions. All tests passed (56 Jest tests, including implicit Pytest runs). Reviewed code changes (`requirements-dev.txt`, `__tests__/python/test_python_bridge.py`, `__tests__/index.test.js`) and confirmed alignment with debug context. Codebase is stable.
+- **Related Entries:** [See ActiveContext 2025-05-06 01:22:03], [See Test Execution Results 2025-05-06 01:22:03]
+---
+### Progress - [2025-05-06 01:18:46]
+- **Regressions Post INT-001-REG-01 Fix Resolved:** Investigated and fixed regressions reported by TDD [Ref: ActiveContext 2025-05-06 00:48:13].
+    - Jest (`__tests__/zlibrary-api.test.js`): 15 failures were already resolved by INT-001-REG-01 fix.
+    - Pytest (`__tests__/python/test_python_bridge.py`): 22 failures resolved by installing missing `httpx` dependency, ensuring local editable install of `./zlibrary`, and correcting outdated mock assertions/return value checks related to `save_processed_text` and `process_document`.
+    - Jest (`__tests__/index.test.js`): 4 subsequent failures resolved by updating assertions to expect direct handler results instead of wrapped content.
+- **INT-001 Fix Re-evaluation:** Confirmed original INT-001/INT-001-REG-01 fixes are sound and did not cause the latest regressions.
+- **Verification:** Full test suite (`npm test`) now passes.
+- **Related Entries:** [See ActiveContext 2025-05-06 01:18:46], [See Debug Issue REG-POST-INT001-FIX]
+---
+### Progress - [2025-05-05 23:42:47]
+- **Regression Test FAIL (Post INT-001 Fix):** Ran full test suite (`npm test`) after fix for INT-001 (ZodError). 17 tests failed in `__tests__/zlibrary-api.test.js`. Failures indicate JSON parsing errors ("Unexpected token o in JSON") in the Node.js/Python bridge (`src/lib/zlibrary-api.ts`), suggesting the fix or related changes introduced a regression in how Python results are handled/parsed.
+- **Related Entries:** [See ActiveContext 2025-05-05 23:42:47], [See Test Execution Results 2025-05-05 23:42:47]
+---
+### Progress - [2025-05-05 22:28:31]
+- **INT-001 (ZodError) Re-investigation Resolved:** Re-investigated recurring ZodError ("Expected array, received undefined" at path 'content'). Confirmed previous fixes (capability declaration, `inputSchema` key) were still in place. Identified root cause as inconsistent `CallToolResponse` structure: error responses used `{ content: [...] }` while success responses returned the raw handler result object directly. Fixed by modifying `src/index.ts` to wrap successful results in `{ content: [result] }`. Verification via `use_mcp_tool` calls (`get_download_limits`, `search_books`) confirmed ZodError resolution.
+- **Related Entries:** [See ActiveContext 2025-05-05 22:32:00], [See Debug Issue INT-001 - 2025-05-05 22:32:14], [See System Patterns 2025-05-05 22:32:14]
+---
 ### Progress - [2025-05-05 02:00:05]
 - **RAG Robustness Verification Completed (via Direct Execution):** Successfully verified EPUB, PDF, and TXT processing via direct Python execution after fixing several bugs (`TypeError`, `UnboundLocalError`, `AttributeError`). MCP tool verification remains blocked by ZodError (INT-001). Full test suite passed. Modified Python bridge to limit output during direct execution tests. [See Debug Issue RAG-Verify-01]
 - **Related Entries:** [See ActiveContext 2025-05-05 01:58:04], [See Debug Issue INT-001 - 2025-04-14 18:22:33]
@@ -109,6 +130,8 @@
 - **[2025-04-29 16:36:11] - Fix: MCP Result Format** - Modified `src/index.ts` `tools/call` handler to return standard `{ result: value }` format. Tests passed. Commit: `47edb7a`. [Ref: ActiveContext 2025-04-29 16:36:11]
 - **[2025-04-29 17:00:00] - HolisticReview - Post-Refinement Assessment Complete** - Reviewed workspace after recent refactoring/fixes. Test suite passes. Integration points verified (RAG refactor, MCP result format). Documentation updated (README, ADRs, Specs). Obsolete `get_book_by_id` references removed from tests/code. Debug logs removed, error logging improved. Minor findings: `lib/rag_processing.py` slightly over line limit, `zlibrary/src/zlibrary/abs.py` significantly over (deferred), utility script `get_venv_python_path.mjs` at root, unused Zod schema remains. Project deemed ready for final checks/deployment prep.
 ## Progress
+- **[2025-05-06 00:33:00] - Regression INT-001-REG-01 Resolved:** Fixed JSON parsing errors in `__tests__/zlibrary-api.test.js` caused by INT-001 fix. Required ensuring `callPythonFunction` used `text` mode with double parsing, removing extra wrapping in `src/index.ts` handlers, and correcting test mocks. Verified via `npm test __tests__/zlibrary-api.test.js`. [See Debug Issue INT-001-REG-01]
+---
 - **[2025-05-05 03:55:59] - DocsWriter - Documentation Update Completed (RAG Robustness)** - Updated `README.md` and `docs/rag-pipeline-implementation-spec.md` to reflect the implementation of RAG robustness enhancements (PDF quality detection, OCR, preprocessing). [Ref: Task 2025-05-05 03:46:21]
 - **[2025-05-03 17:55:55] - TDD Cycle 24 (EPUB Front Matter) - Red Phase Completed** - Added failing test `test_process_epub_removes_front_matter`. [Ref: ActiveContext 2025-05-03 17:55:55]
 - **[2025-05-02 05:15:30] - DevOps Task Completed (Git Debt Cleanup)** - Staged and committed remaining RAG test framework changes and MB updates. Commit: `5d156d3`. [Ref: Task 2025-05-02 05:14:35]
@@ -251,8 +274,25 @@
 - **Related**: `docs/rag-robustness-enhancement-spec.md`, `docs/rag-pipeline-implementation-spec.md` (updated), [ActiveContext 2025-05-05 03:45:36]
 - **Components**: `__tests__/python/test_run_rag_tests.py`
 - **Related**: [Debug Issue RAG-MOCK-LEAK-01]
+### Pattern: Inconsistent MCP Response Structure (Success vs. Error) - [2025-05-05 22:29:07]
+- **Context**: MCP server (`zlibrary-mcp`) handling `tools/call` requests.
+- **Problem**: Server returned different structures for successful responses (raw handler result) and error responses (`{ content: [{ type: 'text', ... }], isError: true }`). Client (RooCode) expected a consistent structure, specifically a top-level `content` array, leading to ZodError on successful calls.
+- **Cause**: Server implementation returned handler result directly on success, violating the client's implicit schema expectation derived from the error structure.
+- **Solution**: Modified the `tools/call` handler in `src/index.ts` to wrap the successful result object directly within the `content` array: `{ content: [result] }`. This satisfies the client's schema expectation while preserving the result data structure.
+- **Components**: `src/index.ts` (`tools/call` handler).
+- **Related**: Issue INT-001, [GlobalContext Progress 2025-05-05 22:32:14]
 - **Components**: `lib/python_bridge.py` (modified), `lib/rag_processing.py` (new).
 - **Impact**: Improved modularity and maintainability. Reduced `lib/python_bridge.py` line count significantly.
+### Pattern: Node/Python Bridge Data Handling (MCP Response) - [2025-05-06 00:33:00]
+- **Context**: Passing data from Python script (`lib/python_bridge.py`) via MCP server (`src/index.ts`) to Node.js library (`src/lib/zlibrary-api.ts`).
+- **Problem**: Regression INT-001-REG-01 occurred where `zlibrary-api.ts` failed to parse JSON results. The INT-001 fix wrapped the Python result in an MCP structure (`{ content: [{ type: 'text', text: JSON.stringify(result) }] }`) within `src/index.ts`. However, `zlibrary-api.ts` was still expecting the raw JSON string from Python, leading to parsing errors.
+- **Solution**:
+    1.  **`src/index.ts` Handlers**: Modified handlers (e.g., `searchBooks`) to return the direct result from `zlibraryApi` functions, removing intermediate object wrapping. The main `tools/call` handler correctly stringifies this direct result into the MCP `content.text` field.
+    2.  **`src/lib/zlibrary-api.ts` (`callPythonFunction`)**: Maintained `python-shell` in `text` mode. Implemented double `JSON.parse`: first parse the raw stdout string to get the MCP response object, then parse the `mcpResponseData.content[0].text` string to get the actual Python result.
+    3.  **`__tests__/zlibrary-api.test.js`**: Corrected all `mockPythonShellRun.mockResolvedValueOnce` calls to resolve with `[stringified_MCP_response]`, matching the `text` mode output. Ensured unique variable names for mock helpers.
+- **Components**: `src/index.ts`, `src/lib/zlibrary-api.ts`, `__tests__/zlibrary-api.test.js`.
+- **Related**: [Debug Issue INT-001-REG-01], [GlobalContext Progress 2025-05-06 00:33:00]
+---
 - **Related**: Task [Refactor Python Bridge (`lib/python_bridge.py`) 2025-04-29 15:43:24]
 # System Patterns
 ### Pattern: RAG Pipeline File Output - [2025-04-23 23:30:58]

@@ -86,7 +86,73 @@
 - **Related Issues**: [GlobalContext Progress 2025-04-28 02:43:32], [GlobalContext Progress 2025-04-28 03:21:02], [GlobalContext Progress 2025-04-28 02:34:57], `memory-bank/feedback/code-feedback.md` [2025-04-28 03:17:29], `memory-bank/feedback/code-feedback.md` [2025-04-28 03:36:37]
 # Debugger Specific Memory
 <!-- Entries below should be added reverse chronologically (newest first) -->
+### Issue: REG-POST-INT001-FIX - Regressions after INT-001-REG-01 Fix - [Status: Resolved] - [2025-05-06 01:19:12]
+- **Reported**: [2025-05-06 00:48:13] (via ActiveContext) / **Severity**: High / **Symptoms**: TDD reported 15 Jest failures (`__tests__/zlibrary-api.test.js`) and 22 Pytest failures (`__tests__/python/test_python_bridge.py`) after fix for INT-001-REG-01.
+- **Investigation**:
+    1. [2025-05-06 00:59:48] Ran `npm test __tests__/zlibrary-api.test.js`. Suite passed, confirming Jest failures were already resolved.
+    2. [2025-05-06 01:00:00] Ran `pytest __tests__/python/test_python_bridge.py`. Failed with `ModuleNotFoundError: No module named 'httpx'`.
+    3. [2025-05-06 01:00:43] Added `httpx` to `requirements-dev.txt`.
+    4. [2025-05-06 01:01:01] Installed dev requirements.
+    5. [2025-05-06 01:01:20] Ran `pytest`. Failed with `ImportError: cannot import name 'DownloadError'`.
+    6. [2025-05-06 01:01:29] Checked installed `zlibrary/exception.py` - `DownloadError` missing.
+    7. [2025-05-06 01:01:39] Checked local `zlibrary/src/zlibrary/exception.py` - `DownloadError` present. Confirmed venv likely lost editable install.
+    8. [2025-05-06 01:02:30] Re-installed main requirements (`requirements.txt` contains `-e ./zlibrary`).
+    9. [2025-05-06 01:02:56] Ran `pytest`. 22 assertion failures related to `save_processed_text` mocks and `process_document` return value.
+    10. [2025-05-06 01:04:09 - 01:10:07] Attempted fixes using `apply_diff` and `search_and_replace`. Tools reported errors or no changes needed, likely due to file state inconsistencies.
+    11. [2025-05-06 01:10:53 - 01:12:41] Re-read file and applied final fixes using `apply_diff` and `search_and_replace`.
+    12. [2025-05-06 01:13:31] Ran `pytest __tests__/python/test_python_bridge.py`. Passed (41 passed, 3 xfailed).
+    13. [2025-05-06 01:15:38] Ran `npm test`. Passed (56 passed).
+- **Root Cause**:
+    - Pytest: Missing `httpx` dependency; lost editable install of local `zlibrary` fork; outdated mock assertions for `save_processed_text` arguments and `process_document` return value.
+    - Jest (`index.test.js`): Outdated assertions expecting wrapped handler results.
+- **Fix Applied**:
+    - Added `httpx` to `requirements-dev.txt`.
+    - Re-ran `pip install -r requirements.txt` to ensure editable install.
+    - Corrected assertions in `__tests__/python/test_python_bridge.py` for `save_processed_text` calls and `process_document` return values.
+    - Corrected assertions in `__tests__/index.test.js` to expect direct handler results.
+- **Verification**: `pytest __tests__/python/test_python_bridge.py` passed (41 passed, 3 xfailed). Full `npm test` suite passed (56 passed).
+- **Related Issues**: [INT-001], [INT-001-REG-01]
+---
 ## Issue History
+### Issue: INT-001-REG-01 - JSON Parsing Regression in zlibrary-api tests - [Status: Resolved] - [2025-05-06 00:33:00]
+- **Reported**: [2025-05-05 23:54:20] (via ActiveContext) / **Severity**: High / **Symptoms**: 17 tests failing in `__tests__/zlibrary-api.test.js` with `Failed to parse JSON output from Python script: Unexpected token o in JSON at position 1. Raw output: [object Object]`. Occurred after INT-001 fix.
+- **Investigation**:
+    1. [2025-05-05 23:58:55] Read `__tests__/zlibrary-api.test.js`. Confirmed tests mock `PythonShell.run` and expect direct JS object/array results.
+    2. [2025-05-05 23:59:08] Read `src/lib/zlibrary-api.ts`. Found `callPythonFunction` used `mode: 'text'` and performed double `JSON.parse`. Error trace pointed to the second parse failing because the input string was `"[object Object]"`.
+    3. [2025-05-06 00:12:21] Read `src/index.ts`. Confirmed INT-001 fix correctly stringified the result: `return { content: [{ type: 'text', text: JSON.stringify(result) }] };`. Hypothesized intermediate handlers (e.g., `handlers.searchBooks`) were wrapping the result *again* before the final stringify.
+    4. [2025-05-06 00:12:52] Applied fix to `src/index.ts` handlers to return direct results.
+    5. [2025-05-06 00:13:01] Ran tests. Still failed with same error, now at the *first* parse in `callPythonFunction`. Indicated mock issue.
+    6. [2025-05-06 00:13:52] Corrected mock in first test (`__tests__/zlibrary-api.test.js`) to resolve with `[stringified_MCP_response]`.
+    7. [2025-05-06 00:15:50] Ran tests. Still failed. Reverted `src/lib/zlibrary-api.ts` to `mode: 'text'` and double parse. Reverted test mock to `[stringified_MCP_response]`.
+    8. [2025-05-06 00:21:13] Searched test file for all mocks. Found many incorrect mocks.
+    9. [2025-05-06 00:22:32 - 00:26:19] Attempted multi-part `apply_diff` and `write_to_file` to correct all mocks and fix resulting duplicate variable `SyntaxError`.
+    10. [2025-05-06 00:31:10] Ran `npm test __tests__/zlibrary-api.test.js`. Tests passed.
+- **Root Cause**: Combination of:
+    - Incorrect test mocks in `__tests__/zlibrary-api.test.js` not simulating the actual MCP response structure (`{ content: [{ type: 'text', text: JSON.stringify(actual_result) }] }`) returned after the INT-001 fix.
+    - Intermediate object wrapping in `src/index.ts` handlers (now removed).
+    - Initial incorrect parsing logic in `src/lib/zlibrary-api.ts` (now reverted to double-parse).
+    - Issues with applying multi-part diffs leading to syntax errors.
+- **Fix Applied**:
+    - Maintained `mode: 'text'` and double `JSON.parse` in `src/lib/zlibrary-api.ts`.
+    - Removed extra object wrapping in `src/index.ts` handlers.
+    - Corrected all `mockPythonShellRun.mockResolvedValueOnce` calls in `__tests__/zlibrary-api.test.js` to provide the mock result as `[stringified_MCP_response]` and ensured unique variable names.
+- **Verification**: `npm test __tests__/zlibrary-api.test.js` passed successfully.
+- **Related Issues**: [INT-001], [ActiveContext 2025-05-05 23:54:20], [GlobalContext Progress 2025-05-06 00:33:00], [System Patterns 2025-05-06 00:33:00]
+---
+### Issue: INT-001 - Client ZodError / No Tools Found - [Status: Resolved] - [2025-05-05 22:28:51]
+- **Reported**: [2025-04-14 13:10:48] / **Severity**: High (Blocks tool usage) / **Symptoms**: RooCode client UI shows "No tools found". Direct `use_mcp_tool` calls fail with client-side `ZodError: Expected array, received undefined` at path `content`. Previously investigated and supposedly fixed [2025-04-14 22:05:00]. Error recurred externally.
+- **Investigation**:
+    1. [2025-05-05 22:14:43] Read `src/index.ts`. Confirmed previous fixes (capability declaration, `inputSchema` key) were still correctly implemented.
+    2. [2025-05-05 22:14:43] Analyzed schema generation (`generateToolsCapability`) - No obvious issues found.
+    3. [2025-05-05 22:14:43] Analyzed response structures. Found inconsistency: Error responses returned `{ content: [{ type: 'text', ... }], isError: true }`, while success responses returned the raw handler result object directly.
+    4. [2025-05-05 22:14:43] Hypothesized client expects `content` to always be a top-level array.
+    5. [2025-05-05 22:15:19] Applied fix to `src/index.ts` (line 324) to wrap successful results: `return { content: [{ type: 'text', text: JSON.stringify(result) }] };`.
+    6. [2025-05-05 22:21:19] Rebuilt server (`npm run build`). User confirmed restart.
+    7. [2025-05-05 22:27:35] Verified fix via `use_mcp_tool` call to `get_download_limits`. Call succeeded without ZodError.
+- **Root Cause**: Inconsistent `CallToolResponse` structure between success and error cases. Successful calls returned the raw handler result, which did not match the client's expected schema (requiring a top-level `content` array).
+- **Fix Applied**: Modified `tools/call` handler in `src/index.ts` to wrap successful results in the `{ content: [{ type: 'text', text: JSON.stringify(result) }] }` structure.
+- **Verification**: `use_mcp_tool` call succeeded without ZodError.
+- **Related Issues**: [ActiveContext 2025-05-05 22:28:12], [GlobalContext Progress 2025-05-05 22:28:31], [System Patterns 2025-05-05 22:28:51]
 ### Issue: TDD-CYCLE23-TOOL-FAILURE - Persistent Tool Failures Blocking TDD Cycle 23 Green Phase - Status: Resolved (Blocker Removed) - [2025-05-02 02:33:00]
 - **Reported**: [2025-05-01 23:43:47] (via ActiveContext) / **Severity**: High (Blocking TDD) / **Symptoms**: `apply_diff` (content mismatch) and `write_to_file` ("Illegal value for `line`") errors preventing addition of `detect_garbled_text` to `lib/rag_processing.py`. [Ref: ActiveContext 2025-05-01 23:43:47, tdd-feedback.md 2025-05-01 23:42:36]
 - **Investigation**:

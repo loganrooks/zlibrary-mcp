@@ -236,13 +236,17 @@ async def process_document(
         # Save the processed text if any was extracted
         if processed_text is not None and processed_text != "":
             # Pass metadata to save_processed_text
+            # Construct book_details dictionary
+            book_details_dict = {
+                "id": book_id,
+                "author": author,
+                "title": title
+            }
             processed_file_path = await rag_processing.save_processed_text(
                 original_file_path=file_path,
-                text_content=processed_text,
+                processed_content=processed_text, # Corrected argument name
                 output_format=output_format,
-                book_id=book_id,
-                author=author,
-                title=title
+                book_details=book_details_dict # Pass as dictionary
             )
         else:
              logging.warning(f"No text extracted from {file_path}, processed file not saved.")
@@ -338,12 +342,19 @@ async def main():
         elif function_name == 'download_book': # Changed from download_book_to_file
              result = await download_book(**args_dict)
         elif function_name == 'process_document': # Changed from process_document_for_rag
+             # Correct the keyword argument name from file_path to file_path_str if present
+             if 'file_path' in args_dict:
+                 args_dict['file_path_str'] = args_dict.pop('file_path')
              result = await process_document(**args_dict)
         else:
             raise ValueError(f"Unknown function: {function_name}")
 
-        # Print result as JSON to stdout
-        print(json.dumps(result))
+        # Print only confirmation and path to stdout to avoid large content
+        if isinstance(result, dict) and 'processed_file_path' in result:
+            print(json.dumps({"status": "success", "processed_file_path": result['processed_file_path']}))
+        else:
+             # Fallback if result format is unexpected
+             print(json.dumps({"status": "success", "result_type": type(result).__name__}))
 
     except Exception as e:
         # Print error as JSON to stderr

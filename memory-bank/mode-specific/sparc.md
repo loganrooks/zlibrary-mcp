@@ -1,5 +1,52 @@
 # SPARC Orchestrator Specific Memory
 <!-- Entries below should be added reverse chronologically (newest first) -->
+## Delegations Log
+<!-- Append new delegation records here -->
+### [2025-05-06 01:23:32] Task: Commit Verified Regression Fixes (INT-001 Chain)
+- Assigned to: devops
+- Description: Stage and commit verified code fixes (`requirements-dev.txt`, `__tests__/python/test_python_bridge.py`, `__tests__/index.test.js`) and Memory Bank updates after successful debug and TDD verification.
+- Expected deliverable: Commit hashes, clean working directory.
+- Status: completed
+- Completion time: 2025-05-06 01:27:12
+- Outcome: SUCCESS. Changes committed to `feature/rag-robustness-enhancement`: `3dd2dd6` (code fixes), `09cca1b` (MB updates), `387d683` (final MB update).
+- Link to Progress Entry: [GlobalContext Progress 2025-05-06 01:27:53]
+
+### [2025-05-06 01:20:33] Task: Final Verification Pass (Post-Regression Fixes)
+- Assigned to: tdd
+- Description: Run full test suite (`npm test`) and review changes after debug fixes for regressions.
+- Expected deliverable: Confirmation of stability and passing tests.
+- Status: completed
+- Completion time: 2025-05-06 01:23:32
+- Outcome: SUCCESS. Full test suite passed. Codebase stable.
+- Link to Progress Entry: [GlobalContext Progress 2025-05-06 01:23:32]
+
+### [2025-05-06 12:57:03] Task: Investigate and Fix New Regressions (Post INT-001-REG-01 Fix) &amp; Re-evaluate INT-001 Fix
+- Assigned to: debug
+- Description: Investigate Jest/Pytest failures reported by TDD, re-evaluate original INT-001 fix using research docs, apply fixes.
+- Expected deliverable: Root cause analysis, applied fixes, passing tests.
+- Status: completed
+- Completion time: 2025-05-06 01:20:33
+- Outcome: SUCCESS. Resolved Jest/Pytest failures (dependency/assertion updates). Re-evaluation confirmed INT-001 fix chain is sound.
+- Link to Progress Entry: [GlobalContext Progress 2025-05-06 01:20:33]
+
+### [2025-05-06 00:36:43] Task: Verify Regression Fix (INT-001-REG-01)
+- Assigned to: tdd
+- Description: Run full test suite (`npm test`) to verify fix for INT-001-REG-01 and check for new regressions.
+- Expected deliverable: Test results report.
+- Status: completed (Failed - New Regressions)
+- Completion time: 2025-05-06 12:55:13
+- Outcome: FAILED. INT-001-REG-01 resolved, but new regressions found in Jest (`__tests__/zlibrary-api.test.js`) and Pytest (`__tests__/python/test_python_bridge.py`).
+- Link to Progress Entry: [GlobalContext Progress 2025-05-06 12:55:13]
+
+## Workflow State (Current - Overwrite this section)
+- Current phase: Completion
+- Phase start: 2025-05-06 01:27:53
+- Current focus: Finalizing orchestration for INT-001 fix chain.
+- Next actions: Perform `attempt_completion`.
+- Last Updated: 2025-05-06 01:27:53
+
+## Intervention Log
+<!-- Append intervention details using the format below -->
 ### [2025-05-05 22:10:51] Intervention: User Request for Internal INT-001 Investigation
 - **Trigger**: User feedback requesting internal log search for previous INT-001 solutions.
 - **Context**: SPARC had halted work pending external investigation, based on previous diagnosis of INT-001 as likely client-side.
@@ -1242,6 +1289,14 @@
 
 ### [2025-04-24 00:57:19] Task: TDD Green Phase - Implement RAG File Output Redesign
 - Assigned to: code
+### [2025-05-05 23:55:59] Task: Debug Regression in Node.js/Python Bridge Tests (INT-001-REG-01)
+- Assigned to: debug
+- Description: Diagnose and fix JSON parsing errors in `__tests__/zlibrary-api.test.js` introduced by INT-001 fix.
+- Expected deliverable: Root cause analysis, applied fixes, confirmation of passing `npm test`.
+- Status: completed
+- Completion time: [2025-05-06 01:28:31]
+- Outcome: SUCCESS. Resolved multi-part issue involving nested response parsing in `src/lib/zlibrary-api.ts`, extra wrapping in `src/index.ts` handlers, and inaccurate mocks in `__tests__/zlibrary-api.test.js`. [Ref: Debug Completion 2025-05-06 01:28:31, Issue INT-001-REG-01]
+- Link to Progress Entry: N/A
 - Description: Implement redesigned RAG file output mechanism to pass failing tests.
 - Expected deliverable: Passing code and confirmation.
 - Status: completed
@@ -1365,11 +1420,11 @@
 - Outcome: SUCCESS. Logic implemented and refactored in `lib/rag_processing.py`. `__tests__/python/test_rag_processing.py` suite passes (50 passed, 1 xfailed). [Ref: User Message 2025-05-05 00:37:04, MB tdd.md 2025-05-04 21:05:16]
 - Link to Progress Entry: N/A
 # Workflow State (Current - Overwrite this section)
-- Current phase: Refinement (Debugging Regression)
-- Phase start: 2025-05-05 23:54:20 (TDD Regression Failure)
-- Current focus: Addressing regression in `__tests__/zlibrary-api.test.js` (17 failures, JSON parsing errors) introduced by the INT-001 fix in `src/index.ts`.
-- Next actions: Delegate debugging task to `debug` mode. Initiate handover due to context limit (46.1%).
-- Last Updated: 2025-05-05 23:54:40
+- Current phase: Refinement (Testing)
+- Phase start: 2025-05-06 01:28:31 (Debug INT-001-REG-01 Complete)
+- Current focus: Regression INT-001-REG-01 fixed by `debug`. Need final verification of test suite.
+- Next actions: Delegate `npm test` execution to `tdd` mode. Initiate handover due to context limit (50.6%).
+- Last Updated: 2025-05-06 01:29:09
 
 - Assigned to: system-refiner
 - Description: Analyze feedback, logs, and mode memories to propose improvements to Roo system rules (.clinerules-*), ensuring generalizability.

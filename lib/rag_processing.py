@@ -1,3 +1,4 @@
+import asyncio
 import re
 import logging
 from pathlib import Path
@@ -943,7 +944,7 @@ def process_epub(file_path: Path, output_format: str = "txt") -> str:
         raise RuntimeError(f"Error processing EPUB {file_path}: {e}") from e
 
 
-def process_txt(file_path: Path, output_format: str = "txt") -> str:
+async def process_txt(file_path: Path, output_format: str = "txt") -> str:
     """Processes a TXT file, applies preprocessing, and returns content."""
     logging.info(f"Processing TXT: {file_path}")
     try:
@@ -952,14 +953,14 @@ def process_txt(file_path: Path, output_format: str = "txt") -> str:
             async def read_utf8():
                  async with aiofiles.open(file_path, mode='r', encoding='utf-8') as f:
                      return await f.readlines()
-            content_lines = asyncio.run(read_utf8()) # Run async read
+            content_lines = await read_utf8() # Await async read
         except UnicodeDecodeError:
             logging.warning(f"UTF-8 decoding failed for {file_path}. Trying latin-1.")
             try:
                 async def read_latin1():
                      async with aiofiles.open(file_path, mode='r', encoding='latin-1') as f:
                          return await f.readlines()
-                content_lines = asyncio.run(read_latin1()) # Run async read
+                content_lines = await read_latin1() # Await async read
             except Exception as read_err:
                  logging.error(f"Failed to read {file_path} with fallback encoding: {read_err}")
                  raise IOError(f"Could not read file {file_path}") from read_err

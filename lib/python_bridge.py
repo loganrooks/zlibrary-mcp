@@ -227,7 +227,7 @@ async def process_document(
             processed_text = rag_processing.process_epub(file_path, output_format)
         elif ext == '.txt':
             # TXT processing doesn't have a separate markdown path in spec
-            processed_text = rag_processing.process_txt(file_path)
+            processed_text = await rag_processing.process_txt(file_path)
         elif ext == '.pdf':
             processed_text = rag_processing.process_pdf(file_path, output_format)
         else:
@@ -350,11 +350,17 @@ async def main():
             raise ValueError(f"Unknown function: {function_name}")
 
         # Print only confirmation and path to stdout to avoid large content
-        if isinstance(result, dict) and 'processed_file_path' in result:
-            print(json.dumps({"status": "success", "processed_file_path": result['processed_file_path']}))
-        else:
-             # Fallback if result format is unexpected
-             print(json.dumps({"status": "success", "result_type": type(result).__name__}))
+        # ALL results from Python script must be wrapped in the MCP structure
+        # that callPythonFunction expects for its first parse.
+        mcp_style_response = {
+            "content": [
+                {
+                    "type": "text",
+                    "text": json.dumps(result) # The actual result is stringified here
+                }
+            ]
+        }
+        print(json.dumps(mcp_style_response))
 
     except Exception as e:
         # Print error as JSON to stderr

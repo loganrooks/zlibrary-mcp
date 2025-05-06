@@ -328,7 +328,8 @@ async function start(opts: StartOptions = {}): Promise<{ server: Server; transpo
         // Wrap the successful result to ensure 'content' is always an array
         // matching the structure expected by the client (based on ZodError)
         // Note: Stringifying the result prevents ZodError but might require client-side parsing.
-        return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+        const stringifiedResult = JSON.stringify(result);
+        return { content: [{ type: 'text', text: stringifiedResult }] };
       } catch (error: any) {
         // Catch errors thrown by the handler
         console.error(`Error calling tool "${toolName}":`, error); // Use toolName in error

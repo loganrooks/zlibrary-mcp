@@ -220,15 +220,15 @@ EXPORT { downloadBookToFile, processDocumentForRag /*, ... other functions */ }
 
 The Python bridge consists of two main files:
 - `lib/python_bridge.py`: Handles the main interface, argument parsing, calling the `zlibrary` library, and orchestrating calls to the RAG processing module.
-- `lib/rag_processing.py`: Contains the specific logic for processing document content (EPUB, TXT, PDF) and saving the results.
+- `lib/rag_processing.py`: Contains the specific logic for processing document content (EPUB, TXT, PDF), including robustness enhancements, and saving the results.
 
 This section details the relevant functions within `lib/rag_processing.py` and how they are called by `lib/python_bridge.py`.
 
 ```python
 # File: lib/rag_processing.py (Contains processing logic)
 # File: lib/python_bridge.py (Calls functions below)
-# Dependencies: zlibrary, ebooklib, beautifulsoup4, lxml, PyMuPDF, httpx, aiofiles
-# Standard Libs: json, sys, os, argparse, logging, pathlib, asyncio, urllib.parse
+# Dependencies: zlibrary, ebooklib, beautifulsoup4, lxml, PyMuPDF, httpx, aiofiles, pytesseract, Pillow
+# Standard Libs: json, sys, os, argparse, logging, pathlib, asyncio, urllib.parse, re, io
 import json
 import sys
 import os
@@ -253,6 +253,14 @@ try:
     PYMUPDF_AVAILABLE = True
 except ImportError:
     PYMUPDF_AVAILABLE = False
+
+try:
+    import pytesseract
+    from PIL import Image # Pillow for image handling with pytesseract
+    import io
+    OCR_LIBS_AVAILABLE = True
+except ImportError:
+    OCR_LIBS_AVAILABLE = False
 
 # --- Attempt to import download/scraping libraries ---
 try:
@@ -296,31 +304,43 @@ def _html_to_text(html_content):
     text = '\n'.join(chunk for chunk in chunks if chunk)
     return text
 
-def _process_epub(file_path: Path) -> str:
-    """Processes an EPUB file to extract plain text. Returns text string."""
-*   **Markdown Generation:** When `output_format='markdown'`, this function uses `BeautifulSoup` to parse the EPUB's HTML content. It maps relevant HTML tags (`h1-h6`, lists, etc.) and EPUB-specific footnote elements (`epub:type="noteref/footnote"`) to their Markdown equivalents. See the [RAG Markdown Generation Specification](./rag-markdown-generation-spec.md) for detailed logic.
+def _process_epub(file_path: Path, output_format: str = "txt") -> str:
+    """Processes an EPUB file. Includes preprocessing and optional Markdown generation."""
+*   **Preprocessing:** Calls helper functions (`identify_and_remove_front_matter`, `extract_and_format_toc`) to handle front matter and Table of Contents before main processing.
+*   **Markdown Generation:** When `output_format='markdown'`, uses `BeautifulSoup` to parse HTML, mapping tags (`h1-h6`, lists, `epub:type="noteref/footnote"`) to Markdown. See [RAG Markdown Spec](./rag-markdown-generation-spec.md).
     if not EBOOKLIB_AVAILABLE:
         raise ImportError("Required library 'ebooklib' is not installed.")
-    logging.info(f"Processing EPUB file: {file_path}")
+    logging.info(f"Processing EPUB file: {file_path}, format: {output_format}")
+    # ... (Implementation includes reading EPUB, extracting HTML/text) ...
+    # ... (Calls preprocessing helpers identify_and_remove_front_matter, extract_and_format_toc) ...
+    # ... (If output_format == 'markdown', calls _epub_node_to_markdown) ...
+    # ... (Else, calls _html_to_text) ...
+    # ... (Returns final processed string, prepended with Title/ToC if applicable) ...
+    # Placeholder for actual implementation details
     book = epub.read_epub(str(file_path))
-    all_text = []
+    all_content_lines = [] # Collect lines for preprocessing
     items = book.get_items_of_type(ebooklib.ITEM_DOCUMENT)
     for item in items:
-        content = item.get_content()
-        if content:
-            try:
-                html_content = content.decode('utf-8', errors='ignore')
-                text = _html_to_text(html_content)
-                if text: all_text.append(text)
-            except Exception as e:
-                logging.warning(f"Could not decode/process item {item.get_name()} in {file_path}: {e}")
-    full_text = "\n\n".join(all_text).strip()
-    logging.info(f"Finished EPUB: {file_path}. Length: {len(full_text)}")
-    return full_text
+        # Extract lines/structure suitable for preprocessing
+        pass # Placeholder
 
-def _process_txt(file_path: Path) -> str:
+    # cleaned_lines, title = identify_and_remove_front_matter(all_content_lines)
+    # final_content_lines, formatted_toc = extract_and_format_toc(cleaned_lines, output_format)
+
+    # Process final_content_lines based on output_format
+    # full_text = process_lines_to_format(final_content_lines, output_format)
+
+    # Prepend title and toc
+    # final_output = f"# {title}\n\n{formatted_toc}\n\n{full_text}"
+
+    # Simplified return for now
+    full_text = "Placeholder for processed EPUB content"
+    logging.info(f"Finished EPUB: {file_path}. Length: {len(full_text)}")
+    return full_text # Return final_output in full implementation
+
+def _process_txt(file_path: Path, output_format: str = "txt") -> str: # Added output_format, though likely unused for TXT
     """Processes a TXT file. Returns text string."""
-    logging.info(f"Processing TXT file: {file_path}")
+    logging.info(f"Processing TXT file: {file_path}, format: {output_format}")
     try:
         with open(file_path, 'r', encoding='utf-8') as f: text = f.read()
         logging.info(f"Finished TXT (UTF-8): {file_path}. Length: {len(text)}")
@@ -338,32 +358,70 @@ def _process_txt(file_path: Path) -> str:
         logging.error(f"Failed to read TXT file {file_path}: {e}")
         raise RuntimeError(f"Failed to read TXT file {file_path}: {e}") from e
 
-def _process_pdf(file_path: Path) -> str:
-    """Processes a PDF file using PyMuPDF. Returns text string."""
+def _process_pdf(file_path: Path, output_format: str = "txt") -> str:
+    """Processes a PDF using PyMuPDF, quality detection, optional OCR, and preprocessing."""
     if not PYMUPDF_AVAILABLE:
         raise ImportError("Required library 'PyMuPDF' is not installed.")
-    logging.info(f"Processing PDF: {file_path}")
-*   **Markdown Generation:** When `output_format='markdown'`, this function uses `PyMuPDF`'s dictionary output (`page.get_text("dict")`) and heuristic analysis (font size, flags, position) to detect and format structural elements like headings, lists, and footnotes into Markdown. See the [RAG Markdown Generation Specification](./rag-markdown-generation-spec.md) for detailed logic.
+    logging.info(f"Processing PDF: {file_path}, format: {output_format}")
+
+*   **Quality Detection & OCR:** Calls `detect_pdf_quality`. If quality is low ('IMAGE_ONLY', 'TEXT_LOW'), triggers `run_ocr_on_pdf` (requires `pytesseract`, `Pillow`). Handles OCR failures gracefully. See [RAG Robustness Spec](./rag-robustness-enhancement-spec.md#33-preprocessing--ocr-integration).
+*   **Preprocessing:** Calls helper functions (`identify_and_remove_front_matter`, `extract_and_format_toc`) to handle front matter and Table of Contents before main processing.
+*   **Markdown Generation:** When `output_format='markdown'`, uses `PyMuPDF`'s dictionary output (`page.get_text("dict")`) and heuristics to map structure to Markdown. See [RAG Markdown Spec](./rag-markdown-generation-spec.md).
+*   **Garbled Text Detection:** Incorporates checks (e.g., `detect_garbled_text`) to identify potentially poor extraction results.
+
     doc = None
     try:
         doc = fitz.open(str(file_path))
         if doc.is_encrypted:
             logging.warning(f"PDF is encrypted: {file_path}")
             raise ValueError("PDF is encrypted")
-        all_text = []
-        for page_num in range(len(doc)):
-            try:
-                page = doc.load_page(page_num)
-                text = page.get_text("text")
-                if text: all_text.append(text.strip())
-            except Exception as page_error:
-                logging.warning(f"Could not process page {page_num + 1} in {file_path}: {page_error}")
-        full_text = "\n\n".join(all_text).strip()
-        if not full_text:
-            logging.warning(f"No extractable text in PDF (image-based?): {file_path}")
-            return "" # Return empty string for image PDFs
-        logging.info(f"Finished PDF: {file_path}. Length: {len(full_text)}")
-        return full_text
+
+        quality_category = detect_pdf_quality(doc)
+        logging.info(f"Detected PDF quality for {file_path}: {quality_category}")
+
+        processed_text = None
+        ocr_triggered = False
+
+        if quality_category in ["IMAGE_ONLY", "TEXT_LOW"]:
+            if OCR_LIBS_AVAILABLE:
+                try:
+                    logging.info(f"Triggering OCR for {file_path} due to quality: {quality_category}")
+                    processed_text = run_ocr_on_pdf(str(file_path))
+                    ocr_triggered = True
+                except Exception as ocr_err:
+                    logging.error(f"OCR failed for {file_path}: {ocr_err}. Falling back.")
+                    if quality_category == "TEXT_LOW":
+                        processed_text = _extract_text_pymupdf(doc, output_format) # Fallback extraction
+                    else:
+                        processed_text = "" # No text if OCR fails on image-only
+            else:
+                logging.warning(f"OCR libraries not available, cannot process {quality_category} PDF: {file_path}")
+                processed_text = "" if quality_category == "IMAGE_ONLY" else _extract_text_pymupdf(doc, output_format)
+        else: # TEXT_HIGH, MIXED, or fallback
+             processed_text = _extract_text_pymupdf(doc, output_format)
+             # Optional: Could add OCR fallback for MIXED if PyMuPDF yield is low
+
+        if processed_text is None: processed_text = ""
+
+        # --- Preprocessing ---
+        # Placeholder: Assume processed_text is now a list of lines or similar
+        # text_lines = processed_text.splitlines()
+        # cleaned_lines, title = identify_and_remove_front_matter(text_lines)
+        # final_content_lines, formatted_toc = extract_and_format_toc(cleaned_lines, output_format)
+        # Re-join or re-process final_content_lines based on format
+        # final_output = f"# {title}\n\n{formatted_toc}\n\n{processed_text_from_final_lines}"
+        # --- End Preprocessing ---
+
+        # --- Garbled Text Check ---
+        # if detect_garbled_text(processed_text):
+        #    logging.warning(f"Potential garbled text detected in {file_path}")
+        # --- End Garbled Text Check ---
+
+        # Simplified return for now
+        final_output = processed_text
+        logging.info(f"Finished PDF: {file_path}. Length: {len(final_output)}. OCR Triggered: {ocr_triggered}")
+        return final_output
+
     except fitz.fitz.FitzError as fitz_error:
         logging.error(f"PyMuPDF error processing {file_path}: {fitz_error}")
         raise RuntimeError(f"Error opening/processing PDF: {file_path} - {fitz_error}") from fitz_error
@@ -375,6 +433,72 @@ def _process_pdf(file_path: Path) -> str:
         if doc:
             try: doc.close()
             except Exception as close_error: logging.error(f"Error closing PDF {file_path}: {close_error}")
+
+
+def _extract_text_pymupdf(doc: fitz.Document, output_format: str) -> str:
+    """Helper to extract text using PyMuPDF based on output format."""
+    # Placeholder: Implement actual extraction logic here
+    # If output_format == 'markdown', use get_text("dict") and heuristics
+    # Else, use get_text("text")
+    all_text = []
+    for page_num in range(len(doc)):
+        try:
+            page = doc.load_page(page_num)
+            # Simplified: just get basic text for now
+            text = page.get_text("text")
+            if text: all_text.append(text.strip())
+        except Exception as page_error:
+            logging.warning(f"Could not process page {page_num + 1} with PyMuPDF: {page_error}")
+    full_text = "\n\n".join(all_text).strip()
+    return full_text
+
+
+# --- Robustness Helper Functions (in lib/rag_processing.py) ---
+
+def detect_pdf_quality(doc: fitz.Document) -> str:
+    """Analyzes PDF and returns quality category (TEXT_HIGH, TEXT_LOW, IMAGE_ONLY, MIXED, EMPTY)."""
+    # Implementation based on heuristics (text density, image area, fonts)
+    # See RAG Robustness Spec for pseudocode.
+    logging.debug("Detecting PDF quality...")
+    # Placeholder implementation
+    return "TEXT_HIGH"
+
+def run_ocr_on_pdf(pdf_path_str: str, lang: str = 'eng') -> str:
+    """Runs Tesseract OCR on a PDF. Requires pytesseract, Pillow."""
+    if not OCR_LIBS_AVAILABLE:
+        raise ImportError("Required libraries 'pytesseract' and 'Pillow' are not installed for OCR.")
+    logging.info(f"Running OCR on {pdf_path_str}...")
+    # Implementation involves rendering pages (PyMuPDF), calling pytesseract.image_to_string
+    # See RAG Robustness Spec for pseudocode.
+    # Placeholder implementation
+    return "Placeholder OCR Text"
+
+def identify_and_remove_front_matter(content_lines: list) -> (list, str):
+     """Identifies title, removes front matter lines. Returns (cleaned_lines, title)."""
+     logging.debug("Identifying and removing front matter...")
+     # Implementation uses heuristics (keywords, page numbers, layout patterns).
+     # See RAG Robustness Spec for pseudocode.
+     # Placeholder implementation
+     title = "Placeholder Title"
+     return (content_lines, title) # Return original lines for now
+
+def extract_and_format_toc(content_lines: list, output_format: str) -> (list, str):
+     """Extracts ToC, formats if Markdown. Returns (remaining_lines, formatted_toc_string)."""
+     logging.debug("Extracting and formatting ToC...")
+     # Implementation uses heuristics (keywords, line formats like 'Chapter...Page').
+     # See RAG Robustness Spec for pseudocode.
+     # Placeholder implementation
+     formatted_toc = "Placeholder ToC"
+     return (content_lines, formatted_toc) # Return original lines for now
+
+def detect_garbled_text(text: str) -> bool:
+    """Detects if text is likely garbled (e.g., high non-alpha ratio, excessive repetition)."""
+    logging.debug("Detecting garbled text...")
+    # Implementation uses heuristics.
+    # See RAG Robustness Spec TDD Cycle 23 for potential logic.
+    # Placeholder implementation
+    return False
+
 
 # --- Helper Function for Saving (in lib/rag_processing.py) ---
 
@@ -399,6 +523,7 @@ def _save_processed_text(original_file_path: Path, text_content: str, output_for
     except Exception as e:
         logging.error(f"Unexpected error saving processed file {output_file_path}: {e}")
         raise FileSaveError(f"An unexpected error occurred while saving processed file: {e}") from e
+
 
 # --- Helper for Scraping and Downloading (async, in lib/python_bridge.py) ---
 
@@ -498,165 +623,132 @@ def process_document(file_path_str: str, output_format: str = "txt") -> dict:
 
     _, ext = os.path.splitext(file_path.name) # Use os.path.splitext for reliability
     ext = ext.lower()
+
     processed_text = None
-
     try:
-        logging.info(f"Starting processing for: {file_path}")
         if ext == '.epub':
-            processed_text = _process_epub(file_path)
+            processed_text = _process_epub(file_path, output_format)
         elif ext == '.txt':
-            processed_text = _process_txt(file_path)
+            processed_text = _process_txt(file_path, output_format)
         elif ext == '.pdf':
-            processed_text = _process_pdf(file_path)
+            processed_text = _process_pdf(file_path, output_format)
         else:
-            raise ValueError(f"Unsupported file format: {ext}. Supported: {SUPPORTED_FORMATS}")
+            raise ValueError(f"Unsupported file format: {ext}")
 
-        # Save the result if text was extracted (allow empty string)
-        if processed_text is not None:
-            output_path = _save_processed_text(file_path, processed_text, output_format)
-            return {"processed_file_path": str(output_path)}
+        # Save the processed text and return the path
+        if processed_text: # Only save if text was extracted
+            processed_file_path = _save_processed_text(file_path, processed_text, output_format)
+            return {"processed_file_path": str(processed_file_path)}
         else:
-            # Handle cases where no text was extracted (e.g., image PDF returned "")
-            logging.warning(f"No processable text extracted from {file_path}. No output file saved.")
-            return {"processed_file_path": None} # Indicate no file saved
+            logging.warning(f"No text extracted from {file_path}, returning null path.")
+            return {"processed_file_path": None} # Return null if no text
 
-    except ImportError as imp_err:
-         logging.error(f"Missing dependency for processing {ext} file {file_path}: {imp_err}")
-         raise RuntimeError(f"Missing required library to process {ext} files.") from imp_err
-    except FileSaveError as save_err:
-        logging.error(f"Failed to save processed output for {file_path}: {save_err}")
-        raise save_err # Re-raise FileSaveError
+    except (ImportError, ValueError, FileNotFoundError, RuntimeError, FileSaveError) as e:
+        logging.error(f"Error processing {file_path}: {e}")
+        raise e # Re-raise to be caught by main handler
     except Exception as e:
-        logging.exception(f"Failed to process document {file_path}")
-        if isinstance(e, (FileNotFoundError, ValueError)): raise e
-        raise RuntimeError(f"An unexpected error occurred processing {file_path}: {e}") from e
+        logging.exception(f"Unexpected error processing {file_path}")
+        raise RuntimeError(f"Unexpected error processing {file_path}: {e}") from e
 
 
-def download_book(book_details: dict, output_dir=None, process_for_rag=False, processed_output_format="txt"):
+async def download_book(book_details: dict, output_dir: str, process_for_rag: bool, processed_output_format: str) -> dict:
     """
-    Downloads a book using details containing the book page URL. Extracts the URL,
-    fetches the page, scrapes the download link (selector: a.btn.btn-primary.dlButton),
-    downloads the file, and optionally processes it. See ADR-002.
-    Returns a dictionary containing file_path and optionally processed_file_path.
+    Downloads a book using scraping, optionally processes it, saves results,
+    and returns paths.
     """
-    # Use default output dir if not provided
-    output_dir_str = output_dir if output_dir else "./downloads"
+    if not book_details or 'url' not in book_details:
+        raise ValueError("Missing 'book_details' or 'url' within book_details.")
 
-    logging.info(f"Attempting download using book details, process_for_rag={process_for_rag}")
-
-    book_page_url = book_details.get('url')
-    if not book_page_url:
-        raise ValueError("Missing 'url' (book page URL) in book_details input.")
+    book_page_url = book_details['url']
+    logging.info(f"Starting download process for URL: {book_page_url}")
 
     try:
-        # Perform scraping and download using the async helper
-        # Run the async function synchronously for the bridge
-        download_result_path_str = asyncio.run(_scrape_and_download(book_page_url, output_dir_str))
+        # Step 1: Scrape and Download the original file
+        downloaded_file_path_str = await _scrape_and_download(book_page_url, output_dir)
+        downloaded_file_path = Path(downloaded_file_path_str)
 
-    except (DownloadScrapeError, DownloadExecutionError) as download_err:
-        logging.error(f"Download failed for book page {book_page_url}: {download_err}")
-        raise RuntimeError(f"Download failed: {download_err}") from download_err
+        result = {"file_path": downloaded_file_path_str, "processed_file_path": None}
+
+        # Step 2: Optionally process the downloaded file
+        if process_for_rag:
+            logging.info(f"Processing downloaded file for RAG: {downloaded_file_path}")
+            try:
+                # Call the synchronous processing function (run in executor if truly blocking)
+                processing_result = process_document(str(downloaded_file_path), processed_output_format)
+                result["processed_file_path"] = processing_result.get("processed_file_path") # Can be None
+            except Exception as processing_error:
+                # Log error but don't fail the whole download, return original path
+                logging.error(f"Failed to process document after download: {processing_error}")
+                # processed_file_path remains None
+
+        return result
+
+    except (DownloadScrapeError, DownloadExecutionError) as e:
+        logging.error(f"Download failed for {book_page_url}: {e}")
+        raise RuntimeError(f"Download failed: {e}") from e
     except Exception as e:
-        logging.exception(f"Unexpected error during download process for {book_page_url}")
-        raise RuntimeError(f"Unexpected download error: {e}") from e
+        logging.exception(f"Unexpected error during download/processing for {book_page_url}")
+        raise RuntimeError(f"Unexpected error during download/processing: {e}") from e
 
-    # --- Post-Download Processing ---
-    download_result_path = Path(download_result_path_str)
-    logging.info(f"Book downloaded successfully to: {download_result_path}")
-
-    result = {"file_path": str(download_result_path)}
-    processed_path_str = None # Use string path
-
-    if process_for_rag:
-        logging.info(f"Processing downloaded file for RAG: {download_result_path}")
-        try:
-            # Call the updated process_document which now saves the file
-            process_result = process_document(str(download_result_path), processed_output_format)
-            processed_path_str = process_result.get("processed_file_path") # Can be None
-            result["processed_file_path"] = processed_path_str # Assign None if processing yielded no text
-
-        except Exception as e:
-            # Log processing errors but don't fail the download result
-            logging.error(f"Failed to process document after download for {download_result_path}: {e}")
-            result["processed_file_path"] = None # Indicate processing failure
-
-    return result
 
 # --- Main Execution Block (Handles calls from Node.js) ---
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='Z-Library MCP Python Bridge')
-    parser.add_argument('function_name', type=str, help='Name of the function to call')
-    parser.add_argument('json_args', type=str, help='JSON string containing function arguments')
-    cli_args = parser.parse_args()
-
+async def main(func_name: str, args_json: str):
+    """Main entry point called by Node.js."""
     try:
-        args_dict = json.loads(cli_args.json_args)
-        response = None # Initialize response
+        args = json.loads(args_json)
+        logging.info(f"Executing Python function: {func_name} with args: {args}")
 
-        if cli_args.function_name == 'download_book':
-            book_details = args_dict.get('book_details')
-            if not book_details or not isinstance(book_details, dict):
-                 raise ValueError("Missing or invalid 'book_details' object")
-            response = download_book(
-                book_details,
-                args_dict.get('output_dir'),
-                args_dict.get('process_for_rag', False),
-                args_dict.get('processed_output_format', "txt")
+        if func_name == 'download_book':
+            result = await download_book(
+                args.get('book_details'),
+                args.get('output_dir', './downloads'),
+                args.get('process_for_rag', False),
+                args.get('processed_output_format', 'txt')
             )
-        elif cli_args.function_name == 'process_document':
-            file_path = args_dict.get('file_path')
-            if not file_path: raise ValueError("Missing 'file_path'")
-            response = process_document(
-                file_path,
-                args_dict.get('output_format', "txt")
+        elif func_name == 'process_document':
+            # Run synchronous function in executor to avoid blocking event loop if it becomes complex
+            loop = asyncio.get_running_loop()
+            result = await loop.run_in_executor(
+                None, # Use default executor
+                process_document,
+                args.get('file_path'),
+                args.get('output_format', 'txt')
             )
-        # Add handlers for other Python functions if needed
-        # elif cli_args.function_name == 'search_books': ...
+        # Add other function handlers here...
+        # elif func_name == 'search_books':
+        #     # ... call search_books ...
+        #     pass
         else:
-            # --- Placeholder for other ZLibrary functions ---
-            # Example: Forwarding to ZLibrary instance if function exists
-            zl = ZLibrary()
-            func = getattr(zl, cli_args.function_name, None)
-            if func and callable(func):
-                 logging.info(f"Calling ZLibrary function: {cli_args.function_name}")
-                 # Note: ZLibrary functions might be async, requiring asyncio.run
-                 # This needs careful checking based on the actual library methods
-                 if asyncio.iscoroutinefunction(func):
-                     response = asyncio.run(func(**args_dict))
-                 else:
-                     response = func(**args_dict)
-            else:
-                 raise ValueError(f"Unknown or non-callable function name: {cli_args.function_name}")
+            raise ValueError(f"Unknown function name: {func_name}")
 
-        # Print the successful JSON response to stdout
-        print(json.dumps(response))
-        sys.stdout.flush()
+        print(json.dumps({"success": True, "result": result}))
 
     except Exception as e:
-        # Log the full error traceback to stderr
-        logging.exception("Python bridge encountered an error")
-        # Print a JSON error structure to stdout for Node.js
-        error_response = {
-            "error": type(e).__name__,
-            "message": str(e)
-        }
-        print(json.dumps(error_response))
-        sys.stdout.flush()
-        sys.exit(1) # Exit with a non-zero code
+        logging.exception(f"Error executing {func_name}")
+        print(json.dumps({"success": False, "error": f"{type(e).__name__}: {e}"}))
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("func_name", help="Name of the function to call")
+    parser.add_argument("args_json", help="JSON string of arguments")
+    script_args = parser.parse_args()
+
+    asyncio.run(main(script_args.func_name, script_args.args_json))
+
 ```
 
 ## 6. Python Dependency Management
 
-The RAG processing requires additional Python libraries.
-
-1.  **Required Libraries:**
+1.  **Add New Dependencies:** Ensure the following are added to the project's Python dependencies:
     *   `ebooklib`: For parsing EPUB files.
     *   `beautifulsoup4`: For cleaning HTML content.
     *   `lxml`: Recommended HTML parser for `beautifulsoup4`.
     *   `PyMuPDF`: For parsing PDF files.
     *   `httpx`: For async HTTP requests (downloading/scraping).
     *   `aiofiles`: For async file writing (downloading).
+    *   `pytesseract`: For OCR integration.
+    *   `Pillow`: Image library needed by `pytesseract`.
 
 2.  **Update `requirements.txt`:**
     ```text
@@ -668,6 +760,8 @@ The RAG processing requires additional Python libraries.
     PyMuPDF
     httpx
     aiofiles
+    pytesseract
+    Pillow
     ```
 
 3.  **Update `lib/venv-manager.ts`:** Ensure `installDependencies` uses `pip install -r requirements.txt`. (Pseudocode remains the same as v2.0, assuming it correctly uses `-r`).
@@ -699,63 +793,46 @@ The RAG processing requires additional Python libraries.
 
 ## 7. TDD Anchors (Updated)
 
-1.  **Tool Schemas (`src/lib/schemas.ts`):**
-    *   Verify `DownloadBookToFileInputSchema` requires `bookDetails` object, accepts optional `outputDir`, `process_for_rag`, `processed_output_format`.
-    *   Verify `DownloadBookToFileOutputSchema` includes `file_path` and optional `processed_file_path` (nullable).
-    *   Verify `ProcessDocumentForRagInputSchema` requires `file_path`, accepts optional `output_format`.
-    *   Verify `ProcessDocumentForRagOutputSchema` requires `processed_file_path` (nullable).
+These anchors guide the Test-Driven Development process. Tests should cover success cases, error handling (file not found, unsupported format, processing errors, save errors, OCR errors, preprocessing errors), and edge cases (empty files, encrypted PDFs, image-only PDFs, garbled text). **Refer to `docs/rag-robustness-enhancement-spec.md` for more detailed TDD anchors related to quality detection, OCR, and preprocessing.**
 
-2.  **Tool Registration (`src/index.ts`):**
-    *   Test `tools/list` includes updated descriptions/schemas for `download_book_to_file`.
-    *   Test `tools/call` routes `download_book_to_file` correctly.
-    *   Test input validation using updated `DownloadBookToFileInputSchema`.
-
-3.  **Node.js Handlers (`src/lib/zlibrary-api.ts`):**
-    *   `downloadBookToFile`: Mock `callPythonFunction`. Test `bookDetails` object passed correctly. Test handling of responses with/without `processed_file_path` (including null). Test error handling (missing paths, Python errors).
-    *   `processDocumentForRag`: Mock `callPythonFunction`. Test `file_path` and `output_format` passed. Test handling of successful response (`processed_file_path`, including null) and error response.
-
-4.  **Python Bridge - `download_book` (`lib/python_bridge.py`):**
-    *   Test raises `ValueError` if `book_details['url']` is missing.
-    *   Test successful extraction of URL from `book_details`.
-    *   Mock `_scrape_and_download`. Test it's called with correct URL and output dir.
-    *   Test successful return from `_scrape_and_download` results in correct `file_path`.
-    *   Test `DownloadScrapeError` or `DownloadExecutionError` from `_scrape_and_download` raises `RuntimeError`.
-    *   Test `process_for_rag=True` calls `process_document` with the downloaded path.
-    *   Test `process_for_rag=True` (Successful Processing) -> Returns `file_path` and `processed_file_path` (string path).
-    *   Test `process_for_rag=True` (Processing Fails/No Text) -> Returns `file_path` and `processed_file_path: None`.
-
-5.  **Python Bridge - `_scrape_and_download` (`lib/python_bridge.py`):**
-    *   Test raises `ImportError` if `httpx`/`aiofiles` missing.
-    *   Mock `httpx.AsyncClient.get` for book page fetch. Test successful fetch.
-    *   Test book page fetch failure (network error) raises `DownloadScrapeError`.
-    *   Test book page fetch failure (HTTP status error) raises `DownloadScrapeError`.
-    *   Mock `BeautifulSoup` parsing. Test successful selection of download link (`a.btn.btn-primary.dlButton`) and extraction of `href`.
-    *   Test parsing failure (selector not found) raises `DownloadScrapeError`.
-    *   Test unexpected parsing error raises `DownloadScrapeError`.
-    *   Mock `httpx.AsyncClient.stream` for final download. Test successful download writes file and returns correct path.
-    *   Test filename extraction logic (Content-Disposition, URL fallback).
-    *   Test final download failure (network error) raises `DownloadExecutionError`.
-    *   Test final download failure (HTTP status error) raises `DownloadExecutionError`.
-    *   Test file saving failure (OS error) raises `DownloadExecutionError`.
-
-6.  **Python Bridge - `process_document` (`lib/python_bridge.py`):**
-    *   (Anchors remain largely the same as v2.0)
-    *   Test returns `{"processed_file_path": None}` if processing helper returns empty string.
-
-7.  **Python Bridge - `_process_epub`, `_process_txt`, `_process_pdf` (`lib/python_bridge.py`):**
-    *   (Anchors remain largely the same as v2.0)
-    *   Verify they return extracted text string (or empty string for image PDF) or raise appropriate errors.
-
-8.  **Python Bridge - `_save_processed_text` (`lib/python_bridge.py`):**
-    *   (Anchors remain the same as v2.0)
-    *   Test raises `ValueError` if `text_content` is None (but allows empty string).
-
-9.  **Python Bridge - Main Execution (`lib/python_bridge.py`):**
-    *   Test routing to updated `download_book`.
-    *   Test passing of `book_details` object.
-    *   Test successful JSON output format (including `processed_file_path`, potentially null).
-    *   Test error JSON output format on exceptions (including `DownloadScrapeError`, `DownloadExecutionError`).
-
-10. **Dependency Management (`src/lib/venv-manager.ts`):**
-    *   (Anchors remain the same as v2.0)
-    *   Ensure `httpx` and `aiofiles` are included in `requirements.txt` tests.
+*   **`lib/rag_processing.py` (Python - `pytest`):**
+    *   Tests for `detect_pdf_quality` (TEXT_HIGH, TEXT_LOW, IMAGE_ONLY, MIXED, EMPTY).
+    *   Tests for `run_ocr_on_pdf` (success, Tesseract not found, image processing errors).
+    *   Tests for `identify_and_remove_front_matter` (basic removal, title preservation, no front matter).
+    *   Tests for `extract_and_format_toc` (basic extraction, Markdown formatting, no ToC).
+    *   Tests for `detect_garbled_text` (garbled vs. clean text).
+    *   `test_process_epub_success`: Verify text/Markdown extraction, including preprocessing.
+    *   `test_process_epub_error`: Mock `epub.read_epub` error.
+    *   `test_process_txt_success`: Verify text extraction.
+    *   `test_process_txt_read_error`: Mock `open` error.
+    *   `test_process_pdf_success_text_high`: Verify PyMuPDF extraction, including preprocessing.
+    *   `test_process_pdf_triggers_ocr`: Mock `detect_pdf_quality` (LOW/IMAGE), verify `run_ocr_on_pdf` called.
+    *   `test_process_pdf_handles_ocr_failure`: Mock `run_ocr_on_pdf` error, verify fallback/empty result.
+    *   `test_process_pdf_encrypted`: Verify `ValueError`.
+    *   `test_process_pdf_open_error`: Mock `fitz.open` error.
+    *   `test_save_processed_text_success`: Verify file saving.
+    *   `test_save_processed_text_os_error`: Mock `open`/`mkdir` error.
+*   **`lib/python_bridge.py` (Python - `pytest`):**
+    *   `test_process_document_routes_correctly`: Verify calls to `rag_processing` functions based on extension.
+    *   `test_process_document_handles_processing_errors`: Verify errors from `rag_processing` are caught.
+    *   `test_download_book_calls_scrape_and_download`: Verify helper call.
+    *   `test_download_book_calls_process_document_when_flag_true`: Verify call to `process_document`.
+    *   `test_download_book_handles_scrape_error`: Mock `_scrape_and_download` error.
+    *   `test_download_book_handles_download_error`: Mock `_scrape_and_download` error.
+    *   `test_download_book_handles_processing_error`: Mock `process_document` error.
+    *   `test_scrape_and_download_success`: Mock `httpx`, `aiofiles`.
+    *   `test_scrape_and_download_fetch_error`: Mock `client.get` error.
+    *   `test_scrape_and_download_scrape_error`: Mock `BeautifulSoup` error.
+    *   `test_scrape_and_download_download_error`: Mock `client.stream`/`aiofiles.open` error.
+    *   `test_main_routes_correctly`: Verify `main` calls correct functions.
+    *   `test_main_handles_errors`: Verify `main` catches exceptions.
+*   **`lib/zlibrary-api.ts` (Node.js - Jest):**
+    *   `test_downloadBookToFile_success_no_processing`: Mock `callPythonFunction`.
+    *   `test_downloadBookToFile_success_with_processing`: Mock `callPythonFunction`.
+    *   `test_downloadBookToFile_python_error`: Mock `callPythonFunction` rejection.
+    *   `test_processDocumentForRag_success`: Mock `callPythonFunction`.
+    *   `test_processDocumentForRag_python_error`: Mock `callPythonFunction` rejection.
+*   **`index.ts` (Node.js - Jest):**
+    *   Verify tool schemas are registered.
+    *   Verify `tools/call` handler routes correctly.
+    *   Verify input validation works.

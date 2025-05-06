@@ -1,3 +1,10 @@
+### Progress - [2025-05-06 01:25:39]
+- **DevOps Task Completed:** Committed verified regression fixes (INT-001 chain) and associated Memory Bank updates.
+- **Commits:**
+    - `3dd2dd6`: `fix(tests): Update assertions and deps post INT-001 fix chain` (Code fixes)
+    - `09cca1b`: `chore(memory): Update MB logs for INT-001 regression fixes` (Memory Bank updates)
+- **Related Entries:** [See ActiveContext 2025-05-06 01:25:13]
+---
 ### Progress - [2025-05-06 01:22:30]
 - **Final Verification Pass Completed:** Ran full test suite (`npm test`) after debug fixes for post-INT-001-REG-01 regressions. All tests passed (56 Jest tests, including implicit Pytest runs). Reviewed code changes (`requirements-dev.txt`, `__tests__/python/test_python_bridge.py`, `__tests__/index.test.js`) and confirmed alignment with debug context. Codebase is stable.
 - **Related Entries:** [See ActiveContext 2025-05-06 01:22:03], [See Test Execution Results 2025-05-06 01:22:03]

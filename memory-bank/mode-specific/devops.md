@@ -1,5 +1,22 @@
 # DevOps Specific Memory
 <!-- Entries below should be added reverse chronologically (newest first) -->
+### Deployment: [2025-05-06 01:25:13] - Memory Bank Updates (INT-001 Regression Fixes) to feature/rag-robustness-enhancement
+- **Triggered By**: User Request (Task: Commit Verified Regression Fixes)
+- **Status**: Success (Commit Only)
+- **Duration**: N/A
+- **Commit/Build ID**: `09cca1b`
+- **Changes**: Updated Memory Bank files (`activeContext.md`, `globalContext.md`, `feedback/debug-feedback.md`, `feedback/sparc-feedback.md`, `mode-specific/debug.md`, `mode-specific/sparc.md`, `mode-specific/tdd.md`) to reflect the resolution of regressions following the INT-001 fix chain.
+- **Issues Encountered**: None.
+- **Rollback Plan**: `git revert 09cca1b`
+
+### Deployment: [2025-05-06 01:24:52] - Code Fixes (INT-001 Regression Chain) to feature/rag-robustness-enhancement
+- **Triggered By**: User Request (Task: Commit Verified Regression Fixes)
+- **Status**: Success (Commit Only)
+- **Duration**: N/A
+- **Commit/Build ID**: `3dd2dd6`
+- **Changes**: Updated test assertions and dependencies (`requirements-dev.txt`, `__tests__/python/test_python_bridge.py`, `__tests__/index.test.js`, `__tests__/zlibrary-api.test.js`, `src/index.ts`, `src/lib/zlibrary-api.ts`, `src/lib/venv-manager.ts`) following the resolution of regressions after the INT-001 fix chain.
+- **Issues Encountered**: None.
+- **Rollback Plan**: `git revert 3dd2dd6`
 ## Deployment History Log
 ### Deployment: [2025-05-02 05:15:30] - RAG Test Framework &amp; MB Updates to feature/rag-robustness-enhancement
 - **Triggered By**: User Request (Task 2025-05-02 05:14:35)

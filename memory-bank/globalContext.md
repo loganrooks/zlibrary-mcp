@@ -1,3 +1,7 @@
+### Progress - [2025-05-05 02:00:05]
+- **RAG Robustness Verification Completed (via Direct Execution):** Successfully verified EPUB, PDF, and TXT processing via direct Python execution after fixing several bugs (`TypeError`, `UnboundLocalError`, `AttributeError`). MCP tool verification remains blocked by ZodError (INT-001). Full test suite passed. Modified Python bridge to limit output during direct execution tests. [See Debug Issue RAG-Verify-01]
+- **Related Entries:** [See ActiveContext 2025-05-05 01:58:04], [See Debug Issue INT-001 - 2025-04-14 18:22:33]
+---
 ### Progress - [2025-05-02 18:30:06]
 - **RAG Test Failures (ToC, PDF Integration):** Resolved externally via TDD session. Fix involved updating `is_toc_like` regex in `lib/rag_processing.py::_extract_and_format_toc`. All tests in `__tests__/python/test_rag_processing.py` now pass (49 passed, 1 xfail). [See Debug Session 2025-05-02 12:15:44 - 18:30:06]
 ---
@@ -105,6 +109,8 @@
 - **[2025-04-29 16:36:11] - Fix: MCP Result Format** - Modified `src/index.ts` `tools/call` handler to return standard `{ result: value }` format. Tests passed. Commit: `47edb7a`. [Ref: ActiveContext 2025-04-29 16:36:11]
 - **[2025-04-29 17:00:00] - HolisticReview - Post-Refinement Assessment Complete** - Reviewed workspace after recent refactoring/fixes. Test suite passes. Integration points verified (RAG refactor, MCP result format). Documentation updated (README, ADRs, Specs). Obsolete `get_book_by_id` references removed from tests/code. Debug logs removed, error logging improved. Minor findings: `lib/rag_processing.py` slightly over line limit, `zlibrary/src/zlibrary/abs.py` significantly over (deferred), utility script `get_venv_python_path.mjs` at root, unused Zod schema remains. Project deemed ready for final checks/deployment prep.
 ## Progress
+- **[2025-05-05 03:55:59] - DocsWriter - Documentation Update Completed (RAG Robustness)** - Updated `README.md` and `docs/rag-pipeline-implementation-spec.md` to reflect the implementation of RAG robustness enhancements (PDF quality detection, OCR, preprocessing). [Ref: Task 2025-05-05 03:46:21]
+- **[2025-05-03 17:55:55] - TDD Cycle 24 (EPUB Front Matter) - Red Phase Completed** - Added failing test `test_process_epub_removes_front_matter`. [Ref: ActiveContext 2025-05-03 17:55:55]
 - **[2025-05-02 05:15:30] - DevOps Task Completed (Git Debt Cleanup)** - Staged and committed remaining RAG test framework changes and MB updates. Commit: `5d156d3`. [Ref: Task 2025-05-02 05:14:35]
 - **[2025-05-02 04:42:28] - DevOps Task Completed (Commit Cycle 23)** - Investigated staging/committing TDD Cycle 23 (Garbled Text). Confirmed via `git log` that changes were included in commit `13c826b` (TDD Cycle 21). No separate commit required. [Ref: Task 2025-05-02 03:16:40, ActiveContext 2025-05-02 04:42:02]
 - **[2025-05-02 03:26:27] - DevOps Task Completed (Commit Cycle 22)** - Investigated staging/committing TDD Cycle 22 (PDF Quality) changes. Found they were already included in commit `13c826b`. No new commit required. [Ref: Task 2025-05-02 03:23:10]
@@ -180,6 +186,11 @@
 - **[2025-04-28 17:03:01] - SpecPseudo - Verified RAG Spec Alignment** - Confirmed `docs/rag-pipeline-implementation-spec.md` (v2.1) aligns with ADR-002 regarding the `download_book_to_file` workflow (using `bookDetails` from `search_books`). No changes required.
 [2025-04-28 10:04:09] - Debug - Resolved Python test failures (`test_python_bridge.py`) related to PDF processing mocks during TDD Refactor phase. All Python and JS tests now pass. [See Debug Issue TDD-Refactor-Block-PyTest-20250428]
 - **[2025-04-28 04:00:05] - Debug - Resolved TDD Green Phase Blockage (Python Tests)** - Investigated and fixed issues in `lib/python_bridge.py` and `__tests__/python/test_python_bridge.py` that prevented TDD Green Phase completion. Refactored tests, corrected assertions, fixed return values, and marked obsolete tests as xfail. `pytest` now exits 0. [See Issue TDD-GREEN-BLOCK-20250428]
+### Product: RAG Robustness Documentation Update - [2025-05-05 03:56:18]
+- **Context**: Documentation updated to reflect the implementation of RAG robustness enhancements.
+- **Changes**: Updated `README.md` (status, architecture, features) and `docs/rag-pipeline-implementation-spec.md` (Python bridge details, dependencies, TDD anchors) to include PDF quality detection, conditional OCR, preprocessing (front matter/ToC), and garbled text detection.
+- **Status**: Documentation Updated.
+- **Related**: `README.md`, `docs/rag-pipeline-implementation-spec.md`, `docs/rag-robustness-enhancement-spec.md`, [ActiveContext 2025-05-05 03:55:29]
 # Product Context
 ### Product: RAG Robustness Spec Update (v1.1) - [2025-04-29 23:15:00]
 - **Context**: Updated `docs/rag-robustness-enhancement-spec.md` based on user feedback.
@@ -228,6 +239,16 @@
 - **Problem**: A test (`test_run_single_test_calls_processing_and_eval`) failed with `StopIteration`/`RuntimeError` when run as part of the suite, but passed in isolation. The error occurred within `unittest.mock` machinery, indicating an exhausted iterator `side_effect`, even though the test used `return_value` or callable `side_effect`.
 - **Cause**: The preceding test (`test_main_loads_manifest_and_runs_tests_revised`) used `unittest.mock.patch` and manual mock assignment, including a list iterator `side_effect`. This state leaked into the subsequent test, corrupting the `side_effect` attribute of manually created `MagicMock` instances in that test, despite attempts to reset (`mocker.resetall`, explicit `side_effect=None`).
 - **Solution**: Refactor the *preceding* test (`test_main_loads_manifest_and_runs_tests_revised`) to use `mocker.patch` (from `pytest-mock`) exclusively. This ensures proper mock isolation and cleanup between tests managed by the `pytest-mock` fixture.
+### Pattern: RAG Robustness Enhancements - [2025-05-05 03:56:36]
+- **Context**: Improving the reliability of the RAG document processing pipeline.
+- **Problem**: Basic text extraction from PDFs and EPUBs is insufficient for real-world documents, leading to poor quality RAG input (missing text from scans, garbled text, irrelevant front matter).
+- **Solution**: Implemented several enhancements in `lib/rag_processing.py`:
+    - **PDF Quality Detection:** Heuristics (`detect_pdf_quality`) analyze text density, image area, and fonts to categorize PDFs (TEXT_HIGH, TEXT_LOW, IMAGE_ONLY, MIXED).
+    - **Conditional OCR:** If PDF quality is low or image-only, OCR (`run_ocr_on_pdf` using `pytesseract`) is triggered to extract text from rendered page images.
+    - **Preprocessing:** Logic (`identify_and_remove_front_matter`, `extract_and_format_toc`) added to remove common front matter sections and extract/format the Table of Contents.
+    - **Garbled Text Detection:** Heuristics (`detect_garbled_text`) added to flag potentially poor extraction results.
+- **Components**: `lib/rag_processing.py` (new functions), `lib/python_bridge.py` (orchestration), `requirements.txt` (added `pytesseract`, `Pillow`).
+- **Related**: `docs/rag-robustness-enhancement-spec.md`, `docs/rag-pipeline-implementation-spec.md` (updated), [ActiveContext 2025-05-05 03:45:36]
 - **Components**: `__tests__/python/test_run_rag_tests.py`
 - **Related**: [Debug Issue RAG-MOCK-LEAK-01]
 - **Components**: `lib/python_bridge.py` (modified), `lib/rag_processing.py` (new).

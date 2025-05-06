@@ -1,5 +1,7 @@
 # Documentation Writer Specific Memory
 <!-- Entries below should be added reverse chronologically (newest first) -->
+### Plan Item: RAG Robustness Documentation Update - [2025-05-05 03:56:52]
+- **Type**: Feature Update / **Audience**: User/Dev / **Outline**: 1.Update README status/features 2.Update RAG pipeline spec with robustness details / **Status**: Done / **Owner**: DocsWriter / **Source**: Task Request [2025-05-05 03:46:21], `docs/rag-robustness-enhancement-spec.md`, MB Context / **Location**: `README.md`, `docs/rag-pipeline-implementation-spec.md`
 ### Debt Item: Remove `get_book_by_id` References - [Status: Resolved] - [2025-04-29 16:32:18]
 - **Location**: `docs/internal-id-lookup-spec.md`, `docs/search-first-id-lookup-spec.md`, `docs/architecture/rag-pipeline.md`
 - **Description**: Remove references to the deprecated `get_book_by_id` tool following code removal (commit `454c92e`) and ADR-003.

@@ -2,38 +2,35 @@
 
 This Model Context Protocol (MCP) server provides access to Z-Library for AI coding assistants like RooCode and Cline for VSCode. It allows AI assistants to search for books, retrieve metadata, download files, and process document content for Retrieval-Augmented Generation (RAG) workflows.
 
-## Current Status (As of 2025-04-28 22:00 UTC-4)
+## Current Status (As of 2025-05-05 03:45 UTC-4)
 
 - **Stability:** Stable. Both Node.js (`npm test`) and Python (`pytest`) test suites are passing.
 - **Recent Updates:**
-    - Fixed `get_download_history` parser (Commit `9350af5`).
-    - Implemented `get_recent_books` tool (Commit `75b6f11`).
-    - Implemented `venv-manager` tests (Commit assumed `3e732b3` or prior).
-    - Resolved test suite issues (Commit `3e732b3`).
-    - Deprecated and removed `get_download_info` tool (Commit `8bef4c2`).
-    - RAG download workflow follows ADR-002 (Commit `f466479` or later).
-    - Deprecated `get_book_by_id` tool (Commit `454c92e`, see ADR-003).
-    - Refactored RAG processing logic from `python_bridge.py` to `rag_processing.py` (Commit `cf8ee5c`).
-- **Branch:** `feature/rag-eval-cleanup` (Current development branch)
+    - **RAG Robustness Enhancements Implemented:** Added PDF quality detection, conditional OCR (via Tesseract), EPUB front matter/ToC handling, and garbled text detection to improve processing reliability (See `docs/rag-robustness-enhancement-spec.md`). [Ref: ActiveContext 2025-05-05 03:45:36]
+    - Refactored RAG processing logic into `lib/rag_processing.py`.
+    - Fixed various test suite issues and regressions across multiple TDD cycles.
+    - Deprecated `get_book_by_id` (ADR-003) and `get_download_info` tools.
+    - RAG download workflow follows ADR-002.
+- **Branch:** `main` (Assumed, pending confirmation of merge)
 
 ## Architecture Overview
 
 This project is primarily built using **Node.js/TypeScript** and acts as an MCP server. Key architectural features include:
 
-- **Python Bridge:** Utilizes a Python bridge (`lib/python_bridge.py` for core logic, `lib/rag_processing.py` for document processing, `src/lib/python-bridge.ts` for Node interface) to leverage Python libraries for specific tasks, notably interacting with the Z-Library website and processing document formats (EPUB, TXT, PDF).
+- **Python Bridge:** Utilizes a Python bridge (`lib/python_bridge.py` for interfacing, `lib/rag_processing.py` for core document processing, `src/lib/python-bridge.ts` for Node interface) to leverage Python libraries for specific tasks, notably interacting with the Z-Library website and processing document formats (EPUB, TXT, PDF).
 - **Managed Python Environment:** The server manages its own Python virtual environment (`.venv`) to ensure consistent dependency handling (see `setup_venv.sh`).
 - **Vendored `zlibrary` Fork:** Includes a modified fork of the `sertraline/zlibrary` Python library within the `zlibrary/` directory. This fork contains specific modifications, particularly for the book download logic which involves scraping the book's detail page to find the actual download link (see ADR-002).
-- **RAG Pipeline:** Implements workflows for downloading books and processing their content (EPUB, TXT, PDF) into plain text suitable for RAG. Processed text is saved to `./processed_rag_output/` and the file path is returned to the agent to avoid context overload (see `docs/architecture/rag-pipeline.md`).
+- **RAG Pipeline:** Implements workflows for downloading books and processing their content (EPUB, TXT, PDF) into plain text or Markdown suitable for RAG. Includes robustness features like PDF quality detection, conditional OCR, front matter removal, and ToC extraction. Processed text is saved to `./processed_rag_output/` and the file path is returned to the agent to avoid context overload (see `docs/architecture/rag-pipeline.md`).
 
 ## Features
 
 - 📚 Search for books by title, author, year, language, and format
-- 📖 Get detailed book information and metadata (Note: ID-based lookup is currently unreliable due to external website changes; search is recommended)
+- 📖 Get detailed book information and metadata (Note: ID-based lookup is deprecated and unreliable; search is recommended)
 - 🔍 Full-text search within book contents
-- 📊 View download history (Parser fixed) and limits
+- 📊 View download history and limits
 - 📈 Get recently added books
 - 💾 Download books directly to local file system (`./downloads/` by default) using `bookDetails` from search results (see ADR-002).
-- ✨ Process downloaded documents (EPUB, TXT, PDF) into plain text for RAG, saving output to `./processed_rag_output/`
+- ✨ Process downloaded documents (EPUB, TXT, PDF) for RAG, with robustness enhancements (quality detection, OCR, preprocessing), saving output to `./processed_rag_output/`
 
 ## Prerequisites
 

@@ -113,11 +113,6 @@ interface GetDownloadHistoryArgs {
     count?: number;
 }
 
-interface GetRecentBooksArgs {
-    count?: number;
-    format?: string | null;
-}
-
 interface DownloadBookToFileArgs {
     // id: string; // Replaced by bookDetails
     // format?: string | null; // Replaced by bookDetails
@@ -183,14 +178,6 @@ export async function getDownloadHistory({ count = 10 }: GetDownloadHistoryArgs)
 export async function getDownloadLimits(): Promise<any> {
   // Pass arguments as an object matching Python function signature
   return await callPythonFunction('get_download_limits', {});
-}
-
-/**
- * Get recently added books
- */
-export async function getRecentBooks({ count = 10, format = null }: GetRecentBooksArgs): Promise<any> {
-  // Pass arguments as an object matching Python function signature
-  return await callPythonFunction('get_recent_books', { count, format });
 }
 
 

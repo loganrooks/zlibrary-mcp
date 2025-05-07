@@ -121,13 +121,6 @@ const handlers: HandlerMap = {
     catch (error: any) { return { error: { message: error.message || 'Failed to get download limits' } }; }
   },
 
-  getRecentBooks: async (args: z.infer<typeof GetRecentBooksParamsSchema>) => {
-    try {
-      // Return the result directly
-      return await zlibraryApi.getRecentBooks(args);
-    } catch (error: any) { return { error: { message: error.message || 'Failed to get recent books' } }; }
-  },
-
   downloadBookToFile: async (args: z.infer<typeof DownloadBookToFileParamsSchema>) => {
     try {
       // Pass all args directly
@@ -185,11 +178,6 @@ const toolRegistry: Record<string, ToolRegistryEntry> = {
     description: "Get user's current download limits",
     schema: GetDownloadLimitsParamsSchema,
     handler: handlers.getDownloadLimits,
-  },
-  get_recent_books: {
-    description: 'Get recently added books in Z-Library',
-    schema: GetRecentBooksParamsSchema,
-    handler: handlers.getRecentBooks,
   },
   download_book_to_file: {
     description: 'Download a book directly to a local file and optionally process it for RAG',

@@ -4,8 +4,8 @@ import aiofiles
 import os
 from pathlib import Path
 from bs4 import BeautifulSoup
+import re # Added for token extraction
 
-from typing import List, Union
 from typing import List, Union, Optional, Dict
 from urllib.parse import quote
 from aiohttp.abc import AbstractCookieJar
@@ -26,7 +26,7 @@ from .util import GET_request, POST_request, GET_request_cookies
 from .abs import SearchPaginator, BookItem
 from .profile import ZlibProfile
 from .const import Extension, Language, OrderOptions
-from typing import Optional
+# Optional removed as it's covered by line 10 (now line 9)
 import json
 
 
@@ -183,9 +183,10 @@ class AsyncZlib:
         to_year: Optional[int] = None,
         lang: List[Union[Language, str]] = [],
         extensions: List[Union[Extension, str]] = [],
+        content_types: Optional[List[str]] = None, # Added content_types
         order: Optional[Union[OrderOptions, str]] = None, # Added order parameter
         count: int = 10,
-    ) -> SearchPaginator:
+    ): # -> Tuple[SearchPaginator, str]: # Return type changed
         if not self.profile:
             raise NoProfileError
         # Allow empty query if sorting by newest (to get all recent books)
@@ -205,19 +206,40 @@ class AsyncZlib:
             assert str(to_year).isdigit()
             payload += f"&yearTo={to_year}"
         if lang:
+            logger.info(f"AsyncZlib.search: 'lang' parameter is present: {lang}")
             assert type(lang) is list
             for la in lang:
+                logger.info(f"AsyncZlib.search: Processing lang item: {la}")
                 if type(la) is str:
                     payload += f"&languages%5B%5D={la}"
+                    logger.info(f"AsyncZlib.search: Appended lang string. Payload now: {payload}")
                 elif type(la) is Language:
                     payload += f"&languages%5B%5D={la.value}"
+                    logger.info(f"AsyncZlib.search: Appended lang enum. Payload now: {payload}")
+        else:
+            logger.info("AsyncZlib.search: 'lang' parameter is NOT present or is empty.")
         if extensions:
+            logger.info(f"AsyncZlib.search: 'extensions' parameter is present: {extensions}")
             assert type(extensions) is list
             for ext in extensions:
+                logger.info(f"AsyncZlib.search: Processing ext item: {ext}")
                 if type(ext) is str:
                     payload += f"&extensions%5B%5D={ext.upper()}"
+                    logger.info(f"AsyncZlib.search: Appended ext string. Payload now: {payload}")
                 elif type(ext) is Extension:
                     payload += f"&extensions%5B%5D={ext.value.upper()}"
+                    logger.info(f"AsyncZlib.search: Appended ext enum. Payload now: {payload}")
+        else:
+            logger.info("AsyncZlib.search: 'extensions' parameter is NOT present or is empty.")
+        if content_types:
+            logger.info(f"AsyncZlib.search: 'content_types' parameter is present: {content_types}")
+            assert type(content_types) is list
+            for ct_value in content_types:
+                logger.info(f"AsyncZlib.search: Processing content_type item: {ct_value}")
+                payload += f"&selected_content_types%5B%5D={quote(ct_value)}"
+                logger.info(f"AsyncZlib.search: Appended content_type. Payload now: {payload}")
+        else:
+            logger.info("AsyncZlib.search: 'content_types' parameter is NOT present or is empty.")
         # Add order logic
         if order:
             if isinstance(order, OrderOptions):
@@ -233,62 +255,16 @@ class AsyncZlib:
                  logger.warning(f"Invalid type '{type(order)}' provided for order parameter. Ignoring.")
 
 
+        logger.info(f"Constructed search_books URL (before Paginator init): {payload}")
         paginator = SearchPaginator(
             url=payload, count=count, request=self._r, mirror=self.mirror
         )
         await paginator.init()
-        return paginator
+        logger.info(f"Returning from AsyncZlib.search with payload: {payload}") # Log payload just before return
+        return paginator, payload # Return paginator and the full payload URL
 
-    async def get_by_id(self, id: str = ""):
-        """Gets book details by searching for its ID."""
-        if not id:
-            raise NoIdError
-        if not self.profile:
-            raise NoProfileError
-
-        try:
-            # Search for the specific ID
-            search_query = f"id:{id}"
-            search_url_for_log = f"{self.mirror}/s/{quote(search_query)}?exact=1" # Construct approx URL for logging
-            logger.debug(f"get_by_id: Attempting search with query: '{search_query}' (URL approx: {search_url_for_log})")
-            paginator = await self.search(q=search_query, exact=True, count=1)
-            # Assuming paginator.init() was called within self.search and parsed the first page
-            # We need the results from the paginator's storage or result attribute
-            results = paginator.result # Access the parsed results directly
-
-            if not results:
-                # Explicitly log that the search returned no results
-                logger.warning(f"get_by_id: Search for '{search_query}' (URL approx: {search_url_for_log}) returned 0 results.")
-                raise BookNotFound(f"Book with ID {id} not found via search.")
-
-            if len(results) > 1:
-                # This shouldn't happen with exact=True and count=1, but handle defensively
-                logger.warning(f"get_by_id: Ambiguous result: Found {len(results)} books for ID {id} via search. Returning first.")
-                # raise ParseError(f"Ambiguous result: Found multiple books for ID {id}.") # Decide if this should be an error
-
-            book_item = results[0]
-            logger.debug(f"get_by_id: Found book via search: {book_item.get('name')}")
-            # Ensure the full book details are fetched if needed (search results might be partial)
-            # Note: The previous fix assumed BookItem.fetch was needed, but the current code
-            # implies the paginator might already contain full details if parsing succeeded.
-            # Let's keep the check for now, but it might be redundant if abs.py parsing is complete.
-            if not book_item.parsed:
-                 logger.debug(f"get_by_id: Search result for id:{id} is partial or not marked parsed, fetching full details...")
-                 await book_item.fetch() # fetch() should ideally mark item as parsed
-                 logger.debug(f"get_by_id: Full details fetched for id:{id}")
-
-            return book_item
-        except BookNotFound as bnf:
-             # Re-raise BookNotFound specifically if caught from search/fetch
-             logger.warning(f"get_by_id({id}) resulted in BookNotFound: {bnf}")
-             raise bnf
-        except ParseError as pe:
-             logger.error(f"get_by_id({id}) resulted in ParseError during search/fetch: {pe}", exc_info=True)
-             raise pe
-        except Exception as e:
-            # Catch other potential errors during search/parsing
-            logger.error(f"get_by_id({id}) failed due to an unexpected error: {e}", exc_info=True)
-            raise ParseError(f"Failed to get book by ID {id} due to an unexpected error: {e}") from e
+    # Removed deprecated get_by_id method.
+    # Download workflow relies on bookDetails from search_books as per ADR-002.
 
     async def full_text_search(
         self,
@@ -300,8 +276,9 @@ class AsyncZlib:
         to_year: Optional[int] = None,
         lang: List[Union[Language, str]] = [],
         extensions: List[Union[Extension, str]] = [],
+        content_types: Optional[List[str]] = None, # Added content_types
         count: int = 10,
-    ) -> SearchPaginator:
+    ): # -> Tuple[SearchPaginator, str]: # Return type changed
         if not self.profile:
             raise NoProfileError
         if not q:
@@ -311,24 +288,48 @@ class AsyncZlib:
                 "You should either specify 'words=True' to match words, or 'phrase=True' to match phrase."
             )
 
+        # Fetch token for full-text search
+        token = None
+        try:
+            search_page_url = f"{self.mirror}/s/" # A page likely to contain the token
+            logger.debug(f"full_text_search: Fetching search page for token: {search_page_url}")
+            # Use httpx directly to fetch the search page HTML
+            async with httpx.AsyncClient(proxy=self.proxy_list[0] if self.proxy_list else None, cookies=self.cookies, follow_redirects=True) as client:
+                search_page_response = await client.get(search_page_url)
+                search_page_response.raise_for_status()
+                search_html_content = search_page_response.text
+            
+            soup = BeautifulSoup(search_html_content, 'lxml')
+            scripts = soup.find_all('script')
+            for script in scripts:
+                if script.string:
+                    # Regex to find: newURL.searchParams.append('token', 'TOKEN_VALUE')
+                    match = re.search(r"newURL\.searchParams\.append\('token',\s*'([^']+)'\)", script.string)
+                    if match:
+                        token = match.group(1)
+                        logger.info(f"full_text_search: Extracted token: {token}")
+                        break
+            if not token:
+                logger.warning("full_text_search: Could not extract token from search page. Proceeding without token, which may lead to incorrect results.")
+
+        except httpx.HTTPStatusError as e:
+            logger.error(f"full_text_search: HTTP error fetching search page for token: {e.response.status_code} - {e.response.text[:200]}", exc_info=True)
+            logger.warning("full_text_search: Proceeding without token due to HTTP error during token fetch.")
+        except Exception as e:
+            logger.error(f"full_text_search: Error fetching or parsing search page for token: {e}", exc_info=True)
+            logger.warning("full_text_search: Proceeding without token due to an unexpected error during token fetch.")
+
         payload = "%s/fulltext/%s?" % (self.mirror, quote(q))
+        
+        if token:
+            payload += f"&token={quote(token)}"
+        
+        # Add type parameter based on words or phrase flags.
+        # The initial check at line 335 ensures at least one is True.
         if words:
             payload += "&type=words"
-        elif phrase: # Only check for phrase if not a 'words' search
-            check = q.split(" ")
-            if len(check) < 2:
-                raise Exception(
-                    (
-                        "At least 2 words must be provided for phrase search. "
-                        "Use 'words=True' to match a single word."
-                    )
-                )
+        elif phrase: # This implies words is False
             payload += "&type=phrase"
-        # If neither words nor phrase is explicitly true, it defaults to words search by not adding &type=phrase
-        # and the initial check 'if not phrase and not words:' (line 309) would have caught if both were false.
-        # However, the original logic (line 326) implies a default to words if phrase is not specified.
-        # To maintain that, if words is false and phrase is false, we should ensure type=words.
-        # The initial check at line 309 already ensures at least one is true.
 
         if exact:
             payload += "&e=1"
@@ -352,17 +353,22 @@ class AsyncZlib:
                     payload += f"&extensions%5B%5D={ext.upper()}"
                 elif type(ext) is Extension:
                     payload += f"&extensions%5B%5D={ext.value.upper()}"
+        if content_types:
+            assert type(content_types) is list
+            for ct_value in content_types:
+                payload += f"&selected_content_types%5B%5D={quote(ct_value)}"
 
+        logger.info(f"Constructed full_text_search URL (before Paginator init): {payload}")
         paginator = SearchPaginator(
             url=payload, count=count, request=self._r, mirror=self.mirror
         )
         await paginator.init()
-        return paginator
-
+        logger.info(f"Returning from AsyncZlib.full_text_search with payload: {payload}") # Log payload just before return
+        return paginator, payload # Return paginator and the full payload URL
     async def download_book(self, book_details: Dict, output_dir_str: str) -> str:
         """Downloads a book to the specified output path by scraping the book page."""
         if not self.profile:
-            raise NoProfileError("Login required before downloading.")
+            raise NoProfileError()
 
         book_id = book_details.get('id', 'Unknown')
         book_page_url = book_details.get('url')
@@ -447,7 +453,7 @@ class AsyncZlib:
                       downloaded_size = 0
                       logger.info(f"Starting download ({total_size} bytes)...")
 
-                      async with aiofiles.open(actual_output_path, 'wb') as f:
+                      async with (await aiofiles.open(actual_output_path, 'wb')) as f:
                           async for chunk in response.aiter_bytes():
                               await f.write(chunk)
                               downloaded_size += len(chunk)
@@ -460,21 +466,21 @@ class AsyncZlib:
         except httpx.HTTPStatusError as e:
              logger.error(f"HTTP error during download from {download_url}: {e.response.status_code} - {e.response.text[:200]}", exc_info=True)
              # Clean up partial file
-             if os.path.exists(output_path): os.remove(output_path)
+             if os.path.exists(actual_output_path): os.remove(actual_output_path)
              raise DownloadError(f"Download failed for book ID {book_id} (HTTP {e.response.status_code})") from e
         except httpx.RequestError as e:
              logger.error(f"Network error during download from {download_url}: {e}", exc_info=True)
-             if os.path.exists(output_path): os.remove(output_path)
+             if os.path.exists(actual_output_path): os.remove(actual_output_path)
              raise DownloadError(f"Download failed for book ID {book_id} (Network Error)") from e
         except Exception as e:
             logger.error(f"Unexpected error during download for book ID {book_id}: {e}", exc_info=True)
             # Clean up partial file
             try:
-                if os.path.exists(output_path):
-                    os.remove(output_path)
-                    logger.debug(f"Removed incomplete file after unexpected error: {output_path}")
+                if os.path.exists(actual_output_path):
+                    os.remove(actual_output_path)
+                    logger.debug(f"Removed incomplete file after unexpected error: {actual_output_path}")
             except OSError:
-                 logger.warning(f"Could not remove incomplete file after unexpected error: {output_path}")
+                 logger.warning(f"Could not remove incomplete file after unexpected error: {actual_output_path}")
             # Raise the final error
             raise DownloadError(f"An unexpected error occurred during download for book ID {book_id}") from e
 

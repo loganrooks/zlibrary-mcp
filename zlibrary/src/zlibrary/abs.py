@@ -36,6 +36,7 @@ class SearchPaginator:
             count = 1
         self.count = count
         self.__url = url
+        self.constructed_url = url # Store the initially constructed URL
         self.__r = request
         self.mirror = mirror
 
@@ -52,6 +53,7 @@ class SearchPaginator:
         if not content_area:
             content_area = soup.find("div", {"class": "itemFullText"})
             logger.debug("Using 'div.itemFullText' as content_area for search results.")
+            if content_area: logger.debug(f"Content of div.itemFullText (first 2000 chars): {str(content_area)[:2000]}")
             if not content_area:
                 content_area = soup.body
                 logger.debug("Using soup.body as content_area for search results.")

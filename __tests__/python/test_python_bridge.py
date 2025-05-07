@@ -266,59 +266,70 @@ def mock_save_text(mocker):
 @pytest.mark.asyncio
 async def test_download_book_bridge_success(mock_zlibrary_client, tmp_path, mocker):
     """Tests the python_bridge.download_book function for successful execution."""
-    book_details_mock = {"id": "987", "extension": "pdf", "name": "Bridge Test Book", "url": "https://example.com/book/987/bridge-test-book"}
+    book_details_mock = {"id": "987", "extension": "pdf", "name": "Bridge Test Book", "author": "Test Author", "url": "https://example.com/book/987/bridge-test-book"}
     output_dir_mock = str(tmp_path / "downloads_bridge")
-    expected_downloaded_path = str(Path(output_dir_mock) / f"{book_details_mock['id']}.{book_details_mock['extension']}")
-
-    # Configure the mock client's download_book to return the expected path
-    mock_zlibrary_client.download_book.return_value = expected_downloaded_path
     
-    # Mock rag_processing.save_processed_text as it might be called if process_for_rag is True (though default is False)
-    # We are primarily testing the bridge's interaction with zlibrary.download_book here.
-    mocker.patch('lib.rag_processing.save_processed_text', AsyncMock(return_value=Path(expected_downloaded_path + ".processed.txt")))
-    mocker.patch('lib.rag_processing.process_document', AsyncMock(return_value={"processed_file_path": expected_downloaded_path + ".processed.txt"}))
-
-
-    # Call the bridge function
-    # The bridge function itself is not async, but it calls an async method.
-    # We need to await the call if the bridge function itself was async.
-    # Based on its current structure, it seems to run the async code internally.
-    # Let's assume the bridge function `download_book` is synchronous and handles asyncio.run internally
-    # If it were async, the test would be: result = await python_bridge.download_book(...)
+    # This is the path where the library initially saves the file
+    original_library_download_path = str(Path(output_dir_mock) / f"{book_details_mock['id']}.{book_details_mock['extension']}") # This path is temporary before rename
     
-    # The python_bridge.download_book function is async.
+    # This is the expected final path after renaming
+    expected_enhanced_filename = "AuthorTest_Bridge_Test_Book_987.pdf"
+    expected_final_path = str(Path(output_dir_mock) / expected_enhanced_filename)
+
+    # Configure the mock client's download_book to return the original library path
+    mock_zlibrary_client.download_book.return_value = original_library_download_path
+    
+    # Mock _create_enhanced_filename
+    mock_create_filename = mocker.patch('python_bridge._create_enhanced_filename', return_value=expected_enhanced_filename)
+    
+    # Mock os.rename
+    mock_os_rename = mocker.patch('os.rename')
+    
+    # Mock Path(original_library_download_path).exists() to return True
+    mock_path_exists = mocker.patch('pathlib.Path.exists', return_value=True)
+    
+    # Mock RAG processing parts to avoid unintended calls in this specific test
+    mocker.patch('lib.rag_processing.save_processed_text', AsyncMock())
+    mocker.patch('python_bridge.process_document', AsyncMock()) # Mock the top-level process_document
+
     result_dict = await python_bridge.download_book(
         book_details=book_details_mock,
         output_dir=output_dir_mock,
         process_for_rag=False # Explicitly False for this test
     )
 
-    # Assert that the underlying zlibrary client's download_book was called correctly
     mock_zlibrary_client.download_book.assert_called_once_with(
-        book_id=book_details_mock['id'], # Ensure book_id is passed
         book_details=book_details_mock,
-        output_dir_str=output_dir_mock, # Check for the renamed parameter
-        # process_for_rag=False, # This param is for the MCP tool, not the zlibrary lib
-        # processed_output_format=None # This param is for the MCP tool
+        output_dir_str=output_dir_mock,
     )
+    mock_create_filename.assert_called_once_with(book_details_mock)
+    mock_os_rename.assert_called_once_with(original_library_download_path, expected_final_path)
 
-    # Assert the structure and content of the result from the bridge
     assert "file_path" in result_dict
-    assert result_dict["file_path"] == expected_downloaded_path
+    assert result_dict["file_path"] == expected_final_path # Assert the final renamed path
     assert result_dict.get("processed_file_path") is None
 
 @pytest.mark.asyncio
 async def test_download_book_bridge_returns_processed_path_if_rag_true(mock_zlibrary_client, tmp_path, mocker):
-    book_details_mock = {"id": "988", "extension": "txt", "name": "Bridge RAG Test Book", "url": "https://example.com/book/988/bridge-rag-test-book"}
+    book_details_mock = {"id": "988", "extension": "txt", "name": "Bridge RAG Test Book", "author": "RAG Author", "url": "https://example.com/book/988/bridge-rag-test-book"}
     output_dir_mock = str(tmp_path / "downloads_bridge_rag")
-    original_downloaded_path = str(Path(output_dir_mock) / f"{book_details_mock['id']}.{book_details_mock['extension']}")
-    processed_path_mock = original_downloaded_path + ".processed.md"
 
-    mock_zlibrary_client.download_book.return_value = original_downloaded_path
+    original_library_download_path = str(Path(output_dir_mock) / f"{book_details_mock['id']}.{book_details_mock['extension']}")
     
-    # Mock the process_document function within python_bridge itself
+    expected_enhanced_filename = "AuthorRAG_Bridge_RAG_Test_Book_988.txt"
+    expected_final_path = str(Path(output_dir_mock) / expected_enhanced_filename)
+    
+    processed_path_mock = expected_final_path + ".processed.md" # RAG output based on enhanced name
+
+    mock_zlibrary_client.download_book.return_value = original_library_download_path
+    mock_create_filename = mocker.patch('python_bridge._create_enhanced_filename', return_value=expected_enhanced_filename)
+    mock_os_rename = mocker.patch('os.rename')
+
+    # Mock Path(original_library_download_path).exists() to return True
+    mock_path_exists = mocker.patch('pathlib.Path.exists', return_value=True)
+    
+    # Mock the process_document function that download_book calls
     mock_process_doc = mocker.patch('python_bridge.process_document', AsyncMock(return_value={"processed_file_path": processed_path_mock, "content": ["Processed content"]}))
-    # No longer need to mock pathlib.Path.exists here as python_bridge.process_document is fully mocked
 
     result_dict = await python_bridge.download_book(
         book_details=book_details_mock,
@@ -328,18 +339,20 @@ async def test_download_book_bridge_returns_processed_path_if_rag_true(mock_zlib
     )
 
     mock_zlibrary_client.download_book.assert_called_once_with(
-        book_id=book_details_mock['id'],
         book_details=book_details_mock,
         output_dir_str=output_dir_mock
     )
+    mock_create_filename.assert_called_once_with(book_details_mock)
+    mock_os_rename.assert_called_once_with(original_library_download_path, expected_final_path)
+    
     mock_process_doc.assert_called_once_with(
-        file_path_str=original_downloaded_path,
+        file_path_str=expected_final_path, # Should be called with the renamed (final) path
         output_format="markdown",
         book_id=book_details_mock['id'],
-        author=book_details_mock.get('author'), # Use .get() in case author is not in mock
+        author=book_details_mock.get('author'),
         title=book_details_mock['name']
     )
-    assert result_dict.get("file_path") == original_downloaded_path
+    assert result_dict.get("file_path") == expected_final_path # This should be the enhanced filename path
     assert result_dict.get("processed_file_path") == processed_path_mock
 
 @pytest.mark.asyncio
@@ -368,8 +381,14 @@ async def test_download_book_bridge_handles_processing_error_if_rag_true(mock_zl
     original_downloaded_path = str(Path(output_dir_mock) / f"{book_details_mock['id']}.{book_details_mock['extension']}")
 
     mock_zlibrary_client.download_book.return_value = original_downloaded_path
-    # No longer need to mock pathlib.Path.exists here
     
+    # Mock Path(original_library_download_path).exists() to return True
+    mocker.patch('pathlib.Path.exists', return_value=True)
+    
+    # Mock os.rename as it's called before the RAG processing error would occur
+    mocker.patch('os.rename')
+    mocker.patch('python_bridge._create_enhanced_filename', return_value="Ignored_Enhanced_Filename.pdf") # Mock this too
+
     mock_process_doc = mocker.patch('python_bridge.process_document', AsyncMock(side_effect=RuntimeError("RAG failed")))
 
     with pytest.raises(RuntimeError, match="RAG failed"):

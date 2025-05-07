@@ -1,5 +1,74 @@
 # Auto-Coder Specific Memory
 <!-- Entries below should be added reverse chronologically (newest first) -->
+### [2025-05-07 06:52:30] Component: `_create_enhanced_filename`
+- **Purpose**: Generates a user-readable and filesystem-safe filename for downloaded books based on the convention `LastnameFirstname_TitleOfTheBook_BookID.ext`.
+- **Files**: `lib/python_bridge.py`
+- **Status**: Implemented
+- **Dependencies**: `re` (Python built-in)
+- **API Surface**: `_create_enhanced_filename(book_details: dict) -> str`
+- **Details**:
+    - Parses author (first author, LastnameFirstname logic, capitalization, fallback "UnknownAuthor", 50 char limit).
+    - Formats title (fallback "UntitledBook", spaces to underscores, sanitization, 100 char limit).
+    - Uses BookID as is (fallback "UnknownID").
+    - Formats extension (lowercase, prepends ".", fallback ".unknown").
+    - Sanitizes components by removing problematic characters (`/ \ ? % * : | " < > . , ; =`), replacing multiple spaces/underscores with a single underscore, and stripping leading/trailing whitespace/underscores.
+    - Assembles filename parts with `_` as separator.
+    - Truncates the entire base filename (before extension) to 200 characters if exceeded, attempting to preserve BookID and parts of author/title.
+- **Tests**: To be covered by TDD mode, specifically testing various `book_details` inputs and expected filename outputs. Will impact tests for `download_book` in `__tests__/python/test_python_bridge.py`.
+- **Related**: [ActiveContext 2025-05-07 06:52:30], [GlobalContext Product: Enhanced Filename Convention Specification - [2025-05-07]], [`docs/project-plan-zlibrary-mcp.md:130-162`](docs/project-plan-zlibrary-mcp.md:130-162)
+### [2025-05-07 06:39:00] `lib/python_bridge.py` Cleanup (Task 2.2)
+- **Purpose**: Remove deprecated ID-based lookup logic and ensure ADR-002 alignment.
+- **Files**: `lib/python_bridge.py`
+- **Status**: Implemented.
+- **Details**:
+    - Removed the `_find_book_by_id_via_search` function.
+    - Verified `download_book` function's interface and its call to `zlib_client.download_book` align with ADR-002 (uses `bookDetails`).
+    - Confirmed public function interfaces in `lib/python_bridge.py` are consistent with ADR-002.
+- **Tests**: Python tests in `__tests__/python/test_python_bridge.py` will need to be checked.
+- **Related**: [ActiveContext 2025-05-07 06:39:00], [`docs/project-plan-zlibrary-mcp.md:104-126`](docs/project-plan-zlibrary-mcp.md:104-126), [`docs/adr/ADR-002-Download-Workflow-Redesign.md`](docs/adr/ADR-002-Download-Workflow-Redesign.md)
+### [2025-05-07 05:58:00] `libasync.py` Cleanup (Task 2.1)
+- **Purpose**: Address Pylance warnings, remove deprecated ID-based download logic, ensure ADR-002 alignment.
+- **Files**: `zlibrary/src/zlibrary/libasync.py`
+- **Status**: Implemented.
+- **Details**:
+    - Removed redundant `typing` imports.
+    - Removed the `AsyncZlib.get_by_id` method.
+    - Verified `AsyncZlib.download_book` aligns with ADR-002 by using `bookDetails` (containing page URL) for download initiation.
+- **Tests**: Python tests in `zlibrary/src/test.py` pass.
+- **Related**: [ActiveContext 2025-05-07 05:58:00], [`docs/project-plan-zlibrary-mcp.md:79-102`](docs/project-plan-zlibrary-mcp.md:79-102), [`docs/adr/ADR-002-Download-Workflow-Redesign.md`](docs/adr/ADR-002-Download-Workflow-Redesign.md)
+### [2025-05-07 03:01:11] Test Regression Fix: `languages` Parameter Change
+- **Purpose**: Fix test failures in `__tests__/zlibrary-api.test.js` after renaming `language` to `languages`.
+- **Files**: `__tests__/zlibrary-api.test.js`
+- **Status**: Implemented.
+- **Details**: Updated `expect(mockPythonShellRun).toHaveBeenCalledWith` assertions in `searchBooks` and `fullTextSearch` tests to include `content_types: []` in the stringified JSON arguments passed to the Python bridge. This is because the default empty array for `content_types` is now always included.
+- **Tests**: `npm test` now passes.
+- **Related**: [ActiveContext 2025-05-07 02:53:59], [feedback/code-feedback.md 2025-05-07 02:53:59]
+### [2025-05-07 02:53:59] Intervention: Completion Denied (Manual Testing &amp; Regressions)
+- **Trigger**: User feedback on `attempt_completion` [Ref: feedback/code-feedback.md 2025-05-07 02:53:59]
+- **Context**: After applying `language` to `languages` parameter changes.
+- **Action Taken**: Will perform manual testing and investigate test regressions.
+- **Rationale**: Ensure functional correctness and address any new issues.
+- **Outcome**: Task ongoing.
+- **Follow-up**: Manual tests, then `npm test` analysis.
+### [2025-05-06 21:57:33] Implement Token-Based `full_text_search` and `content_types` Parameter
+- **Purpose**: Modify `AsyncZlib.full_text_search` to use a token extracted from a Z-Library page and add `content_types` parameter to both `search` and `full_text_search`.
+- **Files**: `zlibrary/src/zlibrary/libasync.py`
+- **Status**: Implemented.
+- **Dependencies**: `re` (new import for regex token extraction), `httpx`, `BeautifulSoup4`.
+- **API Surface**:
+    - `AsyncZlib.search` signature changed to include `content_types: Optional[List[str]] = None`.
+    - `AsyncZlib.full_text_search` signature changed to include `content_types: Optional[List[str]] = None`.
+- **Tests**: Existing tests for these methods will likely require updates to reflect the new parameter and potential changes in URL construction for `full_text_search`. New tests for token extraction logic would be beneficial.
+- **Details**:
+    - `AsyncZlib.search`: Added loop to append `&selected_content_types%5B%5D={value}` for each `content_type`.
+    - `AsyncZlib.full_text_search`:
+        - Added initial GET request to `/s/` to fetch HTML.
+        - Used `BeautifulSoup` and `re.search` to extract token from JavaScript: `newURL.searchParams.append('token', 'TOKEN_VALUE')`.
+        - Constructed URL with `&token={token}` and `&type=phrase`.
+        - Added loop for `&selected_content_types%5B%5D={value}`.
+        - All list parameters (`languages`, `extensions`, `content_types`) are non-indexed.
+        - `extensions` are uppercased.
+- **Related**: [ActiveContext 2025-05-06 21:57:33], [GlobalContext Progress 2025-05-06 21:57:33], [User Task 2025-05-06 21:52:18], [memory-bank/feedback/code-feedback.md - Entry 2025-05-06 19:08:06]
 ### [2025-05-06 18:24:11] URL Parameter Formatting Changed to Non-Indexed
 - **Purpose**: Modify URL parameter formatting for `languages` and `extensions` in `search` and `full_text_search` methods to use non-indexed format (e.g., `languages[]=value`) as per revised user objective.
 - **Files**: `zlibrary/src/zlibrary/libasync.py`

@@ -1,3 +1,87 @@
+---
+### Progress - [2025-05-07 08:02:31]
+- **`get_book_metadata` Tool Specification (Task 4)**:
+    - Defined the detailed specification for the `get_book_metadata` tool, which scrapes metadata from Z-Library book pages.
+    - Specification includes the Python dictionary output structure, data types, nullability for 16 metadata fields plus `source_url`.
+    - Outlined scraping logic for each field, including data cleaning/parsing considerations and handling for missing/malformed data (with placeholders for CSS selectors pending `debug` mode input).
+    - Provided Python pseudocode for the `scrape_book_metadata(url: str, session: httpx.AsyncClient)` function, demonstrating HTML fetching with `httpx`, parsing with `BeautifulSoup4`, data extraction, cleaning, and dictionary construction.
+    - Listed comprehensive TDD anchors for both the Python scraping function (mocked HTML, field extraction, missing fields, parsing complex fields, HTML variations) and Node.js Zod schemas (input/output validation).
+    - This addresses Task 4 of the project plan: [`docs/project-plan-zlibrary-mcp.md:166-237`](docs/project-plan-zlibrary-mcp.md:166-237).
+- **Related Entries**: [ActiveContext 2025-05-07 08:02:31], [memory-bank/mode-specific/spec-pseudocode.md - Feature: Get Book Metadata - [2025-05-07 08:02:31]]
+
+---
+### Progress - [2025-05-07 06:52:30]
+- **Enhanced Filename Convention Implemented (Task 3)**:
+    - Implemented the `LastnameFirstname_TitleOfTheBook_BookID.ext` filename convention in `lib/python_bridge.py`.
+    - Created a helper function `_create_enhanced_filename` to handle parsing, sanitization, and formatting of author, title, BookID, and extension.
+    - Integrated this helper into the `download_book` function, which now renames the downloaded file to the new convention and returns the updated path.
+    - This addresses Task 3 of the project plan: [`docs/project-plan-zlibrary-mcp.md:130-162`](docs/project-plan-zlibrary-mcp.md:130-162).
+- **Related Entries**: [ActiveContext 2025-05-07 06:52:30], [GlobalContext Product: Enhanced Filename Convention Specification - [2025-05-07]], [memory-bank/mode-specific/code.md Component: _create_enhanced_filename - [2025-05-07 06:52:30]]
+
+---
+### Pattern: Enhanced Filename Convention - [2025-05-07 06:52:30]
+- **Context**: Standardizing downloaded book filenames for better readability and filesystem safety.
+- **Problem**: Default filenames (e.g., `BOOK_ID.extension`) are not user-friendly and may lack important metadata at a glance.
+- **Solution**: Implemented a new filename convention: `LastnameFirstname_TitleOfTheBook_BookID.ext`.
+    - A helper function `_create_enhanced_filename(book_details: dict) -> str` in `lib/python_bridge.py` generates this filename.
+    - It parses author (first author, LastnameFirstname), title (slugified), BookID, and extension from `book_details`.
+    - Includes robust string sanitization (removes invalid characters, handles spaces, truncates components and overall length) and fallbacks for missing data.
+    - The `download_book` function in `lib/python_bridge.py` now uses this helper to rename the downloaded file and returns the path with the new convention.
+- **Impact**: Improves user experience by providing more informative filenames. Enhances filesystem compatibility.
+- **Related Files**: `lib/python_bridge.py`
+- **Related Specification**: [GlobalContext Product: Enhanced Filename Convention Specification - [2025-05-07]]
+---
+### Progress - [2025-05-07 06:42:40]
+- **Python Bridge Unit Test Update (Task 2.2)**:
+    - Updated unit tests in `__tests__/python/test_python_bridge.py` to align with changes in `lib/python_bridge.py` (removal of `_find_book_by_id_via_search` and ADR-002 compliance for `download_book`).
+    - Specifically, assertions for `download_book` mock calls were corrected to no longer expect `book_id` as a direct parameter.
+    - All Python unit tests in `__tests__/python/test_python_bridge.py` pass.
+    - Full MCP regression test suite (`npm test`) also passed, confirming no integration issues from Python bridge changes.
+- **Related Entries**: [ActiveContext 2025-05-07 06:42:40], [`docs/project-plan-zlibrary-mcp.md#task-22-update-and-verify-python-bridge-unit-tests`](docs/project-plan-zlibrary-mcp.md), [`docs/adr/ADR-002-Download-Workflow-Redesign.md`](docs/adr/ADR-002-Download-Workflow-Redesign.md)
+---
+### Progress - [2025-05-07 06:39:00]
+- **`lib/python_bridge.py` Cleanup (Task 2.2)**:
+    - Removed the deprecated `_find_book_by_id_via_search` function from [`lib/python_bridge.py`](lib/python_bridge.py).
+    - Confirmed that the `download_book` function in [`lib/python_bridge.py`](lib/python_bridge.py) correctly uses `bookDetails` as input and aligns with the `AsyncZlib.download_book` method in [`zlibrary/src/zlibrary/libasync.py`](zlibrary/src/zlibrary/libasync.py), adhering to ADR-002.
+    - Reviewed public functions in [`lib/python_bridge.py`](lib/python_bridge.py) and confirmed their interfaces are consistent with ADR-002.
+- **Related Entries**: [ActiveContext 2025-05-07 06:39:00], [`docs/project-plan-zlibrary-mcp.md:104-126`](docs/project-plan-zlibrary-mcp.md:104-126), [`docs/adr/ADR-002-Download-Workflow-Redesign.md`](docs/adr/ADR-002-Download-Workflow-Redesign.md)
+---
+### Progress - [2025-05-07 05:58:00]
+- **`zlibrary/libasync.py` Cleanup (Task 2.1)**:
+    - Addressed Pylance warnings in `zlibrary/src/zlibrary/libasync.py` by removing redundant `typing` imports.
+    - Removed the deprecated `AsyncZlib.get_by_id` method, which was used for direct ID-based book fetching.
+    - Confirmed that the `AsyncZlib.download_book` method aligns with ADR-002, strictly using `bookDetails` (which includes the book page URL) as input for initiating downloads.
+    - Python tests in `zlibrary/src/test.py` passed after these changes.
+- Verified `AsyncZlib.download_book` test coverage post-cleanup (Task 2.1). Commented out 1 obsolete test for `get_by_id`, added 4 new error handling unit tests to `zlibrary/src/test.py`. All 14 Python tests in `zlibrary/src/test.py` now pass, confirming ADR-002 alignment and improved robustness.
+- **Related Entries**: [ActiveContext 2025-05-07 05:58:00], [`docs/project-plan-zlibrary-mcp.md:79-102`](docs/project-plan-zlibrary-mcp.md:79-102), [`docs/adr/ADR-002-Download-Workflow-Redesign.md`](docs/adr/ADR-002-Download-Workflow-Redesign.md)
+### Pattern: MCP Server Testing Protocol - [2025-05-07 01:10:33]
+- **Context**: Debugging and verifying changes to MCP servers, particularly those involving interaction with external systems or complex data flows (e.g., Node.js to Python bridge).
+- **Problem**: Incorrect or incomplete testing procedures can lead to flawed diagnostics, repeated errors, wasted effort, and inability to confirm if changes have the intended effect. Basing diagnostic work on stale or unverified server states is unreliable.
+- **Solution (Mandatory Protocol)**: When testing changes to an MCP server (especially after code modifications):
+    1.  **Request Server Restart**: Explicitly ask the user to restart the relevant MCP server to ensure all code changes are active. Wait for user confirmation.
+    2.  **Execute Test**: Perform the specific test action (e.g., `use_mcp_tool` with defined parameters) intended to verify the change.
+    3.  **Check LATEST Log Entries**: After the test execution, use `read_file` to fetch the *latest* entries from relevant log files (e.g., `zlibrary_debug.log`, Node.js console output if available). Focus on entries generated *after* the server restart and test execution. Pay close attention to timestamps.
+    4.  **Diagnose Based on Fresh Data**: Perform diagnostic work and formulate next steps *only* after analyzing the fresh log data from the latest test run.
+- **Rationale**: This protocol ensures that diagnostics are based on the current state of the server and the actual outcome of recent changes, preventing cycles of incorrect assumptions and fixes.
+- **Impact**: Improved reliability of debugging, faster issue resolution, reduced user frustration.
+- **Related Interventions**: [See code-feedback.md - Intervention 2025-05-07 01:09:26]
+
+---
+### Progress - [2025-05-07 05:52:00]
+- **`full_text_search` No-Result Behavior Test**:
+    - Manual testing of the `full_text_search` tool with queries designed to yield no results ("zxcvbnmasdfghjklqwertyuiop1234567890zxcvbnmasdfghjklqwertyuiop" and "the epistemological ramifications of invisible pink unicorns in quantum chromodynamics") confirmed that the tool now correctly returns an empty list of books (`"books":[]`).
+    - This behavior is an improvement over previously reported issues (e.g., FTS_TC006) where such queries returned unexpected results. The "no-result behavior" mentioned in [`docs/project-plan-zlibrary-mcp.md:24`](docs/project-plan-zlibrary-mcp.md:24) appears to be handled gracefully for these test cases.
+- **Related Entries**: [ActiveContext 2025-05-07 05:52:00], [memory-bank/mode-specific/qa-tester.md - Test Execution Results 2025-05-07 05:52:00]
+
+---
+### Progress - [2025-05-06 21:57:33]
+- **Token-Based `full_text_search` and `content_types` Parameter**:
+    - Modified `zlibrary/src/zlibrary/libasync.py` to implement token extraction for `AsyncZlib.full_text_search`. The token is fetched from the `/s/` page and included in the `/fulltext/` API call.
+    - Added a new optional `content_types: Optional[List[str]] = None` parameter to both `AsyncZlib.search` and `AsyncZlib.full_text_search` methods.
+    - Ensured `languages`, `extensions`, and `content_types` are formatted as non-indexed array parameters in the URL. Extensions are uppercased.
+    - The `full_text_search` now defaults to `type=phrase` and includes the extracted token.
+- **Related Entries**: [ActiveContext 2025-05-06 21:57:33], [User Task 2025-05-06 21:52:18], [memory-bank/feedback/code-feedback.md - Entry 2025-05-06 19:08:06]
+---
 ### Progress - [2025-05-06 18:23:51]
 - **E2E Search Filter Failures (Phase 1, Task 1 - URL Format Changed to Non-Indexed)**:
     - Modified the `search` and `full_text_search` methods in `zlibrary/src/zlibrary/libasync.py` to use non-indexed URL parameter formatting for `languages` and `extensions` (e.g., `languages[]=value`).
@@ -407,6 +491,13 @@ ${globalContextEntry}
 - **Status**: Documentation Updated.
 - **Related**: `README.md`, `docs/rag-pipeline-implementation-spec.md`, `docs/rag-robustness-enhancement-spec.md`, [ActiveContext 2025-05-05 03:55:29]
 # Product Context
+### Product: Enhanced Filename Convention Specification - [2025-05-07]
+- **Context**: Specification created for generating user-readable and filesystem-safe filenames for downloaded books.
+- **Format**: `LastnameFirstname_TitleOfTheBook_BookID.ext`
+- **Key Features**: Detailed rules for parsing author (first author focus, lastname/firstname logic, initial handling), title slugification (spaces to underscores), BookID usage, extension handling (lowercase, default), string sanitization (invalid char removal, length limits), and fallbacks for missing data.
+- **Implementation**: Pseudocode provided for a Python helper function `_create_enhanced_filename` intended for `lib/python_bridge.py`.
+- **Status**: Specification Complete (Draft).
+- **Related**: Task 3 in [`docs/project-plan-zlibrary-mcp.md:130-162`](docs/project-plan-zlibrary-mcp.md:130-162)
 ### Product: RAG Robustness Spec Update (v1.1) - [2025-04-29 23:15:00]
 - **Context**: Updated `docs/rag-robustness-enhancement-spec.md` based on user feedback.
 - **Changes**: Refined testing strategy to include AI-assisted quality evaluation. Added requirements and pseudocode for preprocessing (front matter removal, Title/ToC extraction and formatting). Updated pass/fail criteria and definition of done.
@@ -671,6 +762,11 @@ ${globalContextEntry}
 ### Decision-DeprecateGetBookByID-01 - [2025-04-29 15:37:14]
 ### Decision-RAGPreprocessing-01 - [2025-04-29 23:15:00]
 - **Decision**: Implement preprocessing steps in the RAG pipeline to remove front matter (excluding Title) and extract/format the Table of Contents (ToC) before main content processing.
+### Decision: Filename Author Handling - [2025-05-07]
+- **Decision**: For the `LastnameFirstname` component of the enhanced filename, if multiple authors are provided in the `bookDetails.author` string, only the first author will be parsed and used.
+- **Rationale**: Simplifies parsing logic for the filename component while still providing primary author identification. The full author list remains available in the metadata.
+- **Impact**: Filenames will reflect the first listed author.
+- **Related**: Enhanced Filename Convention Specification.
 - **Rationale**: User requirement to improve RAG input quality by removing irrelevant introductory sections and preserving key navigational elements (Title, ToC). Addresses potential negative impact of front matter on RAG performance.
 - **Alternatives Considered**: No preprocessing (current state, suboptimal quality), manual cleaning (not scalable).
 - **Implementation**: Add new functions/logic (e.g., `identify_and_remove_front_matter`, `extract_and_format_toc`) to `lib/rag_processing.py`, integrate into `process_pdf`/`process_epub`. Update specification and tests.

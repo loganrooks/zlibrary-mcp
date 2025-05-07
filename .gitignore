@@ -72,3 +72,5 @@ test_output/
 
 # Ignore MagicMock outputs
 MagicMock/
+# Log files
+logs/

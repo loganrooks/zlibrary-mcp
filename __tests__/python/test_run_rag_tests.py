@@ -719,13 +719,15 @@ async def test_run_single_test_downloads_file_from_manifest(mocker, tmp_path):
     assert not inspect.iscoroutine(result), "run_single_test coroutine was not awaited properly in test"
 
     # Assertions
-    # Assert call on the mock client's method using positional arguments
+    # Assert call on the mock client's method using keyword arguments
     mock_client.download_book.assert_called_once_with(
-        { # Positional arg 1: book_details dict
+        book_id="12345", # Expect book_id to be passed
+        book_details={
             "id": "12345",
             "url": "http://example.com/book/12345"
+            # The actual implementation might pass more from manifest_entry if available
         },
-        str(mock_download_dir) # Positional arg 2: output_dir string
+        output_dir_str=str(mock_download_dir)
     )
     # Check processing uses downloaded path for both text and markdown
     assert mock_process.call_count == 2

@@ -26,6 +26,7 @@ from .util import GET_request, POST_request, GET_request_cookies
 from .abs import SearchPaginator, BookItem
 from .profile import ZlibProfile
 from .const import Extension, Language, OrderOptions
+from .scrapers import scrape_metadata # Added import
 # Optional removed as it's covered by line 10 (now line 9)
 import json
 
@@ -453,7 +454,7 @@ class AsyncZlib:
                       downloaded_size = 0
                       logger.info(f"Starting download ({total_size} bytes)...")
 
-                      async with (await aiofiles.open(actual_output_path, 'wb')) as f:
+                      async with aiofiles.open(actual_output_path, 'wb') as f:
                           async for chunk in response.aiter_bytes():
                               await f.write(chunk)
                               downloaded_size += len(chunk)

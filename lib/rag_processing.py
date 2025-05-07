@@ -778,6 +778,20 @@ def process_pdf(file_path: Path, output_format: str = "txt") -> str:
         # --- Standard Extraction (if OCR not needed OR if OCR failed during preprocessing) ---
         logging.debug(f"Performing standard PDF extraction for {file_path}...")
         doc = fitz.open(str(file_path))
+        try:
+            # Perform a benign operation to check if doc is valid
+            _ = doc.is_closed
+        except ValueError as e:
+            if "document closed" in str(e).lower():
+                logging.error(f"Document {file_path} was already closed immediately after fitz.open().")
+                if doc is not None and hasattr(doc, 'close'):
+                    try:
+                        doc.close()
+                    except Exception as close_err:
+                        logging.debug(f"Suppressed error during close attempt after initial open failed for {file_path}: {close_err}")
+                raise RuntimeError(f"PDF document {file_path} was unusable immediately after opening.") from e
+            raise # Re-raise other ValueErrors
+
         if doc.is_encrypted:
             logging.warning(f"PDF {file_path} is encrypted.")
             if not doc.authenticate(""):
@@ -828,7 +842,18 @@ def process_pdf(file_path: Path, output_format: str = "txt") -> str:
         final_output = "\n\n".join(part for part in final_output_parts if part).strip()
 
         # Close doc before returning
-        if doc: doc.close() # Moved close here
+        if doc is not None:
+            try:
+                doc.close() # Attempt to close
+            except ValueError as e:
+                if "document closed" in str(e).lower():
+                    logging.debug(f"Document {file_path} was already closed (ValueError) during try block close.")
+                else:
+                    raise # Re-raise other ValueErrors
+            except Exception as e:
+                logging.warning(f"Other error during doc.close() in try block for {file_path}: {e}")
+                # Let this be caught by the main except block if it's critical
+                raise
         return final_output
 
     except Exception as fitz_err: # Broaden exception type for PyMuPDF errors
@@ -840,16 +865,21 @@ def process_pdf(file_path: Path, output_format: str = "txt") -> str:
 
         # Check if it's likely an encryption error first
         # Use isinstance to check for ValueError which might indicate encryption
-        elif "encrypted" in str(fitz_err).lower() or isinstance(fitz_err, ValueError):
-             logging.error(f"PyMuPDF/Value error processing encrypted PDF {file_path}: {fitz_err}", exc_info=True)
+        # IMPORTANT: Ensure this doesn't misclassify the "document closed" ValueError
+        elif ("encrypted" in str(fitz_err).lower() or isinstance(fitz_err, ValueError)) and "document closed" not in str(fitz_err).lower():
+             logging.error(f"PyMuPDF/Value error processing (likely encrypted) PDF {file_path}: {fitz_err}", exc_info=True)
              raise ValueError(f"PDF {file_path} is encrypted and cannot be opened.") from fitz_err
-        else: # Handle other PyMuPDF or general errors
+        else: # Handle other PyMuPDF or general errors, including "document closed" if it wasn't handled above
              logging.error(f"PyMuPDF/Other error processing {file_path}: {fitz_err}", exc_info=True)
-             # Use RuntimeError for broader fitz errors or other exceptions
              raise RuntimeError(f"Error opening or processing PDF {file_path}: {fitz_err}") from fitz_err
-    # Removed the separate ValueError and Exception catches as they are covered above.
     finally:
-        if doc: doc.close() # Ensure doc is closed even if standard extraction fails before return
+        if doc is not None and hasattr(doc, 'is_closed') and hasattr(doc, 'close'):
+            try:
+                if not doc.is_closed:
+                    doc.close()
+            except Exception: # Broadly suppress errors during this final cleanup
+                logging.debug(f"Suppressed error during final doc.close() for {file_path} in finally block.")
+                pass
 
 
 def process_epub(file_path: Path, output_format: str = "txt") -> str:

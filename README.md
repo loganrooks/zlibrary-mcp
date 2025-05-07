@@ -28,7 +28,6 @@ This project is primarily built using **Node.js/TypeScript** and acts as an MCP 
 - 📖 Get detailed book information and metadata (Note: ID-based lookup is deprecated and unreliable; search is recommended)
 - 🔍 Full-text search within book contents
 - 📊 View download history and limits
-- 📈 Get recently added books
 - 💾 Download books directly to local file system (`./downloads/` by default) using `bookDetails` from search results (see ADR-002).
 - ✨ Process downloaded documents (EPUB, TXT, PDF) for RAG, with robustness enhancements (quality detection, OCR, preprocessing), saving output to `./processed_rag_output/`
 
@@ -115,7 +114,6 @@ Configure the server in your AI assistant's settings. Ensure the `command` point
 - `full_text_search`: Search within book content.
 - `get_download_history`: View download history (Parser fixed).
 - `get_download_limits`: Check download limits.
-- `get_recent_books`: Get recently added books (Implemented).
 - `download_book_to_file`: Download a book using `bookDetails` from search results. Can optionally process for RAG.
 - `process_document_for_rag`: Process an existing local file (EPUB, TXT, PDF) for RAG.
 

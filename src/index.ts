@@ -55,6 +55,8 @@ const FullTextSearchParamsSchema = z.object({
   exact: z.boolean().optional().default(false).describe('Whether to perform an exact match search'),
   phrase: z.boolean().optional().default(true).describe('Whether to search for the exact phrase (requires at least 2 words)'),
   words: z.boolean().optional().default(false).describe('Whether to search for individual words'),
+  fromYear: z.number().int().optional().describe('Filter by minimum publication year'),
+  toYear: z.number().int().optional().describe('Filter by maximum publication year'),
   languages: z.array(z.string()).optional().default([]).describe('Filter by languages (e.g., ["english", "russian"])'),
   extensions: z.array(z.string()).optional().default([]).describe('Filter by file extensions (e.g., ["pdf", "epub"])'),
   content_types: z.array(z.string()).optional().default([]).describe('Filter by content types (e.g., ["book", "article"])'),
@@ -66,11 +68,6 @@ const GetDownloadHistoryParamsSchema = z.object({
 });
 
 const GetDownloadLimitsParamsSchema = z.object({}); // No parameters
-
-const GetRecentBooksParamsSchema = z.object({
-  count: z.number().int().optional().default(10).describe('Number of books to return'),
-  format: z.string().optional().describe('Filter by file format (e.g., "pdf", "epub")'),
-});
 
 const DownloadBookToFileParamsSchema = z.object({
   // id: z.string().describe('Z-Library book ID'), // Replaced by bookDetails
@@ -85,6 +82,33 @@ const ProcessDocumentForRagParamsSchema = z.object({
   file_path: z.string().describe('Path to the downloaded file to process'),
   output_format: z.string().optional().describe('Desired output format (e.g., "text", "markdown")') // Re-applying again: Ensure it's purely optional, no default
 });
+
+const GetMetadataParamsSchema = z.object({
+  url: z.string().url().describe('URL of the Z-Library book/article page'),
+});
+
+// Zod schema for the output of get_metadata, based on project plan and spec-pseudocode
+const BookMetadataOutputSchema = z.object({
+  title: z.string().describe('Title of the book/article'),
+  authors: z.array(z.string()).describe('List of authors'), // Not nullable, should be empty array if none
+  series_name: z.string().nullable().describe('Name of the series, if any'),
+  series_url: z.string().url().nullable().describe('URL of the series page, if any'),
+  publisher: z.string().nullable().describe('Publisher name'),
+  publication_year: z.number().int().nullable().describe('Year of publication'),
+  language: z.string().nullable().describe('Language of the content'), // Nullable, as per test
+  isbn_list: z.array(z.string()).describe('List of ISBNs (cleaned)'), // Not nullable, should be empty array
+  categories: z.array(z.string()).describe('List of categories/genres'), // Not nullable, should be empty array
+  description: z.string().describe('Synopsis or description of the content'),
+  cover_image_url: z.string().url().nullable().describe('URL of the cover image'),
+  pages_count: z.number().int().nullable().describe('Number of pages'),
+  filesize_str: z.string().nullable().describe('File size as a string (e.g., "12.10 MB")'),
+  doi: z.string().nullable().describe('DOI (Digital Object Identifier)'),
+  booklists_urls: z.array(z.string().url()).describe('List of URLs to Z-Library booklists containing this item'), // Not nullable
+  you_may_be_interested_in_urls: z.array(z.string().url()).describe('List of URLs to similar or recommended items on Z-Library'), // Not nullable
+  most_frequent_terms: z.array(z.string()).describe('List of most frequent terms found in the content'), // Not nullable
+  source_url: z.string().url().describe('The original URL from which the metadata was scraped'),
+});
+
 
 // Define a type for the handler map
 type HandlerMap = {
@@ -144,6 +168,8 @@ const handlers: HandlerMap = {
         exact: args.exact,
         phrase: args.phrase,
         words: args.words,
+        fromYear: args.fromYear,
+        toYear: args.toYear,
         languages: args.languages,
         extensions: args.extensions,
         content_types: args.content_types, // content_types is already plural in Zod
@@ -196,7 +222,34 @@ const handlers: HandlerMap = {
     } catch (error: any) {
       return { error: { message: error.message || 'Failed to process document for RAG' } };
     }
-  }
+  },
+  getMetadata: async (args: z.infer<typeof GetMetadataParamsSchema>) => {
+    try {
+      const getMetadataReceivedArgsLog = `[${new Date().toISOString()}] [src/index.ts] getMetadata handler received Zod-parsed args: ${JSON.stringify(args)}\n`;
+      console.log(getMetadataReceivedArgsLog.trim());
+      // Log to file
+      try {
+        const logFilePath = path.resolve(__dirname, '..', 'logs', 'nodejs_debug.log');
+        await mkdirAsync(path.dirname(logFilePath), { recursive: true }); // Ensure logs dir exists
+        await appendFileAsync(logFilePath, getMetadataReceivedArgsLog);
+      } catch (e) { console.error('Failed to write to logs/nodejs_debug.log', e); }
+
+      const result = await zlibraryApi.getMetadata({ url: args.url });
+      
+      // Validate the result against the output schema before returning
+      const validation = BookMetadataOutputSchema.safeParse(result);
+      if (!validation.success) {
+        console.error(`[src/index.ts] getMetadata handler: Output validation failed: ${JSON.stringify(validation.error.format())}`);
+        // Log the invalid data as well for debugging
+        console.error(`[src/index.ts] getMetadata handler: Invalid data: ${JSON.stringify(result)}`);
+        return { error: { message: `Output validation failed for get_metadata: ${validation.error.message}` } };
+      }
+      return validation.data; // Return validated data
+    } catch (error: any) {
+      console.error(`[src/index.ts] getMetadata handler error: ${error.message}`);
+      return { error: { message: error.message || 'Failed to get metadata' } };
+    }
+  },
 };
 
 // Define a type for the tool registry entries
@@ -209,8 +262,9 @@ interface ToolDefinition {
 
 interface ToolRegistryEntry {
     description: string;
-    schema: ZodObject<ZodRawShape>; // Use ZodObject<any> or a more specific shape if possible
-    handler?: (args: any) => Promise<any>; // Make handler optional in type definition
+    schema: ZodObject<ZodRawShape>;
+    outputSchema?: ZodObject<ZodRawShape>; // Add outputSchema to the type
+    handler?: (args: any) => Promise<any>;
 }
 
 // Tool Registry
@@ -244,6 +298,12 @@ const toolRegistry: Record<string, ToolRegistryEntry> = {
     description: 'Process a downloaded document (EPUB, TXT, PDF) to extract text content for RAG',
     schema: ProcessDocumentForRagParamsSchema,
     handler: handlers.processDocumentForRag,
+  },
+  get_metadata: { // New tool definition
+    description: 'Scrape comprehensive metadata from a Z-Library book/article page URL.',
+    schema: GetMetadataParamsSchema, // Input schema
+    outputSchema: BookMetadataOutputSchema, // Explicitly define output schema
+    handler: handlers.getMetadata,
   },
 };
 

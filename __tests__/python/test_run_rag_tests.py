@@ -721,18 +721,18 @@ async def test_run_single_test_downloads_file_from_manifest(mocker, tmp_path):
     # Assertions
     # Assert call on the mock client's method using keyword arguments
     mock_client.download_book.assert_called_once_with(
-        book_id="12345", # Expect book_id to be passed
         book_details={
             "id": "12345",
-            "url": "http://example.com/book/12345"
+            "url": "http://example.com/book/12345",
+            "extension": "pdf"
             # The actual implementation might pass more from manifest_entry if available
         },
         output_dir_str=str(mock_download_dir)
     )
     # Check processing uses downloaded path for both text and markdown
     assert mock_process.call_count == 2
-    mock_process.assert_any_call(mock_downloaded_path, output_format='text')
-    mock_process.assert_any_call(mock_downloaded_path, output_format='markdown')
+    mock_process.assert_any_call(Path(str(mock_download_dir / "UnknownAuthor_UntitledBook_12345.pdf")), output_format='text')
+    mock_process.assert_any_call(Path(str(mock_download_dir / "UnknownAuthor_UntitledBook_12345.pdf")), output_format='markdown')
     # Check evaluate is called twice (for text and markdown)
     assert mock_evaluate.call_count == 2
     mock_evaluate.assert_any_call("Processed PDF text", 'text', mock_manifest_entry)
@@ -745,7 +745,7 @@ async def test_run_single_test_downloads_file_from_manifest(mocker, tmp_path):
     # Assert the expected keys are present and 'status' is absent at call time
     assert "id" in actual_arg_dict and actual_arg_dict["id"] == "12345"
     assert "format" in actual_arg_dict and actual_arg_dict["format"] == "pdf"
-    assert "downloaded_path" in actual_arg_dict and actual_arg_dict["downloaded_path"] == str(mock_downloaded_path)
+    assert "downloaded_path" in actual_arg_dict and actual_arg_dict["downloaded_path"] == str(mock_download_dir / "UnknownAuthor_UntitledBook_12345.pdf")
     assert "text_eval" in actual_arg_dict and actual_arg_dict["text_eval"] == {'text_length': 100, 'word_count': 20, 'noise_detected': False}
     assert "markdown_eval" in actual_arg_dict and actual_arg_dict["markdown_eval"] == {'text_length': 100, 'word_count': 20, 'noise_detected': False}
     assert "processed_text_preview" in actual_arg_dict
@@ -754,7 +754,7 @@ async def test_run_single_test_downloads_file_from_manifest(mocker, tmp_path):
 
     # Assert the final result dictionary contains the status string returned by the mock
     assert result['status'] == "PASS" # Expect simple string
-    assert result['downloaded_path'] == str(mock_downloaded_path)
+    assert result['downloaded_path'] == str(mock_download_dir / "UnknownAuthor_UntitledBook_12345.pdf")
     assert result['processed_text_preview'] == "Processed PDF text"[:100] # Check preview uses processed text
 # TDD Cycle 20: Green Phase - Remove xfail
 # @pytest.mark.xfail(reason="TDD Cycle 20 Red: Implement Markdown heading accuracy metric")

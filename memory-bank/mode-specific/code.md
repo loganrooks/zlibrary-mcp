@@ -1,5 +1,91 @@
 # Auto-Coder Specific Memory
 <!-- Entries below should be added reverse chronologically (newest first) -->
+### [2025-05-07 14:10:18] EFN_CONVENTION_FAIL_01 Fix: Regex and Logging
+- **Location**: `lib/python_bridge.py`
+- **Nature**: Bug Fix / Data Integrity Investigation
+- **Severity**: Medium (Impacts filename correctness and debuggability)
+- **Resolution**:
+    - **Corrected Sanitization Regex**: In `_sanitize_component` (around line 62), changed `re.sub(r'[\\/\?%\*:\ attentes|"&lt;&gt;.,;=]', '', text)` to `re.sub(r'[\\/\?%\*:"&lt;&gt;\|.,;=]', '', text)`.
+    - **Added Author/Title Logging**: In `download_book` (before line 365 call to `_create_enhanced_filename`), added `logger.debug(f"Book details for filename generation: authors='{book_details.get('authors')}', title='{book_details.get('title')}'")`.
+- **Status**: Resolved (Pending Verification)
+- **Resolution Date**: 2025-05-07
+- **Verification**: To be performed by user/QA. Check logs for author/title presence and verify filename convention.
+- **Related**: [ActiveContext 2025-05-07 14:10:18], [GlobalContext Progress EFN_CONVENTION_FAIL_01 - [2025-05-07 14:10:18]], [Original Task EFN_CONVENTION_FAIL_01]
+### [2025-05-07 13:57:07] GM_MISSING_AUTHORS_ISBN_01 Fix: Scraper Selector Update
+- **Location**: `zlibrary/src/zlibrary/scrapers.py` (scrape_metadata function)
+- **Nature**: Bug Fix / Data Extraction Accuracy. Incorrect CSS selectors led to missing author and ISBN data.
+- **Severity**: Medium (Impacts completeness of `get_metadata` tool output)
+- **Resolution**:
+    - **Authors**: Modified extraction logic (lines 129-159) to prioritize direct selection of author `<a>` tags using `div.col-sm-9 > i > a.color1[title*="Find all the author's book"]` and `div.col-sm-9 i a.color1` as fallbacks, before attempting original broader logic.
+    - **ISBNs**: Modified extraction logic (lines 206-215) to remove reliance on `SELECTORS["isbn_container"]`. Now directly uses `SELECTORS["isbn13_spec"]` and `SELECTORS["isbn10_spec"]`, with a fallback to regex search on the page text.
+- **Status**: Resolved and Verified
+- **Resolution Date**: 2025-05-07
+- **Verification**: Manually tested `get_metadata` tool with "https://z-library.sk/book/23778950/c6a0ea/art-war.html". Successfully extracted authors (["Lavie Tidhar", "Shimon Adaf"]) and ISBNs (["9781910924051", "1910924059"]).
+- **Related**: [ActiveContext 2025-05-07 13:59:15], [GlobalContext Progress 2025-05-07 13:59:15], [Original Task GM_MISSING_AUTHORS_ISBN_01], [Debug Report for GM_MISSING_AUTHORS_ISBN_01]
+### [2025-05-07 13:35:26] FTS_TC006 Fix: "Close Matches" Banner Detection
+- **Location**: `zlibrary/src/zlibrary/abs.py` (SearchPaginator.parse_page method)
+- **Nature**: Bug Fix / Search Result Accuracy. Incorrectly parsing "close match" suggestions as direct search results.
+- **Severity**: Medium (Impacts accuracy of `full_text_search` for certain queries)
+- **Proposed Resolution**: Implemented as per `debug` mode recommendations and task objective.
+    1. Added banner detection logic using `re.compile("don't fit your search query exactly but very close to it", re.IGNORECASE)` within the `content_area`.
+    2. If the banner is found, log an info message, set results to empty (`self.storage[self.page] = []`, `self.result = []`), and return.
+- **Status**: Resolved (Pending Verification)
+- **Resolution Date**: 2025-05-07
+- **Verification**: To be performed: Manual test of `full_text_search` with a query known to trigger "close matches", check logs, confirm empty result, run `npm test`.
+- **Related**: [ActiveContext 2025-05-07 13:35:26], [GlobalContext Progress 2025-05-07 13:35:26], [Original Task FTS_TC006]
+## Technical Debt
+### [2025-05-07 13:01:00] PDR_PDF_DOCUMENT_CLOSED_ERROR_01 Fix
+- **Location**: `lib/rag_processing.py` (process_pdf function)
+- **Nature**: Robustness / Error Handling. The `fitz.Document` object was becoming closed or invalidated prematurely, leading to `ValueError: document closed`.
+- **Severity**: Critical (as per user task)
+- **Proposed Resolution**: Implemented based on `debug` mode recommendations.
+    1.  **Robust `fitz.open()` Handling**: Added `try-except` after `fitz.open()` to check document validity immediately. Raises `RuntimeError` if unusable.
+    2.  **Robust Document Closing Logic**:
+        - Main `try` block `doc.close()`: Confirmed existing `try-except ValueError` is adequate.
+        - `finally` block `doc.close()`: Enhanced with `hasattr` checks for `is_closed` and `close`, and conditional `if not doc.is_closed: doc.close()`. Suppresses errors during this final cleanup.
+- **Status**: Resolved
+- **Resolution Date**: 2025-05-07
+- **Verification**:
+    - Manual test with `__tests__/python/fixtures/rag_robustness/poor_extraction_mock.pdf` via `process_document_for_rag` tool succeeded.
+    - `npm run build` passed.
+    - `npm test` (58 tests) passed.
+- **Related**: [ActiveContext 2025-05-07 13:01:00], [GlobalContext Progress 2025-05-07 13:01:00]
+## Component Deprecations
+<!-- Track components deprecated and their status -->
+
+### [2025-05-07 12:25:39] `get_recent_books` Tool
+- **Purpose**: This tool was intended to fetch a list of recently added books.
+- **Files Affected**:
+    - `src/index.ts`: Removed `GetRecentBooksParamsSchema` and `get_recent_books` entry from `toolRegistry`.
+    - `src/lib/zlibrary-api.ts`: No specific function found or removed.
+    - `lib/python_bridge.py`: No specific function found or removed.
+    - `zlibrary/src/zlibrary/libasync.py`: No specific method found or removed.
+    - `zlibrary/src/zlibrary/abs.py`: No specific parsing logic found or removed.
+    - `__tests__/index.test.js`: No specific tests found or removed.
+    - `__tests__/zlibrary-api.test.js`: No specific tests found or removed.
+    - `__tests__/python/test_python_bridge.py`: No specific tests found or removed.
+    - `zlibrary/src/test.py`: No specific tests found or removed.
+- **Status**: Deprecated and Removed.
+- **Reason**: As per project plan Task 6 ([`docs/project-plan-zlibrary-mcp.md:273-299`](docs/project-plan-zlibrary-mcp.md:273-299)). Functionality likely superseded by `search_books` with `order: OrderOptions.NEWEST`.
+- **Tests**: Verified no associated tests remained. Project build and existing Python tests pass.
+- **Related**: [ActiveContext 2025-05-07 12:24:49], [GlobalContext Progress 2025-05-07 12:25:17]
+### [2025-05-07 08:53:53] Component: `get_metadata` MCP Tool
+- **Purpose**: Scrapes comprehensive metadata from a Z-Library book/article page URL.
+- **Files**:
+    - `zlibrary/src/zlibrary/scrapers.py` (new file for `scrape_metadata` Python function)
+    - `zlibrary/src/zlibrary/libasync.py` (import for `scrape_metadata`)
+    - `lib/python_bridge.py` (new `get_metadata` bridge function)
+    - `src/lib/zlibrary-api.ts` (new `getMetadata` Node.js API function and `BookMetadataOutputFromPython` type)
+    - `src/index.ts` (MCP tool definition, Zod schemas `GetMetadataParamsSchema`, `BookMetadataOutputSchema`)
+- **Status**: Implemented
+- **Dependencies**: `httpx`, `beautifulsoup4` (Python); `zod` (Node.js)
+- **API Surface**:
+    - Python: `async def scrape_metadata(url: str, session: httpx.AsyncClient) -> BookMetadata`
+    - Python Bridge: `async def get_metadata(url: str)`
+    - Node.js API: `async function getMetadata({ url }: GetMetadataArgs): Promise<BookMetadataOutputFromPython>`
+    - MCP Tool: `get_metadata` with input `{ url: string }` and output matching `BookMetadataOutputSchema`.
+- **Tests**: TDD anchors defined in `docs/get-book-metadata-spec.md`. To be implemented by `tdd` mode.
+- **Related**: [ActiveContext 2025-05-07 08:53:53], [GlobalContext Progress 2025-05-07 08:53:53], [`docs/project-plan-zlibrary-mcp.md:166-237`](docs/project-plan-zlibrary-mcp.md:166-237), [`docs/get-book-metadata-spec.md`](docs/get-book-metadata-spec.md)
 ### [2025-05-07 06:52:30] Component: `_create_enhanced_filename`
 - **Purpose**: Generates a user-readable and filesystem-safe filename for downloaded books based on the convention `LastnameFirstname_TitleOfTheBook_BookID.ext`.
 - **Files**: `lib/python_bridge.py`

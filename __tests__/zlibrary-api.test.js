@@ -265,6 +265,7 @@ describe('Z-Library API', () => {
 
         const searchArgs = {
             query: 'javascript', exact: false, phrase: true, words: false,
+            fromYear: 2010, toYear: 2020, // Added year filters
             languages: ['english'], extensions: ['pdf'], count: 15
         };
         result = await zlibApi.fullTextSearch(searchArgs);
@@ -273,6 +274,7 @@ describe('Z-Library API', () => {
             scriptPath: '/home/loganrooks/Code/zlibrary-mcp/lib', // Corrected script path
             args: ['full_text_search', JSON.stringify({
                 query: searchArgs.query, exact: searchArgs.exact, phrase: searchArgs.phrase, words: searchArgs.words,
+                from_year: searchArgs.fromYear, to_year: searchArgs.toYear, // Added year filters to assertion
                 languages: searchArgs.languages, extensions: searchArgs.extensions, content_types: [], count: searchArgs.count
             })]
         }));

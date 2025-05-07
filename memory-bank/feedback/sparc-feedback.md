@@ -1,3 +1,11 @@
+### [2025-05-07 14:02:12] User Intervention: Task Re-prioritization &amp; New Feature Request
+- **Source:** User Input
+- **Issue:** Following `code` mode completion of GM_MISSING_AUTHORS_ISBN_01 fix, user deferred TDD/QA for the fix.
+- **New Request:**
+    1.  Add `author` and `title` fields to `search_books` and `full_text_search` results.
+    2.  Verify author/title extraction for enhanced filename convention during download *before* proceeding with the new search feature.
+- **Action:** Acknowledged new priorities. Logged in `activeContext.md`. Will update `sparc.md` (Workflow State, Intervention Log) and `globalContext.md` (Progress). Will then proceed with verification of filename data extraction.
+- **Follow-up:** Delegate tasks for filename data verification and then the new search feature.
 ### [2025-05-05 22:08:16] User Correction: MCP Acronym
 - **Source:** User Input
 - **Issue:** SPARC incorrectly expanded MCP as "Meta-Controller Protocol".

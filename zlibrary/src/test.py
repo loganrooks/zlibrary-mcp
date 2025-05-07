@@ -95,6 +95,10 @@ async def main():
     await test_full_text_search_paginator_uses_year_filters()
     print("test_full_text_search_paginator_uses_year_filters PASSED (called)")
     print("All paginator year filter usage tests called.")
+    print("\\nRunning close matches banner test...")
+    await test_search_paginator_close_matches_banner()
+    print("test_search_paginator_close_matches_banner PASSED (called)")
+    print("All close matches banner tests called.")
  
 async def test_download_history_url_construction():
     lib = AsyncZlib()
@@ -293,10 +297,10 @@ async def test_download_history_parse_error():
     except ParseError:
         assert True
     # print(book) # This line was causing NameError, removed.
-@patch('aiofiles.open', new_callable=AsyncMock)
+@patch('aiofiles.open') # Changed: Use standard MagicMock for the function itself
 @patch('zlibrary.libasync.httpx.AsyncClient') # This will be MockHttpxClientClassArg
 @patch('os.makedirs')
-async def test_download_book_functionality(mock_makedirs_arg, MockHttpxClientClassArg, mock_aio_open_arg):
+async def test_download_book_functionality(mock_makedirs_arg, MockHttpxClientClassArg, mock_aio_open_arg): # mock_aio_open_arg is now a MagicMock
     lib = AsyncZlib()
     lib.mirror = "https://example.com" # Set a dummy mirror
     lib.domain = "example.com"
@@ -357,6 +361,10 @@ async def test_download_book_functionality(mock_makedirs_arg, MockHttpxClientCla
     mock_client_for_download.__aexit__ = AsyncMock(return_value=False, name="client_for_download_aexit")
 
     MockHttpxClientClassArg.side_effect = [mock_client_for_page, mock_client_for_download]
+
+    # Configure the return_value of the mock for aiofiles.open to be an AsyncMock
+    # This AsyncMock will serve as the asynchronous context manager
+    mock_aio_open_arg.return_value = AsyncMock(name="aiofiles_open_returned_cm")
     
     returned_path = await lib.download_book(
         book_details=mock_book_details,
@@ -711,6 +719,63 @@ async def test_full_text_search_paginator_uses_year_filters(MockHttpxClientClass
     assert "&type=phrase" in called_url, f"Type phrase missing in called URL: {called_url}"
     assert "&yearFrom=2021" in called_url, f"yearFrom missing or incorrect in called URL: {called_url}"
     assert "&yearTo=2023" in called_url, f"yearTo missing or incorrect in called URL: {called_url}"
+async def test_search_paginator_close_matches_banner(caplog):
+    """Tests SearchPaginator.parse_page when a 'close matches' banner is present."""
+    lib = AsyncZlib()
+    lib.mirror = "https://example.com"
+    lib.domain = "example.com" # Needed for SearchPaginator if it uses profile or other mirror-dependent things
+    lib.cookies = {} # Assuming cookies might be accessed
+
+    # Mock the internal request method _r that SearchPaginator will use via its 'request' callable
+    # This mock will be called by paginator.fetch_page()
+    mock_request_callable = AsyncMock(name="request_callable_for_paginator")
+    
+    HTML_WITH_BANNER = """
+    <html>
+    <body>
+        <div id="searchFormResultsList">
+            <p>The books listed below don't fit your search query exactly but very close to it.</p>
+            <div class="book-card-wrapper">
+                <z-bookcard id="123" name="Some Book" href="/book/123/some-book"></z-bookcard>
+            </div>
+        </div>
+    </body>
+    </html>
+    """
+    mock_request_callable.return_value = HTML_WITH_BANNER
+
+    from zlibrary.abs import SearchPaginator # Import locally if not already at top
+    
+    # Instantiate SearchPaginator
+    # The 'request' callable in SearchPaginator is self.__r, which is set in __init__
+    # So, we pass our mock_request_callable here.
+    paginator = SearchPaginator(
+        url="https://example.com/s/somequery",
+        count=10,
+        request=mock_request_callable, # This is self.__r for the paginator instance
+        mirror=lib.mirror
+    )
+
+    # Trigger parse_page, usually via init or by accessing results that require fetching
+    # await paginator.init() # This calls fetch_page which then calls parse_page
+    # Or, more directly if parse_page is the target:
+    # page_content = await paginator.fetch_page()
+    # paginator.parse_page(page_content)
+    
+    # Let's use init() as it's the natural way it's called
+    caplog.set_level(logging.INFO) # Ensure caplog captures INFO level messages
+    await paginator.init()
+
+    assert paginator.result == [], "Paginator result should be empty when close matches banner is detected"
+    assert paginator.storage[paginator.page] == [], "Paginator storage for the page should be empty"
+    
+    # Check for the specific log message
+    log_message_found = False
+    for record in caplog.records:
+        if record.levelname == 'INFO' and "Detected 'close matches' banner. Treating as no results." in record.message:
+            log_message_found = True
+            break
+    assert log_message_found, "Expected log message for close matches banner not found"
     print("test_full_text_search_paginator_uses_year_filters: Assertions for lib._r call passed.")
 async def test_download_book_missing_url_in_details():
     lib = AsyncZlib()

@@ -1,5 +1,15 @@
 # SPARC Orchestrator Specific Memory
 <!-- Entries below should be added reverse chronologically (newest first) -->
+### [2025-05-07 14:02:12] Intervention: Task Re-prioritization &amp; New Feature (Search Results Author/Title)
+- **Trigger**: User Input following `code` mode completion of GM_MISSING_AUTHORS_ISBN_01 fix.
+- **Context**: SPARC was about to delegate TDD/QA for the GM_MISSING_AUTHORS_ISBN_01 fix.
+- **Action Taken**: Acknowledged user's new priorities:
+    1. Defer TDD/QA for GM_MISSING_AUTHORS_ISBN_01 fix.
+    2. New Feature: Add `author` and `title` to `search_books` and `full_text_search` results.
+    3. Priority Verification: Confirm author/title extraction for enhanced filename convention during download *before* starting the new search feature.
+- **Rationale**: Align with explicit user direction.
+- **Outcome**: Workflow re-prioritized. Memory Bank updated.
+- **Follow-up**: Proceed with verification of filename data extraction, then plan and delegate tasks for the new search results feature.
 ### [2025-05-06 01:45:41] Intervention: User Request for Manual E2E Testing via RooCode
 - **Trigger**: User feedback requesting SPARC perform manual testing via RooCode UI.
 - **Context**: Following successful automated testing (`npm test`) after INT-001 fix.
@@ -103,11 +113,11 @@
 - Link to Progress Entry: [GlobalContext Progress 2025-05-06 12:55:13]
 
 # Workflow State (Current - Overwrite this section)
-- Current phase: Refinement / Pre-Release Stabilization
-- Phase start: 2025-05-06 13:02:41
-- Current focus: Ensuring stability of all tools and preparing for release.
-- Next actions: Plan and delegate manual E2E testing, deprecate `get_recent_books`.
-- Last Updated: 2025-05-06 13:07:03
+- Current phase: Refinement / Feature Enhancement
+- Phase start: 2025-05-07 14:02:12
+- Current focus: Verify author/title extraction for filenames, then add author/title to search results.
+- Next actions: Delegate filename data verification to `qa-tester`. Then, delegate investigation for search results enhancement to `debug`.
+- Last Updated: 2025-05-07 14:03:09
 
 ## Intervention Log
 ### [2025-05-06 13:02:41] Intervention: User Shifted Priorities - Halt Feature Work, Focus on Stability/Deployment

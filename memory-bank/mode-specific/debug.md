@@ -144,6 +144,17 @@
 - **Verification**: `pytest __tests__/python/test_python_bridge.py` exits with code 0. All relevant tests pass. [2025-04-28 03:59:38]
 - **Related Issues**: [GlobalContext Progress 2025-04-28 02:43:32], [GlobalContext Progress 2025-04-28 03:21:02], [GlobalContext Progress 2025-04-28 02:34:57], `memory-bank/feedback/code-feedback.md` [2025-04-28 03:17:29], `memory-bank/feedback/code-feedback.md` [2025-04-28 03:36:37]
 # Debugger Specific Memory
+---
+### Issue: DBTF_AIOFILES_AENTER_ERROR_01 - `download_book_to_file` fails with `AttributeError: __aenter__` - [Status: Resolved] - [2025-05-07 12:44:17]
+- **Reported**: [2025-05-07 12:38:21] (via E2E Test Report in [`memory-bank/activeContext.md`](memory-bank/activeContext.md:1) and [`memory-bank/globalContext.md`](memory-bank/globalContext.md:1)) / **Severity**: Critical / **Symptoms**: `download_book_to_file` MCP tool fails with `AttributeError: __aenter__` when `aiofiles.open` is used.
+- **Investigation**:
+    1. [2025-05-07 12:43:13] Attempted to reproduce error by calling `download_book_to_file` with a sample book. Error successfully reproduced. Traceback pointed to `async with (await aiofiles.open(actual_output_path, 'wb')) as f:` in [`zlibrary/src/zlibrary/libasync.py:457`](zlibrary/src/zlibrary/libasync.py:457).
+    2. [2025-05-07 12:43:45] Read [`zlibrary/src/zlibrary/libasync.py`](zlibrary/src/zlibrary/libasync.py:457) and confirmed the incorrect `await` usage. `aiofiles.open()` returns an async context manager directly, and should not be awaited before `async with`.
+- **Root Cause**: Incorrect usage of `await` with `aiofiles.open()`. The `aiofiles.open()` function returns an asynchronous context manager, and the `await` keyword was erroneously placed before it, causing the `async with` statement to operate on the result of an incorrect await operation rather than the context manager itself.
+- **Fix Applied**: Removed the `await` keyword from the line `async with (await aiofiles.open(actual_output_path, 'wb')) as f:` in [`zlibrary/src/zlibrary/libasync.py:457`](zlibrary/src/zlibrary/libasync.py:457), changing it to `async with aiofiles.open(actual_output_path, 'wb') as f:`.
+- **Verification**: [2025-05-07 12:44:17] Successfully called `download_book_to_file` tool after applying the fix. The `AttributeError` did not occur, and the book was downloaded.
+- **Related Issues**: [QA E2E Test DBTF_AIOFILES_AENTER_ERROR_01], [GlobalContext Pattern: Incorrect `await` with Async Context Manager Factory - [2025-05-07 12:44:17]]
+---
 <!-- Entries below should be added reverse chronologically (newest first) -->
 ### Issue: REG-POST-INT001-FIX - Regressions after INT-001-REG-01 Fix - [Status: Resolved] - [2025-05-06 01:19:12]
 - **Reported**: [2025-05-06 00:48:13] (via ActiveContext) / **Severity**: High / **Symptoms**: TDD reported 15 Jest failures (`__tests__/zlibrary-api.test.js`) and 22 Pytest failures (`__tests__/python/test_python_bridge.py`) after fix for INT-001-REG-01.

@@ -1,5 +1,96 @@
 # QA Tester Specific Memory
 <!-- Entries below should be added reverse chronologically (newest first) -->
+### Bug Report: EFN_CONVENTION_FAIL_01 - [Status: New] - [2025-05-07 14:04:54]
+- **Severity**: Medium / **Priority**: High
+- **Feature/Area**: Enhanced Filename Convention (`_create_enhanced_filename` in `lib/python_bridge.py`)
+- **Summary**: The enhanced filename convention `LastnameFirstname_TitleOfTheBook_BookID.ext` is not correctly generated despite `get_metadata` providing accurate author and title.
+- **Steps to Reproduce**:
+    1. Obtain correct `bookDetails` for a book (e.g., ID `23778950`, Author: "Lavie Tidhar", Title: "Art & War") using `get_metadata`.
+    2. Call `download_book_to_file` with these `bookDetails`.
+    3. Observe the downloaded filename.
+- **Expected Result**: Filename should be `TidharLavie_Art&War_23778950.epub` (or similar correct slug for title).
+- **Actual Result**: Filename was `downloads_qa_tester/UkowAuhor_Ar&Wr_23778950.epub`. The author component (`UkowAuhor`) and title component (`Ar&Wr`) are incorrect.
+- **Environment**: Local / **Build**: `get_metadata` branch (post GM_MISSING_AUTHORS_ISBN_01 fix)
+- **Notes**: This confirms the `get_metadata` fix for GM_MISSING_AUTHORS_ISBN_01 is working, but reveals a separate bug in the filename generation logic within [`lib/python_bridge.py`](lib/python_bridge.py:1).
+### Test Execution: Enhanced Filename Convention Verification - [2025-05-07 14:04:54]
+- **Environment**: Local / **Build**: `get_metadata` branch (post GM_MISSING_AUTHORS_ISBN_01 fix)
+- **Outcome**: FAIL
+- **Summary**: Tested if the enhanced filename convention (`LastnameFirstname_TitleOfTheBook_BookID.ext`) uses correctly extracted author/title after the GM_MISSING_AUTHORS_ISBN_01 fix.
+    - Book ID `23778950` ("Art & War" by "Lavie Tidhar, Shimon Adaf").
+    - `get_metadata` correctly returned authors: `["Lavie Tidhar", "Shimon Adaf"]` and title: `"Art & War"`.
+    - `download_book_to_file` (with correct `bookDetails` including `url`) downloaded the file.
+    - Actual filename: `downloads_qa_tester/UkowAuhor_Ar&Wr_23778950.epub`.
+    - Expected author component: `TidharLavie`. Actual: `UkowAuhor`.
+    - Expected title component: `Art&War` (or similar slug). Actual: `Ar&Wr`.
+- **Bugs Found**: EFN_CONVENTION_FAIL_01
+- **Notes**: The `get_metadata` fix is working. The issue lies in the `_create_enhanced_filename` logic in `lib/python_bridge.py`.
+- **Report Link**: N/A (details in this entry and `activeContext.md`, `globalContext.md`)
+## Bug Reports Log
+<!-- Append new bug reports using the format below -->
+### Bug Report: PDR_PDF_DOCUMENT_CLOSED_ERROR_01 - [Status: New] - [2025-05-07 12:38:21]
+- **Severity**: Critical / **Priority**: High
+- **Feature/Area**: `process_document_for_rag` (PDF processing)
+- **Summary**: `process_document_for_rag` fails with `ValueError: document closed` when processing PDF files.
+- **Steps to Reproduce**: 1. Call `process_document_for_rag` with a valid PDF file_path and output_format: "text".
+- **Expected Result**: Successful text extraction and creation of a .txt file.
+- **Actual Result**: Tool fails with `ValueError: document closed` originating from `pymupdf` library within `lib/rag_processing.py`.
+- **Environment**: Local / **Build**: V1 Candidate (as of 2025-05-07)
+- **Notes**: See test case PDR_E2E_PDF_TEXT_01.
+
+### Bug Report: GM_MISSING_AUTHORS_ISBN_01 - [Status: New] - [2025-05-07 12:38:21]
+- **Severity**: Medium / **Priority**: Medium
+- **Feature/Area**: `get_metadata` tool
+- **Summary**: `get_metadata` tool returns empty `authors` and `isbn_list` for a book known to have this information.
+- **Steps to Reproduce**: 1. Call `get_metadata` with a valid Z-Library book URL (e.g., https://z-library.sk/book/23778950/c6a0ea/art-war.html).
+- **Expected Result**: Metadata should include authors and ISBNs if present on the page.
+- **Actual Result**: `authors` and `isbn_list` fields are empty arrays in the response.
+- **Environment**: Local / **Build**: V1 Candidate (as of 2025-05-07)
+- **Notes**: See test case GM_E2E_VALID_URL_01. Other metadata fields appear correct.
+
+### Bug Report: DBTF_AIOFILES_AENTER_ERROR_01 - [Status: New] - [2025-05-07 12:38:21]
+- **Severity**: Critical / **Priority**: High
+- **Feature/Area**: `download_book_to_file` tool
+- **Summary**: `download_book_to_file` fails with `AttributeError: __aenter__` during `aiofiles.open`.
+- **Steps to Reproduce**: 1. Call `download_book_to_file` with valid `bookDetails`.
+- **Expected Result**: Successful book download.
+- **Actual Result**: Tool fails with `AttributeError: __aenter__` in `zlibrary/src/zlibrary/libasync.py` when trying to open the output file with `aiofiles.open`.
+- **Environment**: Local / **Build**: V1 Candidate (as of 2025-05-07)
+- **Notes**: See test case DBTF_E2E_RETEST_STABILITY_01. This is a new error, different from the previously logged DBTF-BUG-001.
+
+### Bug Report: FTS_YEAR_FILTER_NOT_APPLIED_01 - [Status: New] - [2025-05-07 12:38:21]
+- **Severity**: High / **Priority**: High
+- **Feature/Area**: `full_text_search` tool (Year Filter)
+- **Summary**: Year filters (`fromYear`, `toYear`) are not applied when using `full_text_search`.
+- **Steps to Reproduce**: 1. Call `full_text_search` with a query and `fromYear`/`toYear` parameters.
+- **Expected Result**: Results should be filtered by the specified year range, and URL should reflect these parameters.
+- **Actual Result**: `retrieved_from_url` does not include year parameters. Returned books are outside the specified year range.
+- **Environment**: Local / **Build**: V1 Candidate (as of 2025-05-07)
+- **Notes**: See test case FTS_E2E_RETEST_YEAR_01.
+
+## Test Execution Results
+<!-- Append summaries of test runs using the format below -->
+### Test Execution: E2E - Z-Library MCP V1 Candidate Verification - [2025-05-07 12:38:21]
+- **Environment**: Local / **Build**: V1 Candidate (as of 2025-05-07)
+- **Outcome**: PARTIAL (Multiple failures and blockers)
+- **Summary**:
+    - `search_books` filters (language, extension, year): All PASS.
+    - `full_text_search` filters:
+        - Language: PASS
+        - Extension: PASS
+        - Year: FAIL (New Bug: FTS_YEAR_FILTER_NOT_APPLIED_01)
+        - No-result behavior: FAIL (Consistent with FTS_TC006)
+        - Single-word `words:true`: PASS (FTS_TC009 resolved)
+    - `download_book_to_file` stability: FAIL (New Bug: DBTF_AIOFILES_AENTER_ERROR_01). DBTF-BUG-001 (TypeError) did not reoccur. DBTF-BUG-002 (FileExistsError) not applicable this run.
+    - `get_metadata`:
+        - Valid URL: PARTIAL (New Bug: GM_MISSING_AUTHORS_ISBN_01)
+        - Invalid URL: PASS (Python bridge error parsing needs improvement but core 404 handling OK)
+    - `process_document_for_rag`:
+        - PDF: FAIL (New Bug: PDR_PDF_DOCUMENT_CLOSED_ERROR_01)
+        - EPUB: PASS
+        - TXT: PASS
+- **Bugs Found**: FTS_YEAR_FILTER_NOT_APPLIED_01, DBTF_AIOFILES_AENTER_ERROR_01, GM_MISSING_AUTHORS_ISBN_01, PDR_PDF_DOCUMENT_CLOSED_ERROR_01. FTS_TC006 (no-result) remains.
+- **Notes**: `download_book_to_file` failure blocks testing of Enhanced Filenames and RAG processing via `download_book_to_file`.
+- **Report Link**: Detailed test case results in `memory-bank/feedback/qa-tester-feedback.md` (entry to be added).
 ### Test Execution: RAG Output Quality Re-evaluation - [2025-04-29 02:33:00]
 - **Environment**: Local / **Build**: `60c0764`
 - **Outcome**: PARTIAL
@@ -15,6 +106,33 @@
 - **Notes**: Key issues: Lack of Markdown structure (headings, lists), inclusion of PDF headers/footers, non-standard footnote handling.
 - **Report Link**: `docs/rag-output-qa-report.md`
 ## Test Plans
+### Test Plan: E2E - Z-Library MCP V1 Candidate Verification - [2025-05-07 12:33:01]
+- **Objective**: Verify stability and functionality of all MCP tools post-Phase 1 changes, identify regressions, and confirm V1 release readiness for the Z-Library MCP application.
+- **Scope**: All MCP tools as defined in Task 7 of Phase 1 ([`docs/project-plan-zlibrary-mcp.md:303-327`](docs/project-plan-zlibrary-mcp.md:303-327)), with particular focus on:
+    1.  **Previously Failed E2E Scenarios (Re-test):**
+        *   `search_books`: Language, extension, and year filters.
+        *   `full_text_search`: Language, extension, year filters, no-result behavior, and single-word phrase searches (with and without `words:true`).
+        *   `download_book_to_file`: Stability, re-testing issues DBTF-BUG-001 (`TypeError`) and DBTF-BUG-002 (`FileExistsError`).
+    2.  **New Functionalities:**
+        *   `get_metadata` tool: Test with various valid Z-Library book page URLs, verify comprehensive metadata extraction.
+        *   Enhanced Filenames: Verify files downloaded via `download_book_to_file` use the `LastnameFirstname_TitleOfTheBook_BookID.ext` convention.
+    3.  **Core Functionalities (General Verification):**
+        *   `search_books` (general queries).
+        *   `full_text_search` (general queries).
+        *   `download_book_to_file` (basic download, RAG processing option `process_for_rag: true` and `process_for_rag: false`).
+        *   `process_document_for_rag` (with various local file types: PDF, EPUB, TXT).
+    4.  **Error Handling:**
+        *   Test tools with invalid inputs (e.g., bad URL for `get_metadata`, invalid ID for download).
+        *   Simulate or observe behavior if external Z-Library API calls fail or return unexpected data (if possible to test).
+- **Prerequisites**:
+    *   Z-Library MCP server (V1 candidate reflecting all Phase 1 changes) is running and accessible.
+    *   User has necessary credentials/access for Z-Library if required by the tools.
+    *   Sample book files (PDF, EPUB, TXT) available for testing `process_document_for_rag`.
+    *   Known valid `bookDetails` objects (from successful `search_books` calls) for testing `download_book_to_file`.
+    *   A list of valid Z-Library book page URLs for testing `get_metadata`.
+    *   Access to project plan document: [`docs/project-plan-zlibrary-mcp.md`](docs/project-plan-zlibrary-mcp.md:1).
+- **Associated Bugs**: DBTF-BUG-001, DBTF-BUG-002 (to be re-tested). New bugs will be logged in `memory-bank/mode-specific/qa-tester.md` under "Bug Reports Log" and cross-referenced here.
+- **Test Cases Reference**: Detailed test cases will be derived from this plan and executed. Results will be documented in `memory-bank/feedback/qa-tester-feedback.md` and summarized under "Test Execution Results" in this file.
 ### Test Plan: E2E - Z-Library MCP Tools - [2025-05-06 13:10:00]
 - **Objective**: To perform manual End-to-End (E2E) testing for all existing Z-Library MCP tools to ensure stability and correctness before release.
 - **Scope**: All tools provided by the `zlibrary-mcp` server: `search_books`, `full_text_search`, `get_download_history`, `get_download_limits`, `download_book_to_file`, `process_document_for_rag`.

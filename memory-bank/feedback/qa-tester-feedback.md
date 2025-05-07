@@ -1,3 +1,124 @@
+### E2E Test Execution: Z-Library MCP V1 Candidate Verification - [2025-05-07 12:38:21]
+
+**Test Plan:** E2E - Z-Library MCP V1 Candidate Verification - [2025-05-07 12:33:01] (see [`memory-bank/mode-specific/qa-tester.md`](memory-bank/mode-specific/qa-tester.md:1))
+
+**Overall Outcome:** PARTIAL (Multiple critical failures and blockers)
+
+**Tool: `search_books`**
+
+-   **SB_E2E_RETEST_LANG_01 (Re-test Language Filter - formerly SB_TC005)**
+    -   **Input**: `{"query": "art", "languages": ["english"]}`
+    -   **Expected**: Books in English.
+    -   **Actual**: All 10 books returned were "english". URL: `...&languages%5B%5D=english`
+    -   **Outcome**: PASS
+    -   **Notes**: Previously failing. Fix for `language` to `languages` parameter likely resolved this.
+
+-   **SB_E2E_RETEST_EXT_01 (Re-test Extension Filter - formerly SB_TC006)**
+    -   **Input**: `{"query": "cooking", "extensions": ["pdf"]}`
+    -   **Expected**: Books in PDF format.
+    -   **Actual**: All 10 books returned were "pdf". URL: `...&extensions%5B%5D=PDF`
+    -   **Outcome**: PASS
+    -   **Notes**: Consistent with previous pass. Uppercasing of extension in URL noted.
+
+-   **SB_E2E_RETEST_YEAR_01 (Re-test Year Filter - formerly SB_TC004)**
+    -   **Input**: `{"query": "science", "fromYear": 2020, "toYear": 2023}`
+    -   **Expected**: Books published 2020-2023.
+    -   **Actual**: All 10 books returned were within 2020-2023. URL: `...&yearFrom=2020&yearTo=2023`
+    -   **Outcome**: PASS
+    -   **Notes**: Consistent with previous pass and MB entries.
+
+**Tool: `full_text_search`**
+
+-   **FTS_E2E_RETEST_LANG_01 (Re-test Language Filter - formerly FTS_TC004)**
+    -   **Input**: `{"query": "quantum mechanics", "languages": ["english"]}`
+    -   **Expected**: English books containing "quantum mechanics".
+    -   **Actual**: All 10 books returned were "english". URL: `...&languages%5B%5D=english`
+    -   **Outcome**: PASS
+    -   **Notes**: Previously failing. Fix for `language` to `languages` parameter likely resolved this.
+
+-   **FTS_E2E_RETEST_EXT_01 (Re-test Extension Filter - formerly FTS_TC005)**
+    -   **Input**: `{"query": "machine learning", "extensions": ["pdf"]}`
+    -   **Expected**: PDF books containing "machine learning".
+    -   **Actual**: All 10 books returned were "pdf". URL: `...&extensions%5B%5D=PDF`
+    -   **Outcome**: PASS
+    -   **Notes**: Previously failing. Uppercasing of extension and `languages` param fix likely resolved this.
+
+-   **FTS_E2E_RETEST_YEAR_01 (Re-test Year Filter)**
+    -   **Input**: `{"query": "deep learning", "fromYear": 2018, "toYear": 2020}`
+    -   **Expected**: Books published 2018-2020 containing "deep learning".
+    -   **Actual**: URL did not contain year parameters (`retrieved_from_url":"https://z-library.sk/fulltext/deep%20learning?&token=9bb75ba4&type=phrase"`). Results included years 2017, 2016.
+    -   **Outcome**: FAIL
+    -   **Bug ID**: FTS_YEAR_FILTER_NOT_APPLIED_01
+
+-   **FTS_E2E_RETEST_NORESULT_01 (Re-test No-Result Behavior - formerly FTS_TC006)**
+    -   **Input**: `{"query": "supercalifragilisticexpialidocious content"}`
+    -   **Expected**: Empty list of books.
+    -   **Actual**: Returned 10 unexpected books.
+    -   **Outcome**: FAIL
+    -   **Notes**: Consistent with previous FTS_TC006 failure.
+
+-   **FTS_E2E_RETEST_SINGLEWORD_01 (Re-test Single Word with `words:true` - formerly FTS_TC009)**
+    -   **Input**: `{"query": "epistemology", "words": true, "phrase": true}`
+    -   **Expected**: Successful search for word "epistemology".
+    -   **Actual**: Successful search. URL: `...&type=words`.
+    -   **Outcome**: PASS
+    -   **Notes**: Previously failing. Fix noted in MB ActiveContext [2025-05-06 17:10:34] resolved this.
+
+**Tool: `download_book_to_file`**
+
+-   **DBTF_E2E_RETEST_STABILITY_01 (Re-test Stability - DBTF-BUG-001, DBTF-BUG-002)**
+    -   **Input**: `{"bookDetails": {"id":"23778950", ...}}` (The Art of War)
+    -   **Expected**: Successful download, no `TypeError` or `FileExistsError`.
+    -   **Actual**: Failed with `AttributeError: __aenter__` in `aiofiles.open` call within `zlibrary/src/zlibrary/libasync.py`.
+    -   **Outcome**: FAIL
+    -   **Bug ID**: DBTF_AIOFILES_AENTER_ERROR_01
+    -   **Notes**: Original `TypeError` (DBTF-BUG-001) did not occur. `FileExistsError` (DBTF-BUG-002) not applicable as `./downloads` was empty. This new error blocks further `download_book_to_file` testing.
+
+-   **Enhanced Filenames Test**: BLOCKED by DBTF_AIOFILES_AENTER_ERROR_01.
+-   **RAG Processing Option Tests**: BLOCKED by DBTF_AIOFILES_AENTER_ERROR_01.
+
+**Tool: `get_metadata`**
+
+-   **GM_E2E_VALID_URL_01 (Valid URL)**
+    -   **Input**: `{"url": "https://z-library.sk/book/23778950/c6a0ea/art-war.html"}`
+    -   **Expected**: Comprehensive metadata.
+    -   **Actual**: Most metadata extracted. `authors` and `isbn_list` were empty.
+    -   **Outcome**: PARTIAL
+    -   **Bug ID**: GM_MISSING_AUTHORS_ISBN_01
+
+-   **GM_E2E_INVALID_URL_01 (Invalid URL)**
+    -   **Input**: `{"url": "https://z-library.sk/book/invalidurl"}`
+    -   **Expected**: Error response.
+    -   **Actual**: `Error from tool "get_metadata": Python bridge execution failed... HTTP error fetching ... Status 404...` followed by JSON of null/empty fields.
+    -   **Outcome**: PASS (Core error detection worked, though bridge error reporting is messy)
+    -   **Notes**: Python script correctly identified 404 but Python bridge failed to parse the mixed output (error message + JSON).
+
+**Tool: `process_document_for_rag`**
+
+-   **PDR_E2E_PDF_TEXT_01 (PDF to Text)**
+    -   **Input**: `{"file_path": "test_files/sample.pdf", "output_format": "text"}`
+    -   **Expected**: Successful text extraction.
+    -   **Actual**: Failed with `ValueError: document closed` from `pymupdf`.
+    -   **Outcome**: FAIL
+    -   **Bug ID**: PDR_PDF_DOCUMENT_CLOSED_ERROR_01
+
+-   **PDR_E2E_EPUB_MD_01 (EPUB to Markdown)**
+    -   **Input**: `{"file_path": "test_files/sample.epub", "output_format": "markdown"}`
+    -   **Expected**: Successful Markdown generation.
+    -   **Actual**: `{"processed_file_path":"processed_rag_output/none-none-None.epub.processed.markdown", "content": [...]}`. Tool executed.
+    -   **Outcome**: PASS (Tool execution successful)
+
+-   **PDR_E2E_TXT_TEXT_01 (TXT to Text)**
+    -   **Input**: `{"file_path": "test_files/sample.txt", "output_format": "text"}`
+    -   **Expected**: Successful processing, content similar to input.
+    -   **Actual**: `{"processed_file_path":"processed_rag_output/none-none-None.txt.processed.text", "content":["This is a simple text file for testing.\n","\n","This is a simple text file for testing.\n","\n","It has multiple lines."]}`. Tool executed.
+    -   **Outcome**: PASS (Tool execution successful)
+
+**General Verification & Error Handling (Summary)**
+- General queries for `search_books` and `full_text_search` (where filters worked) returned results.
+- Error handling for invalid Zod schema inputs (e.g., missing `query` for search tools) worked as expected.
+- Error handling for `get_metadata` with a bad URL correctly identified the HTTP 404.
+- Critical errors in `download_book_to_file` and `process_document_for_rag` (PDF) prevent full verification of these tools and dependent features.
 ### E2E Test Execution: Z-Library MCP Tools - [2025-05-06 13:18:00]
 
 **Tool: `search_books`**

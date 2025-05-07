@@ -1,4 +1,199 @@
 ---
+### Progress EFN_CONVENTION_FAIL_01 - [2025-05-07 14:10:18]
+- **Bug Fix EFN_CONVENTION_FAIL_01**:
+    - Modified `lib/python_bridge.py` to address issues with enhanced filename generation.
+    - **Corrected Sanitization Regex**: In `_sanitize_component` (around line 62), changed `re.sub(r'[\\/\?%\*:\ attentes|"&lt;&gt;.,;=]', '', text)` to `re.sub(r'[\\/\?%\*:"&lt;&gt;\|.,;=]', '', text)`. This removes the erroneous "attentes" string and correctly includes the pipe character.
+    - **Added Author/Title Logging**: In `download_book` (before line 365 call to `_create_enhanced_filename`), added `logger.debug(f"Book details for filename generation: authors='{book_details.get('authors')}', title='{book_details.get('title')}'")` to investigate potential missing author/title data.
+- **Related Entries**: [ActiveContext 2025-05-07 14:10:18], [Original Task EFN_CONVENTION_FAIL_01], [GlobalContext Progress - [2025-05-07 14:04:54] (Bug Report)]
+---
+---
+### Progress - [2025-05-07 14:04:54]
+- **Enhanced Filename Convention Verification (GM_MISSING_AUTHORS_ISBN_01 Post-Fix Test)**:
+    - **Objective**: Verify if the `LastnameFirstname_TitleOfTheBook_BookID.ext` filename convention works correctly after the `get_metadata` fix for author/title extraction (GM_MISSING_AUTHORS_ISBN_01).
+    - **Test Case**: Book ID `23778950` ("Art & War" by "Lavie Tidhar, Shimon Adaf").
+    - **Steps**:
+        1. Used `get_metadata` for URL `https://z-library.sk/book/23778950/c6a0ea/art-war.html`. Result: Correctly extracted authors `["Lavie Tidhar", "Shimon Adaf"]` and title `"Art & War"`.
+        2. Used `download_book_to_file` with the full `bookDetails` (including `id`, `extension`, and `url` mapped from `source_url`).
+    - **Outcome**: FAIL.
+        - Downloaded filename: `downloads_qa_tester/UkowAuhor_Ar&Wr_23778950.epub`.
+        - Expected author component: `TidharLavie`. Actual: `UkowAuhor`.
+        - Expected title component (slugified "Art & War"): `Art&War` or similar. Actual: `Ar&Wr`.
+    - **Conclusion**: The `get_metadata` fix is confirmed working. However, the filename generation logic in `_create_enhanced_filename` within [`lib/python_bridge.py`](lib/python_bridge.py:1) is not correctly processing the extracted author and title.
+    - **New Bug**: EFN_CONVENTION_FAIL_01 (Enhanced Filename Convention Failure).
+- **Related Entries**: [ActiveContext 2025-05-07 14:04:54], [GlobalContext Progress - [2025-05-07 13:59:15] (GM_MISSING_AUTHORS_ISBN_01 fix)], [GlobalContext Progress - [2025-05-07 06:52:30] (Enhanced Filename Convention Implemented)]
+---
+---
+### Progress - [2025-05-07 14:02:12]
+- **User Intervention: Task Re-prioritization &amp; New Feature Request**
+    - TDD/QA for GM_MISSING_AUTHORS_ISBN_01 fix (completed by `code` mode, manually verified) has been deferred by the user.
+    - **New Priority 1: Verify Filename Data Extraction:** Confirm that author and title are correctly extracted and used for the enhanced filename convention during book downloads. This verification is to be done *before* proceeding with other new features.
+    - **New Feature Request (Priority 2):** Enhance `search_books` and `full_text_search` tools to include `author` and `title` fields in their results. This will require investigation of search result page HTML, specification updates, implementation, and testing.
+- **Related Entries**: [ActiveContext 2025-05-07 14:02:12], [SPARC MB Intervention Log 2025-05-07 14:02:12], [SPARC Feedback MB 2025-05-07 14:02:12]
+---
+---
+### Progress - [2025-05-07 13:59:15]
+- **GM_MISSING_AUTHORS_ISBN_01 Bug Fix & Verification**:
+    - Modified `zlibrary/src/zlibrary/scrapers.py` to correct CSS selectors for author and ISBN extraction in the `scrape_metadata` function.
+    - **Authors**: Changed logic (around lines 129-159) to directly use selectors `div.col-sm-9 > i > a.color1[title*="Find all the author's book"]` and fallback `div.col-sm-9 i a.color1`, instead of relying on the non-existent `div.authors` container. Retained fallback logic for broader matching if specific selectors fail.
+    - **ISBNs**: Changed logic (around lines 206-215) to remove reliance on `div.isbn` container. Now directly uses `SELECTORS["isbn13_spec"]` and `SELECTORS["isbn10_spec"]` for extraction, with a fallback to regex search on the page text.
+    - **Verification**: Manually tested `get_metadata` tool with "https://z-library.sk/book/23778950/c6a0ea/art-war.html". Successfully extracted authors (["Lavie Tidhar", "Shimon Adaf"]) and ISBNs (["9781910924051", "1910924059"]).
+- **Related Entries**: [ActiveContext 2025-05-07 13:59:15], [See Code MB GM_MISSING_AUTHORS_ISBN_01 Fix - [2025-05-07 13:59:15]], [Original Task GM_MISSING_AUTHORS_ISBN_01]
+---
+---
+### Progress - [2025-05-07 13:42:26]
+- **Unit Tests for FTS_TC006 Fix (Close Matches Banner)**:
+    - Added a new unit test `test_search_paginator_close_matches_banner` to `zlibrary/src/test.py`.
+    - This test verifies that `SearchPaginator.parse_page` in `zlibrary/src/zlibrary/abs.py` correctly identifies the "close matches" banner and returns an empty list of results, along with logging an appropriate message.
+    - The test uses a mocked HTML fixture containing the banner text.
+    - Python unit tests (`./venv/bin/python3 -m pytest zlibrary/src/test.py`) passed (15 tests).
+    - Full MCP application test suite (`npm test`) passed (62 tests).
+- **Related Entries**: [ActiveContext 2025-05-07 13:42:26], [TDD Test Execution Results 2025-05-07 13:42:26], [TDD Cycle Log Close Matches Banner - 2025-05-07 13:42:26], [TDD Test Fixtures Close Matches HTML - 2025-05-07 13:42:26]
+---
+---
+### Progress - [2025-05-07 13:35:26]
+- **FTS_TC006 Bug Fix (Close Matches Banner)**:
+    - Modified `zlibrary/src/zlibrary/abs.py` in the `SearchPaginator.parse_page` method.
+    - Added logic to detect a "close matches" banner text (e.g., "don't fit your search query exactly but very close to it") within the `content_area`.
+    - If the banner is detected, the method now logs an informational message, sets `self.storage[self.page] = []` and `self.result = []`, and returns, effectively treating these pages as yielding no direct search results.
+    - This addresses the issue where suggested books on "close match" pages were incorrectly parsed as direct results.
+- **Related Entries**: [ActiveContext 2025-05-07 13:35:26], [See Code MB FTS_TC006 Fix - [2025-05-07 13:35:26]]
+---
+---
+### Progress - [2025-05-07 13:29:00]
+- **FTS Year Filter Regression Testing & Coverage Enhancement**:
+    - **Full Regression Test Suite**:
+        - Python unit tests (`./venv/bin/python3 -m pytest`): Executed. Result: PASS (84 passed, 5 xfailed, 1 xpassed, 7 warnings). No new regressions.
+        - Node.js/MCP tests (`npm test`): Executed. Result: PASS (4 test suites, 62 tests passed). No new regressions.
+    - **Test Coverage for `full_text_search` Year Filters**:
+        - **Node.js Layer**:
+            - `__tests__/index.test.js` (`FullTextSearchParamsSchema`): Added 4 new test cases to validate `fromYear` and `toYear` fields (valid numbers, optional, invalid types). Tests PASS.
+            - `__tests__/zlibrary-api.test.js` (`fullTextSearch` function): Updated existing test to verify `fromYear` and `toYear` are correctly included in `pythonArgsFTS` passed to `callPythonFunction` (as `from_year`, `to_year`). Test PASSES.
+        - **Python Bridge Layer** (`__tests__/python/test_python_bridge.py`):
+            - Added new test `test_full_text_search_bridge_handles_year_filters` to verify `from_year` and `to_year` are correctly passed to `zlib_client.full_text_search`. Test PASSES after fixing initial assertion errors and a bug in `lib/python_bridge.py` (passing `count` as `limit`).
+        - **`zlibrary` Library Layer** (`zlibrary/src/test.py`):
+            - Reviewed `AsyncZlib.full_text_search` tests. Existing test `test_full_text_search_url_construction` (specifically Case 16) adequately covers `yearFrom` and `yearTo` inclusion in the URL payload. No new tests added.
+- **Conclusion**: Fix for FTS_YEAR_FILTER_NOT_APPLIED_01 did not introduce regressions. Unit test coverage for `yearFrom`/`toYear` in `full_text_search` enhanced across Node.js and Python bridge layers. All tests pass.
+- **Related Entries**: [ActiveContext 2025-05-07 13:29:00], [TDD Test Execution Results 2025-05-07 13:29:00], [TDD Cycle Log FTS Year Filter Coverage - [2025-05-07 13:29:00]]
+---
+---
+### Progress - [2025-05-07 13:03:00]
+- **Regression Test Cycle (Post-PDR_PDF_DOCUMENT_CLOSED_ERROR_01 Fix)**:
+    - Executed Python unit tests (`./venv/bin/python3 -m pytest __tests__/python/test_rag_processing.py __tests__/python/test_python_bridge.py zlibrary/src/test_scrapers.py zlibrary/src/test.py`). Result: FAIL (1 failed, 70 passed, 5 xfailed, 1 xpassed, 12 warnings).
+        - Failure: `zlibrary/src/test.py::test_download_book_functionality` - `AttributeError: __aenter__` in `zlibrary/src/zlibrary/libasync.py:457`. This is a regression of DBTF_AIOFILES_AENTER_ERROR_01.
+    - Executed full MCP application test suite (`npm test`). Result: PASS (4 test suites, 58 tests passed).
+    - Conclusion: A regression (DBTF_AIOFILES_AENTER_ERROR_01) was detected in the Python unit tests. The fix for PDR_PDF_DOCUMENT_CLOSED_ERROR_01 appears to have reintroduced or conflicted with the fix for the `aiofiles.open` issue.
+- **Related Entries**: [ActiveContext 2025-05-07 13:03:00], [TDD Test Execution Results 2025-05-07 13:03:00], [GlobalContext Progress 2025-05-07 13:01:00 for PDR_PDF_DOCUMENT_CLOSED_ERROR_01 fix details], [GlobalContext Progress 2025-05-07 12:48:07 for DBTF_AIOFILES_AENTER_ERROR_01 fix details]
+---
+---
+### Progress - [2025-05-07 13:01:00]
+- **PDR_PDF_DOCUMENT_CLOSED_ERROR_01 Fix**:
+    - Modified `lib/rag_processing.py` in the `process_pdf` function.
+    - Added robust `fitz.open()` handling: immediately after `fitz.open()`, a benign operation (`doc.is_closed`) is performed in a `try-except` block. If `ValueError` ("document closed") occurs, a `RuntimeError` is raised indicating the PDF was unusable on open.
+    - Enhanced `doc.close()` logic in the `finally` block: added checks for `doc is not None`, `hasattr(doc, 'is_closed')`, and `hasattr(doc, 'close')` before attempting `if not doc.is_closed: doc.close()`. Errors during this final close are suppressed.
+    - The `doc.close()` call within the main `try` block was already robustly handled.
+- **Verification**:
+    - Manual test of `process_document_for_rag` with `__tests__/python/fixtures/rag_robustness/poor_extraction_mock.pdf` was successful; the "document closed" error did not occur.
+    - `npm run build` completed successfully.
+    - `npm test` (58 tests) passed, indicating no regressions.
+- **Related Entries**: [ActiveContext 2025-05-07 13:01:00], [See Code MB PDR_PDF_DOCUMENT_CLOSED_ERROR_01 Fix - [2025-05-07 13:01:00]]
+---
+---
+### Progress - [2025-05-07 12:48:07]
+- **Regression Test Cycle (Post-DBTF_AIOFILES_AENTER_ERROR_01 Fix)**:
+    - Executed Python unit tests (`./venv/bin/python3 -m pytest`). Result: PASS (84 passed, 5 xfailed, 1 xpassed, 7 warnings). No new failures.
+    - Executed full MCP application test suite (`npm test`). Result: PASS (4 test suites, 58 tests passed). No new failures.
+    - Conclusion: The fix for DBTF_AIOFILES_AENTER_ERROR_01 in `zlibrary/src/zlibrary/libasync.py` did not introduce any regressions detected by the existing automated test suites.
+- **Related Entries**: [ActiveContext 2025-05-07 12:48:07], [TDD Test Execution Results 2025-05-07 12:48:07], [Debug Issue DBTF_AIOFILES_AENTER_ERROR_01], [GlobalContext Pattern: Incorrect `await` with Async Context Manager Factory - [2025-05-07 12:44:17]]
+---
+---
+### Progress - [2025-05-07 12:38:21]
+- **E2E Test Cycle for V1 Candidate (Phase 1, Task 7)**:
+    - Initiated comprehensive E2E testing of Z-Library MCP tools.
+    - **`search_books` Tool**:
+        - Language filter: PASS (SB_E2E_RETEST_LANG_01) - Previously failing SB_TC005/SB_TC007 resolved.
+        - Extension filter: PASS (SB_E2E_RETEST_EXT_01) - Consistent with previous pass SB_TC006.
+        - Year filter: PASS (SB_E2E_RETEST_YEAR_01) - Consistent with previous pass SB_TC004 and MB ActiveContext [2025-05-07 05:48:00].
+    - **`full_text_search` Tool**:
+        - Language filter: PASS (FTS_E2E_RETEST_LANG_01) - Previously failing FTS_TC004 resolved.
+        - Extension filter: PASS (FTS_E2E_RETEST_EXT_01) - Previously failing FTS_TC005 resolved.
+        - Year filter: FAIL (FTS_YEAR_FILTER_NOT_APPLIED_01) - Parameters not included in `retrieved_from_url`, results incorrect. New bug.
+        - No-result behavior: FAIL (FTS_E2E_RETEST_NORESULT_01) - Returned unexpected books, consistent with FTS_TC006.
+        - Single-word phrase with `words:true`: PASS (FTS_E2E_RETEST_SINGLEWORD_01) - Previously failing FTS_TC009 resolved (fix noted in MB ActiveContext [2025-05-06 17:10:34]).
+    - **`download_book_to_file` Tool**:
+        - Stability re-test (DBTF_E2E_RETEST_STABILITY_01): PASS (FIXED) - `AttributeError: __aenter__` (DBTF_AIOFILES_AENTER_ERROR_01) in `aiofiles.open` within `libasync.py` resolved by removing incorrect `await`. Original `TypeError` (DBTF-BUG-001) did not occur. `FileExistsError` (DBTF-BUG-002) not encountered as `./downloads` was empty. [See Debug Issue DBTF_AIOFILES_AENTER_ERROR_01]
+        - Dependent tests (Enhanced Filenames, RAG processing option) blocked.
+    - **`get_metadata` Tool**:
+        - Valid URL: PARTIAL (GM_E2E_VALID_URL_01) - `authors` and `isbn_list` empty (GM_MISSING_AUTHORS_ISBN_01).
+        - Invalid URL: PASS (GM_E2E_INVALID_URL_01) - Correctly identified 404, though Python bridge parsing of error message failed.
+    - **`process_document_for_rag` Tool**:
+        - PDF to Text: FAIL (PDR_E2E_PDF_TEXT_01) - `ValueError: document closed` from `pymupdf` (PDR_PDF_DOCUMENT_CLOSED_ERROR_01).
+        - EPUB to Markdown: PASS (PDR_E2E_EPUB_MD_01) - Tool executed, produced output.
+        - TXT to Text: PASS (PDR_E2E_TXT_TEXT_01) - Tool executed, produced output.
+- **Related Entries**: [ActiveContext 2025-05-07 12:38:21], [`docs/project-plan-zlibrary-mcp.md:303-327`](docs/project-plan-zlibrary-mcp.md:303-327)
+---
+---
+### Pattern: Incorrect `await` with Async Context Manager Factory - [2025-05-07 12:44:17]
+- **Context**: Using libraries that provide asynchronous context managers, like `aiofiles`.
+- **Problem**: Incorrectly using `await` on the function that *returns* an async context manager (e.g., `await aiofiles.open(...)`) instead of letting `async with` handle the context manager's `__aenter__` and `__aexit__`. This leads to `AttributeError: __aenter__` because the awaited result (if the function is not a coroutine itself) is not the context manager object.
+- **Solution**: Ensure `await` is not used directly on functions like `aiofiles.open()` when they are intended to be used with `async with`. The correct pattern is `async with aiofiles.open(...) as f:`.
+- **Impact**: Prevents `AttributeError` and ensures correct asynchronous file operations.
+- **Related Files**: [`zlibrary/src/zlibrary/libasync.py:457`](zlibrary/src/zlibrary/libasync.py:457)
+- **Related Issues**: DBTF_AIOFILES_AENTER_ERROR_01
+---
+---
+### Progress - [2025-05-07 12:25:17]
+- **`get_recent_books` Tool Deprecation (Task 6)**:
+    - Removed `GetRecentBooksParamsSchema` and the `get_recent_books` tool definition from `toolRegistry` in `src/index.ts`.
+    - Verified that no `getRecentBooks` function existed in `src/lib/zlibrary-api.ts`.
+    - Verified that no `get_recent_books` function existed in `lib/python_bridge.py`.
+    - Verified that no `AsyncZlib.get_recent_books` method or specific parsing logic existed in `zlibrary/src/zlibrary/libasync.py` or `zlibrary/src/zlibrary/abs.py`.
+    - Verified that no associated tests existed in `__tests__/index.test.js`, `__tests__/zlibrary-api.test.js`, `__tests__/python/test_python_bridge.py`, or `zlibrary/src/test.py`.
+    - Confirmed project builds successfully (`npm run build`) and Python tests pass (`pytest __tests__/python/test_python_bridge.py` and `pytest zlibrary/src/test.py`).
+- **Regression Testing**: Full MCP application test suite (`npm test`) executed. Result: PASS (4 test suites, 58 tests passed). No regressions detected.
+- **Related Entries**: [ActiveContext 2025-05-07 12:24:49], [`docs/project-plan-zlibrary-mcp.md:273-299`](docs/project-plan-zlibrary-mcp.md:273-299)
+---
+---
+### Progress - [2025-05-07 12:19:09]
+- **Version Control Strategy Documentation (Task 5)**:
+    - Created `CONTRIBUTING.md` file.
+    - Documented the project's version control strategy, including:
+        - Branching Model: `master` (stable), `development` (integration), feature branches (e.g., `feature/task-name`).
+        - Commit Message Conventions: Conventional Commits (`feat:`, `fix:`, `docs:`, etc.).
+        - Memory Bank & Commits: Option A - Separate commits for code and MB updates (`chore(memory): ...`).
+        - Pull Requests: Required for merging to `development` and `master`, with review expectation.
+- **Related Entries**: [ActiveContext 2025-05-07 12:19:09], [`docs/project-plan-zlibrary-mcp.md:241-269`](docs/project-plan-zlibrary-mcp.md:241-269), [`CONTRIBUTING.md`](CONTRIBUTING.md)
+---
+### Pattern: Gitflow-Inspired Version Control - [2025-05-07 12:19:09]
+- **Context**: Establishing a clear and consistent version control process for collaborative development and stable releases.
+- **Problem**: Lack of a defined branching model and commit conventions can lead to disorganized history, difficult integration, and unstable releases.
+- **Solution**: Adopted a Gitflow-inspired branching model with Conventional Commits.
+    - **Branches**:
+        - `master`: Stable, releasable code. Merged from `development` via PRs.
+        - `development`: Integration branch for features. New features branched from here. Merged from feature branches via PRs.
+        - Feature Branches (`feature/<task-name>`, `fix/<issue-id>`): For isolated development, branched from `development`.
+    - **Commits**: Conventional Commits standard enforced (e.g., `feat:`, `fix:`, `docs:`, `chore(memory):`).
+    - **Memory Bank Commits**: Handled as separate `chore(memory): ...` commits after the related code commit.
+    - **Pull Requests**: Mandatory for merging into `development` and `master`, with review.
+- **Impact**: Improved code stability, clearer project history, easier collaboration, and potential for automated changelog generation.
+- **Related Files**: [`CONTRIBUTING.md`](CONTRIBUTING.md)
+- **Related Specification**: [`docs/project-plan-zlibrary-mcp.md:241-269`](docs/project-plan-zlibrary-mcp.md:241-269)
+---
+---
+### Progress - [2025-05-07 11:25:00]
+- **`get_metadata` Tool TDD Unit Tests (Task 4)**:
+    - Created Python unit tests for `scrape_metadata` in `zlibrary/src/test_scrapers.py`. Tests cover complete extraction, missing optional fields, and specific format parsing using mocked HTML. All Python tests pass.
+    - Created Node.js unit tests for Zod schemas (`GetMetadataParamsSchema`, `BookMetadataOutputSchema`) in `__tests__/index.test.js`. Tests cover valid/invalid inputs and outputs, including optional fields and type checking. All Node.js schema tests pass.
+    - Minimal implementation of `scrape_metadata` in `zlibrary/src/zlibrary/scrapers.py` and `BookMetadataOutputSchema` in `src/index.ts` was done to make tests pass.
+- **Related Entries**: [ActiveContext 2025-05-07 11:25:00], [`docs/project-plan-zlibrary-mcp.md:228-230`](docs/project-plan-zlibrary-mcp.md:228-230), [`docs/get-book-metadata-spec.md`](docs/get-book-metadata-spec.md)
+---
+### Progress - [2025-05-07 08:53:53]
+- **`get_metadata` Tool Implementation (Task 4)**:
+    - Created Python scraping function `scrape_metadata` in `zlibrary/src/zlibrary/scrapers.py` using selectors from `docs/get-book-metadata-spec.md`.
+    - Added Python bridge function `get_metadata` in `lib/python_bridge.py` to call the scraper.
+    - Implemented Node.js API function `getMetadata` in `src/lib/zlibrary-api.ts` with `BookMetadataOutputFromPython` type.
+    - Defined `get_metadata` MCP tool in `src/index.ts` with Zod input schema `z.object({ url: z.string().url() })` and comprehensive Zod output schema `BookMetadataOutputSchema` for 17 fields.
+- **Related Entries**: [ActiveContext 2025-05-07 08:53:53], [`docs/project-plan-zlibrary-mcp.md:166-237`](docs/project-plan-zlibrary-mcp.md:166-237), [`docs/get-book-metadata-spec.md`](docs/get-book-metadata-spec.md)
+---
 ### Progress - [2025-05-07 08:02:31]
 - **`get_book_metadata` Tool Specification (Task 4)**:
     - Defined the detailed specification for the `get_book_metadata` tool, which scrapes metadata from Z-Library book pages.

@@ -131,6 +131,31 @@ interface ProcessDocumentForRagArgs {
     outputFormat?: string;
 }
 
+interface GetMetadataArgs {
+    url: string;
+}
+
+// This type should mirror the Python dictionary structure returned by scrape_metadata
+export interface BookMetadataOutputFromPython {
+    title: string | null;
+    authors: string[] | null;
+    publisher: string | null;
+    publication_year: number | null;
+    isbn: string | null;
+    doi: string | null;
+    series: string | null;
+    language: string | null;
+    pages: number | null;
+    filesize: string | null;
+    description: string | null;
+    cover_image_url: string | null;
+    tags: string[] | null;
+    most_frequent_terms: string[] | null;
+    related_booklist_urls: string[] | null;
+    you_may_be_interested_in_urls: string[] | null;
+    source_url: string; // This is mandatory
+}
+
 
 /**
  * Search for books in Z-Library
@@ -175,6 +200,8 @@ export async function fullTextSearch({
   exact = false,
   phrase = true,
   words = false,
+  fromYear,
+  toYear,
   languages = [],
   extensions = [],
   content_types = [],
@@ -187,6 +214,8 @@ export async function fullTextSearch({
     exact: exact,
     phrase: phrase,
     words: words,
+    from_year: fromYear, // Python conventional name
+    to_year: toYear,     // Python conventional name
     languages: languages,
     extensions: extensions,
     content_types: content_types,
@@ -302,6 +331,31 @@ export async function downloadBookToFile({
     // Re-throw errors from callPythonFunction or validation checks
     throw new Error(`Failed to download book: ${error.message || 'Unknown error'}`);
   }
+}
+
+/**
+ * Get metadata for a given book URL
+ */
+export async function getMetadata({ url }: GetMetadataArgs): Promise<BookMetadataOutputFromPython> {
+  if (!url) {
+    throw new Error("Missing required argument: url");
+  }
+  const pythonArgs = { url };
+  const logArgs = `[${new Date().toISOString()}] Node.js getMetadata: Sending to callPythonFunction: ${JSON.stringify(pythonArgs)}\n`;
+  console.log(logArgs.trim());
+  try {
+    const logFilePath = path.resolve(__dirname, '..', '..', 'logs', 'nodejs_debug.log');
+    await mkdirAsyncFS(path.dirname(logFilePath), { recursive: true });
+    await appendFileAsyncFS(logFilePath, logArgs);
+  } catch (e) { console.error('Failed to write to logs/nodejs_debug.log', e); }
+  
+  const result = await callPythonFunction('get_metadata', pythonArgs);
+
+  // Basic validation, Zod schema in index.ts will do more thorough validation
+  if (!result || typeof result.source_url !== 'string') {
+    throw new Error('Invalid metadata structure received from Python bridge.');
+  }
+  return result as BookMetadataOutputFromPython;
 }
 
 // Removed unused downloadFile helper function

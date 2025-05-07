@@ -23,8 +23,14 @@ from urllib.parse import urljoin
 
 # Import the new RAG processing functions
 from lib import rag_processing
+from zlibrary.scrapers import scrape_metadata # Added import
 # Global zlibrary client
 zlib_client = None
+logger = logging.getLogger('zlibrary') # Get the 'zlibrary' logger instance
+
+MAX_COMPONENT_LENGTH = 50 # Max length for sanitized filename components
+MAX_COMPONENT_LENGTH = 50 # Max length for sanitized filename components
+MAX_FILENAME_LENGTH_BASE = 200 # Max length for the base filename (author_title_id)
 logger = logging.getLogger('zlibrary') # Get the 'zlibrary' logger instance
 
 # Custom Internal Exceptions
@@ -51,27 +57,31 @@ DEFAULT_HEADERS = {
 DEFAULT_SEARCH_TIMEOUT = 20
 DEFAULT_DETAIL_TIMEOUT = 15
 
-def _sanitize_component(text: str, max_length: int, is_title: bool = False) -> str:
+def _sanitize_component(text: str, is_title: bool = False) -> str: # Removed max_length parameter
     """Sanitizes a filename component."""
     if not text:
         return ""
     
-    # Remove problematic characters
-    # / \ ? % * : | " < > . , ; =
-    sanitized = re.sub(r'[\\/\?%\*:\ attentes|"<>.,;=]', '', text)
-    
-    if is_title:
-        # Replace spaces with underscores for title
-        sanitized = sanitized.replace(' ', '_')
-    
-    # Replace multiple consecutive underscores/spaces with a single underscore
-    sanitized = re.sub(r'[_ ]+', '_', sanitized)
-    
-    # Strip leading/trailing whitespace and underscores
+    # Initial sanitization of always-removed characters
+    sanitized = re.sub(r"[\\/\?%\*:'\"<>\|]", '', text) # Added apostrophe
+
+    if is_title == True: # Explicit check
+        # For titles: convert spaces, dots, commas, semicolons, equals, ampersands to underscores
+        processed_text = re.sub(r'[ \.,;&=&]+', '_', sanitized)
+        processed_text = re.sub(r'_+', '_', processed_text) # Consolidate underscores
+        sanitized = processed_text
+    elif is_title == False: # Explicit check
+        # For non-titles: remove spaces, dots, commas, semicolons, equals, ampersands, and all underscores
+        processed_text = re.sub(r'[ \.,;&=&_]+', '', sanitized)
+        sanitized = processed_text
+            
+    # Truncate first
+    sanitized = sanitized[:MAX_COMPONENT_LENGTH]
+
+    # Final strip of any leading/trailing underscores OR spaces from the truncated string
     sanitized = sanitized.strip('_ ')
     
-    # Truncate
-    return sanitized[:max_length]
+    return sanitized
 
 def _create_enhanced_filename(book_details: dict) -> str:
     """
@@ -81,22 +91,28 @@ def _create_enhanced_filename(book_details: dict) -> str:
     author_str = "UnknownAuthor"
     raw_author = book_details.get('author', '')
     if raw_author:
-        first_author = raw_author.split(',')[0].strip()
-        if first_author:
-            name_parts = first_author.split()
+        parts = [p.strip() for p in raw_author.split(',')]
+        if len(parts) > 1: # Likely "Last, First Middle"
+            lastname = parts[0]
+            first_middle_parts = parts[1].split()
+            firstnames = "".join([name.capitalize() for name in first_middle_parts])
+            author_str = f"{lastname.capitalize()}{firstnames}"
+        else: # Likely "First Middle Last" or "SingleName"
+            name_parts = raw_author.split()
             if len(name_parts) == 1:
-                # Single word author name (e.g., "Plato")
                 author_str = name_parts[0].capitalize()
             elif len(name_parts) > 1:
                 lastname = name_parts[-1].capitalize()
                 firstnames = "".join([name.capitalize() for name in name_parts[:-1]])
                 author_str = f"{lastname}{firstnames}"
+            else: # Empty string after strip
+                author_str = "UnknownAuthor" # Fallback if name_parts is empty
     
-    formatted_author = _sanitize_component(author_str, 50)
+    formatted_author = _sanitize_component(author_str) # default is_title=False
 
     raw_title = book_details.get('title') or book_details.get('name') # 'name' is often used for title
     title_str = raw_title if raw_title else "UntitledBook"
-    formatted_title = _sanitize_component(title_str, 100, is_title=True)
+    formatted_title = _sanitize_component(title_str, is_title=True) # Removed max_length
 
     book_id_str = str(book_details.get('id', "UnknownID"))
     # No real sanitization needed for ID other than ensuring it's a string,
@@ -110,8 +126,8 @@ def _create_enhanced_filename(book_details: dict) -> str:
 
     base_filename = f"{formatted_author}_{formatted_title}_{formatted_book_id}"
     
-    # Truncate entire base filename (before extension) to a max of 200 characters
-    if len(base_filename) > 200:
+    # Truncate entire base filename (before extension) to a max of MAX_FILENAME_LENGTH_BASE characters
+    if len(base_filename) > MAX_FILENAME_LENGTH_BASE:
         # Try to preserve BookID and some author/title
         # A simple truncation might cut off critical parts.
         # This strategy attempts to keep BookID intact and as much of title/author as possible.
@@ -210,7 +226,7 @@ async def search(query, exact=False, from_year=None, to_year=None, languages=Non
         "books": book_results
     }
 
-async def full_text_search(query, exact=False, phrase=True, words=False, languages=None, extensions=None, content_types=None, count=10):
+async def full_text_search(query, exact=False, phrase=True, words=False, from_year=None, to_year=None, languages=None, extensions=None, content_types=None, count=10):
     """Search for text within book contents"""
     if not zlib_client:
         await initialize_client()
@@ -219,12 +235,14 @@ async def full_text_search(query, exact=False, phrase=True, words=False, languag
     exts = _parse_enums(extensions, Extension)
 
     # Execute the search
-    logger.info(f"python_bridge.full_text_search: Calling zlib_client.full_text_search with query='{query}', exact={exact}, phrase={phrase}, words={words}, lang={langs}, extensions={exts}, content_types={content_types}, count={count}")
+    logger.info(f"python_bridge.full_text_search: Calling zlib_client.full_text_search with query='{query}', exact={exact}, phrase={phrase}, words={words}, from_year={from_year}, to_year={to_year}, lang={langs}, extensions={exts}, content_types={content_types}, count={count}")
     paginator, constructed_url = await zlib_client.full_text_search( # Unpack tuple
         q=query,
         exact=exact,
         phrase=phrase,
         words=words,
+        from_year=from_year,
+        to_year=to_year,
         lang=langs,
         extensions=exts,
         content_types=content_types, # Pass content_types
@@ -359,6 +377,7 @@ async def download_book(book_details: dict, output_dir: str, process_for_rag: bo
              _, ext_from_path = os.path.splitext(original_download_path_str)
              book_details['extension'] = ext_from_path.lstrip('.')
 
+        logger.debug(f"Book details for filename generation: authors='{book_details.get('authors')}', title='{book_details.get('title')}'")
         enhanced_filename = _create_enhanced_filename(book_details)
         final_file_path = Path(output_dir) / enhanced_filename
         final_file_path_str = str(final_file_path)
@@ -390,6 +409,23 @@ async def download_book(book_details: dict, output_dir: str, process_for_rag: bo
     except Exception as e:
         logger.exception(f"Error in download_book for book ID {book_details.get('id')}, URL {book_page_url}")
         raise e
+
+async def get_metadata(url: str):
+    """Scrapes metadata from a Z-Library book page URL."""
+    if not zlib_client:
+        await initialize_client()
+    
+    # The scrape_metadata function expects an httpx.AsyncClient session.
+    # We can either pass the global zlib_client._r (which is essentially a GET_request wrapper)
+    # or create a new session here. For simplicity and to align with how other zlib_client methods work,
+    # we'll use a new session. This also avoids potential issues if zlib_client.cookies or proxy_list
+    # are not what scrape_metadata expects for a direct page fetch.
+    async with httpx.AsyncClient(
+        proxies=zlib_client.proxy_list[0] if zlib_client.proxy_list else None,
+        cookies=zlib_client.cookies,
+        timeout=DEFAULT_DETAIL_TIMEOUT # Use a reasonable timeout
+    ) as session:
+        return await scrape_metadata(url, session)
 
 # --- Main Execution Block ---
 import argparse # Moved import here
@@ -455,6 +491,8 @@ async def main():
              if 'file_path' in args_dict:
                  args_dict['file_path_str'] = args_dict.pop('file_path')
              result = await process_document(**args_dict)
+        elif function_name == 'get_metadata':
+            result = await get_metadata(**args_dict)
         else:
             raise ValueError(f"Unknown function: {function_name}")
 

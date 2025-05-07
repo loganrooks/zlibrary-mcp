@@ -85,6 +85,15 @@ class SearchPaginator:
             logger.error(f"Raising ParseError: Could not parse book list (content_area not valid Tag and not a direct book page) for URL: {self.__url}")
             raise ParseError(f"Could not parse book list (content_area not valid Tag) for URL: {self.__url}")
 
+        # Check for "close matches" banner
+        # Example text: "The books listed below don't fit your search query exactly but very close to it."
+        close_match_banner_text = "don't fit your search query exactly but very close to it"
+        if content_area.find(text=re.compile(close_match_banner_text, re.IGNORECASE)):
+            logger.info("Detected 'close matches' banner. Treating as no results.")
+            self.storage[self.page] = []
+            self.result = []
+            return
+
         check_notfound = content_area.find("div", {"class": "notFound"})
         if check_notfound:
             logger.debug("Standard search page returned 'notFound'.")

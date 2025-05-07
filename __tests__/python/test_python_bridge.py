@@ -11,7 +11,7 @@ import httpx
 import aiofiles
 from pathlib import Path
 from zlibrary.exception import DownloadError, ParseError # Added ParseError
-from zlibrary import Extension # Import Extension enum
+from zlibrary import Extension, Language # Import Extension and Language enum
 # Add lib directory to sys.path explicitly
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'lib')))
 
@@ -264,6 +264,71 @@ def mock_save_text(mocker):
     assert book_details == MOCK_BOOK_RESULT
 
 @pytest.mark.asyncio
+async def test_full_text_search_bridge_handles_year_filters(mock_zlibrary_client, mocker):
+    """Tests that the full_text_search bridge function correctly passes year filters."""
+    # Mock zlib_client.full_text_search to return a tuple (paginator_mock, url_mock)
+    paginator_mock = AsyncMock()
+    # paginator_mock.next is already an AsyncMock, so it's awaitable.
+    # The line `await paginator_mock.next.return_value` was incorrect and caused a TypeError.
+    # We can set its return_value if needed, e.g., paginator_mock.next.return_value = []
+    mock_zlibrary_client.full_text_search = AsyncMock(return_value=(paginator_mock, "http://mockurl.com"))
+
+    args_dict = {
+            "query": "history",
+            "from_year": 2000,
+            "to_year": 2020,
+            "languages": ["english"],
+            "extensions": ["pdf"],
+            "content_types": ["book"],
+            "exact": False,
+            "phrase": True,
+            "words": False,
+            "count": 5
+        }
+    
+    await python_bridge.full_text_search(**args_dict) # Unpack args_dict
+    
+    mock_zlibrary_client.full_text_search.assert_called_once_with(
+            q="history",
+            exact=False,
+            phrase=True,
+            words=False,
+            from_year=2000, # Corrected: from_year
+            to_year=2020,   # Corrected: to_year
+            lang=[Language.ENGLISH], # Corrected: lang and enum
+            extensions=[Extension.PDF], # Corrected: extensions and enum
+            content_types=["book"],
+            count=5 # Corrected: limit to count
+        )
+
+# Parametrized test for _sanitize_component
+@pytest.mark.parametrize("test_input, is_title, expected_output", [
+    ("Art & War", True, "Art_War"),
+    ("Art & War", False, "ArtWar"),
+    ("UnknownAuthor", False, "UnknownAuthor"),
+    ("UnknownAuthor", True, "UnknownAuthor"),
+    ("A /\\?%*:|\"<>.,;= B", True, "A_B"),
+    ("A /\\?%*:|\"<>.,;= B", False, "AB"),
+    ("  Multiple   Spaces  ", True, "Multiple_Spaces"),
+    ("  Multiple   Spaces  ", False, "MultipleSpaces"),
+    (" LeadingSpaces", True, "LeadingSpaces"),
+    ("TrailingSpaces ", False, "TrailingSpaces"),
+    ("Dot.At.End.", True, "Dot_At_End"), # Adjusted expectation
+    ("Dot.At.End.", False, "DotAtEnd"),
+    (None, True, ""),
+    (None, False, ""),
+    ("", True, ""),
+    ("", False, ""),
+    ("Okay", True, "Okay"),
+    ("Okay", False, "Okay"),
+    ("With-Hyphen", True, "With-Hyphen"), # Hyphens are not in the removal list
+    ("With-Hyphen", False, "With-Hyphen"),
+])
+def test_sanitize_component_various_inputs(test_input, is_title, expected_output):
+    """Tests the _sanitize_component function with various inputs."""
+    assert python_bridge._sanitize_component(test_input, is_title) == expected_output
+
+@pytest.mark.asyncio
 async def test_download_book_bridge_success(mock_zlibrary_client, tmp_path, mocker):
     """Tests the python_bridge.download_book function for successful execution."""
     book_details_mock = {"id": "987", "extension": "pdf", "name": "Bridge Test Book", "author": "Test Author", "url": "https://example.com/book/987/bridge-test-book"}
@@ -308,6 +373,31 @@ async def test_download_book_bridge_success(mock_zlibrary_client, tmp_path, mock
     assert "file_path" in result_dict
     assert result_dict["file_path"] == expected_final_path # Assert the final renamed path
     assert result_dict.get("processed_file_path") is None
+
+# Tests for _create_enhanced_filename
+@pytest.mark.parametrize("book_details_input, expected_filename", [
+    ({"author": "Doe, John", "title": "My Book", "id": "123", "extension": "epub"}, "DoeJohn_My_Book_123.epub"),
+    ({"author": "Smith, Jane Ann", "title": "Another Title", "id": "456", "extension": "pdf"}, "SmithJaneAnn_Another_Title_456.pdf"),
+    ({"title": "Only Title", "id": "789", "extension": "txt"}, "UnknownAuthor_Only_Title_789.txt"), # Missing author
+    ({"author": "Just Author", "id": "101", "extension": "mobi"}, "AuthorJust_UntitledBook_101.mobi"), # Missing title
+    ({"id": "112", "extension": "azw3"}, "UnknownAuthor_UntitledBook_112.azw3"), # Missing author and title
+    ({"author": "O'Malley, Grace", "title": "A Pirate's Life & Times", "id": "223", "extension": "epub"}, "OmalleyGrace_A_Pirates_Life_Times_223.epub"), # Special chars, corrected expectation
+    ({"author": "  Leading Author  ", "title": "  Padded Title  ", "id": "334", "extension": "pdf"}, "AuthorLeading_Padded_Title_334.pdf"), # Leading/trailing spaces in details
+    ({"author": "", "title": "", "id": "445", "extension": "epub"}, "UnknownAuthor_UntitledBook_445.epub"), # Empty author/title
+    ({"author": "Author", "title": "Title.With.Dots", "id": "556", "extension": "pdf"}, "Author_Title_With_Dots_556.pdf"), # Title with dots
+    ({"author": "Author", "title": "A Very Long Title That Will Exceed The Max Length And Should Be Truncated Gracefully", "id": "667", "extension": "epub"}, "Author_A_Very_Long_Title_That_Will_Exceed_The_Max_Length_667.epub"), # Corrected for component truncation
+    ({"author": "Single", "title": "Book", "id": "778", "extension": "pdf"}, "Single_Book_778.pdf"), # Single name author
+    ({"author": "Complex, Name, Jr.", "title": "Multi-Part Author", "id": "889", "extension": "epub"}, "ComplexName_Multi-Part_Author_889.epub"), # Multi-part author name
+])
+def test_create_enhanced_filename_various_inputs(book_details_input, expected_filename, mocker):
+    # Ensure MAX_COMPONENT_LENGTH is what _create_enhanced_filename expects for its internal _sanitize_component calls
+    mocker.patch('python_bridge.MAX_COMPONENT_LENGTH', 50) # Default used in _sanitize_component tests
+    # MAX_FILENAME_LENGTH_BASE is used by _create_enhanced_filename for overall base name truncation
+    # We are not specifically testing that truncation here, but relying on the default MAX_FILENAME_LENGTH_BASE=200
+    # The "long title" test case above does not actually exceed this 200 char base limit.
+
+    actual_filename = python_bridge._create_enhanced_filename(book_details_input)
+    assert actual_filename == expected_filename
 
 @pytest.mark.asyncio
 async def test_download_book_bridge_returns_processed_path_if_rag_true(mock_zlibrary_client, tmp_path, mocker):

@@ -358,6 +358,120 @@ describe('Tool Handlers (Direct)', () => {
         // expect(outputSchema.shape.processed_file_path._def.typeName).toBe(z.ZodNullable.name); // Check it's nullable
         // expect(outputSchema.shape.processed_file_path.unwrap()._def.typeName).toBe(z.ZodString.name); // Check underlying type is string
       });
+
+      describe('FullTextSearchParamsSchema', () => {
+        const schema = toolRegistry.full_text_search.schema;
+
+        test('should validate with valid fromYear and toYear', () => {
+          expect(schema.safeParse({ query: 'test', fromYear: 2000, toYear: 2020 }).success).toBe(true);
+        });
+
+        test('should validate with optional fromYear and toYear missing', () => {
+          expect(schema.safeParse({ query: 'test' }).success).toBe(true);
+        });
+
+        test('should invalidate with non-integer fromYear', () => {
+          expect(schema.safeParse({ query: 'test', fromYear: 2000.5 }).success).toBe(false);
+        });
+
+        test('should invalidate with non-integer toYear', () => {
+          expect(schema.safeParse({ query: 'test', toYear: '2020' }).success).toBe(false);
+        });
+      });
+ 
+      describe('get_metadata Schemas', () => {
+        const GetMetadataParamsSchema = toolRegistry.get_metadata.schema;
+        const BookMetadataOutputSchema = toolRegistry.get_metadata.outputSchema;
+
+        test('GetMetadataParamsSchema should validate URL correctly', () => {
+          expect(GetMetadataParamsSchema.safeParse({ url: 'http://example.com' }).success).toBe(true);
+          expect(GetMetadataParamsSchema.safeParse({ url: 'https://example.com/book/123' }).success).toBe(true);
+          expect(GetMetadataParamsSchema.safeParse({ url: 'invalid-url' }).success).toBe(false);
+          expect(GetMetadataParamsSchema.safeParse({}).success).toBe(false); // Missing URL
+          expect(GetMetadataParamsSchema.safeParse({ url: 123 }).success).toBe(false); // Invalid type
+        });
+
+        test('BookMetadataOutputSchema should validate a complete and valid output', () => {
+          const validInput = {
+            title: "Test Book",
+            authors: ["Author A", "Author B"],
+            series_name: "Test Series",
+            series_url: "http://example.com/series/1",
+            publisher: "Test Publisher",
+            publication_year: 2021,
+            language: "English",
+            isbn_list: ["978-1234567890"],
+            categories: ["Fiction", "Sci-Fi"],
+            description: "A test description.",
+            cover_image_url: "http://example.com/cover.jpg",
+            pages_count: 300,
+            filesize_str: "1.2 MB",
+            doi: "10.1000/xyz123",
+            booklists_urls: ["http://example.com/list/1"],
+            you_may_be_interested_in_urls: ["http://example.com/related/1"],
+            most_frequent_terms: ["test", "book"],
+            source_url: "http://example.com/book/original"
+          };
+          expect(BookMetadataOutputSchema.safeParse(validInput).success).toBe(true);
+        });
+
+        test('BookMetadataOutputSchema should validate with missing optional fields', () => {
+          const validInputOptionalMissing = {
+            title: "Test Book Minimal",
+            authors: [], // Optional, can be empty
+            series_name: null, // Optional
+            series_url: null, // Optional
+            publisher: null, // Optional
+            publication_year: null, // Optional
+            language: "Unknown", // Optional but string
+            isbn_list: [], // Optional, can be empty
+            categories: [], // Optional, can be empty
+            description: "Minimal desc.", // Required
+            cover_image_url: null, // Optional
+            pages_count: null, // Optional
+            filesize_str: null, // Optional
+            doi: null, // Optional
+            booklists_urls: [], // Optional, can be empty
+            you_may_be_interested_in_urls: [], // Optional, can be empty
+            most_frequent_terms: [], // Optional, can be empty
+            source_url: "http://example.com/book/minimal" // Required
+          };
+          const result = BookMetadataOutputSchema.safeParse(validInputOptionalMissing);
+          expect(result.success).toBe(true);
+        });
+
+        test('BookMetadataOutputSchema should fail with missing required fields', () => {
+          const invalidInput = {
+            // Missing title, description, source_url
+            authors: [],
+          };
+          expect(BookMetadataOutputSchema.safeParse(invalidInput).success).toBe(false);
+        });
+
+        test('BookMetadataOutputSchema should fail with incorrect data types', () => {
+          const invalidTypes = {
+            title: "Test Book",
+            authors: "Not an array", // Incorrect type
+            series_name: "Test Series",
+            series_url: "http://example.com/series/1",
+            publisher: "Test Publisher",
+            publication_year: "2021", // Incorrect type (string instead of number)
+            language: "English",
+            isbn_list: ["978-1234567890"],
+            categories: ["Fiction", "Sci-Fi"],
+            description: "A test description.",
+            cover_image_url: "http://example.com/cover.jpg",
+            pages_count: "300 pages", // Incorrect type
+            filesize_str: "1.2 MB",
+            doi: "10.1000/xyz123",
+            booklists_urls: ["http://example.com/list/1"],
+            you_may_be_interested_in_urls: ["http://example.com/related/1"],
+            most_frequent_terms: ["test", "book"],
+            source_url: "http://example.com/book/original"
+          };
+          expect(BookMetadataOutputSchema.safeParse(invalidTypes).success).toBe(false);
+        });
+      });
     }); // End Tool Schemas describe
 
 

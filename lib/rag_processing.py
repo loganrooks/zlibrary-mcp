@@ -1060,6 +1060,53 @@ def run_ocr_on_pdf(pdf_path: str, lang: str = 'eng') -> str: # Cycle 21 Refactor
 
 # --- File Saving ---
 
+async def process_document(file_path_str: str, output_format: str = "txt", book_details: dict = None) -> dict:
+    """
+    Processes a document (PDF, EPUB, TXT) based on its extension,
+    extracts text, applies preprocessing, saves it, and returns the path.
+    """
+    if book_details is None: # Ensure book_details is a dict for _slugify
+        book_details = {}
+
+    file_path = Path(file_path_str)
+    file_extension = file_path.suffix.lower()
+    processed_text = ""
+
+    logging.info(f"Processing document: {file_path} with format {output_format}")
+
+    try:
+        if file_extension == '.pdf':
+            processed_text = await asyncio.to_thread(process_pdf, file_path, output_format)
+        elif file_extension == '.epub':
+            if not EBOOKLIB_AVAILABLE:
+                raise ImportError("Required library 'ebooklib' is not installed or available for EPUB processing.")
+            processed_text = await asyncio.to_thread(process_epub, file_path, output_format)
+        elif file_extension == '.txt':
+            processed_text = await process_txt(file_path, output_format) # process_txt is already async
+        else:
+            raise ValueError(f"Unsupported file format: {file_extension}")
+
+        if processed_text is None or not processed_text.strip():
+            logging.warning(f"No text extracted from {file_path}")
+            # Return None for path if no content, but keep content list for consistency
+            return {"processed_file_path": None, "content": []}
+
+        # Save the processed text
+        # Pass book_details to save_processed_text for filename generation
+        saved_path = await save_processed_text(
+            original_file_path=file_path,
+            processed_content=processed_text,
+            output_format=output_format, # This should be the format of the processed_text (e.g. 'md' or 'txt')
+            book_details=book_details
+        )
+        # The 'content' key is expected by some client-side logic, even if empty.
+        # For RAG, the primary output is the file path.
+        return {"processed_file_path": str(saved_path), "content": [processed_text]} # Return list for content
+
+    except Exception as e:
+        logging.error(f"Error processing document {file_path}: {e}")
+        # Re-raise as a RuntimeError to be caught by the bridge's main error handler
+        raise RuntimeError(f"Error processing document {file_path}: {e}") from e
 async def save_processed_text(
     original_file_path: str,
     processed_content: str,

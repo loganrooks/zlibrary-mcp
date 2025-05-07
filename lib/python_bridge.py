@@ -161,42 +161,6 @@ async def get_download_limits():
     limits = await zlib_client.profile.get_limits()
     return limits
 
-async def get_recent_books(count=10, format=None):
-    """Get recently added books, optionally filtered by format."""
-    if not zlib_client:
-        await initialize_client()
-
-    # Convert single format string to list of extensions if provided
-    extensions_list = []
-    if format:
-        # Attempt to parse as enum, fallback to string
-        try:
-            extensions_list.append(getattr(Extension, format.upper()))
-        except AttributeError:
-            extensions_list.append(format) # Pass raw string if not an enum
-
-    try:
-        # Use search with empty query and order by newest
-        paginator = await zlib_client.search(
-            q="",
-            order=OrderOptions.NEWEST,
-            count=count,
-            extensions=extensions_list,
-            # Include defaults for other search params
-            exact=False,
-            from_year=None,
-            to_year=None,
-            lang=[]
-        )
-        # Get results from the first page (assuming .next() is needed based on test mock)
-        results = await paginator.next()
-        # If the library changes and results are directly on paginator after search:
-        # results = paginator.results
-        return results
-    except Exception as e:
-        logging.exception(f"Error fetching recent books (count={count}, format={format})")
-        raise e # Re-raise the original error for main handler
-
 # --- Core Bridge Functions ---
 
 async def process_document(
@@ -281,8 +245,11 @@ async def download_book(book_details: dict, output_dir: str, process_for_rag: bo
 
     try:
         # Use the client's download method
+        book_id = book_details.get('id')
+        if not book_id:
+            raise ValueError("Missing 'id' key in bookDetails object for download_book.")
         # downloaded_file_path_str = await _scrape_and_download(book_page_url, output_dir) # Assumes _scrape_and_download exists
-        downloaded_file_path_str = await zlib_client.download_book(book_details, output_dir) # Use client download
+        downloaded_file_path_str = await zlib_client.download_book(book_details=book_details, output_dir_str=output_dir) # Use client download
 
         if process_for_rag and downloaded_file_path_str:
             logging.info(f"Processing downloaded file for RAG: {downloaded_file_path_str}")
@@ -337,8 +304,6 @@ async def main():
             result = await get_download_history(**args_dict)
         elif function_name == 'get_download_limits':
             result = await get_download_limits(**args_dict)
-        elif function_name == 'get_recent_books':
-             result = await get_recent_books(**args_dict)
         elif function_name == 'download_book': # Changed from download_book_to_file
              result = await download_book(**args_dict)
         elif function_name == 'process_document': # Changed from process_document_for_rag

@@ -1,7 +1,9 @@
 import { PythonShell, Options as PythonShellOptions } from 'python-shell';
 import * as path from 'path';
 import { getManagedPythonPath } from './venv-manager.js'; // Import ESM style
-// Removed unused fs, https, http imports
+import { appendFile as appendFileAsyncFS, mkdir as mkdirAsyncFS } from 'fs/promises'; // Import fs/promises for async file operations, aliased
+// Removed unused https, http imports
+// path is already imported on line 2
 import { fileURLToPath } from 'url';
 
 // Recreate __dirname for ESM
@@ -22,6 +24,7 @@ const BRIDGE_SCRIPT_NAME = 'python_bridge.py';
  * @throws {Error} If the Python process fails or returns an error.
  */
 async function callPythonFunction(functionName: string, args: Record<string, any> = {}): Promise<any> { // Changed args type to Record<string, any>
+
   try {
     // Get the python path asynchronously INSIDE the try block
     const venvPythonPath = await getManagedPythonPath();
@@ -96,6 +99,7 @@ interface SearchBooksArgs {
     toYear?: number | null;
     languages?: string[];
     extensions?: string[];
+    content_types?: string[];
     count?: number;
 }
 
@@ -138,14 +142,31 @@ export async function searchBooks({
   toYear = null,
   languages = [],
   extensions = [],
+  content_types = [],
   count = 10
 }: SearchBooksArgs): Promise<any> {
   // Pass arguments as an object matching Python function signature
-  return await callPythonFunction('search', {
-    query, exact, from_year: fromYear, to_year: toYear, languages, extensions, count
-  });
+  // Python bridge main() expects 'language' (singular) and 'content_types'
+  const pythonArgs = {
+    query: query,
+    exact: exact,
+    from_year: fromYear,
+    to_year: toYear,
+    languages: languages,
+    extensions: extensions,
+    content_types: content_types,
+    count: count
+  };
+  // Moved logging to after pythonArgs is defined
+  const searchBooksPythonArgsLog = `[${new Date().toISOString()}] Node.js searchBooks: Sending to callPythonFunction: ${JSON.stringify(pythonArgs)}\n`;
+  console.log(searchBooksPythonArgsLog.trim());
+  try {
+    const logFilePath = path.resolve(__dirname, '..', '..', 'logs', 'nodejs_debug.log');
+    await mkdirAsyncFS(path.dirname(logFilePath), { recursive: true });
+    await appendFileAsyncFS(logFilePath, searchBooksPythonArgsLog);
+  } catch (e) { console.error('Failed to write to logs/nodejs_debug.log', e); }
+  return await callPythonFunction('search', pythonArgs);
 }
-
 /**
  * Perform full text search
  */
@@ -156,12 +177,30 @@ export async function fullTextSearch({
   words = false,
   languages = [],
   extensions = [],
+  content_types = [],
   count = 10
 }: FullTextSearchArgs): Promise<any> {
   // Pass arguments as an object matching Python function signature
-  return await callPythonFunction('full_text_search', {
-    query, exact, phrase, words, languages, extensions, count
-  });
+  // Python bridge main() expects 'language' (singular) and 'content_types'
+  const pythonArgsFTS = {
+    query: query,
+    exact: exact,
+    phrase: phrase,
+    words: words,
+    languages: languages,
+    extensions: extensions,
+    content_types: content_types,
+    count: count
+  };
+  // Moved logging to after pythonArgsFTS is defined
+  const ftsPythonArgsLog = `[${new Date().toISOString()}] Node.js fullTextSearch: Sending to callPythonFunction: ${JSON.stringify(pythonArgsFTS)}\n`;
+  console.log(ftsPythonArgsLog.trim());
+  try {
+    const logFilePath = path.resolve(__dirname, '..', '..', 'logs', 'nodejs_debug.log');
+    await mkdirAsyncFS(path.dirname(logFilePath), { recursive: true });
+    await appendFileAsyncFS(logFilePath, ftsPythonArgsLog);
+  } catch (e) { console.error('Failed to write to logs/nodejs_debug.log', e); }
+  return await callPythonFunction('full_text_search', pythonArgsFTS);
 }
 
 /**

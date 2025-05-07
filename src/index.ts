@@ -3,7 +3,8 @@
 import { z, ZodObject, ZodRawShape } from 'zod';
 import { zodToJsonSchema } from 'zod-to-json-schema'; // Reverted back to named import (correct for types)
 import { ensureVenvReady } from './lib/venv-manager.js'; // Use .js extension
-import * as fs from 'fs';
+import * as fs from 'fs'; // For sync operations if any
+import { appendFile as appendFileAsync, mkdir as mkdirAsync } from 'fs/promises'; // For async file logging
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -43,8 +44,9 @@ const SearchBooksParamsSchema = z.object({
   exact: z.boolean().optional().default(false).describe('Whether to perform an exact match search'),
   fromYear: z.number().int().optional().describe('Filter by minimum publication year'),
   toYear: z.number().int().optional().describe('Filter by maximum publication year'),
-  language: z.array(z.string()).optional().default([]).describe('Filter by languages (e.g., ["english", "russian"])'),
+  languages: z.array(z.string()).optional().default([]).describe('Filter by languages (e.g., ["english", "russian"])'),
   extensions: z.array(z.string()).optional().default([]).describe('Filter by file extensions (e.g., ["pdf", "epub"])'),
+  content_types: z.array(z.string()).optional().default([]).describe('Filter by content types (e.g., ["book", "article"])'),
   count: z.number().int().optional().default(10).describe('Number of results to return per page'),
 });
 
@@ -53,8 +55,9 @@ const FullTextSearchParamsSchema = z.object({
   exact: z.boolean().optional().default(false).describe('Whether to perform an exact match search'),
   phrase: z.boolean().optional().default(true).describe('Whether to search for the exact phrase (requires at least 2 words)'),
   words: z.boolean().optional().default(false).describe('Whether to search for individual words'),
-  language: z.array(z.string()).optional().default([]).describe('Filter by languages (e.g., ["english", "russian"])'),
+  languages: z.array(z.string()).optional().default([]).describe('Filter by languages (e.g., ["english", "russian"])'),
   extensions: z.array(z.string()).optional().default([]).describe('Filter by file extensions (e.g., ["pdf", "epub"])'),
+  content_types: z.array(z.string()).optional().default([]).describe('Filter by content types (e.g., ["book", "article"])'),
   count: z.number().int().optional().default(10).describe('Number of results to return per page'),
 });
 
@@ -93,15 +96,68 @@ type HandlerMap = {
 const handlers: HandlerMap = {
   searchBooks: async (args: z.infer<typeof SearchBooksParamsSchema>) => {
     try {
-      // Return the result directly, tools/call handler will stringify
-      return await zlibraryApi.searchBooks(args);
+      const searchBooksReceivedArgsLog = `[${new Date().toISOString()}] [src/index.ts] searchBooks handler received Zod-parsed args: ${JSON.stringify(args)}\n`;
+      console.log(searchBooksReceivedArgsLog.trim());
+      try {
+        const logFilePath = path.resolve(__dirname, '..', 'logs', 'nodejs_debug.log');
+        await mkdirAsync(path.dirname(logFilePath), { recursive: true });
+        await appendFileAsync(logFilePath, searchBooksReceivedArgsLog);
+      } catch (e) { console.error('Failed to write to logs/nodejs_debug.log', e); }
+      // Explicitly construct the object for zlibraryApi.searchBooks
+      // to ensure keys match what zlibraryApi.searchBooks expects.
+      // Zod schema uses 'language' (singular) and 'content_types' (plural).
+      // zlibraryApi.searchBooks destructures 'language' (singular) and 'content_types' (plural).
+      const apiArgs = {
+        query: args.query,
+        exact: args.exact,
+        fromYear: args.fromYear,
+        toYear: args.toYear,
+        languages: args.languages,
+        extensions: args.extensions,
+        content_types: args.content_types, // content_types is already plural in Zod
+        count: args.count,
+      };
+      const searchBooksSendingLog = `[${new Date().toISOString()}] [src/index.ts] searchBooks handler sending to zlibraryApi: ${JSON.stringify(apiArgs)}\n`;
+      console.log(searchBooksSendingLog.trim());
+      try {
+        // Directory creation already handled above for this function scope
+        const logFilePath = path.resolve(__dirname, '..', 'logs', 'nodejs_debug.log');
+        // Directory creation already handled above for this function scope by the first logging block
+        await appendFileAsync(logFilePath, searchBooksSendingLog);
+      } catch (e) { console.error('Failed to write to logs/nodejs_debug.log', e); }
+      return await zlibraryApi.searchBooks(apiArgs);
     } catch (error: any) { return { error: { message: error.message || 'Failed to search books' } }; }
   },
 
   fullTextSearch: async (args: z.infer<typeof FullTextSearchParamsSchema>) => {
     try {
-      // Return the result directly
-      return await zlibraryApi.fullTextSearch(args);
+      const ftsReceivedArgsLog = `[${new Date().toISOString()}] [src/index.ts] fullTextSearch handler received Zod-parsed args: ${JSON.stringify(args)}\n`;
+      console.log(ftsReceivedArgsLog.trim());
+      try {
+        const logFilePath = path.resolve(__dirname, '..', 'logs', 'nodejs_debug.log');
+        await mkdirAsync(path.dirname(logFilePath), { recursive: true });
+        await appendFileAsync(logFilePath, ftsReceivedArgsLog);
+      } catch (e) { console.error('Failed to write to logs/nodejs_debug.log', e); }
+      // Explicitly construct the object for zlibraryApi.fullTextSearch
+      const apiArgsFTS = {
+        query: args.query,
+        exact: args.exact,
+        phrase: args.phrase,
+        words: args.words,
+        languages: args.languages,
+        extensions: args.extensions,
+        content_types: args.content_types, // content_types is already plural in Zod
+        count: args.count,
+      };
+      const ftsSendingLog = `[${new Date().toISOString()}] [src/index.ts] fullTextSearch handler sending to zlibraryApi: ${JSON.stringify(apiArgsFTS)}\n`;
+      console.log(ftsSendingLog.trim());
+      try {
+        // Directory creation already handled above for this function scope
+        const logFilePath = path.resolve(__dirname, '..', 'logs', 'nodejs_debug.log');
+        // Directory creation already handled above for this function scope by the first logging block
+        await appendFileAsync(logFilePath, ftsSendingLog);
+      } catch (e) { console.error('Failed to write to logs/nodejs_debug.log', e); }
+      return await zlibraryApi.fullTextSearch(apiArgsFTS);
     } catch (error: any) { return { error: { message: error.message || 'Failed to perform full text search' } }; }
   },
 
@@ -231,6 +287,15 @@ function generateToolsCapability(): Record<string, ToolDefinition> {
 async function start(opts: StartOptions = {}): Promise<{ server: Server; transport: StdioServerTransport } | null> {
     // --- RAW INPUT LOGGING REMOVED ---
   try {
+    // Ensure the logs directory exists
+    try {
+      await mkdirAsync(path.resolve(__dirname, '..', 'logs'), { recursive: true });
+      console.log("Log directory 'logs/' ensured.");
+    } catch (dirError: any) {
+      console.error("Failed to create 'logs/' directory:", dirError.message);
+      // Decide if this is fatal or if we can continue without file logging
+    }
+
     // Ensure the Python virtual environment is ready
     await ensureVenvReady();
 

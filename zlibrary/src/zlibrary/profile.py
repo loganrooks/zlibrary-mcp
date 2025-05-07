@@ -60,7 +60,7 @@ class ZlibProfile:
 
         dfrom = date_from.strftime('%y-%m-%d') if date_from else ''
         dto = date_to.strftime('%y-%m-%d') if date_to else ''
-        url = self.mirror + '/users/dstats.php?date_from=%s&date_to=%s' % (dfrom, dto)
+        url = self.mirror + '/users/downloads?date_from=%s&date_to=%s' % (dfrom, dto)
 
         paginator = DownloadsPaginator(url, page, self.__r, self.mirror)
         return await paginator.init()

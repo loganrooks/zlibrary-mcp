@@ -101,13 +101,23 @@ class AsyncZlib:
     async def _r(self, url: str):
         if self.semaphore:
             async with self.__semaphore:
-                return await GET_request(
+                response = await GET_request(
                     url, proxy_list=self.proxy_list, cookies=self.cookies
                 )
+                if hasattr(response, 'text'):
+                    logger.debug(f"Response text for {url}: {response.text[:1000]}") # Log first 1000 chars
+                else:
+                    logger.debug(f"Response for {url} is not an HTTPX object, it is a string: {str(response)[:1000]}") # Log first 1000 chars
+                return response
         else:
-            return await GET_request(
+            response = await GET_request(
                 url, proxy_list=self.proxy_list, cookies=self.cookies
             )
+            if hasattr(response, 'text'):
+                logger.debug(f"Response text for {url}: {response.text[:1000]}") # Log first 1000 chars
+            else:
+                logger.debug(f"Response for {url} is not an HTTPX object, it is a string: {str(response)[:1000]}") # Log first 1000 chars
+            return response
 
     async def login(self, email: str, password: str):
         data = {
@@ -205,9 +215,9 @@ class AsyncZlib:
             assert type(extensions) is list
             for ext in extensions:
                 if type(ext) is str:
-                    payload += f"&extensions%5B%5D={ext}"
+                    payload += f"&extensions%5B%5D={ext.upper()}"
                 elif type(ext) is Extension:
-                    payload += f"&extensions%5B%5D={ext.value}"
+                    payload += f"&extensions%5B%5D={ext.value.upper()}"
         # Add order logic
         if order:
             if isinstance(order, OrderOptions):
@@ -302,7 +312,9 @@ class AsyncZlib:
             )
 
         payload = "%s/fulltext/%s?" % (self.mirror, quote(q))
-        if phrase:
+        if words:
+            payload += "&type=words"
+        elif phrase: # Only check for phrase if not a 'words' search
             check = q.split(" ")
             if len(check) < 2:
                 raise Exception(
@@ -312,8 +324,11 @@ class AsyncZlib:
                     )
                 )
             payload += "&type=phrase"
-        else:
-            payload += "&type=words"
+        # If neither words nor phrase is explicitly true, it defaults to words search by not adding &type=phrase
+        # and the initial check 'if not phrase and not words:' (line 309) would have caught if both were false.
+        # However, the original logic (line 326) implies a default to words if phrase is not specified.
+        # To maintain that, if words is false and phrase is false, we should ensure type=words.
+        # The initial check at line 309 already ensures at least one is true.
 
         if exact:
             payload += "&e=1"
@@ -334,9 +349,9 @@ class AsyncZlib:
             assert type(extensions) is list
             for ext in extensions:
                 if type(ext) is str:
-                    payload += f"&extensions%5B%5D={ext}"
+                    payload += f"&extensions%5B%5D={ext.upper()}"
                 elif type(ext) is Extension:
-                    payload += f"&extensions%5B%5D={ext.value}"
+                    payload += f"&extensions%5B%5D={ext.value.upper()}"
 
         paginator = SearchPaginator(
             url=payload, count=count, request=self._r, mirror=self.mirror
@@ -344,7 +359,7 @@ class AsyncZlib:
         await paginator.init()
         return paginator
 
-    async def download_book(self, book_details: Dict, output_path: str) -> None:
+    async def download_book(self, book_details: Dict, output_dir_str: str) -> str:
         """Downloads a book to the specified output path by scraping the book page."""
         if not self.profile:
             raise NoProfileError("Login required before downloading.")
@@ -402,17 +417,23 @@ class AsyncZlib:
             logger.error(f"Error parsing book page or finding download link for {book_page_url}: {e}", exc_info=True)
             raise DownloadError(f"Failed to process book page for ID {book_id}") from e
 
+        # Construct Full File Path
+        book_id_for_filename = book_details.get('id', 'unknown_book')
+        extension = book_details.get('extension', 'epub') # Or derive more reliably if possible
+        filename = f"{book_id_for_filename}.{extension}"
+        
+        output_directory = Path(output_dir_str) # Treat the input param as a directory
+        actual_output_path = output_directory / filename
 
-        logger.info(f"Attempting download from extracted URL: {download_url} to {output_path}")
+        logger.info(f"Attempting download from extracted URL: {download_url} to {actual_output_path}")
 
         # --- Ensure Output Directory Exists ---
         try:
-            output_dir = Path(output_path).parent
-            os.makedirs(output_dir, exist_ok=True)
-            logger.debug(f"Ensured output directory exists: {output_dir}")
+            os.makedirs(output_directory, exist_ok=True)
+            logger.debug(f"Ensured output directory exists: {output_directory}")
         except OSError as e:
-            logger.error(f"Failed to create output directory {output_dir}: {e}", exc_info=True)
-            raise DownloadError(f"Failed to create output directory {output_dir}: {e}") from e
+            logger.error(f"Failed to create output directory {output_directory}: {e}", exc_info=True)
+            raise DownloadError(f"Failed to create output directory {output_directory}: {e}") from e
 
         # --- Perform Download using httpx stream ---
         try:
@@ -426,16 +447,15 @@ class AsyncZlib:
                       downloaded_size = 0
                       logger.info(f"Starting download ({total_size} bytes)...")
 
-                      async with aiofiles.open(output_path, 'wb') as f:
+                      async with aiofiles.open(actual_output_path, 'wb') as f:
                           async for chunk in response.aiter_bytes():
                               await f.write(chunk)
                               downloaded_size += len(chunk)
                               # Optional: Add progress logging here if needed
                               # logger.debug(f"Downloaded {downloaded_size}/{total_size} bytes")
 
-            logger.info(f"Successfully downloaded book ID {book_id} to {output_path}")
-            # Method returns None on success
-            return None # Explicitly return None
+            logger.info(f"Successfully downloaded book ID {book_id} to {actual_output_path}")
+            return str(actual_output_path)
 
         except httpx.HTTPStatusError as e:
              logger.error(f"HTTP error during download from {download_url}: {e.response.status_code} - {e.response.text[:200]}", exc_info=True)

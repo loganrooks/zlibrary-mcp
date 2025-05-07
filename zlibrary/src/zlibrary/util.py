@@ -28,9 +28,21 @@ async def GET_request(url, cookies=None, proxy_list=None) -> str:
             timeout=TIMEOUT,
             connector=ChainProxyConnector.from_urls(proxy_list) if proxy_list else None,
         ) as sess:
-            logger.info("GET %s" % url)
+            logger.info(f"GET {url}")
+            logger.debug(f"Request cookies for {url}: {cookies}")
             async with sess.get(url) as resp:
-                return await resp.text()
+                response_text = await resp.text()
+                logger.debug(f"Response status for {url}: {resp.status}")
+                logger.debug(f"Response headers for {url}: {resp.headers}")
+                if response_text:
+                    logger.debug(f"Response body for {url} (first 1000 chars): {response_text[:1000]}")
+                    if len(response_text) > 1000:
+                        logger.debug(f"Response body for {url} is longer than 1000 chars, full length: {len(response_text)}")
+                    else:
+                        logger.debug(f"Full response body for {url}: {response_text}")
+                else:
+                    logger.debug(f"Response body for {url} is EMPTY.")
+                return response_text
     except asyncio.exceptions.CancelledError:
         raise LoopError("Asyncio loop has been closed before request could finish.")
 

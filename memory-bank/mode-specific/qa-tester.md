@@ -25,6 +25,19 @@
     - A known `bookDetails` object from a successful `search_books` call for testing `download_book_to_file`.
 - **Associated Bugs**: None initially. Will be updated as testing progresses.
 ## Test Execution Results
+### Test Execution: `full_text_search` No-Result Behavior - [2025-05-07 05:52:00]
+- **Environment**: Local / **Build**: Current (as of 2025-05-07)
+- **Outcome**: PASS
+- **Summary**: Tested `full_text_search` tool with two queries designed to yield no results.
+    - Query 1: "zxcvbnmasdfghjklqwertyuiop1234567890zxcvbnmasdfghjklqwertyuiop"
+        - Observed Output: `{"retrieved_from_url":"...","books":[]}`
+        - Status: PASS (Returned empty list as expected)
+    - Query 2: "the epistemological ramifications of invisible pink unicorns in quantum chromodynamics"
+        - Observed Output: `{"retrieved_from_url":"...","books":[]}`
+        - Status: PASS (Returned empty list as expected)
+- **Bugs Found**: None from this specific test. The behavior observed suggests that the previously reported issue FTS_TC006 (no-result queries returning unexpected books) might be resolved or behaves differently now.
+- **Notes**: The tool correctly returned an empty list for both highly nonsensical and very specific unlikely queries. This is an improvement over the behavior noted in FTS_TC006 from the E2E test run on 2025-05-06.
+- **Report Link**: N/A (Results documented in `attempt_completion`)
 <!-- Append summaries of test runs using the format below -->
 
 ### Test Execution: E2E Z-Library MCP Tools - [2025-05-06 13:37:30]

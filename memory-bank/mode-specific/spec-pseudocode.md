@@ -1,5 +1,227 @@
 # Specification Writer Specific Memory
 <!-- Entries below should be added reverse chronologically (newest first) -->
+### Feature: Get Book Metadata (Scraping)
+- Added: 2025-05-07 08:02:31
+- Description: Define the specification for a tool to scrape metadata from a Z-Library book page URL. This includes the output data structure, detailed scraping logic for 16 fields, data cleaning/parsing rules, error handling for missing fields, Python pseudocode for the scraping function, and TDD anchors.
+- Acceptance criteria:
+    1. Output metadata object structure (Python dictionary) precisely defined, aligning with Zod schema in [`docs/project-plan-zlibrary-mcp.md:204-222`](docs/project-plan-zlibrary-mcp.md:204-222).
+    2. Data types and nullability specified for all 16 fields plus `source_url`.
+    3. Scraping logic detailed for each field, using (placeholder) CSS selectors.
+    4. Data cleaning and parsing rules specified for each field (e.g., authors list, filesize string, description joining, URL attribute extraction).
+    5. Error handling for missing/malformed data defined for each field (e.g., return `None` or `[]`).
+    6. Python pseudocode for `async def scrape_book_metadata(url: str, session: httpx.AsyncClient) -> Dict[str, Any]:` provided, showing HTML fetching, parsing, data extraction, cleaning, and dictionary construction.
+    7. TDD anchors for Python scraping function cover successful extraction, missing fields, parsing of complex fields, and HTML variations.
+    8. TDD anchors for Node.js Zod schemas cover input URL validation and output dictionary validation against various valid/invalid structures.
+- Dependencies: `httpx`, `BeautifulSoup4` for Python. Zod for Node.js. CSS selectors from `debug` mode.
+- Status: Draft (Specification Complete, pending CSS selectors)
+- Related: Task 4 in [`docs/project-plan-zlibrary-mcp.md:166-237`](docs/project-plan-zlibrary-mcp.md:166-237)
+
+### Pseudocode: `scrape_book_metadata` (Z-Library Book Page Scraper)
+- Created: 2025-05-07 08:02:31
+- Updated: 2025-05-07 08:02:31
+```pseudocode
+# File: zlibrary/src/zlibrary/libasync.py (or new scraping module)
+# Dependencies: httpx, beautifulsoup4, typing, re, urllib.parse
+
+from typing import Dict, Any, List, Optional
+import httpx
+from bs4 import BeautifulSoup
+import re
+from urllib.parse import urlparse, urljoin
+
+# Placeholder for actual selectors - these need to be defined based on debug mode's findings
+SELECTORS = {
+    "title": "h1.book-title",
+    "authors": "div.col-sm-9 > i > a.color1[title*=\"Find all the author's book\"]",
+    "publisher": "div.bookProperty.property_publisher > div.property_value",
+    "publication_year": "div.bookProperty.property_year > div.property_value",
+    "isbn13": "div.bookProperty.property_isbn.13 > div.property_value",
+    "isbn10": "div.bookProperty.property_isbn.10 > div.property_value",
+    "doi": "div.bookProperty.property_isbn > div.property_value", # Example, may need specific selector for DOI if different from ISBN field
+    "series": "div.bookProperty.property_series > div.property_value",
+    "language": "div.bookProperty.property_language > div.property_value",
+    "pages": "div.bookProperty.property_pages > div.property_value > span[title*=\"Pages\"]",
+    "filesize": "div.bookProperty.property__file > div.property_value",
+    "description": "div#bookDescriptionBox",
+    "cover_image_url": "div.details-book-cover-container z-cover img[src]", # Or specific img inside
+    "tags": "SELECTOR_FOR_TAGS_ANCHOR_OR_ELEMENT a", # Placeholder - e.g., div.tags-container a
+    "most_frequent_terms": "div.termsCloud div.termWrap a.color1",
+    "related_booklist_urls": "div.related-booklists-block z-booklist[href]", # Placeholder for custom element attribute or child a[href]
+    "you_may_be_interested_in_urls": "div.books-mosaic div.masonry-endless div.item a[href*=\"/book/\"]"
+}
+
+BookMetadata = Dict[str, Any]
+
+def _safe_get_text(element, default=None):
+    if element:
+        text = element.get_text(strip=True)
+        return text if text else default
+    return default
+
+def _safe_get_attr(element, attribute, base_url: Optional[str] = None, default=None):
+    if element:
+        attr_value = element.get(attribute)
+        if attr_value:
+            if (attribute == 'href' or attribute == 'src') and base_url:
+                attr_value = urljoin(base_url, attr_value)
+            return attr_value
+    return default
+
+def _safe_get_all_texts(elements_list, default_if_empty=None):
+    # ... (implementation as in previous markdown) ...
+    if not elements_list:
+        return default_if_empty if default_if_empty is not None else []
+    texts = [el.get_text(strip=True) for el in elements_list if el.get_text(strip=True)]
+    return texts if texts else (default_if_empty if default_if_empty is not None else [])
+
+
+def _safe_get_all_attrs(elements_list, attribute, base_url: Optional[str] = None, default_if_empty=None):
+    # ... (implementation as in previous markdown, ensuring urljoin is used) ...
+    if not elements_list:
+        return default_if_empty if default_if_empty is not None else []
+    attrs = []
+    for el in elements_list:
+        attr_val = el.get(attribute)
+        if attr_val:
+            if (attribute == 'href' or attribute == 'src') and base_url:
+                attr_val = urljoin(base_url, attr_val)
+            attrs.append(attr_val)
+    return attrs if attrs else (default_if_empty if default_if_empty is not None else [])
+
+async def scrape_book_metadata(url: str, session: httpx.AsyncClient) -> BookMetadata:
+    metadata: BookMetadata = { # Initialize with defaults
+        "title": None, "authors": [], "publisher": None, "publication_year": None,
+        "isbn": None, "doi": None, "series": None, "language": None, "pages": None,
+        "filesize": None, "description": None, "cover_image_url": None, "tags": [],
+        "most_frequent_terms": [], "related_booklist_urls": [],
+        "you_may_be_interested_in_urls": [], "source_url": url
+    }
+    parsed_url_obj = urlparse(url)
+    base_page_url = f"{parsed_url_obj.scheme}://{parsed_url_obj.netloc}"
+
+    try:
+        response = await session.get(url, timeout=20.0, follow_redirects=True)
+        response.raise_for_status()
+        html_content = response.text
+        soup = BeautifulSoup(html_content, 'html.parser')
+
+        # --- Title ---
+        metadata["title"] = _safe_get_text(soup.select_one(SELECTORS["title"]))
+
+        # --- Authors ---
+        metadata["authors"] = _safe_get_all_texts(soup.select(SELECTORS["authors"]), default_if_empty=[])
+
+        # --- Publisher ---
+        metadata["publisher"] = _safe_get_text(soup.select_one(SELECTORS["publisher"]))
+
+        # --- Publication Year ---
+        year_text = _safe_get_text(soup.select_one(SELECTORS["publication_year"]))
+        if year_text and year_text.isdigit(): metadata["publication_year"] = int(year_text)
+
+        # --- ISBN ---
+        isbn_text = _safe_get_text(soup.select_one(SELECTORS["isbn13"]))
+        if not isbn_text: isbn_text = _safe_get_text(soup.select_one(SELECTORS["isbn10"]))
+        if isbn_text: metadata["isbn"] = re.sub(r"[^0-9X]", "", isbn_text)
+
+        # --- DOI ---
+        # This selector needs to be specific for DOI, or logic to differentiate from ISBN if field is shared
+        doi_element = soup.select_one(SELECTORS["doi"])
+        doi_text = _safe_get_text(doi_element)
+        if doi_text:
+            # Basic check to differentiate from ISBN if selector is shared
+            if "10." in doi_text and "/" in doi_text and (not metadata["isbn"] or metadata["isbn"] != re.sub(r"[^0-9X]", "", doi_text)):
+                 metadata["doi"] = doi_text.replace("DOI:", "").strip()
+            # If DOI selector is different from ISBN, this check might not be needed.
+
+        # --- Series ---
+        metadata["series"] = _safe_get_text(soup.select_one(SELECTORS["series"]))
+
+        # --- Language ---
+        lang_text = _safe_get_text(soup.select_one(SELECTORS["language"]))
+        if lang_text: metadata["language"] = lang_text.lower()
+
+        # --- Pages ---
+        pages_text = _safe_get_text(soup.select_one(SELECTORS["pages"]))
+        if pages_text:
+            cleaned_pages = re.sub(r'\D', '', pages_text)
+            if cleaned_pages.isdigit(): metadata["pages"] = int(cleaned_pages)
+
+        # --- Filesize ---
+        filesize_text = _safe_get_text(soup.select_one(SELECTORS["filesize"]))
+        if filesize_text:
+            match = re.search(r'(\d+(\.\d+)?\s*(KB|MB|GB))', filesize_text, re.IGNORECASE)
+            if match: metadata["filesize"] = match.group(1)
+
+        # --- Description ---
+        desc_el = soup.select_one(SELECTORS["description"])
+        if desc_el:
+            p_tags = desc_el.find_all('p', recursive=False) # Only direct children
+            if p_tags:
+                metadata["description"] = "\n".join([p.get_text(strip=True) for p in p_tags if p.get_text(strip=True)]).strip()
+            else:
+                metadata["description"] = desc_el.get_text(separator="\n", strip=True)
+
+
+        # --- Cover Image URL ---
+        metadata["cover_image_url"] = _safe_get_attr(soup.select_one(SELECTORS["cover_image_url"]), "src", base_url=base_page_url)
+
+        # --- Tags ---
+        # Placeholder: Actual selector for tags needed
+        metadata["tags"] = _safe_get_all_texts(soup.select(SELECTORS["tags"]), default_if_empty=[])
+
+        # --- Most Frequent Terms ---
+        metadata["most_frequent_terms"] = _safe_get_all_texts(soup.select(SELECTORS["most_frequent_terms"]), default_if_empty=[])
+
+        # --- Related Booklist URLs ---
+        # Placeholder: Actual selector for related booklist URLs needed
+        metadata["related_booklist_urls"] = _safe_get_all_attrs(soup.select(SELECTORS["related_booklist_urls"]), "href", base_url=base_page_url, default_if_empty=[])
+
+        # --- "You may be interested in" URLs ---
+        metadata["you_may_be_interested_in_urls"] = _safe_get_all_attrs(soup.select(SELECTORS["you_may_be_interested_in_urls"]), "href", base_url=base_page_url, default_if_empty=[])
+
+    except httpx.HTTPStatusError as e:
+        # LOG error: HTTP error fetching {url}: {e.response.status_code}
+        pass # Keep defaults
+    except httpx.RequestError as e:
+        # LOG error: Network error fetching {url}: {e}
+        pass # Keep defaults
+    except Exception as e:
+        # LOG error: Unexpected error scraping {url}: {e}
+        pass # Keep defaults
+    
+    return metadata
+```
+#### TDD Anchors:
+- Test successful extraction of all 16 fields from a complete HTML page.
+- Test handling of missing optional fields (e.g., DOI, Series result in `None` or `[]`).
+- Test parsing of multiple authors into a list.
+- Test correct conversion of publication year and pages to integers.
+- Test cleaning of ISBN and DOI strings.
+- Test extraction of filesize string (e.g., "12.10 MB").
+- Test joining of multi-paragraph descriptions.
+- Test correct extraction of `src` for cover image and `href` for URL lists, ensuring they are absolute URLs.
+- Test graceful handling of HTTP errors (404, 500) and network errors (timeout).
+- Test with HTML variations if `debug` mode identified significant structural differences between pages.
+- Test extraction from an article page, focusing on DOI presence.
+
+```
+### Feature: Enhanced Filename Convention
+- Added: 2025-05-07
+- Description: Implement an enhanced filename convention `LastnameFirstname_TitleOfTheBook_BookID.ext` for downloaded books, including author/title formatting, sanitization, and fallbacks.
+- Acceptance criteria:
+    1. Filenames correctly generated according to the specified format.
+    2. Author names are parsed and formatted (LastnameFirstname, handling single/multiple names, initials).
+    3. Titles are slugified (spaces to underscores).
+    4. BookID is included.
+    5. Original extension is used and lowercased.
+    6. All components are sanitized for filesystem safety (character removal/replacement, length truncation).
+    7. Underscore used as a separator between main components.
+    8. Fallback values ("UnknownAuthor", "UntitledBook", "UnknownID", ".unknown") used for missing/empty data.
+    9. Python helper function `_create_enhanced_filename(book_details: dict) -> str` implemented in `lib/python_bridge.py`.
+   10. Comprehensive TDD test cases cover all specified formatting, sanitization, and edge cases.
+- Dependencies: Python `re` module.
+- Status: Draft (Specification Complete)
+- Related: [`docs/project-plan-zlibrary-mcp.md:130-162`](docs/project-plan-zlibrary-mcp.md:130-162) (Task 3)
 
 ### Feature: RAG Robustness - Preprocessing (Front Matter & ToC)
 - Added: 2025-04-29 23:15:00
@@ -348,6 +570,148 @@ IF __name__ == "__main__":
 - Related: `docs/rag-markdown-generation-spec.md`, `docs/rag-output-quality-spec.md`, `docs/rag-output-qa-report-rerun-20250429.md`
 
 ## Pseudocode Library
+### Pseudocode: Enhanced Filename Generation - `_create_enhanced_filename`
+- Created: 2025-05-07
+- Updated: 2025-05-07
+```pseudocode
+# File: lib/python_bridge.py
+# Dependencies: re
+
+CONSTANT MAX_AUTHOR_LEN = 50
+CONSTANT MAX_TITLE_LEN = 100
+CONSTANT MAX_TOTAL_FILENAME_BASE_LEN = 200 # Max length before adding extension
+CONSTANT INVALID_FILENAME_CHARS_REGEX = r'[/\?%*:|"<>.\\,;=!@#$^&()+{}\[\]~`\']'
+CONSTANT NON_ASCII_ALPHANUMERIC_PRESERVE_REGEX = r'[^a-zA-Z0-9_]'
+
+FUNCTION _sanitize_string(input_str: str, component_type: str) -> str:
+  sanitized = input_str
+  if component_type == "title":
+    sanitized = REGEX_REPLACE(sanitized, r'\s+', '_')
+  if component_type == "author" OR component_type == "title":
+    sanitized = REGEX_REPLACE(sanitized, INVALID_FILENAME_CHARS_REGEX, '')
+  elif component_type == "book_id":
+    sanitized = REGEX_REPLACE(sanitized, r'[^a-zA-Z0-9]', '')
+  if component_type == "author":
+    sanitized = REGEX_REPLACE(sanitized, r'\s+', '')
+  sanitized = REGEX_REPLACE(sanitized, r'_+', '_')
+  sanitized = REGEX_REPLACE(sanitized, r'^_+|_+$', '')
+  if component_type == "author":
+    if LENGTH(sanitized) > MAX_AUTHOR_LEN:
+      sanitized = SUBSTRING(sanitized, 0, MAX_AUTHOR_LEN)
+  elif component_type == "title":
+    if LENGTH(sanitized) > MAX_TITLE_LEN:
+      sanitized = SUBSTRING(sanitized, 0, MAX_TITLE_LEN)
+      sanitized = REGEX_REPLACE(sanitized, r'_+$', '')
+  RETURN sanitized
+END FUNCTION
+
+FUNCTION _format_author(author_str: str) -> str:
+  if NOT author_str OR author_str.strip() == "": RETURN "UnknownAuthor"
+  first_author = author_str.split(',')[0].split(' and ')[0].split(';')[0].strip()
+  words = first_author.split()
+  if LENGTH(words) == 0: RETURN "UnknownAuthor"
+  if LENGTH(words) == 1:
+    lastname = words[0]
+    if lastname.isupper() OR (ANY(c.islower() for c in lastname) AND ANY(c.isupper() for c in lastname)):
+        lastname = lastname[0].upper() + lastname[1:].lower() if LENGTH(lastname) > 1 else lastname.upper()
+    else:
+        lastname = lastname.capitalize()
+    formatted_name = lastname
+  else:
+    lastname = words[-1]
+    firstnames_parts = words[:-1]
+    lastname = lastname[0].upper() + lastname[1:].lower() if LENGTH(lastname) > 1 else lastname.upper()
+    formatted_firstnames = ""
+    for part in firstnames_parts:
+      temp_part = part
+      is_initial_with_period = LENGTH(temp_part) == 2 AND temp_part[1] == '.' AND temp_part[0].isalpha()
+      is_initial_alone = LENGTH(temp_part) == 1 AND temp_part[0].isalpha()
+      if is_initial_with_period OR is_initial_alone:
+          formatted_firstnames += temp_part[0].upper()
+          if is_initial_with_period: formatted_firstnames += "."
+      else:
+          formatted_firstnames += part.capitalize()
+    formatted_name = lastname + formatted_firstnames
+  RETURN _sanitize_string(formatted_name, "author")
+END FUNCTION
+
+FUNCTION _format_title(title_str: str) -> str:
+  if NOT title_str OR title_str.strip() == "": RETURN "UntitledBook"
+  RETURN _sanitize_string(title_str, "title")
+END FUNCTION
+
+FUNCTION _format_book_id(book_id_val) -> str:
+  if book_id_val IS NULL OR TRIM(str(book_id_val)) == "": RETURN "UnknownID"
+  RETURN _sanitize_string(str(book_id_val), "book_id")
+END FUNCTION
+
+FUNCTION _format_extension(ext_str: str) -> str:
+  if NOT ext_str OR ext_str.strip() == "": ext = "unknown"
+  else:
+    ext = ext_str.lower()
+    if ext.startswith("."): ext = ext[1:]
+  ext = REGEX_REPLACE(ext, r'[^a-z0-9]', '')
+  if ext == "": return "unknown"
+  RETURN ext
+END FUNCTION
+
+FUNCTION _create_enhanced_filename(book_details: dict) -> str:
+  author_name = _format_author(book_details.get("author"))
+  book_title = _format_title(book_details.get("title"))
+  book_id = _format_book_id(book_details.get("id"))
+  extension = _format_extension(book_details.get("extension"))
+
+  if author_name == "": author_name = "UnknownAuthor"
+  if book_title == "" OR book_title == "_": book_title = "UntitledBook"
+  if book_id == "": book_id = "UnknownID"
+  if extension == "": extension = "unknown"
+
+  base_filename_parts = [author_name, book_title, book_id]
+  valid_parts = [part for part in base_filename_parts if part and part != "_"]
+  base_filename = "_".join(valid_parts)
+
+  if LENGTH(base_filename) > MAX_TOTAL_FILENAME_BASE_LEN:
+    overflow = LENGTH(base_filename) - MAX_TOTAL_FILENAME_BASE_LEN
+    if LENGTH(book_title) > overflow AND LENGTH(book_title) > LENGTH(author_name) AND LENGTH(book_title) > LENGTH(book_id):
+        new_title_len = LENGTH(book_title) - overflow
+        book_title = SUBSTRING(book_title, 0, new_title_len)
+        book_title = REGEX_REPLACE(book_title, r'_+$', '')
+        if book_title == "": book_title = "ShortTitle"
+    base_filename_parts = [author_name, book_title, book_id]
+    valid_parts = [part for part in base_filename_parts if part and part != "_"]
+    base_filename = "_".join(valid_parts)
+    if LENGTH(base_filename) > MAX_TOTAL_FILENAME_BASE_LEN:
+        base_filename = SUBSTRING(base_filename, 0, MAX_TOTAL_FILENAME_BASE_LEN)
+        base_filename = REGEX_REPLACE(base_filename, r'_+$', '')
+
+  final_filename = base_filename + "." + extension
+  RETURN final_filename
+END FUNCTION
+```
+#### TDD Anchors:
+1.  **Standard Input:** `{"author": "Stephen King", "title": "The Shining", "id": "12345", "extension": "epub"}` -> `"KingStephen_The_Shining_12345.epub"`
+2.  **Author Formatting:**
+    *   Single name: `{"author": "Plato", ...}` -> `"Plato_..."`
+    *   Multiple given names: `{"author": "John Ronald Reuel Tolkien", ...}` -> `"TolkienJohnRonaldReuel_..."`
+    *   Missing author: `{"title": "A Book", ...}` -> `"UnknownAuthor_A_Book_..."`
+    *   Initials: `{"author": "J. K. Rowling", ...}` -> `"RowlingJK_..."`
+3.  **Title Formatting:**
+    *   Spaces: `{"title": "A Tale of Two Cities", ...}` -> `"..._A_Tale_of_Two_Cities_..."`
+    *   Special Chars: `{"title": "Book: The Sequel? (Part 1/2)", ...}` -> `"..._Book_The_Sequel_Part_12_..."`
+    *   Missing: `{"author": "An Author", ...}` -> `"AuthorAn_UntitledBook_..."`
+4.  **BookID Formatting:**
+    *   Missing: `{"id": null, ...}` -> `"..._UnknownID..."`
+    *   Special Chars: `{"id": "ID-123!", ...}` -> `"..._ID123..."`
+5.  **Extension Formatting:**
+    *   Uppercase: `{"extension": "PDF", ...}` -> `"...pdf"`
+    *   Missing: `{...}` -> `"...unknown"`
+6.  **Sanitization & Length:**
+    *   Long author/title: Test truncation to 50/100 chars.
+    *   Overall length > 200: Test title truncation.
+    *   All special chars title: `{"title": "!!!", ...}` -> `"..._UntitledBook_..."`
+7.  **Edge Cases:**
+    *   All fields missing: `{}` -> `"UnknownAuthor_UntitledBook_UnknownID.unknown"`
+    *   Author "Æsop" -> "Aesop" (or "sop" depending on final ASCII rule)
 ### Pseudocode: Python Bridge (`lib/python_bridge.py`) - RAG Markdown Generation Refactor
 - Created: 2025-04-29 02:40:07
 - Updated: 2025-04-29 02:40:07

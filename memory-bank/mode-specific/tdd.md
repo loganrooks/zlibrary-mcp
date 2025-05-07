@@ -1,6 +1,165 @@
 # TDD Specific Memory
 <!-- Entries below should be added reverse chronologically (newest first) -->
+### Test Execution: MCP Regression Test (`npm test`) - [2025-05-07 06:59:39]
+- **Trigger**: Post-verification of Python bridge unit tests for enhanced filename.
+- **Outcome**: PASS
+- **Summary**: 4 test suites, 53 tests passed.
+- **Failed Tests**: None.
+- **Notes**: No regressions detected in the MCP application due to Python bridge changes for enhanced filenames. Console errors observed are from existing mocked error conditions in tests.
 
+### Test Execution: Python Bridge Unit Tests (`./venv/bin/python3 -m pytest __tests__/python/test_python_bridge.py`) - [2025-05-07 06:59:18]
+- **Trigger**: Post-modification of `download_book` tests for enhanced filename feature.
+- **Outcome**: PASS
+- **Summary**: 12 tests passed.
+- **Failed Tests**: None.
+- **Notes**: All tests for `_create_enhanced_filename` and updated tests for `download_book` pass.
+
+### TDD Cycle: Enhanced Filename Convention Unit Tests (Task 3) - [2025-05-07 06:59:04]
+- **Red**:
+    - New tests for `_create_enhanced_filename` in `__tests__/python/test_python_bridge.py` covering standard inputs, author/title formatting, missing data, sanitization, truncation, and extensions.
+    - Updated tests for `download_book` in `__tests__/python/test_python_bridge.py` to mock `_create_enhanced_filename`, `os.rename`, and assert new filename format.
+    - Initial run of `download_book` tests failed due to `FileNotFoundError` because `os.rename` was not mocked in one test and `Path.exists` was not properly mocked for the initially downloaded file.
+- **Green**:
+    - Added `mocker.patch('pathlib.Path.exists', return_value=True)` to relevant `download_book` tests.
+    - Added `mocker.patch('os.rename')` and `mocker.patch('python_bridge._create_enhanced_filename')` to `test_download_book_bridge_handles_processing_error_if_rag_true`.
+    - All tests in `__tests__/python/test_python_bridge.py` now pass.
+- **Refactor**: No production code refactoring in this cycle. Test code was iteratively improved.
+- **Outcome**: Cycle completed. Unit tests for `_create_enhanced_filename` are implemented and passing. Existing `download_book` tests are updated and passing.
+- **Test File**: `__tests__/python/test_python_bridge.py`
+- **Code File**: `lib/python_bridge.py` (testing existing implementation)
+### Test Execution: MCP Regression Test (`npm test`) - [2025-05-07 06:42:40]
+- **Trigger**: Post-verification of Python bridge unit tests.
+- **Outcome**: PASS
+- **Summary**: 4 test suites, 53 tests passed.
+- **Failed Tests**: None.
+- **Notes**: No regressions detected in the MCP application due to changes in the Python bridge. Console errors observed are from existing mocked error conditions in tests.
+### Test Execution: Python Bridge Unit Tests (`./venv/bin/python3 -m pytest __tests__/python/test_python_bridge.py`) - [2025-05-07 06:42:15]
+- **Trigger**: Post-modification of `test_download_book_bridge_success` and `test_download_book_bridge_returns_processed_path_if_rag_true` assertions.
+- **Outcome**: PASS
+- **Summary**: 12 tests passed.
+- **Failed Tests**: None.
+- **Notes**: Confirmed that `download_book` test assertions align with ADR-002 (no direct `book_id` kwarg).
+### Test Execution: Regression &amp; New Download Error Tests (`./venv/bin/python3 -m pytest zlibrary/src/test.py`) - [2025-05-07 06:34:50]
+- **Trigger**: Post-modification of `test_download_book_no_download_link_found` assertion.
+- **Outcome**: PASS
+- **Summary**: 14 tests passed.
+### TDD Cycle: Python Bridge Unit Test Update (Task 2.2) - [2025-05-07 06:42:40]
+- **Red**: Initial run of `__tests__/python/test_python_bridge.py` failed 2 tests (`test_download_book_bridge_success`, `test_download_book_bridge_returns_processed_path_if_rag_true`) due to `AssertionError: expected call not found.` The mock assertion for `AsyncZlib.download_book` incorrectly expected `book_id` as a direct keyword argument. / Test File: `__tests__/python/test_python_bridge.py`
+- **Green**: Modified assertions in `test_download_book_bridge_success` and `test_download_book_bridge_returns_processed_path_if_rag_true` to remove `book_id` from the `assert_called_once_with` call for the `mock_zlibrary_client.download_book` mock. This aligns with ADR-002 where `book_id` is derived from `bookDetails` within the `AsyncZlib.download_book` method. / Code File: `__tests__/python/test_python_bridge.py`
+- **Refactor**: No specific refactoring of production code was part of this task, only test code update.
+- **Outcome**: Cycle completed. Python unit tests for `lib/python_bridge.py` now pass and correctly reflect the updated `download_book` interface.
+- **Failed Tests**: None.
+- **Notes**: All existing tests and new error handling tests for `AsyncZlib.download_book` are passing.
+
+### TDD Cycle: AsyncZlib.download_book Error Handling Tests - [2025-05-07 06:34:50]
+- **Red**: Added 4 new tests to `zlibrary/src/test.py`: `test_download_book_missing_url_in_details`, `test_download_book_page_fetch_http_error`, `test_download_book_no_download_link_found`, `test_download_book_file_download_http_error`. Initial run failed due to `NameError: DownloadError not defined` and `TypeError: 'Mock' object is not subscriptable` in `libasync.py` logger during exception handling, and one `AssertionError` in `test_download_book_no_download_link_found` due to error message mismatch. / Test File: `zlibrary/src/test.py`
+- **Green**:
+    - Imported `DownloadError` in `zlibrary/src/test.py`.
+    - Corrected `httpx.HTTPStatusError` mocks in the new tests to ensure the `response` attribute of the error mock has a `.text` attribute.
+    - Updated assertion in `test_download_book_no_download_link_found` to use `e.args[0]` and match the exact error string.
+- **Refactor**: N/A (changes were to fix tests or test setup).
+- **Outcome**: All 4 new error handling tests now pass, along with the 10 pre-existing tests. `AsyncZlib.download_book` error paths are now unit-tested.
+### Test Plan: Year Filter Bug Investigation - [2025-05-07 05:48:00]
+- **Objective**: Investigate and fix bug where `from_year` and `to_year` filters are reportedly not applied in live tool usage.
+- **Scope**: `zlibrary.libasync.AsyncZlib.search`, `zlibrary.libasync.AsyncZlib.full_text_search`, `zlibrary.abs.SearchPaginator`.
+- **Test Cases**:
+    - Case 1 (Red Phase - Unit Test): New tests in `zlibrary/src/test.py` (`test_search_paginator_uses_year_filters`, `test_full_text_search_paginator_uses_year_filters`) to assert that `SearchPaginator`'s internal HTTP call (mocked `_r`) includes `yearFrom` and `yearTo` parameters. / Expected: Test initially fails if parameters are dropped. / Status: Test PASSED after mock HTML correction, indicating parameters are included in the URL used by `_r`.
+    - Case 2 (Manual Verification 1): `use_mcp_tool` for `search_books` with `query="philosophy"`, `fromYear=2020`, `toYear=2021`. / Expected: `retrieved_from_url` contains year params, results are within range. / Status: PASS. `retrieved_from_url` correct, one book from 2020 returned.
+    - Case 3 (Manual Verification 2): `use_mcp_tool` for `search_books` with `query="artificial intelligence"`, `fromYear=1800`, `toYear=1850`. / Expected: `retrieved_from_url` contains year params, results are within range (likely few/none). / Status: PASS. `retrieved_from_url` correct, books from 1800, 1849, 1832 returned.
+- **Related Requirements**: User Task objective.
+
+### TDD Cycle: Year Filter Bug Investigation - [2025-05-07 05:48:00]
+- **Red**: Added `test_search_paginator_uses_year_filters` and `test_full_text_search_paginator_uses_year_filters` to `zlibrary/src/test.py`. These tests mock `AsyncZlib._r` and check if the URL passed to it by `SearchPaginator` contains `yearFrom` and `yearTo`. After correcting mock HTML to prevent premature `ParseError`, these tests PASSED. This indicates the URL used by `SearchPaginator` for its request *does* contain the year filters. / Test File: `zlibrary/src/test.py`
+- **Green**: No code changes required in `libasync.py` or `abs.py` based on the unit test results, as they show parameters are correctly passed to the point of the (mocked) HTTP request.
+- **Refactor**: No refactoring performed.
+- **Outcome**: Unit tests indicate year parameters are correctly included in the URL used by `SearchPaginator`. Manual verification with `use_mcp_tool` also shows `retrieved_from_url` includes year parameters, and results are consistent with filters being applied. The originally reported bug is not reproducible with current evidence.
+
+### Test Execution: Pytest (`./venv/bin/python3 -m pytest zlibrary/src/test.py`) - [2025-05-07 05:47:20]
+- **Trigger**: Post-modification of `test_search_paginator_uses_year_filters` and `test_full_text_search_paginator_uses_year_filters` (updated mock HTML).
+- **Outcome**: PASS
+- **Summary**: 10 tests passed.
+- **Failed Tests**: None.
+- **Notes**: Confirmed that `test_search_paginator_uses_year_filters` and `test_full_text_search_paginator_uses_year_filters` pass, meaning the `lib._r` mock was called with URLs containing the year filters.
+
+### Test Execution: Manual MCP Tool Verification (Year Filters) - [2025-05-07 05:48:01]
+- **Trigger**: Investigation of year filter bug.
+- **Scope**: `zlibrary-mcp::search_books`
+- **Test 1**: `query="philosophy", fromYear=2020, toYear=2021, count=1`
+    - **Outcome**: PASS
+    - **`retrieved_from_url`**: `"https://z-library.sk/s/philosophy?&yearFrom=2020&yearTo=2021"`
+    - **Result**: Book year "2020". Consistent with filter.
+- **Test 2**: `query="artificial intelligence", fromYear=1800, toYear=1850, count=3`
+    - **Outcome**: PASS
+    - **`retrieved_from_url`**: `"https://z-library.sk/s/artificial%20intelligence?&yearFrom=1800&yearTo=1850"`
+    - **Result**: Book years "1800", "1849", "1832". Consistent with filter.
+- **Notes**: Manual tests confirm `yearFrom` and `yearTo` are present in the `retrieved_from_url` and results appear to respect the filters. This contradicts the initial bug report.
+
+### Test Plan: `AsyncZlib` Search URL Construction - [2025-05-07 03:34:00]
+- **Objective**: Verify correct URL construction in `AsyncZlib.search` and `AsyncZlib.full_text_search` for various filter combinations, mocking external HTTP calls.
+- **Scope**: `zlibrary.libasync.AsyncZlib.search`, `zlibrary.libasync.AsyncZlib.full_text_search`.
+- **Test Cases**:
+    - Case 1 (Search - Basic): `q="test query"` -> `https://example.com/s/test%20query?`
+    - Case 2 (Search - Exact): `q="exact test", exact=True` -> `https://example.com/s/exact%20test?&e=1`
+    - Case 3 (Search - Languages): `q="lang test", lang=["english", "spanish"]` -> `https://example.com/s/lang%20test?&languages%5B%5D=english&languages%5B%5D=spanish`
+    - Case 4 (Search - Extensions): `q="ext test", extensions=["epub", "PDF"]` -> `https://example.com/s/ext%20test?&extensions%5B%5D=EPUB&extensions%5B%5D=PDF`
+    - Case 5 (Search - Content Types): `q="content test", content_types=["book", "article"]` -> `https://example.com/s/content%20test?&selected_content_types%5B%5D=book&selected_content_types%5B%5D=article`
+    - Case 6 (Search - Year): `q="year test", from_year=2020, to_year=2022` -> `https://example.com/s/year%20test?&yearFrom=2020&yearTo=2022`
+    - Case 7 (Search - Order): `q="order test", order=OrderOptions.POPULAR` -> `https://example.com/s/order%20test?&order=popular`
+    - Case 8 (Search - Combo): `q="combo test", exact=True, lang=["french"], ext=["mobi"], ct=["magazine"], from=2021, order=NEWEST` -> Verify all params present.
+    - Case 9 (Search - Empty Filters): `q="empty filters", lang=[], ext=[], ct=[]` -> `https://example.com/s/empty%20filters?`
+    - Case 10 (Search - Single Filters): `q="single value filters", lang=["german"], ext=["azw3"], ct=["journal"]` -> Verify all params present.
+    - Case 11 (Full-Text - Basic): `q="full text query", phrase=True` -> `https://example.com/fulltext/full%20text%20query?&token=test_token_123&type=phrase`
+    - Case 12 (Full-Text - Exact): `q="exact full text", exact=True, phrase=True` -> `https://example.com/fulltext/exact%20full%20text?&token=test_token_123&type=phrase&e=1`
+    - Case 13 (Full-Text - Languages): `q="lang full text", lang=["english", "spanish"], phrase=True` -> `https://example.com/fulltext/lang%20full%20text?&token=test_token_123&type=phrase&languages%5B%5D=english&languages%5B%5D=spanish`
+    - Case 14 (Full-Text - Extensions): `q="ext full text", extensions=["epub", "PDF"], phrase=True` -> `https://example.com/fulltext/ext%20full%20text?&token=test_token_123&type=phrase&extensions%5B%5D=EPUB&extensions%5B%5D=PDF`
+    - Case 15 (Full-Text - Content Types): `q="content full text", content_types=["book", "article"], phrase=True` -> `https://example.com/fulltext/content%20full%20text?&token=test_token_123&type=phrase&selected_content_types%5B%5D=book&selected_content_types%5B%5D=article`
+    - Case 16 (Full-Text - Year): `q="year full text", from_year=2020, to_year=2022, phrase=True` -> `https://example.com/fulltext/year%20full%20text?&token=test_token_123&type=phrase&yearFrom=2020&yearTo=2022`
+    - Case 17 (Full-Text - Combo): `q="combo full text", exact=True, lang=["french"], ext=["mobi"], ct=["magazine"], from=2021, phrase=True` -> Verify all params.
+    - Case 18 (Full-Text - Words): `q="words true test", words=True` -> Verify `type=phrase` is NOT present or `type=words` is present. (Current code hardcodes `type=phrase`).
+- **Related Requirements**: Task objective.
+- **Status**: Red (Tests written in `zlibrary/src/test.py`, failing as expected or due to mock issues).
+
+### TDD Cycle: `AsyncZlib` Search URL Construction - Mock Fix &amp; `type=words` - [2025-05-07 04:57:00]
+- **Red**: `test_search_url_construction` and `test_full_text_search_url_construction` initially failed (`SearchPaginator` mock not called, then specific URL mismatch for `type=words`). Test File: `zlibrary/src/test.py`
+- **Green**:
+    - Corrected `unittest.mock.patch` target for `SearchPaginator` in `zlibrary/src/test.py` from `zlibrary.abs.SearchPaginator` to `zlibrary.libasync.SearchPaginator`.
+    - Modified `zlibrary/src/zlibrary/libasync.py` in `AsyncZlib.full_text_search` to correctly set `&amp;type=words` when `words=True` and `phrase=False`, and `&amp;type=phrase` when `phrase=True`. Code File: `zlibrary/src/zlibrary/libasync.py`
+- **Refactor**: Cleaned up obsolete comments in `AsyncZlib.full_text_search` in `zlibrary/src/zlibrary/libasync.py` related to `type` parameter logic. Files Changed: `zlibrary/src/zlibrary/libasync.py`
+- **Outcome**: Cycle completed. All tests in `zlibrary/src/test.py` pass, including `test_search_url_construction` and `test_full_text_search_url_construction`. URL construction for search methods is now robustly tested and implemented.
+### TDD Cycle: `AsyncZlib` Search URL Construction - Red Phase - [2025-05-07 03:34:00]
+- **Red**: Added `test_search_url_construction` and `test_full_text_search_url_construction` to `zlibrary/src/test.py`. These tests mock `zlibrary.abs.SearchPaginator` and `httpx.AsyncClient` to verify the URL passed to `SearchPaginator`'s constructor. Updated `main` to call these tests.
+    - `test_download_book_functionality` is failing due to `httpx.ConnectError` (mocking of `httpx.AsyncClient` needs refinement for multiple context manager uses).
+    - `test_search_url_construction` fails with `AssertionError: expected call not found. Expected: SearchPaginator(...) Actual: not called.`.
+### Test Execution: Manual MCP Tool Verification - [2025-05-07 05:07:00]
+- **Trigger**: User Feedback (Post TDD Cycle for URL Construction)
+- **Scope**: `zlibrary-mcp::search_books`, `zlibrary-mcp::full_text_search`
+- **Outcome**: PASS
+- **Summary**:
+    - `search_books` (query: "python programming") - Successfully returned book results.
+    - `full_text_search` (query: "philosophy of mind") - Successfully returned book results.
+- **Notes**: Confirmed core functionality of search tools is intact after changes to URL construction logic in `zlibrary/src/zlibrary/libasync.py` and related tests in `zlibrary/src/test.py`.
+### Test Execution: Pytest (`./venv/bin/python3 -m pytest zlibrary/src/test.py`) - [2025-05-07 04:57:00]
+- **Trigger**: Post-Refactor (Search URL Construction Logic)
+- **Outcome**: PASS
+- **Summary**: 8 tests passed.
+- **Failed Tests**: None.
+- **Notes**: Confirmed `test_search_url_construction` and `test_full_text_search_url_construction` pass after fixing mock targets, implementing `type=words` logic, and refactoring. `test_download_book_functionality` also remains passing.
+    - `test_full_text_search_url_construction` fails with `AssertionError: expected call not found. Expected: SearchPaginator(...) Actual: not called.`.
+- **Green**: Not yet reached.
+- **Refactor**: Not yet reached.
+- **Outcome**: Red phase established for search URL tests. `test_download_book_functionality` needs mock fixing.
+- **Test File**: `zlibrary/src/test.py`
+- **Code Files**: `zlibrary/src/zlibrary/libasync.py` (to be modified in Green phase)
+
+### Test Execution: Pytest (`./venv/bin/python3 -m pytest zlibrary/src/test.py`) - [2025-05-07 03:34:00]
+- **Trigger**: Manual run after adding new tests and attempting mock fixes.
+- **Outcome**: FAIL
+- **Summary**: 3 failed, 5 passed, 1 warning.
+- **Failed Tests**:
+    - `zlibrary/src/test.py::test_download_book_functionality`: `zlibrary.exception.DownloadError: Failed to fetch book page for ID 12345 (Network Error)` (due to `httpx.ConnectError: [Errno -2] Name or service not known`)
+    - `zlibrary/src/test.py::test_search_url_construction`: `AssertionError: expected call not found. Expected: SearchPaginator(...) Actual: not called.`
+    - `zlibrary/src/test.py::test_full_text_search_url_construction`: `AssertionError: expected call not found. Expected: SearchPaginator(...) Actual: not called.`
+- **Notes**: Search tests are in desired Red state (failing on assertion of `SearchPaginator` call). `download_book` test mock for `httpx.AsyncClient` needs further refinement.
 ### Test Plan: `download_book_to_file` Fix Verification - [2025-05-06 12:52:00]
 - **Objective**: Verify fixes to the `download_book_to_file` tool, ensuring correct file path construction, directory creation, file saving (mocked), return values, and no regressions.
 - **Scope**: `zlibrary.libasync.AsyncZlib.download_book`, `python_bridge.download_book`, `zlibrary-api.downloadBookToFile`.

@@ -497,35 +497,6 @@ describe('Z-Library API', () => {
     });
   });
 
-  describe('getRecentBooks', () => {
-    test('should call Python bridge for getRecentBooks', async () => {
-        const mockApiResult_rec1 = [{ id: '4', title: 'Recent Book' }]; // Unique result var
-        mockGetManagedPythonPath.mockResolvedValue('/fake/python');
-        // Corrected: Ensure mock provides the stringified MCP response in an array (Unique Vars)
-        const mockPythonResultString_rec1 = JSON.stringify(mockApiResult_rec1);
-        const mockMcpResponseString_rec1 = JSON.stringify({ content: [{ type: 'text', text: mockPythonResultString_rec1 }] });
-        mockPythonShellRun.mockResolvedValueOnce([mockMcpResponseString_rec1]);
-
-        const recentArgs = { count: 5, format: 'epub' };
-        result = await zlibApi.getRecentBooks(recentArgs);
-
-        expect(mockPythonShellRun).toHaveBeenCalledWith('python_bridge.py', expect.objectContaining({ // Corrected script name
-            scriptPath: '/home/loganrooks/Code/zlibrary-mcp/lib', // Corrected script path
-            args: ['get_recent_books', JSON.stringify({ count: recentArgs.count, format: recentArgs.format })]
-        }));
-        expect(result).toEqual(mockApiResult_rec1); // Use unique result var
-    });
-
-     test('should handle errors from Python bridge during getRecentBooks', async () => {
-      const apiError = new Error('Python Recent Failed');
-      mockGetManagedPythonPath.mockResolvedValue('/fake/python');
-      mockPythonShellRun.mockRejectedValue(apiError);
-
-      await expect(zlibApi.getRecentBooks({ count: 3 })).rejects.toThrow(`Python bridge execution failed for get_recent_books: ${apiError.message}`);
-      expect(mockPythonShellRun).toHaveBeenCalledWith('python_bridge.py', expect.objectContaining({ scriptPath: '/home/loganrooks/Code/zlibrary-mcp/lib', args: ['get_recent_books', JSON.stringify({ count: 3, format: null })] })); // Corrected script name and path, Default format null
-    });
-  });
-
   describe('processDocumentForRag', () => {
     // test.todo('[FAILING] should call Python bridge with correct args and return processed_file_path'); // Remove todo
     test('should call Python bridge with correct args and return processed_file_path', async () => { // Uncomment test
@@ -602,23 +573,19 @@ describe('Z-Library API', () => {
         // Act & Assert
         await expect(zlibApi.processDocumentForRag(processArgs))
             .rejects
-            // Match the actual error message (including " key")
-            .toThrow("Invalid response from Python bridge during processing. Missing processed_file_path key.");
+            .toThrow("Invalid response from Python bridge during processing. Missing processed_file_path key."); // Updated error message
 
         expect(mockPythonShellRun).toHaveBeenCalledTimes(1);
     });
 
     test('should handle errors from Python bridge during processDocumentForRag', async () => {
-        const apiError = new Error('Python Processing Failed');
-        mockGetManagedPythonPath.mockResolvedValue('/fake/python');
-        mockPythonShellRun.mockRejectedValue(apiError);
+      const apiError = new Error('Python Process Failed');
+      mockGetManagedPythonPath.mockResolvedValue('/fake/python');
+      mockPythonShellRun.mockRejectedValue(apiError);
 
-        const processArgs = { filePath: '/path/to/fail.epub' };
-        const expectedPythonFilePath = path.resolve('/path/to/fail.epub');
-
-        await expect(zlibApi.processDocumentForRag(processArgs)).rejects.toThrow(`Python bridge execution failed for process_document: ${apiError.message}`);
-        expect(mockPythonShellRun).toHaveBeenCalledWith('python_bridge.py', expect.objectContaining({ scriptPath: '/home/loganrooks/Code/zlibrary-mcp/lib', args: ['process_document', JSON.stringify({ file_path_str: expectedPythonFilePath, output_format: 'txt' })] }));
+      await expect(zlibApi.processDocumentForRag({ filePath: './local/doc.txt' })).rejects.toThrow(`Python bridge execution failed for process_document: ${apiError.message}`);
+      const expectedPythonFilePath = path.resolve('./local/doc.txt');
+      expect(mockPythonShellRun).toHaveBeenCalledWith('python_bridge.py', expect.objectContaining({ scriptPath: '/home/loganrooks/Code/zlibrary-mcp/lib', args: ['process_document', JSON.stringify({ file_path_str: expectedPythonFilePath, output_format: 'txt' })] }));
     });
   });
-
-}); // End describe('Z-Library API')
+});

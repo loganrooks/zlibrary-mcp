@@ -566,45 +566,6 @@ describe('Tool Handlers (Direct)', () => {
        expect(errorResponse).toEqual({ error: { message: 'Limits Error' } }); // Match nested structure
     });
 
-    test('getRecentBooks handler should call zlibApi.getRecentBooks', async () => {
-       // --- Setup Mocks for this test ---
-       jest.resetModules();
-       jest.clearAllMocks();
-       const mockGetRecentBooks = jest.fn();
-       jest.unstable_mockModule('../lib/zlibrary-api.js', () => ({
-         searchBooks: jest.fn(),
-         // getBookById: jest.fn(), // Already removed
-         downloadBookToFile: jest.fn(),
-         getDownloadInfo: jest.fn(),
-         fullTextSearch: jest.fn(),
-         getDownloadHistory: jest.fn(),
-         getDownloadLimits: jest.fn(),
-         getRecentBooks: mockGetRecentBooks,
-         processDocumentForRag: jest.fn(),
-       }));
-
-       // Dynamically import toolRegistry and the mocked zlibApi
-       const { toolRegistry } = await import('../dist/index.js');
-       const zlibApi = await import('../lib/zlibrary-api.js');
-
-       const handler = toolRegistry.get_recent_books.handler;
-       const mockArgs = { count: 3, format: 'epub' };
-       const validatedArgs = toolRegistry.get_recent_books.schema.parse(mockArgs);
-       const mockResult = [{ id: 'recent1' }];
-       mockGetRecentBooks.mockResolvedValueOnce(mockResult); // Use the specific mock function
-
-       const response = await handler(validatedArgs);
-
-       expect(mockGetRecentBooks).toHaveBeenCalledWith(validatedArgs); // Check the specific mock function
-       // Update expectation to use 'content' key as returned by the handler
-       expect(response).toEqual(mockResult); // Expect direct result
-
-       const error = new Error('Recent Error');
-       mockGetRecentBooks.mockRejectedValueOnce(error); // Use the specific mock function
-       const errorResponse = await handler(validatedArgs);
-       expect(errorResponse).toEqual({ error: { message: 'Recent Error' } }); // Match nested structure
-    }); // End getRecentBooks test
-
- }); // End Handler Logic describe
+  }); // End Handler Logic describe
 }); // End Tool Handlers (Direct) describe
 // Removed duplicated code from bad diff

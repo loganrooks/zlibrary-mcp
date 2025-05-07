@@ -1,3 +1,62 @@
+### Issue: FTS_TC009 - `full_text_search` single word with `words:true` - [Status: Resolved] - [2025-05-06 17:10:34]
+- **Reported**: [2025-05-06 13:18:00] (via QA E2E Test Report SB_TC005) / **Severity**: Medium / **Symptoms**: `full_text_search` with a single query word, `words: true`, and `phrase: true` incorrectly raised an error "At least 2 words must be provided for phrase search."
+- **Investigation**:
+    1. Analysis of `zlibrary/src/zlibrary/libasync.py` (`AsyncZlib.full_text_search`) revealed that the `if phrase:` check and its 2-word minimum validation occurred before the `words` flag was evaluated.
+- **Root Cause**: Internal logic error in `zlibrary/src/zlibrary/libasync.py` where the `phrase:true` check preempted the `words:true` flag, preventing single-word searches when `phrase:true` was also set.
+- **Fix Applied**: Modified `zlibrary/src/zlibrary/libasync.py` to prioritize the `words: true` condition. If `words: true`, `&type=words` is appended to the payload. The phrase check (`len(check) < 2`) is only performed if `words: false` and `phrase: true`.
+- **Verification**: `npm test` command executed and all 53 tests passed, indicating the fix was successful and introduced no regressions.
+- **Related Issues**: [QA E2E Test FTS_TC009]
+---
+### Issue: ZLIB-PARSE-ERR-001-VERIFY-ATTEMPT-3 - Verification of ParseError Fix for get_download_history - [Status: Failed] - [2025-05-06 04:50:12]
+- **Reported**: [2025-05-06 04:49:28] (Self-initiated verification task) / **Severity**: High / **Symptoms**: Previous `ParseError` in `get_download_history`.
+- **Investigation**:
+    1. [2025-05-06 04:50:12] Called `get_download_history` tool with `count: 1`. Result: FAILED with `zlibrary.exception.ParseError: Could not find a valid main content area for downloads list. URL: https://z-library.sk/users/dstats.php?date_from=&date_to=`. Logs show: `ERROR - Could not find a valid main content area for downloads list.`
+- **Root Cause**: The fix applied by `code` mode to `zlibrary/src/zlibrary/abs.py` for `DownloadsPaginator.parse_page` (from [ActiveContext 2025-05-06 04:44:36]) was not effective. The HTML structure of the Z-Library website likely differs from the assumptions made in the fix, or has changed again. The logic (using `soup.body` as a fallback) still results in `ParseError`.
+- **Fix Applied**: None (Verification task only).
+- **Verification**: Fix is NOT verified. The tool still exhibits the same parsing-related error.
+- **Related Issues**: [ZLIB-PARSE-ERR-001-VERIFY-ATTEMPT-2], [ZLIB-PARSE-ERR-001], [ActiveContext 2025-05-06 04:44:36 for original fix attempt by code mode], [Task 2025-05-06 04:49:28]
+
+---
+### Issue: ZLIB-PARSE-ERR-001-VERIFY-ATTEMPT-2 - Verification of ParseError Fixes (Attempt 2) - [Status: Failed] - [2025-05-06 04:28:00]
+- **Reported**: [2025-05-06 04:27:04] (Self-initiated verification task) / **Severity**: High / **Symptoms**: Previous `ParseError`s in `get_recent_books` and `get_download_history`.
+- **Investigation**:
+    1. [2025-05-06 04:27:49] Called `get_recent_books` tool with `count: 1`. Result: FAILED with `zlibrary.exception.ParseError: Could not find the book list items.` Logs show: `WARNING - No 'div.book-card-wrapper' or 'div.book-item' elements found. Raising ParseError.`
+    2. [2025-05-06 04:27:55] Called `get_download_history` tool with `count: 1`. Result: FAILED with `zlibrary.exception.ParseError: Could not find a valid main content area for downloads list. URL: https://z-library.sk/users/dstats.php?date_from=&date_to=`. Logs show: `ERROR - Could not find a valid main content area for downloads list.`
+- **Root Cause**: The fixes applied by `code` mode to `zlibrary/src/zlibrary/abs.py` for `SearchPaginator.parse_page` and `DownloadsPaginator.parse_page` (from [ActiveContext 2025-05-06 04:12:18]) were not effective. The HTML structure of the Z-Library website likely differs from the assumptions made in the fixes, or has changed again.
+    - `get_recent_books`: The new logic (looking for `div.itemFullText` then `div.book-card-wrapper` or `div.book-item`) still fails to find the book list items.
+    - `get_download_history`: The new logic (using `soup.body` as a fallback) still results in `ParseError` because a valid content area could not be identified.
+- **Fix Applied**: None (Verification task only).
+- **Verification**: Fixes are NOT verified. Both tools still exhibit parsing-related errors.
+- **Related Issues**: [ZLIB-PARSE-ERR-001-VERIFY], [ZLIB-PARSE-ERR-001], [ActiveContext 2025-05-06 04:12:18 for attempted fix by code mode], [Task 2025-05-06 04:27:04]
+
+---
+### Issue: ZLIB-PARSE-ERR-001-VERIFY - Verification of ParseError Fixes - [Status: Failed] - [2025-05-06 04:07:08]
+- **Reported**: [2025-05-06 04:05:46] (Self-initiated verification task) / **Severity**: High / **Symptoms**: Previous `ParseError`s in `get_recent_books` and `get_download_history`.
+- **Investigation**:
+    1. [2025-05-06 04:06:25] Called `get_recent_books` tool with `count: 1`. Result: FAILED with `zlibrary.exception.ParseError: Could not find the book list.` Logs show: `WARNING - No 'z-bookcard' elements found. Raising ParseError.`
+    2. [2025-05-06 04:06:31] Called `get_download_history` tool with `count: 1`. Result: FAILED with `AttributeError: 'NoneType' object has no attribute 'find'`. Logs show: `DEBUG - Using soup.body as content_area for downloads.` followed by the error, indicating `soup.body` was `None`.
+- **Root Cause**: The fixes applied by `code` mode to `zlibrary/src/zlibrary/abs.py` for `SearchPaginator.parse_page` and `DownloadsPaginator.parse_page` were not effective. The HTML structure of the Z-Library website likely differs from the assumptions made in the fixes, or has changed again.
+    - `get_recent_books`: The new logic (looking for `div.itemFullText` then `z-bookcard`) still fails to find the book list.
+    - `get_download_history`: The new logic (using `soup.body`) results in `content_area` being `None`, which is not handled before attempting to use it.
+- **Fix Applied**: None (Verification task only).
+- **Verification**: Fixes are NOT verified. Both tools still exhibit parsing-related errors.
+- **Related Issues**: [ZLIB-PARSE-ERR-001], [ActiveContext 2025-05-06 03:55:15 for attempted fix by code mode], [Task 2025-05-06 04:05:46]
+
+---
+### Issue: ZLIB-PARSE-ERR-001 - ParseErrors in get_recent_books and get_download_history - [Status: Diagnosed] - [2025-05-06 03:03:00]
+- **Reported**: [2025-05-06 02:58:38] (via activeContext.md, from SPARC) / **Severity**: High / **Symptoms**: `get_recent_books` fails with `ParseError: Could not parse book list (searchResultBox not found)`. `get_download_history` fails with `ParseError: Could not find main content area...`.
+- **Investigation**:
+    1. [2025-05-06 03:02:19] Read `zlibrary/src/zlibrary/abs.py`. Identified `SearchPaginator.parse_page` expects `div#searchResultBox` and `DownloadsPaginator.parse_page` expects `body` or `div.dstats-table-content`.
+    2. [2025-05-06 03:02:45] Read `zlibrary/src/zlibrary/libasync.py`. Confirmed `AsyncZlib.search` (used for recent books) uses `SearchPaginator`.
+    3. [2025-05-06 03:03:01] Read `zlibrary/src/zlibrary/profile.py`. Confirmed `ZlibProfile.download_history` uses `DownloadsPaginator`.
+- **Root Cause**: HTML structure of the Z-Library website has likely changed, causing the parsing logic in `zlibrary/src/zlibrary/abs.py` to fail:
+    - `get_recent_books` (via `SearchPaginator`): The expected `div` with `id="searchResultBox"` is no longer found on the relevant pages.
+    - `get_download_history` (via `DownloadsPaginator`): The expected `body` tag is not parsable as anticipated, and the fallback `div` with class `dstats-table-content` is also not found or has changed.
+- **Fix Applied**: None (Diagnosis task only).
+- **Verification**: N/A (Diagnosis task only).
+- **Related Issues**: [activeContext.md 2025-05-06 02:58:38], [activeContext.md 2025-05-06 02:43:53]
+
+---
 ### Issue: RAG-Verify-01 - RAG Robustness Verification - [Status: Resolved (Partial)] - [2025-05-05 02:01:45]
 - **Reported**: [2025-05-05 00:38:02] / **Severity**: Medium / **Symptoms**: Initial task to verify RAG robustness enhancements, particularly EPUB front matter removal, after TDD Cycle 24.
 - **Investigation**:
@@ -113,8 +172,52 @@
 - **Verification**: `pytest __tests__/python/test_python_bridge.py` passed (41 passed, 3 xfailed). Full `npm test` suite passed (56 passed).
 - **Related Issues**: [INT-001], [INT-001-REG-01]
 ---
+### Issue: INT-001 - Client ZodError / No Tools Found - [Status: Verification Complete] - [2025-05-06 01:53:52]
+- **Reported**: [2025-04-14 13:10:48] / **Severity**: High / **Symptoms**: RooCode client UI shows "No tools found". Direct `use_mcp_tool` calls fail with client-side `ZodError: Expected array, received undefined` at path `content`.
+- **Investigation**: See previous entries [2025-05-05 22:28:51], [2025-04-14 18:22:33], [2025-04-14 13:48:12].
+- **Root Cause**: Inconsistent `CallToolResponse` structure between success and error cases in `src/index.ts`. [See System Patterns 2025-05-05 22:29:07]
+- **Fix Applied**: Modified `tools/call` handler in `src/index.ts` to wrap successful results in `{ content: [result] }`. [See ActiveContext 2025-05-05 22:15:19]
+- **Verification**: Called `zlibrary-mcp::get_download_limits` via `use_mcp_tool`. Call succeeded without ZodError. [See ActiveContext 2025-05-06 01:53:52]
+- **Related Issues**: [INT-001-REG-01]
+
+---
+### Issue: ZLIB-DSTATS-404 - `get_download_history` fails due to 404 on `/users/dstats.php` - [Status: Diagnosed] - [2025-05-06 12:01:30]
+- **Reported**: [2025-05-06 12:01:30] (Self-diagnosed during current task investigating empty server response) / **Severity**: High / **Symptoms**: `get_download_history` tool returns `ParseError` because the server responds with an empty string for the `/users/dstats.php` page.
+- **Investigation**:
+    1. [2025-05-06 12:01:00] Modified `zlibrary/src/zlibrary/util.py` to add detailed HTTP request (cookies) and response (status, headers, full body) logging within the `GET_request` function.
+    2. [2025-05-06 12:01:30] Called `get_download_history` tool via `use_mcp_tool` with `count: 1`.
+    3. Analysis of the Python bridge logs from the tool call revealed:
+        - Request was made to `https://z-library.sk/users/dstats.php?date_from=&date_to=&page=1` with valid session cookies (`remix_userkey`, `remix_userid`, `selectedSiteMode`).
+        - Server responded with HTTP status code: **404 Not Found**.
+        - Response headers included `Location: /users/downloads`.
+        - Response body was confirmed to be **EMPTY**.
+- **Root Cause**: The Z-Library endpoint `/users/dstats.php`, which the `zlibrary` Python library uses for fetching download history, is obsolete or has been moved. The server returns a 404 status and an empty body for this URL. The `Location` header in the 404 response suggests that `/users/downloads` is the new or correct endpoint. The empty response body directly causes the `ParseError` in `zlibrary.exception.ParseError: Could not find a valid main content area for downloads list.` because there is no HTML content to parse.
+- **Fix Applied**: None (Diagnosis task only). Logging added to `zlibrary/src/zlibrary/util.py` for investigation.
+- **Verification**: N/A (Diagnosis complete).
+- **Related Issues**: [Original task description: Investigate `get_download_history` Empty Server Response], [ActiveContext 2025-05-06 11:46:55 - Previous confirmation of empty string], [GlobalContext Progress 2025-05-06 04:51:04 - Previous suspicion of HTML content mismatch]
+---
 ## Issue History
 ### Issue: INT-001-REG-01 - JSON Parsing Regression in zlibrary-api tests - [Status: Resolved] - [2025-05-06 00:33:00]
+### Issue: DBTF-BUG-002 - FileExistsError when creating output directory for download_book_to_file - [Status: Resolved] - [2025-05-06 13:54:11]
+- **Reported**: [2025-05-06 13:52:58] (Discovered during verification of DBTF-BUG-001) / **Severity**: High / **Symptoms**: `download_book_to_file` fails with `zlibrary.exception.DownloadError: Failed to create output directory downloads: [Errno 17] File exists: 'downloads'`.
+- **Investigation**:
+    1. [2025-05-06 13:52:58] Called `download_book_to_file` tool to verify fix for DBTF-BUG-001. Tool failed with `FileExistsError`.
+    2. [2025-05-06 13:53:29] User confirmed conflicting `downloads` file was removed.
+- **Root Cause**: The `os.makedirs('./downloads', exist_ok=True)` call in `zlibrary/src/zlibrary/libasync.py` fails because a file (not a directory) named `downloads` already exists in the current working directory.
+- **Fix Applied**: User deleted the conflicting `downloads` file.
+- **Verification**: [2025-05-06 13:54:11] Retried `download_book_to_file` tool call after user removed conflicting file. Tool call succeeded, book downloaded to `downloads/4552708.epub`. Issue resolved.
+- **Related Issues**: DBTF-BUG-001 (original bug being verified)
+---
+### Issue: DBTF-BUG-001 - TypeError in download_book_to_file (unexpected book_id kwarg) - [Status: Verified Resolved] - [2025-05-06 13:54:11]
+- **Reported**: [2025-05-06 13:48:36] (via task) / **Severity**: High / **Symptoms**: `TypeError: AsyncZlib.download_book() got an unexpected keyword argument 'book_id'`.
+- **Investigation**:
+    1. [2025-05-06 13:49:19] Read `lib/python_bridge.py`. Confirmed `download_book` calls `zlib_client.download_book` with `book_id` kwarg.
+    2. [2025-05-06 13:49:25] Read `zlibrary/src/zlibrary/libasync.py`. Confirmed `AsyncZlib.download_book` signature expects `book_details: Dict, output_dir_str: str` and does not include `book_id` kwarg.
+- **Root Cause**: `lib/python_bridge.py` incorrectly passed `book_id` as a keyword argument to `AsyncZlib.download_book`, which does not expect it. The `book_id` is derivable from the `book_details` argument.
+- **Fix Applied**: Modified `lib/python_bridge.py` (line 252) to remove `book_id=book_id` from the call to `zlib_client.download_book`.
+- **Verification**: [2025-05-06 13:54:11] Successfully called `download_book_to_file` tool after applying the code fix and resolving a subsequent `FileExistsError` (DBTF-BUG-002). The `TypeError` did not occur. Book downloaded to `downloads/4552708.epub`. Issue resolved. Full test suite (`npm test`) run on [2025-05-06 14:02:42] passed, confirming no regressions from this fix.
+- **Related Issues**: [memory-bank/feedback/qa-tester-feedback.md - Bug ID: DBTF-BUG-001], [ActiveContext 2025-05-06 12:37:17], [GlobalContext Progress 2025-05-06 12:37:17], [GlobalContext Progress 2025-05-06 12:52:00]
+---
 - **Reported**: [2025-05-05 23:54:20] (via ActiveContext) / **Severity**: High / **Symptoms**: 17 tests failing in `__tests__/zlibrary-api.test.js` with `Failed to parse JSON output from Python script: Unexpected token o in JSON at position 1. Raw output: [object Object]`. Occurred after INT-001 fix.
 - **Investigation**:
     1. [2025-05-05 23:58:55] Read `__tests__/zlibrary-api.test.js`. Confirmed tests mock `PythonShell.run` and expect direct JS object/array results.

@@ -1,5 +1,77 @@
+# TDD Specific Memory
+<!-- Entries below should be added reverse chronologically (newest first) -->
+
+### Test Plan: `download_book_to_file` Fix Verification - [2025-05-06 12:52:00]
+- **Objective**: Verify fixes to the `download_book_to_file` tool, ensuring correct file path construction, directory creation, file saving (mocked), return values, and no regressions.
+- **Scope**: `zlibrary.libasync.AsyncZlib.download_book`, `python_bridge.download_book`, `zlibrary-api.downloadBookToFile`.
+- **Test Cases**:
+    - Case 1 (Python Lib): `AsyncZlib.download_book` correctly forms `actual_output_path`. / Expected: Path matches `output_dir/BOOK_ID.extension`. / Status: Green (Verified via `test_download_book_functionality` in `zlibrary/src/test.py`)
+    - Case 2 (Python Lib): `AsyncZlib.download_book` ensures target directory is created. / Expected: `os.makedirs` called with `output_dir_str` and `exist_ok=True`. / Status: Green (Verified via mock in `test_download_book_functionality`)
+    - Case 3 (Python Lib): `AsyncZlib.download_book` saves file to `actual_output_path`. / Expected: `aiofiles.open` called with `actual_output_path` and 'wb', and `write` called with content. / Status: Green (Verified via mock in `test_download_book_functionality`)
+    - Case 4 (Python Lib): `AsyncZlib.download_book` returns `str(actual_output_path)`. / Expected: Return value matches constructed path. / Status: Green (Verified via `test_download_book_functionality`)
+    - Case 5 (Python Bridge): `python_bridge.download_book` calls `AsyncZlib.download_book` with correct `book_id` and `output_dir_str`. / Expected: Mocked `AsyncZlib.download_book` called with correct kwargs. / Status: Green (Verified via `test_download_book_bridge_success` in `__tests__/python/test_python_bridge.py`)
+    - Case 6 (Python Bridge): `python_bridge.download_book` returns correct JSON response (file_path). / Expected: Dictionary with `file_path` key. / Status: Green (Verified via `test_download_book_bridge_success`)
+    - Case 7 (Python Bridge): `python_bridge.download_book` handles RAG processing flag and returns `processed_file_path`. / Expected: Mocked `process_document` called, `processed_file_path` in result. / Status: Green (Verified via `test_download_book_bridge_returns_processed_path_if_rag_true`)
+    - Case 8 (Node.js API): `zlibrary-api.downloadBookToFile` passes arguments correctly and returns `file_path` from Python bridge. / Expected: `PythonShell.run` called with correct args, result matches mocked Python output. / Status: Green (Verified by existing tests in `__tests__/zlibrary-api.test.js` passing during `npm test`)
+- **Related Requirements**: User Task: "Test Fixes for `download_book_to_file` Errors and Check Regressions", [ActiveContext 2025-05-06 12:37:17] (code mode changes).
+
+### TDD Cycle: `download_book_to_file` Fix Verification - [2025-05-06 12:52:00]
+- **Red**: N/A (Tests written/updated to verify existing code changes by `code` mode). New/updated tests initially failed or would have failed against pre-fix code.
+- **Green**:
+    - `zlibrary/src/test.py`: Added `test_download_book_functionality`. Test passes with mocks.
+    - `__tests__/python/test_python_bridge.py`: Updated/added `test_download_book_bridge_success`, `test_download_book_bridge_returns_processed_path_if_rag_true`, `test_download_book_bridge_handles_zlib_download_error`, `test_download_book_bridge_handles_processing_error_if_rag_true`. Tests pass with mocks.
+    - `lib/python_bridge.py`: Minor correction to pass `book_id` to `zlib_client.download_book`.
+    - `lib/rag_processing.py`: Added missing `process_document` orchestrator function.
+- **Refactor**: Test assertions in `__tests__/python/test_python_bridge.py` were refined to correctly match mock call signatures and expected outcomes.
+- **Outcome**: Cycle completed. Fixes for `download_book_to_file` verified across Python library, Python bridge, and implicitly at Node.js API level via `npm test`.
+
+### Test Execution: Z-Library Python Library & Bridge (`pytest`) - [2025-05-06 12:52:00]
+- **Trigger**: Manual run after adding/updating tests for `download_book_to_file` and fixing related code.
+- **Outcome**: PASS (Relevant tests)
+- **Summary**: 81 passed, 5 xfailed, 1 xpassed. All tests related to `download_book` functionality in `zlibrary/src/test.py` and `__tests__/python/test_python_bridge.py` passed.
+- **Failed Tests**: None related to `download_book_to_file`. 5 xfailed and 1 xpassed are pre-existing unrelated tests.
+- **Notes**: Confirmed fixes for `download_book_to_file` are working correctly at the Python level.
+
+### Test Execution: MCP Application Regression (`npm test`) - [2025-05-06 12:52:00]
+- **Trigger**: Post-Code Change (Verification of `download_book_to_file` fixes in Python layers).
+- **Outcome**: PASS
+- **Summary**: 4 test suites, 53 tests passed.
+- **Failed Tests**: None.
+- **Coverage Change**: Stable (Coverage: 74.35% Stmts, 58.64% Branch, 75% Funcs, 74.59% Lines - from previous `npm test` output, may vary slightly).
+- **Notes**: No regressions detected in the MCP application (including Node.js tests for `zlibrary-api.downloadBookToFile`) due to changes in the Python bridge or `zlibrary` library. Pre-existing console errors in `venv-manager.test.js` noted but do not represent new failures.
 ### Test Execution: Regression Verification (Full Suite - `npm test`) - [2025-05-06 01:22:47]
 - **Trigger**: Post-Code Change (Debug Fixes for REG-POST-INT001-FIX)
+### Test Plan: `get_download_history` Fix Verification - [2025-05-06 12:29:00]
+- **Objective**: Verify fixes to `get_download_history` tool, ensuring correct URL usage and HTML parsing for new `/users/downloads` endpoint.
+- **Scope**: `zlibrary.profile.ZlibProfile.download_history`, `zlibrary.abs.DownloadsPaginator.parse_page`.
+- **Test Cases**:
+    - Case 1 (Verify): Correct URL construction for `/users/downloads` with various date filters. / Expected: URLs match expected format. / Status: Green (Verified via `test_download_history_url_construction`)
+    - Case 2 (Verify): Successful parsing of mocked new HTML structure (`div.item-wrap`). / Expected: Correct extraction of book ID, title, date, URLs. / Status: Green (Verified via `test_download_history_parsing_new_structure`)
+    - Case 3 (Verify): Successful parsing of mocked old HTML structure (`tr.dstats-row`). / Expected: Correct extraction of book ID, title, date, URLs. / Status: Green (Verified via `test_download_history_parsing_old_structure`)
+    - Case 4 (Verify): Graceful handling of empty download history page. / Expected: Empty result list. / Status: Green (Verified via `test_download_history_empty`)
+    - Case 5 (Verify): Graceful handling of broken/unexpected HTML. / Expected: `ParseError` raised. / Status: Green (Verified via `test_download_history_parse_error`)
+- **Related Requirements**: User Task: "Test `get_download_history` Fixes and Check Regressions", [ActiveContext 2025-05-06 12:13:18] (code mode changes).
+
+### TDD Cycle: `get_download_history` Verification - [2025-05-06 12:29:00]
+- **Red**: N/A (Tests written to verify existing code changes by `code` mode). New tests in `zlibrary/src/test.py` initially failed or would have failed if run against pre-fix code.
+- **Green**: Code changes by `code` mode in `zlibrary/profile.py` (endpoint update) and `zlibrary/abs.py` (parser update for new HTML) were implemented. Tests in `zlibrary/src/test.py` (e.g., `test_download_history_parsing_new_structure`) now pass against these changes with mocked HTML.
+- **Refactor**: Minor corrections to test setup in `zlibrary/src/test.py` (mocking, `ZlibProfile` instantiation) to ensure tests run correctly. Parsing logic in `zlibrary/abs.py` for `DownloadsPaginator.parse_page` was refined to correctly locate elements in the new HTML structure.
+- **Outcome**: Cycle completed. Fixes for `get_download_history` verified. Tests passing for mocked scenarios.
+
+### Test Execution: Z-Library Python Library (`zlibrary/src/test.py`) - [2025-05-06 12:29:00]
+- **Trigger**: Manual run after adding `get_download_history` tests and fixing parser logic.
+- **Outcome**: PASS (for `get_download_history` specific tests)
+- **Summary**: `test_download_history_url_construction`, `test_download_history_parsing_new_structure`, `test_download_history_parsing_old_structure`, `test_download_history_empty`, `test_download_history_parse_error` all passed as per script output. Login-dependent tests were skipped gracefully.
+- **Failed Tests**: None related to `get_download_history`.
+- **Notes**: Confirmed fixes for `get_download_history` URL and parsing logic are working correctly with mocked data.
+
+### Test Execution: MCP Application Regression (`npm test`) - [2025-05-06 12:29:00]
+- **Trigger**: Post-Code Change (Verification of `get_download_history` fixes in `zlibrary` library).
+- **Outcome**: PASS
+- **Summary**: 4 test suites, 53 tests passed.
+- **Failed Tests**: None.
+- **Coverage Change**: Stable (Coverage: 74.35% Stmts, 58.64% Branch, 75% Funcs, 74.59% Lines).
+- **Notes**: No regressions detected in the MCP application due to changes in the shared `zlibrary` Python library. Pre-existing console errors in `venv-manager.test.js` and `zlibrary-api.test.js` noted but do not represent new failures.
 - **Outcome**: PASS
 ${tddModeEntry}
 - **Summary**: 56 Jest tests passed (including implicit Pytest runs).

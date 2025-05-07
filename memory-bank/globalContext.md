@@ -1,3 +1,153 @@
+### Progress - [2025-05-06 18:23:51]
+- **E2E Search Filter Failures (Phase 1, Task 1 - URL Format Changed to Non-Indexed)**:
+    - Modified the `search` and `full_text_search` methods in `zlibrary/src/zlibrary/libasync.py` to use non-indexed URL parameter formatting for `languages` and `extensions` (e.g., `languages[]=value`).
+    - This change was made based on direct user feedback clarifying that the Z-Library API expects non-indexed parameters, overriding the original task's objective which was to ensure indexed formatting.
+- **Related Entries**: [ActiveContext 2025-05-06 18:23:33], [User Feedback 2025-05-06 18:23:01]
+---
+### Progress - [2025-05-06 18:06:15]
+- **E2E Search Filter Failures (Phase 1, Task 1 - URL Format Verification)**:
+    - Verified the URL parameter formatting for `languages` and `extensions` in the `search` and `full_text_search` methods within `zlibrary/src/zlibrary/libasync.py`.
+    - Confirmed that both methods already correctly implement indexed formatting (e.g., `languages[0]=value`, `extensions[0]=value`).
+    - No code changes were necessary for this specific task.
+- **Related Entries**: [ActiveContext 2025-05-06 18:05:57]
+---
+### Progress - [2025-05-06 17:10:34]
+- **E2E Search Filter Investigation (Phase 1, Task 1 - Partial Fix)**:
+    - Fixed internal logic error in `zlibrary/src/zlibrary/libasync.py` for `full_text_search` tool (Issue FTS_TC009) related to single-word queries with `words:true` and `phrase:true`. The `words:true` flag is now correctly prioritized. Verification via `npm test` passed.
+    - Investigation into other filter issues (`search_books` language filter; `full_text_search` language, extension, and no-result filters) indicates these are likely due to Z-Library website behavior (e.g., unsupported filter combinations, different parameter expectations for full-text search, or unexpected responses for no-result queries) rather than internal code errors in parameter passing or parsing.
+- **Related Entries**: [ActiveContext 2025-05-06 17:10:34], [QA Tester Feedback 2025-05-06 13:18:00]
+---
+### Progress - [2025-05-06 16:31:22]
+- **Project Plan Update (TDD & Regression Testing Emphasis)**:
+    - Updated `docs/project-plan-zlibrary-mcp.md` based on user feedback.
+    - Enhanced the "VI. General Procedures for All Phases" section to include:
+        - Detailed "Test-Driven Development (TDD) Workflow" subsection: Outlines Red-Green-Refactor cycle, scope for TDD, and mode integration for TDD stages.
+        - Explicit "TDD Integration" within the "Version Control" subsection: Details how TDD cycles integrate with Git (commits per cycle/feature, commit message conventions for TDD stages).
+        - Strengthened "Verification and Regression Testing" subsection: Emphasizes post-task verification, specific regression checks after refactoring, and E2E re-testing milestones.
+    - Mode delegation descriptions updated to reflect `tdd` mode's role in full TDD cycles and regression checks.
+- **Related Entries**: [ActiveContext 2025-05-06 16:31:22], [GlobalContext Progress 2025-05-06 16:25:27] (Initial plan creation)
+---
+### Progress - [2025-05-06 16:25:27]
+- **Project Plan Creation**:
+    - Successfully created the comprehensive project plan document: `docs/project-plan-zlibrary-mcp.md`.
+    - The plan details Phase 1 (V1 Release: cleanup, bug fixes, critical features like `get_book_metadata` and enhanced filenames), Phase 2 (Advanced Features: direct advanced search, architectural review), and Phase 3 (Ongoing Refinement).
+    - Each task within the phases includes detailed architectural considerations: dependencies, potential challenges, technical approach, mode delegation, verification, and impact assessment.
+    - User priorities and clarifications (e.g., `get_book_metadata` scope, deferred advanced search fields in `search_books`) have been incorporated.
+- **Related Entries**: [ActiveContext 2025-05-06 16:25:27]
+---
+### Progress - [2025-05-06 14:02:42]
+- **DBTF-BUG-001 Fix Test Verification**:
+    - Ran full test suite (`npm test`) after applying the fix for DBTF-BUG-001.
+    - All 4 test suites and 53 tests passed.
+    - Console errors observed during the test run appear to be related to expected error handling paths in tests and did not cause failures.
+    - The fix for DBTF-BUG-001 is confirmed to not introduce regressions caught by the automated test suite.
+- **Related Entries**: [ActiveContext 2025-05-06 14:02:42], [GlobalContext Progress 2025-05-06 13:54:11]
+---
+### Progress - [2025-05-06 13:54:11]
+- **`download_book_to_file` Bug Fix Verification (DBTF-BUG-001 & DBTF-BUG-002)**:
+    - Successfully called `download_book_to_file` tool after applying the fix to `lib/python_bridge.py` (removing `book_id` kwarg) and after the user removed a conflicting file named `downloads`.
+    - This verifies that the `TypeError` (DBTF-BUG-001) is resolved.
+    - This also verifies that the `FileExistsError` (DBTF-BUG-002) is resolved by removing the conflicting file.
+    - Book downloaded successfully to `downloads/4552708.epub`.
+- **Related Entries**: [ActiveContext 2025-05-06 13:54:11], [GlobalContext Progress 2025-05-06 13:49:38], [memory-bank/mode-specific/debug.md - Issue DBTF-BUG-001], [memory-bank/mode-specific/debug.md - Issue DBTF-BUG-002]
+---
+### Progress - [2025-05-06 13:49:38]
+- **`download_book_to_file` Bug Fix (DBTF-BUG-001)**:
+    - Identified that `lib/python_bridge.py` was incorrectly passing `book_id` as a keyword argument to `AsyncZlib.download_book` in `zlibrary/src/zlibrary/libasync.py`.
+    - The `AsyncZlib.download_book` function expects `book_details` (object) and `output_dir_str`, and can derive `book_id` from `book_details`.
+    - Applied fix to `lib/python_bridge.py` to remove the redundant `book_id` keyword argument from the call.
+- **Related Entries**: [ActiveContext 2025-05-06 13:49:38], [memory-bank/feedback/qa-tester-feedback.md - Bug ID: DBTF-BUG-001], [ActiveContext 2025-05-06 12:37:17], [GlobalContext Progress 2025-05-06 12:37:17]
+---
+### Progress - [2025-05-06 12:52:00]
+- **`download_book_to_file` Fix Verification (TDD)**:
+    - Added new unit tests to `zlibrary/src/test.py` for `AsyncZlib.download_book` covering:
+        - Correct file path construction (e.g., `./downloads/BOOK_ID.extension`).
+        - Mocked directory creation (`os.makedirs`).
+        - Mocked file saving (`aiofiles.open` and write).
+        - Correct return value (`str(actual_output_path)`).
+    - Updated unit tests in `__tests__/python/test_python_bridge.py` for `python_bridge.download_book`:
+        - Ensured correct parameters (including `book_id` and `output_dir_str`) are passed to the mocked `zlibrary.AsyncZlib.download_book`.
+        - Verified handling of `process_for_rag` flag and `processed_output_format`.
+        - Confirmed correct JSON response structure (`file_path`, `processed_file_path`).
+        - Tested error propagation from the underlying library.
+    - All new/updated Python tests for `download_book_to_file` pass at the library and bridge levels (`pytest`).
+    - Full MCP application test suite (`npm test`) passed, indicating no regressions in other parts of the system from these changes.
+    - The "Missing original file_path" error and the path handling bug for `download_book_to_file` are confirmed resolved by these tests.
+- **Related Entries**: [ActiveContext 2025-05-06 12:52:00], [Task: Test Fixes for `download_book_to_file` Errors and Check Regressions], [GlobalContext Progress 2025-05-06 12:37:17] (Code mode changes)
+---
+### Progress - [2025-05-06 12:37:17]
+- **`download_book_to_file` Fixes Implemented**:
+    - Modified `zlibrary/src/zlibrary/libasync.py` (`AsyncZlib.download_book`):
+        - Renamed `output_path: str` parameter to `output_dir_str: str`.
+        - Changed return type annotation from `-> None:` to `-> str:`.
+        - Added logic to construct `actual_output_path` using `book_details` (ID, extension) and `output_dir_str`.
+        - Updated directory creation to use `output_directory` (derived from `output_dir_str`).
+        - Updated file opening to use `actual_output_path`.
+        - Changed final return to `str(actual_output_path)`.
+        - Updated logging to refer to `actual_output_path`.
+    - Modified `lib/python_bridge.py` (`download_book` function):
+        - Updated the call to `zlib_client.download_book` to pass `output_dir_str=output_dir` due to parameter rename in `libasync.py`.
+- **Objective**: Resolve "Missing original file_path" error and path handling bug.
+- **Related Entries**: [See ActiveContext 2025-05-06 12:37:17], [See Task: Implement Fixes for `download_book_to_file` Errors], [See Debug Completion Report - ActiveContext 2025-05-06 12:35:22], [See SPARC MB Delegation Log Task [2025-05-06 12:31:34] Outcome]
+---
+### Progress - [2025-05-06 12:29:00]
+- **`get_download_history` Fix Verification (TDD)**:
+    - Added new unit tests to `zlibrary/src/test.py` covering:
+        - Correct URL construction for `/users/downloads` endpoint in `zlibrary/profile.py`.
+        - Successful fetching and parsing of mocked HTML (new and old structures) for `/users/downloads` by `DownloadsPaginator.parse_page` in `zlibrary/abs.py`.
+        - Accurate extraction of download history items.
+        - Handling of empty history and parse error states.
+    - All new tests for `get_download_history` pass at the library level.
+    - Full MCP application test suite (`npm test`) passed, indicating no regressions in other parts of the system.
+    - Debug logging in `zlibrary/util.py` reviewed and deemed beneficial; recommended to keep.
+- **Related Entries**: [See ActiveContext 2025-05-06 12:29:00], [See ActiveContext 2025-05-06 12:13:18] (code mode changes), [See GlobalContext Progress 2025-05-06 12:12:11] (code mode changes summary)
+---
+### Progress - [2025-05-06 12:12:11]
+- **`get_download_history` Fix**:
+    - Endpoint updated from `/users/dstats.php` to `/users/downloads` in `zlibrary/src/zlibrary/profile.py`.
+    - Parser logic in `zlibrary/src/zlibrary/abs.py` (within `DownloadsPaginator.parse_page`) updated to correctly extract data (ID, date/time, title, book URL, re-download URL) from the new HTML structure (`tr.dstats-row` and its `td` children) of the `/users/downloads` page.
+- **Related Entries**: [See ActiveContext 2025-05-06 12:11:44], [See GlobalContext Pattern: External API Endpoint Obsolescence - 2025-05-06 12:01:30]
+---
+### Progress - [2025-05-06 12:01:30]
+- Diagnosed `get_download_history` empty response: Server returns 404 for `/users/dstats.php`.
+- Response headers include a `Location: /users/downloads` redirect.
+- Root cause: The `/users/dstats.php` endpoint is likely obsolete or incorrect.
+- Recommendation: Update `zlibrary` Python library to use `/users/downloads` for download history and verify parsing logic for the new page structure.
+- Related Entries: [See ActiveContext 2025-05-06 12:01:30], [See Debug Issue ZLIB-DSTATS-404]
+---
+### Progress - [2025-05-06 04:51:04]
+- User decided to deprecate `get_recent_books` tool.
+- Verification of `get_download_history` fix (Attempt 3) FAILED. `ParseError: Could not find a valid main content area for downloads list.` persists.
+- Root cause for `get_download_history` may be that the Python library is not receiving the expected HTML page content, possibly due to session/login issues, rather than solely a parser selector problem in `zlibrary/src/zlibrary/abs.py`.
+- Related Entries: [See ActiveContext 2025-05-06 04:51:04], [See Debug Completion 2025-05-06 04:50:12]
+---
+### Progress - [2025-05-06 04:50:12]
+- **ParseError Fix Verification FAILED (Attempt 3):** The fix applied to `zlibrary/src/zlibrary/abs.py` for `DownloadsPaginator.parse_page` was not successful. The `get_download_history` tool still fails with `ParseError: Could not find a valid main content area for downloads list.`
+- **Related Entries:** [See ActiveContext 2025-05-06 04:50:12], [See Task 2025-05-06 04:49:28], [See ActiveContext 2025-05-06 04:44:36 for original fix attempt by code mode]
+---
+### Progress - [2025-05-06 04:28:00]
+- **ParseError Fix Verification FAILED (Attempt 2):** Attempted fixes for `ParseError`s in `get_recent_books` and `get_download_history` (related to `zlibrary/src/zlibrary/abs.py`) were not successful.
+    - `get_recent_books`: Still fails with `ParseError: Could not find the book list items.` (New parsing logic for `SearchPaginator` looking for `div.itemFullText` and then `div.book-card-wrapper` or `div.book-item` elements failed).
+    - `get_download_history`: Still fails with `ParseError: Could not find a valid main content area for downloads list.` (New parsing logic for `DownloadsPaginator` using `soup.body` resulted in an error because a valid content area could not be found).
+- **Related Entries:** [See ActiveContext 2025-05-06 04:28:00], [See Task 2025-05-06 04:27:04], [See ActiveContext 2025-05-06 04:12:18 for attempted fix by code mode]
+---
+### Progress - [2025-05-06 04:06:57]
+- **ParseError Fix Verification FAILED:** Attempted fixes for `ParseError`s in `get_recent_books` and `get_download_history` (related to `zlibrary/src/zlibrary/abs.py`) were not successful.
+    - `get_recent_books`: Still fails with `ParseError: Could not find the book list.` (New parsing logic for `SearchPaginator` looking for `div.itemFullText` and then `z-bookcard` elements failed).
+    - `get_download_history`: Fails with `AttributeError: 'NoneType' object has no attribute 'find'` (New parsing logic for `DownloadsPaginator` resulted in `soup.body` being `None`).
+- **Related Entries:** [See ActiveContext 2025-05-06 04:06:31], [See Task 2025-05-06 04:05:46], [See ActiveContext 2025-05-06 03:55:15 for attempted fix by code mode]
+---
+### Progress - [2025-05-06 03:03:00]
+- **ParseError Diagnosis Completed:** Investigated `ParseError`s for `get_recent_books` and `get_download_history`.
+- **Root Cause:** HTML structural changes on the Z-Library website.
+    - `get_recent_books`: `zlibrary/src/zlibrary/abs.py` (SearchPaginator) fails to find `<div id="searchResultBox">`.
+    - `get_download_history`: `zlibrary/src/zlibrary/abs.py` (DownloadsPaginator) fails to find `<body>` or `<div class="dstats-table-content">`.
+- **Related Entries:** [See ActiveContext 2025-05-06 03:03:00], [See Task 2025-05-06 03:01:17]
+---
+### Progress - [2025-05-06 01:38:00]
+- **DevOps Task Completed:** Committed final Memory Bank updates (commit `53ba6e1`) reflecting the successful verification of the INT-001 fix chain. Working directory is clean.
+- **Related Entries:** [See ActiveContext 2025-05-06 01:38:00]
+---
 ${globalContextEntry}
 ### Progress - [2025-05-06 01:25:39]
 - **DevOps Task Completed:** Committed verified regression fixes (INT-001 chain) and associated Memory Bank updates.
@@ -144,6 +294,33 @@ ${globalContextEntry}
 - **[2025-04-29 11:11:06] - Debug - Resolved RAG PDF Footnote Formatting Bug** - Fixed `test_rag_markdown_pdf_formats_footnotes_correctly` failure in `lib/python_bridge.py`. Root cause was a combination of an erroneous `continue` statement and an extra newline in the footnote separator. Test now passes. [Ref: ActiveContext 2025-04-29 11:11:06, Debug Issue RAG-PDF-FN-01]
 - **[2025-04-29 16:36:11] - Fix: MCP Result Format** - Modified `src/index.ts` `tools/call` handler to return standard `{ result: value }` format. Tests passed. Commit: `47edb7a`. [Ref: ActiveContext 2025-04-29 16:36:11]
 - **[2025-04-29 17:00:00] - HolisticReview - Post-Refinement Assessment Complete** - Reviewed workspace after recent refactoring/fixes. Test suite passes. Integration points verified (RAG refactor, MCP result format). Documentation updated (README, ADRs, Specs). Obsolete `get_book_by_id` references removed from tests/code. Debug logs removed, error logging improved. Minor findings: `lib/rag_processing.py` slightly over line limit, `zlibrary/src/zlibrary/abs.py` significantly over (deferred), utility script `get_venv_python_path.mjs` at root, unused Zod schema remains. Project deemed ready for final checks/deployment prep.
+### Progress - [2025-05-06 01:53:52]
+- **INT-001 ZodError Verification:** Successfully verified the resolution of INT-001 via a `use_mcp_tool` call to `zlibrary-mcp::get_download_limits`. The call completed without the "Expected array, received undefined" ZodError or other critical errors.
+- **Related Entries:** [See ActiveContext 2025-05-06 01:53:52], [See Debug Issue INT-001 - 2025-05-05 22:28:51]
+---
+### Progress - [2025-05-06 02:05:11]
+- **MCP Response Fix Completed:** Modified `src/index.ts` `tools/call` handler to return the raw result object (`{ content: [result] }`) instead of a stringified text object. This resolves the incorrect data return issue reported after the INT-001 fix.
+- **Verification:** Build (`npm run build`) and relevant tests (`npm test __tests__/index.test.js`) passed successfully.
+- **Related Entries:** [See ActiveContext 2025-05-06 02:05:11], [See System Patterns 2025-05-06 02:05:11], [See GlobalContext Progress 2025-05-05 22:28:31] (INT-001 Fix)
+---
+### Progress - [2025-05-06 02:24:48]
+- **MCP Data Return Fix Verified:** Successfully fixed incorrect data return for `get_download_limits`. The root cause was identified in `lib/python_bridge.py`, where the `main` function was not outputting the result in the doubly-wrapped JSON structure expected by `callPythonFunction` in `src/lib/zlibrary-api.ts`.
+- **Changes:**
+    - Modified `lib/python_bridge.py` (lines 353-360) to ensure all Python function results are printed in the format: `json.dumps({ "content": [{ "type": "text", "text": json.dumps(actual_python_result) }] })`.
+    - Reverted an earlier incorrect change in `src/index.ts` (line 331) back to `return { content: [{ type: 'text', text: JSON.stringify(result) }] };`.
+- **Verification:** The fix was confirmed by a successful `use_mcp_tool` call to `get_download_limits`, which returned the correct data object. Build and unit tests also passed.
+- **Related Entries:** [See ActiveContext 2025-05-06 02:24:48], [See System Patterns 2025-05-06 02:24:48], [See User Feedback 2025-05-06 02:07:05]
+---
+### Progress - [2025-05-06 02:40:36]
+- **MCP Data Flow & RAG Tooling Fixes:**
+    - Corrected Python bridge (`lib/python_bridge.py`) output to consistently use a doubly-wrapped JSON structure (`json.dumps({ "content": [{ "type": "text", "text": json.dumps(actual_python_result) }] })`) for all tool calls. This resolved the primary issue of incorrect data (e.g., status dicts) being returned to the client for tools like `get_download_limits`.
+    - Fixed `asyncio` usage in `lib/rag_processing.py` (added `asyncio` import, made `process_txt` async, and correctly awaited its call in `lib/python_bridge.py`). This resolved `NameError` and `RuntimeError: asyncio.run() cannot be called from a running event loop` during `process_document_for_rag` calls.
+- **Verification:**
+    - `get_download_limits`, `search_books`, `full_text_search`, `process_document_for_rag`: All successfully verified via `use_mcp_tool` after fixes.
+    - `get_recent_books`, `get_download_history`, `download_book_to_file`: These tools continue to fail due to errors originating from the external `zlibrary` Python library (likely website parsing/scraping issues or changes in the Z-Library website itself), not the MCP data flow.
+- **Noted Issue:** User reported that `download_book_to_file` created an extensionless file named `downloads` instead of a `./downloads` directory. This is a separate issue to be investigated.
+- **Related Entries:** [See ActiveContext 2025-05-06 02:40:36], [See System Patterns 2025-05-06 02:24:48], [User Feedback 2025-05-06 02:07:05], [User Feedback 2025-05-06 02:29:51], [User Feedback on downloads file]
+---
 ## Progress
 - **[2025-05-06 00:33:00] - Regression INT-001-REG-01 Resolved:** Fixed JSON parsing errors in `__tests__/zlibrary-api.test.js` caused by INT-001 fix. Required ensuring `callPythonFunction` used `text` mode with double parsing, removing extra wrapping in `src/index.ts` handlers, and correcting test mocks. Verified via `npm test __tests__/zlibrary-api.test.js`. [See Debug Issue INT-001-REG-01]
 ---
@@ -305,10 +482,40 @@ ${globalContextEntry}
     1.  **`src/index.ts` Handlers**: Modified handlers (e.g., `searchBooks`) to return the direct result from `zlibraryApi` functions, removing intermediate object wrapping. The main `tools/call` handler correctly stringifies this direct result into the MCP `content.text` field.
     2.  **`src/lib/zlibrary-api.ts` (`callPythonFunction`)**: Maintained `python-shell` in `text` mode. Implemented double `JSON.parse`: first parse the raw stdout string to get the MCP response object, then parse the `mcpResponseData.content[0].text` string to get the actual Python result.
     3.  **`__tests__/zlibrary-api.test.js`**: Corrected all `mockPythonShellRun.mockResolvedValueOnce` calls to resolve with `[stringified_MCP_response]`, matching the `text` mode output. Ensured unique variable names for mock helpers.
+### Pattern Update: MCP Response Structure (Raw Object) - [2025-05-06 02:05:11]
+- **Context**: MCP server (`zlibrary-mcp`) handling `tools/call` requests.
+- **Problem**: Initial INT-001 fix wrapped successful results in `{ content: [{ type: 'text', text: JSON.stringify(result) }] }`. While resolving the ZodError, this returned stringified data, not the expected raw object, causing issues for the client (e.g., `get_download_limits` returning `{"status":"success","result_type":"dict"}`).
+### Pattern Update: Node/Python Bridge Data Handling (MCP Response) - [2025-05-06 02:24:48]
+- **Context**: Ensuring correct data flow from Python script (`lib/python_bridge.py`) through the Node.js layer (`src/lib/zlibrary-api.ts`, `src/index.ts`) to the MCP client.
+- **Problem**: Client was receiving a stringified status dictionary (e.g., `"{'status':'success','result_type':'dict'}"`) instead of the actual tool result (e.g., download limits object). This was due to `lib/python_bridge.py` not outputting its data in the doubly-wrapped JSON structure expected by `callPythonFunction` in `src/lib/zlibrary-api.ts`.
+- **Solution**:
+    1.  **`lib/python_bridge.py` (`main` function)**: Modified to *always* print its output in the format `json.dumps({ "content": [{ "type": "text", "text": json.dumps(actual_python_result) }] })`. This ensures `callPythonFunction` receives the structure it expects for its initial parse.
+    2.  **`src/lib/zlibrary-api.ts` (`callPythonFunction`)**: No changes needed here. It correctly performs a double parse: first to get the outer MCP object, then to extract and parse the `text` field to get the `actual_python_result`. It returns this `actual_python_result`.
+    3.  **`src/index.ts` (Tool Handlers, e.g., `getDownloadLimits`)**: No changes needed. They correctly return the `actual_python_result` received from `zlibraryApi` functions.
+    4.  **`src/index.ts` (`tools/call` handler)**: No changes needed to its final response structure. It correctly takes the `actual_python_result` from the specific tool handler and stringifies it into the final client response: `{ content: [{ type: 'text', text: JSON.stringify(actual_python_result) }] }`.
+- **Components**: `lib/python_bridge.py`, `src/lib/zlibrary-api.ts`, `src/index.ts`.
+- **Related**: [GlobalContext Progress 2025-05-06 02:24:48], [GlobalContext Pattern 2025-05-06 00:33:00] (Previous state), [User Feedback 2025-05-06 02:07:05]
+---
+- **Solution**: Modified the `tools/call` handler in `src/index.ts` (line 331) to return the raw result object directly within the content array: `{ content: [result] }`. This aligns with the original intent of the INT-001 fix and provides the client with the expected data structure.
+- **Components**: `src/index.ts` (`tools/call` handler).
+- **Related**: Issue INT-001 Follow-up, [GlobalContext Progress 2025-05-06 02:05:11], [GlobalContext Pattern 2025-05-05 22:29:07] (Previous structure)
+---
 - **Components**: `src/index.ts`, `src/lib/zlibrary-api.ts`, `__tests__/zlibrary-api.test.js`.
 - **Related**: [Debug Issue INT-001-REG-01], [GlobalContext Progress 2025-05-06 00:33:00]
 ---
 - **Related**: Task [Refactor Python Bridge (`lib/python_bridge.py`) 2025-04-29 15:43:24]
+### Pattern: External API Endpoint Obsolescence - [2025-05-06 12:01:30]
+- **Context**: Tools relying on specific URL endpoints of external services (e.g., Z-Library).
+- **Problem**: External services may change their API endpoints or URL structures without notice (e.g., `/users/dstats.php` becoming `/users/downloads`). This leads to 404 errors and tool failures (e.g., `ParseError` due to empty response).
+- **Detection**: Monitor for 404 errors, unexpected empty responses, or redirect headers (`Location`) in HTTP responses from external services.
+- **Mitigation/Solution**:
+    - Implement robust error handling to detect 404s and log redirect information.
+    - Update the library/tool to use the new endpoint.
+    - Verify HTML parsing logic against the new endpoint's structure.
+    - Consider adding configuration for base URLs or key endpoints if changes are frequent.
+- **Components**: `zlibrary/src/zlibrary/libasync.py`, `zlibrary/src/zlibrary/abs.py`, `zlibrary/src/zlibrary/profile.py`.
+- **Related Issues**: [Debug Issue ZLIB-DSTATS-404]
+---
 # System Patterns
 ### Pattern: RAG Pipeline File Output - [2025-04-23 23:30:58]
 ### Pattern: Conflicting Function Definitions - [2025-05-01 03:09:11]

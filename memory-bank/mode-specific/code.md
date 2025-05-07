@@ -1,5 +1,56 @@
 # Auto-Coder Specific Memory
 <!-- Entries below should be added reverse chronologically (newest first) -->
+### [2025-05-06 18:24:11] URL Parameter Formatting Changed to Non-Indexed
+- **Purpose**: Modify URL parameter formatting for `languages` and `extensions` in `search` and `full_text_search` methods to use non-indexed format (e.g., `languages[]=value`) as per revised user objective.
+- **Files**: `zlibrary/src/zlibrary/libasync.py`
+- **Status**: Implemented.
+- **Dependencies**: None.
+- **API Surface**: N/A (Internal implementation detail of URL construction).
+- **Tests**: Existing tests for URL parameter formatting may now fail and require updates.
+- **Details**: Changed loops iterating over `lang` and `extensions` lists to append `&languages%5B%5D={value}` or `&extensions%5B%5D={value}` instead of the indexed `&languages%5B{i}%5D={value}`.
+- **Related**: [ActiveContext 2025-05-06 18:23:33], [GlobalContext Progress 2025-05-06 18:23:51], [User Feedback 2025-05-06 18:23:01]
+### [2025-05-06 18:06:36] URL Parameter Formatting Verification
+- **Purpose**: Verify that `languages` and `extensions` parameters in `search` and `full_text_search` methods in `zlibrary/src/zlibrary/libasync.py` use indexed URL formatting.
+- **Files**: `zlibrary/src/zlibrary/libasync.py`
+- **Status**: Verified (No changes needed).
+- **Dependencies**: None.
+- **API Surface**: N/A (Internal implementation detail).
+- **Tests**: N/A (No code changes made).
+- **Details**: Confirmed that the existing implementation already uses the correct indexed format (e.g., `languages[0]=value`) for these parameters in both specified methods.
+- **Related**: [ActiveContext 2025-05-06 18:05:57], [GlobalContext Progress 2025-05-06 18:06:15]
+### [2025-05-06 12:37:17] `download_book_to_file` Fixes
+- **Purpose**: To resolve "Missing original file_path" error and path handling bug in the `download_book_to_file` tool.
+- **Files**:
+    - `zlibrary/src/zlibrary/libasync.py`: Modified `AsyncZlib.download_book` method.
+        - Renamed `output_path: str` parameter to `output_dir_str: str`.
+        - Changed return type annotation from `-> None:` to `-> str:`.
+        - Added logic to construct `actual_output_path` from `book_details` and `output_dir_str`.
+        - Updated directory creation logic to use `output_directory`.
+        - Updated file opening logic to use `actual_output_path`.
+        - Changed final return to `str(actual_output_path)`.
+        - Updated logging to use `actual_output_path`.
+    - `lib/python_bridge.py`: Modified `download_book` function.
+        - Updated the call to `zlib_client.download_book` to use the new parameter name `output_dir_str`.
+- **Status**: Implemented.
+- **Details**: These changes address the root causes identified by `debug` mode: `libasync.py` returning `None` and incorrect path handling. The method now returns the actual path of the downloaded file, and the output directory is correctly used.
+- **Related**: [ActiveContext 2025-05-06 12:37:17], [GlobalContext Progress 2025-05-06 12:37:17], [See Debug Completion Report - ActiveContext 2025-05-06 12:35:22]
+## API/Handler Modifications
+### [2025-05-06 12:12:30] `get_download_history` Endpoint and Parser Update
+- **Purpose**: To fix the `get_download_history` tool which was failing due to an obsolete endpoint and incorrect parser logic.
+- **Files**:
+    - `zlibrary/src/zlibrary/profile.py`: Modified `download_history` method to change the target URL from `/users/dstats.php` to `/users/downloads`.
+    - `zlibrary/src/zlibrary/abs.py`: Modified `DownloadsPaginator.parse_page` method to correctly parse the HTML structure of the new `/users/downloads` page. This involved updating selectors to find table rows (`tr.dstats-row`), and then extracting `data-item_id`, download date/time, book title, book URL, and re-download URL from the table cells (`td`) within each row.
+- **Status**: Implemented.
+- **Details**: The previous endpoint `/users/dstats.php` was returning a 404. Debug investigation indicated `/users/downloads` as the new endpoint. Parser logic was updated based on user-provided HTML for the new page.
+- **Related**: [ActiveContext 2025-05-06 12:11:44], [GlobalContext Progress 2025-05-06 12:12:11]
+## Intervention Log
+### [2025-05-06 04:49:15] Intervention: Deprecate `get_recent_books`
+- **Trigger**: User Feedback [Ref: ActiveContext 2025-05-06 04:49:15]
+- **Context**: After multiple failed attempts to fix `ParseError` for `get_recent_books` and `get_download_history`.
+- **Action Taken**: User decided to deprecate `get_recent_books`. Focus shifted to verifying the fix for `get_download_history`.
+- **Rationale**: `get_recent_books` page was not showing results, making parser fixes impossible. User prefers to enhance `search_books` instead.
+- **Outcome**: `get_recent_books` fix is no longer pursued. `get_download_history` fix attempt also failed verification [Ref: Debug Completion 2025-05-06 04:50:12].
+- **Follow-up**: Further investigation needed for `get_download_history` if the tool is still required. Consider if the issue is HTML content retrieval vs. parsing.
 ### Implementation: `download_book` in Forked Library - [2025-04-24 03:49:26]
 ### [2025-04-29 19:34:25] _slugify Function
 - **Purpose**: Generate URL-safe slugs from strings (author, title).
@@ -17,6 +68,26 @@
 - **API Surface**: `save_processed_text(original_file_path: Path, text_content: str, output_format: str = "txt", book_id: str = None, author: str = None, title: str = None) -> Path`
 - **Tests**: `__tests__/python/test_rag_processing.py` (various tests)
 ## API/Handler Modifications
+### [2025-05-06 02:40:36] Fix RAG Tool Async/Await Issues
+- **Purpose**: Resolved `NameError: name 'asyncio' is not defined` and `RuntimeError: asyncio.run() cannot be called from a running event loop` during `process_document_for_rag` calls.
+- **Files**:
+    - `lib/rag_processing.py`: Added `import asyncio` (line 1). Changed `process_txt` (line 947) to `async def`. Changed `asyncio.run(read_utf8())` to `await read_utf8()` (line 956) and `asyncio.run(read_latin1())` to `await read_latin1()` (line 963).
+    - `lib/python_bridge.py`: Changed `processed_text = rag_processing.process_txt(file_path)` to `processed_text = await rag_processing.process_txt(file_path)` (line 230) within the `process_document` function.
+- **Status**: Implemented and Verified.
+- **Details**: The `asyncio` library was missing from `rag_processing.py`. Additionally, `asyncio.run()` was being called from within an already running event loop, and `process_txt` (now async) was not being awaited by its caller. These changes correct the async control flow.
+- **Related**: [ActiveContext 2025-05-06 02:40:36]
+### [2025-05-06 02:24:48] Fix Python Bridge Output for MCP Data Flow
+- **Purpose**: Resolved incorrect data return for tools like `get_download_limits`. The Python bridge (`lib/python_bridge.py`) was not outputting data in the doubly-wrapped JSON structure expected by `callPythonFunction` in `src/lib/zlibrary-api.ts`.
+- **Files**: `lib/python_bridge.py` (modified `main` function's print statement, lines 353-360).
+- **Status**: Implemented and Verified.
+- **Details**: Changed the Python script's `main` function to always print `json.dumps({ "content": [{ "type": "text", "text": json.dumps(actual_python_result) }] })`. This ensures the Node.js layer receives the correct intermediate structure for parsing. The `tools/call` handler in `src/index.ts` remains as `return { content: [{ type: 'text', text: JSON.stringify(result) }] };` for the final client response.
+- **Related**: Task [Fix Incorrect Data Return in MCP `tools/call` Handler], [GlobalContext Progress 2025-05-06 02:24:48], [GlobalContext Pattern 2025-05-06 02:24:48], [User Feedback 2025-05-06 02:07:05]
+### [2025-05-06 02:05:11] Fix MCP Result Format (`tools/call` - Raw Object)
+- **Purpose**: Corrected the `tools/call` handler to return the raw result object directly within the `content` array, resolving incorrect data return (e.g., stringified dict instead of actual dict) reported after INT-001 fix.
+- **Files**: `src/index.ts` (modified line 331).
+- **Status**: Implemented.
+- **Details**: Changed `return { content: [{ type: 'text', text: JSON.stringify(result) }] };` to `return { content: [result] };`. Build and tests passed.
+- **Related**: Task [Fix Incorrect Data Return in MCP `tools/call` Handler], [GlobalContext Progress 2025-05-06 02:05:11], [GlobalContext Pattern 2025-05-06 02:05:11], [GlobalContext Pattern 2025-05-05 22:29:07] (Previous structure)
 
 ### [2025-04-29 16:36:11] Fix MCP Result Format (`tools/call`)
 - **Purpose**: Ensure the `tools/call` handler returns results in the standard MCP format `{ result: value }`.

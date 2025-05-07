@@ -1,7 +1,71 @@
 # SPARC Orchestrator Specific Memory
 <!-- Entries below should be added reverse chronologically (newest first) -->
+### [2025-05-06 01:45:41] Intervention: User Request for Manual E2E Testing via RooCode
+- **Trigger**: User feedback requesting SPARC perform manual testing via RooCode UI.
+- **Context**: Following successful automated testing (`npm test`) after INT-001 fix.
+- **Action Taken**: Explained inability to directly interact with RooCode UI. Referenced `debug` mode's simulated verification. Requested user perform the manual test via their UI and report results.
+- **Rationale**: Clarify SPARC's operational limitations while guiding user towards the necessary verification step.
+- **Outcome**: Awaiting user confirmation of manual test results. Workflow state updated to reflect this.
+- **Follow-up**: Await user feedback. Initiate handover due to context limit (55.6%).
 ## Delegations Log
 <!-- Append new delegation records here -->
+### [2025-05-06 12:58:58] Task: Implement `download_book_to_file` Fixes
+- Assigned to: code
+- Description: Implement fixes in `zlibrary/src/zlibrary/libasync.py` and `lib/python_bridge.py` as per debug recommendations to resolve "Missing original file_path" and path handling errors for `download_book_to_file`. Key changes: `AsyncZlib.download_book` to construct full path from `output_dir_str` and `book_details`, use it for saving, and return `str(actual_output_path)`. Update `python_bridge.py` call accordingly.
+- Expected deliverable: Modified Python files with implemented fixes.
+- Status: pending
+- Completion time:
+- Outcome:
+- Link to Progress Entry: [activeContext.md 2025-05-06 12:35:22]
+### [2025-05-06 12:31:34] Task: Investigate `download_book_to_file` Errors
+- Assigned to: debug
+- Description: Investigate two issues with `download_book_to_file`: 1. Node.js error: "Invalid response from Python bridge: Missing original file_path." 2. Path handling bug: Creates a file named "downloads" instead of a directory "./downloads/".
+- Expected deliverable: Root cause analysis for both errors. Recommendations for fixing them.
+- Status: completed
+- Completion time: 2025-05-06 12:35:22
+- Outcome: SUCCESS. Root causes identified: Python returns None for file_path, and output_dir used as filename. Recommendations provided for libasync.py and python_bridge.py.
+- Link to Progress Entry: [activeContext.md 2025-05-06 12:31:15]
+### [2025-05-06 12:13:43] Task: Test `get_download_history` Fixes and Regressions
+- Assigned to: tdd
+- Description: Write/update tests for `get_download_history` functionality covering changes in `zlibrary/profile.py` and `zlibrary/abs.py`. Ensure tool works, verify no regressions. Decide on logging in `zlibrary/util.py`.
+- Expected deliverable: Passing test suite, report on test coverage, decision on logging.
+- Status: completed
+- Completion time: 2025-05-06 12:31:15
+- Outcome: SUCCESS. Tests for `get_download_history` pass. No regressions found in MCP app. Debug logging in `zlibrary/util.py` retained.
+- Link to Progress Entry: [activeContext.md 2025-05-06 12:13:18]
+
+### [2025-05-06 12:13:18] Task: Fix `get_download_history` Endpoint and Parser
+- Assigned to: code
+- Description: Update endpoint in `zlibrary/profile.py` to `/users/downloads` and update parser logic in `zlibrary/abs.py` for the new page structure.
+- Expected deliverable: Modified Python files, basic operational verification.
+- Status: completed
+- Completion time: 2025-05-06 12:13:05
+- Outcome: SUCCESS. Endpoint updated in `zlibrary/profile.py`, parser logic updated in `zlibrary/abs.py`.
+- Link to Progress Entry: [activeContext.md 2025-05-06 12:13:18]
+### [2025-05-06 11:59:03] Task: Investigate `get_download_history` Empty Server Response
+- Assigned to: debug
+- Description: Investigate why an empty string is returned by the Z-Library server for the `/users/dstats.php` page when called by the internalized `zlibrary` library. Attempt to capture raw HTTP request/response or add detailed logging in `zlibrary/src/zlibrary/libasync.py` around the fetch call for the history page.
+- Expected deliverable: Root cause analysis for the empty server response. Recommendations for fixing the `get_download_history` tool.
+- Status: completed
+- Completion time: 2025-05-06 12:03:42
+- Outcome: SUCCESS. Debug mode found /users/dstats.php returns 404. New suggested endpoint is /users/downloads. Logging added to zlibrary/util.py.
+- Link to Progress Entry: [activeContext.md 2025-05-06 11:59:03]
+### [2025-05-06 02:01:32] Task: Fix Incorrect Data Return in MCP `tools/call` Handler
+- Assigned to: code
+- Description: Modify `src/index.ts` tools/call handler (approx. line 331) to return raw result object `return { content: [result] };` instead of `return { content: [{ type: 'text', text: JSON.stringify(result) }] };` to fix incorrect data return for `get_download_limits`.
+- Expected deliverable: Modified `src/index.ts`, build confirmation, and verification if possible.
+- Status: completed
+- Completion time: 2025-05-06 02:43:53
+- Outcome: SUCCESS. `code` mode reported extensive fixes primarily in `lib/python_bridge.py` and `lib/rag_processing.py` related to JSON wrapping and asyncio. `get_download_limits` and other key tools now return correct data. Some tools still fail due to external library issues.
+- Link to Progress Entry: [activeContext.md 2025-05-06 02:43:53]
+### [2025-05-06 01:52:46] Task: Verify INT-001 ZodError Resolution via MCP Tool Call
+- Assigned to: debug
+- Description: Perform a client-side test by calling `get_download_limits` from `zlibrary-mcp` to verify if INT-001 ZodError is resolved.
+- Expected deliverable: Summary of tool call outcome, specifically if ZodError was observed.
+- Status: completed
+- Completion time: 2025-05-06 01:53:52
+- Outcome: SUCCESS. `get_download_limits` tool call completed successfully without INT-001 ZodError.
+- Link to Progress Entry: [GlobalContext Progress 2025-05-06 01:53:52] (Entry made by debug mode)
 ### [2025-05-06 01:23:32] Task: Commit Verified Regression Fixes (INT-001 Chain)
 - Assigned to: devops
 - Description: Stage and commit verified code fixes (`requirements-dev.txt`, `__tests__/python/test_python_bridge.py`, `__tests__/index.test.js`) and Memory Bank updates after successful debug and TDD verification.
@@ -38,14 +102,21 @@
 - Outcome: FAILED. INT-001-REG-01 resolved, but new regressions found in Jest (`__tests__/zlibrary-api.test.js`) and Pytest (`__tests__/python/test_python_bridge.py`).
 - Link to Progress Entry: [GlobalContext Progress 2025-05-06 12:55:13]
 
-## Workflow State (Current - Overwrite this section)
-- Current phase: Completion
-- Phase start: 2025-05-06 01:27:53
-- Current focus: Finalizing orchestration for INT-001 fix chain.
-- Next actions: Perform `attempt_completion`.
-- Last Updated: 2025-05-06 01:27:53
+# Workflow State (Current - Overwrite this section)
+- Current phase: Refinement / Pre-Release Stabilization
+- Phase start: 2025-05-06 13:02:41
+- Current focus: Ensuring stability of all tools and preparing for release.
+- Next actions: Plan and delegate manual E2E testing, deprecate `get_recent_books`.
+- Last Updated: 2025-05-06 13:07:03
 
 ## Intervention Log
+### [2025-05-06 13:02:41] Intervention: User Shifted Priorities - Halt Feature Work, Focus on Stability/Deployment
+- **Trigger**: User feedback denying `spec-pseudocode` delegation for `search_books` enhancement.
+- **Context**: SPARC was about to delegate specification for `search_books` sorting. User requested to halt new feature work.
+- **Action Taken**: Halted `search_books` enhancement. Acknowledged new user priorities: 1. Manual E2E testing of all tools. 2. Officially deprecate/remove `get_recent_books`. 3. Stabilize for release. 4. Address deployment.
+- **Rationale**: Align with explicit user direction to prioritize stability and existing tool functionality over new features.
+- **Outcome**: Current task (enhancing `search_books`) aborted. Workflow will be re-planned by the next SPARC instance.
+- **Follow-up**: Initiate handover to a new SPARC instance due to context limits (41.45%) and significant task reprioritization. The new instance will manage the E2E testing, `get_recent_books` deprecation, stabilization, and deployment planning.
 <!-- Append intervention details using the format below -->
 ### [2025-05-05 22:10:51] Intervention: User Request for Internal INT-001 Investigation
 - **Trigger**: User feedback requesting internal log search for previous INT-001 solutions.
@@ -54,6 +125,13 @@
 - **Rationale**: Address user request to re-examine internal history before relying solely on external investigation.
 - **Outcome**: Workflow focus shifted to internal log investigation.
 - **Follow-up**: Delegate Memory Bank search task to `debug`. Update Workflow State.
+### [2025-05-06 02:58:38] Intervention: User Feedback - Remaining Tool Failures & Internalized Library
+- **Trigger**: User feedback on `attempt_completion`.
+- **Context**: SPARC attempted completion after `get_download_limits` data return was fixed. User pointed out other tools (`get_recent_books`, `get_download_history`, `download_book_to_file`) are still failing and that the `zlibrary` Python library is now internalized, making its `ParseError` issues potentially fixable.
+- **Action Taken**: Acknowledged feedback. Rescinded previous `attempt_completion`. Logged new understanding in `activeContext.md`. Will update Workflow State to "Refinement" and create a plan to address remaining tool failures.
+- **Rationale**: Address all known critical tool failures before final completion. The internalized library changes the approach for some `ParseError` issues.
+- **Outcome**: Task scope expanded to include fixing remaining tool failures.
+- **Follow-up**: Update Workflow State in `sparc.md`. Delegate diagnostic and fixing tasks for remaining tool failures.
 ### [2025-05-05 22:09:10] Intervention: User Feedback on Research Prompt Explicitness
 - **Trigger**: User feedback following provision of research prompt for INT-001.
 - **Context**: SPARC provided a research prompt that implicitly relied on local context.
@@ -1420,11 +1498,11 @@
 - Outcome: SUCCESS. Logic implemented and refactored in `lib/rag_processing.py`. `__tests__/python/test_rag_processing.py` suite passes (50 passed, 1 xfailed). [Ref: User Message 2025-05-05 00:37:04, MB tdd.md 2025-05-04 21:05:16]
 - Link to Progress Entry: N/A
 # Workflow State (Current - Overwrite this section)
-- Current phase: Refinement (Testing)
-- Phase start: 2025-05-06 01:28:31 (Debug INT-001-REG-01 Complete)
-- Current focus: Regression INT-001-REG-01 fixed by `debug`. Need final verification of test suite.
-- Next actions: Delegate `npm test` execution to `tdd` mode. Initiate handover due to context limit (50.6%).
-- Last Updated: 2025-05-06 01:29:09
+- Current phase: Completion (Verification Pending)
+- Phase start: 2025-05-06 01:34:01 (TDD Verification Complete)
+- Current focus: INT-001 and regression INT-001-REG-01 fixed and verified by automated tests. Awaiting user manual verification via RooCode UI.
+- Next actions: Await user confirmation. Initiate handover due to context limit (55.6%).
+- Last Updated: 2025-05-06 01:46:02
 
 - Assigned to: system-refiner
 - Description: Analyze feedback, logs, and mode memories to propose improvements to Roo system rules (.clinerules-*), ensuring generalizability.

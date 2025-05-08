@@ -1,5 +1,19 @@
 # Auto-Coder Specific Memory
 <!-- Entries below should be added reverse chronologically (newest first) -->
+### [2025-05-07 22:05:00] EFN_CONVENTION_FAIL_01 Fix: Author Retrieval in `_create_enhanced_filename`
+- **Location**: `lib/python_bridge.py`
+- **Nature**: Bug Fix / Data Integrity. Incorrect author data retrieval for filename generation.
+- **Severity**: Medium (Impacts filename correctness)
+- **Resolution**:
+    - Changed author retrieval in `_create_enhanced_filename` (around line 92-93) from `raw_author = book_details.get('author', '')` to:
+      ```python
+      authors_list = book_details.get('authors', []) # Get the list of authors
+      raw_author = authors_list[0] if authors_list and isinstance(authors_list, list) and authors_list[0] else ""
+      ```
+- **Status**: Resolved (Pending Verification)
+- **Resolution Date**: 2025-05-07
+- **Verification**: To be performed by user/QA. Check if filenames now correctly use the first author from the `authors` list.
+- **Related**: [ActiveContext 2025-05-07 22:05:00], [GlobalContext Progress EFN_CONVENTION_FAIL_01 - [2025-05-07 22:05:00]], [Original Task EFN_CONVENTION_FAIL_01], [GlobalContext Progress - [2025-05-07 21:50:00] (QA Report identifying the bug)]
 ### [2025-05-07 20:30:40] Feature: Add Author/Title to Search Results
 - **Purpose**: Enhance `search_books` and `full_text_search` tools to include `author` and `title` in their results.
 - **Files**:

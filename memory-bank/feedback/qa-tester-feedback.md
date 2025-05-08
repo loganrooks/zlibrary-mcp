@@ -1,3 +1,17 @@
+### User Feedback & New QA Tasks for RAG Processing - [2025-05-07 21:49:19]
+- **Source**: User feedback following QA cycle update.
+- **Feedback/Issues for `process_document_for_rag`**:
+    1.  **Content Return**: The tool currently returns the full processed content in the response. This should not be the default behavior; returning content should be optional.
+    2.  **Output Configuration**: The tool should offer parameters similar to `download_book_to_file` for specifying an `outputDir` and `output_file_type` (or a way to control the output filename and extension more granularly than the current `processed_rag_output/none-none-None.epub.processed.markdown` default).
+- **New Verification Task for EPUB to Markdown**:
+    1.  Verify that headers and subheaders are correctly formatted in the Markdown output.
+    2.  Verify that citations and internal references (including Table of Contents linking) are properly formatted according to standard Markdown.
+- **Focus**: These new RAG verification tasks should focus on EPUB processing.
+- **Action Taken**: Acknowledged. Will proceed with testing EPUB to Markdown formatting and note the feature requests/bugs for `process_document_for_rag`.
+### User Feedback on QA Report - [2025-05-07 21:31:20]
+- **Source**: User feedback on `attempt_completion` for QA Verification Cycle (get_metadata branch `4ceef25`).
+- **Feedback**: Report was incomplete. Need to also test (1) the file naming more thoroughly and (2) pick a small book to test the RAG processing with, perhaps download it and then play around with the processing.
+- **Action Taken**: Task acknowledged. Will add these verification steps to the current QA cycle.
 ### E2E Test Execution: Z-Library MCP V1 Candidate Verification - [2025-05-07 12:38:21]
 
 **Test Plan:** E2E - Z-Library MCP V1 Candidate Verification - [2025-05-07 12:33:01] (see [`memory-bank/mode-specific/qa-tester.md`](memory-bank/mode-specific/qa-tester.md:1))

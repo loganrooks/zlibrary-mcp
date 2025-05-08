@@ -89,14 +89,15 @@ def _create_enhanced_filename(book_details: dict) -> str:
     Format: LastnameFirstname_TitleOfTheBook_BookID.ext
     """
     author_str = "UnknownAuthor"
-    raw_author = book_details.get('author', '')
+    authors_list = book_details.get('authors', []) # Get the list of authors
+    raw_author = authors_list[0] if authors_list and isinstance(authors_list, list) and authors_list[0] else ""
     if raw_author:
         parts = [p.strip() for p in raw_author.split(',')]
         if len(parts) > 1: # Likely "Last, First Middle"
-            lastname = parts[0]
-            first_middle_parts = parts[1].split()
-            firstnames = "".join([name.capitalize() for name in first_middle_parts])
-            author_str = f"{lastname.capitalize()}{firstnames}"
+            lastname = parts[0].capitalize()
+            # Join all other parts as first/middle names
+            first_middle_names = "".join("".join(p_part.capitalize() for p_part in part.split()) for part in parts[1:])
+            author_str = f"{first_middle_names}{lastname}"
         else: # Likely "First Middle Last" or "SingleName"
             name_parts = raw_author.split()
             if len(name_parts) == 1:

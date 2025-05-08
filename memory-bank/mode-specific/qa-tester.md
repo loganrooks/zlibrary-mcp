@@ -1,5 +1,38 @@
 # QA Tester Specific Memory
 <!-- Entries below should be added reverse chronologically (newest first) -->
+### Test Execution: Verification Cycle - `get_metadata` branch (4ceef25) - [2025-05-07 21:50:00]
+- **Environment**: Local / **Build**: `get_metadata` branch (commit `4ceef25`)
+- **Outcome**: PARTIAL
+- **Summary**:
+    - Re-verify GM_MISSING_AUTHORS_ISBN_01 Fix (`get_metadata`): PASS. Authors and ISBNs correctly extracted for "Art & War".
+    - Verify EFN_CONVENTION_FAIL_01 Fix (Filename Generation - `download_book_to_file`): FAIL.
+        - Test 1 (Art & War): Filename was `downloads/UnknownAuthor_Art_War_23778950.epub`, expected `TidharLavie_Art&War_23778950.epub`. Author component incorrect.
+        - Test 2 (O Corvo): Filename was `downloads_qa_tester/UnknownAuthor_O_Corvo_(The_Raven)_4774969.epub`, expected `PoeEdgarAllan_O_Corvo_(The_Raven)_4774969.epub`. Author component incorrect.
+    - Verify New Feature: Author/Title in Search Results:
+        - `search_books`: PASS. Results include `author` and `title`.
+        - `full_text_search`: PASS. Results include `author` and `title`.
+    - Test RAG Processing (`process_document_for_rag`):
+        - EPUB to Text: PASS. Successfully processed `downloads_qa_tester/UnknownAuthor_O_Corvo_(The_Raven)_4774969.epub` to text.
+        - EPUB to Markdown: PARTIAL. Tool executed successfully, producing `processed_rag_output/none-none-None.epub.processed.markdown`. Initial review of returned content shows some headers formatted. Full verification of headers, citations, and internal links requires manual file inspection.
+- **Bugs Found/Updated**: EFN_CONVENTION_FAIL_01 (Still Failing - Author Component).
+- **New Issues/Feature Requests (RAG Processing)**:
+    - `process_document_for_rag` should not return full content by default.
+    - `process_document_for_rag` needs options for `outputDir` and `output_file_type`.
+- **Notes**: `get_metadata` fix is solid. Filename generation for authors needs further debugging. Author/Title in search results feature is working. Basic RAG EPUB to text processing is functional. RAG EPUB to Markdown requires manual file review.
+- **Report Link**: N/A (Details in this entry and `activeContext.md`, `globalContext.md`)
+
+### Bug Report: EFN_CONVENTION_FAIL_01 - [Status: STILL FAILING (Author Component)] - [2025-05-07 21:50:00]
+- **Severity**: Medium / **Priority**: High
+- **Feature/Area**: Enhanced Filename Convention (`_create_enhanced_filename` in `lib/python_bridge.py`)
+- **Summary**: The author component of the enhanced filename is consistently `UnknownAuthor` instead of the correctly extracted author, even when `bookDetails.authors` is populated. Title sanitization appears to work.
+- **Steps to Reproduce**:
+    1. Obtain `bookDetails` with correct `authors` array (e.g., `["Lavie Tidhar", "Shimon Adaf"]` or `["Edgar Allan Poe", "Machado de Assis", "Fernando Pessoa"]`) and `title`.
+    2. Call `download_book_to_file` with these `bookDetails`.
+    3. Observe the downloaded filename.
+- **Expected Result**: Filename should use the first author's name, formatted (e.g., `TidharLavie_...` or `PoeEdgarAllan_...`).
+- **Actual Result**: Filename consistently uses `UnknownAuthor_...` for the author part.
+- **Environment**: Local / **Build**: `get_metadata` branch (commit `4ceef25`)
+- **Notes**: This indicates a persistent issue with how author information from the `bookDetails` object (specifically the `authors` array) is passed to or processed by the `_create_enhanced_filename` function in [`lib/python_bridge.py`](lib/python_bridge.py:1). The previous fix ([GlobalContext `2025-05-07 14:10:18`](memory-bank/globalContext.md:24)) did not resolve this aspect. Original report: [QA Tester MB EFN_CONVENTION_FAIL_01 - [2025-05-07 14:04:54]](memory-bank/mode-specific/qa-tester.md:28)
 ### Bug Report: EFN_CONVENTION_FAIL_01 - [Status: New] - [2025-05-07 14:04:54]
 - **Severity**: Medium / **Priority**: High
 - **Feature/Area**: Enhanced Filename Convention (`_create_enhanced_filename` in `lib/python_bridge.py`)

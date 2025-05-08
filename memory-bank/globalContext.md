@@ -1,14 +1,17 @@
 ---
-### Progress EFN_CONVENTION_FAIL_01 - [2025-05-07 22:13:00]
-- **Bug Fix Verification EFN_CONVENTION_FAIL_01 (Author Component)**:
+### Progress EFN_CONVENTION_FAIL_01 & Title Sanitization - [2025-05-07 22:31:00]
+- **Bug Fix Verification EFN_CONVENTION_FAIL_01 (Author Component) & Title Format Update**:
     - The fix applied by `code` mode to `lib/python_bridge.py` (`_create_enhanced_filename`) to use `book_details.get('authors', [])` was verified.
-    - TDD mode added new unit tests (`test_create_enhanced_filename_author_list_logic`) to `__tests__/python/test_python_bridge.py` specifically for the new author list processing.
-    - Existing tests (`test_create_enhanced_filename_various_inputs`) in `__tests__/python/test_python_bridge.py` were updated to use the new `authors` list structure in their inputs and their expectations were corrected to align with the actual parsing logic in `lib/python_bridge.py`.
-    - A minor adjustment was made to the author parsing logic in `lib/python_bridge.py` to correctly format "LastName, FirstName" as "FirstNameLastName".
+    - TDD mode added new unit tests (`test_create_enhanced_filename_author_list_logic`) to `__tests__/python/test_python_bridge.py` for new author list processing (including semicolon handling).
+    - Existing tests (`test_create_enhanced_filename_various_inputs`) in `__tests__/python/test_python_bridge.py` were updated for the `authors` list and corrected expectations for author parsing.
+    - Author parsing logic in `lib/python_bridge.py` was adjusted for "LastName, FirstName" format and to prioritize author before a semicolon.
+    - Title sanitization logic in `_sanitize_component` (for `is_title=True`) in `lib/python_bridge.py` was changed to produce PascalCase (e.g., "MyBookTitle") instead of underscore-separated.
+    - Unit tests for `_sanitize_component` and `_create_enhanced_filename` in `__tests__/python/test_python_bridge.py` were updated to reflect new title sanitization.
+    - A regression in `__tests__/python/test_run_rag_tests.py` due to the new title sanitization was fixed.
     - All Python unit tests (`pytest`) now pass (123 passed, 5 xfailed, 1 xpassed).
     - Node.js tests (`npm test`) pass (72 passed).
-    - The fix is considered stable and no regressions were introduced by the testing and minor code adjustment.
-- **Related Entries**: [ActiveContext 2025-05-07 22:13:00], [GlobalContext Progress EFN_CONVENTION_FAIL_01 - [2025-05-07 22:05:00] (Previous fix attempt)], [Original Task EFN_CONVENTION_FAIL_01]
+    - The author fix and title sanitization changes are considered stable. No regressions detected.
+- **Related Entries**: [ActiveContext 2025-05-07 22:31:00], [GlobalContext Progress EFN_CONVENTION_FAIL_01 - [2025-05-07 22:05:00] (Previous fix attempt)], [Original Task EFN_CONVENTION_FAIL_01], [User Feedback on Title Format]
 ---
 ---
 ### Progress EFN_CONVENTION_FAIL_01 - [2025-05-07 22:05:00]

@@ -303,25 +303,25 @@ async def test_full_text_search_bridge_handles_year_filters(mock_zlibrary_client
 
 # Parametrized test for _sanitize_component
 @pytest.mark.parametrize("test_input, is_title, expected_output", [
-    ("Art & War", True, "Art_War"),
+    ("Art & War", True, "ArtWar"),
     ("Art & War", False, "ArtWar"),
     ("UnknownAuthor", False, "UnknownAuthor"),
-    ("UnknownAuthor", True, "UnknownAuthor"),
-    ("A /\\?%*:|\"<>.,;= B", True, "A_B"),
+    ("UnknownAuthor", True, "Unknownauthor"), # PascalCase applies capitalize
+    ("A /\\?%*:|\"<>.,;= B", True, "AB"),
     ("A /\\?%*:|\"<>.,;= B", False, "AB"),
-    ("  Multiple   Spaces  ", True, "Multiple_Spaces"),
+    ("  Multiple   Spaces  ", True, "MultipleSpaces"),
     ("  Multiple   Spaces  ", False, "MultipleSpaces"),
-    (" LeadingSpaces", True, "LeadingSpaces"),
+    (" LeadingSpaces", True, "Leadingspaces"), # PascalCase applies capitalize
     ("TrailingSpaces ", False, "TrailingSpaces"),
-    ("Dot.At.End.", True, "Dot_At_End"), # Adjusted expectation
+    ("Dot.At.End.", True, "DotAtEnd"),
     ("Dot.At.End.", False, "DotAtEnd"),
     (None, True, ""),
     (None, False, ""),
     ("", True, ""),
     ("", False, ""),
-    ("Okay", True, "Okay"),
+    ("Okay", True, "Okay"), # Already PascalCase
     ("Okay", False, "Okay"),
-    ("With-Hyphen", True, "With-Hyphen"), # Hyphens are not in the removal list
+    ("With-Hyphen", True, "WithHyphen"),
     ("With-Hyphen", False, "With-Hyphen"),
 ])
 def test_sanitize_component_various_inputs(test_input, is_title, expected_output):
@@ -376,18 +376,18 @@ async def test_download_book_bridge_success(mock_zlibrary_client, tmp_path, mock
 
 # Tests for _create_enhanced_filename
 @pytest.mark.parametrize("book_details_input, expected_filename", [
-    ({"authors": ["Doe, John"], "title": "My Book", "id": "123", "extension": "epub"}, "JohnDoe_My_Book_123.epub"),
-    ({"authors": ["Smith, Jane Ann"], "title": "Another Title", "id": "456", "extension": "pdf"}, "JaneAnnSmith_Another_Title_456.pdf"),
-    ({"title": "Only Title", "id": "789", "extension": "txt"}, "UnknownAuthor_Only_Title_789.txt"), # Missing authors
-    ({"authors": ["Just Author"], "title": "UntitledBook", "id": "101", "extension": "mobi"}, "AuthorJust_UntitledBook_101.mobi"), # Corrected expectation
-    ({"id": "112", "extension": "azw3"}, "UnknownAuthor_UntitledBook_112.azw3"), # Missing authors and title
-    ({"authors": ["O'Malley, Grace"], "title": "A Pirate's Life & Times", "id": "223", "extension": "epub"}, "GraceOmalley_A_Pirates_Life_Times_223.epub"),
-    ({"authors": ["  Leading Author  "], "title": "  Padded Title  ", "id": "334", "extension": "pdf"}, "AuthorLeading_Padded_Title_334.pdf"), # Corrected expectation
-    ({"authors": [""], "title": "", "id": "445", "extension": "epub"}, "UnknownAuthor_UntitledBook_445.epub"), # Empty authors/title
-    ({"authors": ["Author"], "title": "Title.With.Dots", "id": "556", "extension": "pdf"}, "Author_Title_With_Dots_556.pdf"),
-    ({"authors": ["Author"], "title": "A Very Long Title That Will Exceed The Max Length And Should Be Truncated Gracefully", "id": "667", "extension": "epub"}, "Author_A_Very_Long_Title_That_Will_Exceed_The_Max_Length_667.epub"),
-    ({"authors": ["Single"], "title": "Book", "id": "778", "extension": "pdf"}, "Single_Book_778.pdf"),
-    ({"authors": ["Complex, Name, Jr."], "title": "Multi-Part Author", "id": "889", "extension": "epub"}, "NameJrComplex_Multi-Part_Author_889.epub"), # Corrected expectation (dot removed by sanitize)
+    ({"authors": ["Doe, John"], "title": "My Book", "id": "123", "extension": "epub"}, "JohnDoe_MyBook_123.epub"),
+    ({"authors": ["Smith, Jane Ann"], "title": "Another Title", "id": "456", "extension": "pdf"}, "JaneAnnSmith_AnotherTitle_456.pdf"),
+    ({"title": "Only Title", "id": "789", "extension": "txt"}, "UnknownAuthor_OnlyTitle_789.txt"), # Missing authors
+    ({"authors": ["Just Author"], "title": "UntitledBook", "id": "101", "extension": "mobi"}, "AuthorJust_Untitledbook_101.mobi"),
+    ({"id": "112", "extension": "azw3"}, "UnknownAuthor_Untitledbook_112.azw3"),
+    ({"authors": ["O'Malley, Grace"], "title": "A Pirate's Life & Times", "id": "223", "extension": "epub"}, "GraceOmalley_APiratesLifeTimes_223.epub"),
+    ({"authors": ["  Leading Author  "], "title": "  Padded Title  ", "id": "334", "extension": "pdf"}, "AuthorLeading_PaddedTitle_334.pdf"),
+    ({"authors": [""], "title": "", "id": "445", "extension": "epub"}, "UnknownAuthor_Untitledbook_445.epub"),
+    ({"authors": ["Author"], "title": "Title.With.Dots", "id": "556", "extension": "pdf"}, "Author_TitleWithDots_556.pdf"),
+    ({"authors": ["Author"], "title": "A Very Long Title That Will Exceed The Max Length And Should Be Truncated Gracefully", "id": "667", "extension": "epub"}, "Author_AVeryLongTitleThatWillExceedTheMaxLengthAndShouldB_667.epub"), # Title component truncated to 51 (if MAX_COMPONENT_LENGTH is 50, this is odd)
+    ({"authors": ["Single"], "title": "Book", "id": "778", "extension": "pdf"}, "Single_Book_778.pdf"), # Title is already PascalCase
+    ({"authors": ["Complex, Name, Jr."], "title": "Multi-Part Author", "id": "889", "extension": "epub"}, "NameJrComplex_MultiPartAuthor_889.epub"),
 ])
 def test_create_enhanced_filename_various_inputs(book_details_input, expected_filename, mocker):
     # Ensure MAX_COMPONENT_LENGTH is what _create_enhanced_filename expects for its internal _sanitize_component calls

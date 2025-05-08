@@ -66,20 +66,30 @@ def _sanitize_component(text: str, is_title: bool = False) -> str: # Removed max
     sanitized = re.sub(r"[\\/\?%\*:'\"<>\|]", '', text) # Added apostrophe
 
     if is_title == True: # Explicit check
-        # For titles: convert spaces, dots, commas, semicolons, equals, ampersands to underscores
-        processed_text = re.sub(r'[ \.,;&=&]+', '_', sanitized)
-        processed_text = re.sub(r'_+', '_', processed_text) # Consolidate underscores
-        sanitized = processed_text
+        # For titles: convert to PascalCase/CamelCase
+        # Replace common separators with a single space
+        processed_text = re.sub(r'[ \._,;&=\-]+', ' ', sanitized)
+        # Remove any other non-alphanumeric characters (except space for splitting)
+        processed_text = re.sub(r'[^a-zA-Z0-9 ]', '', processed_text)
+        words = processed_text.split()
+        pascal_case_title = "".join(word.capitalize() for word in words)
+        sanitized = pascal_case_title
+        if not sanitized: # If title was only symbols and became empty
+            sanitized = "UntitledBook" # Fallback
     elif is_title == False: # Explicit check
-        # For non-titles: remove spaces, dots, commas, semicolons, equals, ampersands, and all underscores
+        # For non-titles (authors, IDs): remove spaces, dots, commas, semicolons, equals, ampersands, and all underscores
         processed_text = re.sub(r'[ \.,;&=&_]+', '', sanitized)
         sanitized = processed_text
             
-    # Truncate first
+    # Truncate after specific formatting
     sanitized = sanitized[:MAX_COMPONENT_LENGTH]
 
-    # Final strip of any leading/trailing underscores OR spaces from the truncated string
-    sanitized = sanitized.strip('_ ')
+    # Final strip for titles (in case of MAX_COMPONENT_LENGTH cut an underscore) is not needed due to PascalCase.
+    # For non-titles, stripping underscores or spaces is already handled by the regex.
+    if is_title == True:
+        pass # No final strip needed for PascalCase titles
+    else: # For non-titles, ensure no leading/trailing spaces if any slipped through (though regex should cover it)
+        sanitized = sanitized.strip(' ')
     
     return sanitized
 
@@ -92,22 +102,29 @@ def _create_enhanced_filename(book_details: dict) -> str:
     authors_list = book_details.get('authors', []) # Get the list of authors
     raw_author = authors_list[0] if authors_list and isinstance(authors_list, list) and authors_list[0] else ""
     if raw_author:
-        parts = [p.strip() for p in raw_author.split(',')]
-        if len(parts) > 1: # Likely "Last, First Middle"
-            lastname = parts[0].capitalize()
-            # Join all other parts as first/middle names
-            first_middle_names = "".join("".join(p_part.capitalize() for p_part in part.split()) for part in parts[1:])
-            author_str = f"{first_middle_names}{lastname}"
-        else: # Likely "First Middle Last" or "SingleName"
-            name_parts = raw_author.split()
-            if len(name_parts) == 1:
-                author_str = name_parts[0].capitalize()
-            elif len(name_parts) > 1:
-                lastname = name_parts[-1].capitalize()
-                firstnames = "".join([name.capitalize() for name in name_parts[:-1]])
-                author_str = f"{lastname}{firstnames}"
-            else: # Empty string after strip
-                author_str = "UnknownAuthor" # Fallback if name_parts is empty
+        # Prioritize the first author if multiple are specified with semicolon
+        primary_author_candidate = raw_author.split(';')[0].strip()
+
+        if primary_author_candidate: # Process the primary author candidate
+            parts = [p.strip() for p in primary_author_candidate.split(',')]
+            if len(parts) > 1: # Likely "Last, First Middle"
+                lastname = parts[0].capitalize()
+                # Join all other parts as first/middle names
+                first_middle_names = "".join("".join(p_part.capitalize() for p_part in part.split()) for part in parts[1:])
+                author_str = f"{first_middle_names}{lastname}"
+            else: # Likely "First Middle Last" or "SingleName"
+                name_parts = primary_author_candidate.split()
+                if len(name_parts) == 1: # SingleName
+                    author_str = name_parts[0].capitalize()
+                elif len(name_parts) > 1: # First Middle Last
+                    lastname = name_parts[-1].capitalize()
+                    firstnames = "".join([name.capitalize() for name in name_parts[:-1]])
+                    author_str = f"{lastname}{firstnames}" # Corrected to LastFirst for this path as per previous successful tests
+                else: # Empty string after strip
+                    author_str = "UnknownAuthor" # Fallback if name_parts is empty
+        else: # If primary_author_candidate is empty (e.g. raw_author was just ";")
+            author_str = "UnknownAuthor"
+    # If raw_author was empty from the start, author_str remains "UnknownAuthor" (from line 91)
     
     formatted_author = _sanitize_component(author_str) # default is_title=False
 

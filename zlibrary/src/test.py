@@ -95,6 +95,11 @@ async def main():
     await test_full_text_search_paginator_uses_year_filters()
     print("test_full_text_search_paginator_uses_year_filters PASSED (called)")
     print("All paginator year filter usage tests called.")
+
+    print("\\nRunning search paginator author/title tests...")
+    await test_search_paginator_parse_page_author_title()
+    print("All search paginator author/title tests called.")
+
     print("\\nRunning close matches banner test...")
     await test_search_paginator_close_matches_banner()
     print("test_search_paginator_close_matches_banner PASSED (called)")
@@ -895,6 +900,128 @@ async def test_download_book_file_download_http_error(MockHttpxClientClassArg, m
         assert False, f"Unexpected exception {type(e)} raised: {e}"
 
 # Add new test calls to main
+async def test_search_paginator_parse_page_author_title():
+    """Tests SearchPaginator.parse_page for author and title extraction."""
+    lib = AsyncZlib()
+    lib.mirror = "https://example.com"
+    lib.profile = AsyncMock() # Mock profile
+    lib._r = AsyncMock() # Mock internal request
+
+    from zlibrary.abs import SearchPaginator # Import SearchPaginator
+
+    test_cases = [
+        {
+            "name": "title_author_present",
+            "html": """
+                <html><body><div class="z-bookcard" id="test-id-1">
+                    <div slot="title">Test Book Title 1</div>
+                    <div slot="author">Author One</div>
+                </div></body></html>
+            """,
+            "expected": [{"name": "Test Book Title 1", "authors": ["Author One"], "title": "Test Book Title 1", "author": "Author One"}]
+        },
+        {
+            "name": "title_present_author_missing",
+            "html": """
+                <html><body><div class="z-bookcard" id="test-id-2">
+                    <div slot="title">Test Book Title 2</div>
+                </div></body></html>
+            """,
+            "expected": [{"name": "Test Book Title 2", "authors": [], "title": "Test Book Title 2", "author": None}]
+        },
+        {
+            "name": "author_present_title_missing",
+            "html": """
+                <html><body><div class="z-bookcard" id="test-id-3">
+                    <div slot="author">Author Three</div>
+                </div></body></html>
+            """,
+            "expected": [{"name": None, "authors": ["Author Three"], "title": None, "author": "Author Three"}]
+        },
+        {
+            "name": "both_missing",
+            "html": """
+                <html><body><div class="z-bookcard" id="test-id-4">
+                    <div>Some other content</div>
+                </div></body></html>
+            """,
+            "expected": [{"name": None, "authors": [], "title": None, "author": None}]
+        },
+        {
+            "name": "empty_title_author",
+            "html": """
+                <html><body><div class="z-bookcard" id="test-id-5">
+                    <div slot="title"></div>
+                    <div slot="author"></div>
+                </div></body></html>
+            """,
+            "expected": [{"name": "", "authors": [], "title": "", "author": ""}]
+        },
+        {
+            "name": "special_chars_title_author",
+            "html": """
+                <html><body><div class="z-bookcard" id="test-id-6">
+                    <div slot="title">Book & Title with Sp€ci@l Chars</div>
+                    <div slot="author">Author Nāmē & Co.</div>
+                </div></body></html>
+            """,
+            "expected": [{"name": "Book & Title with Sp€ci@l Chars", "authors": ["Author Nāmē & Co."], "title": "Book & Title with Sp€ci@l Chars", "author": "Author Nāmē & Co."}]
+        },
+        {
+            "name": "multiple_authors_string",
+            "html": """
+                <html><body><div class="z-bookcard" id="test-id-7">
+                    <div slot="title">Collaborative Work</div>
+                    <div slot="author">Author A, Author B, Author C</div>
+                </div></body></html>
+            """,
+            "expected": [{"name": "Collaborative Work", "authors": ["Author A, Author B, Author C"], "title": "Collaborative Work", "author": "Author A, Author B, Author C"}]
+        },
+        {
+            "name": "no_bookcards",
+            "html": """
+                <html><body><div>No books here</div></body></html>
+            """,
+            "expected": []
+        }
+    ]
+
+    for case in test_cases:
+        print(f"Running test case: {case['name']}")
+        lib._r.return_value = case["html"]
+        paginator = SearchPaginator(url="http://dummyurl.com/s/test", count=10, request=lib._r, mirror=lib.mirror)
+        await paginator.init() # Call init to parse the page
+
+        # Basic assertion for number of books
+        assert len(paginator.result) == len(case["expected"]), f"Test Case '{case['name']}': Expected {len(case['expected'])} books, got {len(paginator.result)}"
+
+        for i, expected_book in enumerate(case["expected"]):
+            actual_book = paginator.result[i]
+            assert actual_book.get("title") == expected_book.get("title"), \
+                f"Test Case '{case['name']}': Title mismatch. Expected '{expected_book.get('title')}', got '{actual_book.get('title')}'"
+            assert actual_book.get("author") == expected_book.get("author"), \
+                f"Test Case '{case['name']}': Author mismatch. Expected '{expected_book.get('author')}', got '{actual_book.get('author')}'"
+            # The 'name' field in BookItem is often derived from title, so we check that too.
+            # The 'authors' list in BookItem is often derived from author string, so we check that too.
+            if expected_book.get("title") is not None:
+                 assert actual_book.get("name") == expected_book.get("title"), \
+                    f"Test Case '{case['name']}': Name (from title) mismatch. Expected '{expected_book.get('title')}', got '{actual_book.get('name')}'"
+            if expected_book.get("author") is not None and expected_book.get("author") != "":
+                 assert actual_book.get("authors") == [expected_book.get("author")], \
+                    f"Test Case '{case['name']}': Authors list mismatch. Expected ['{expected_book.get('author')}'], got '{actual_book.get('authors')}'"
+            elif expected_book.get("author") == "":
+                 assert actual_book.get("authors") == [], \
+                    f"Test Case '{case['name']}': Authors list mismatch for empty author. Expected [], got '{actual_book.get('authors')}'"
+
+
+    print("test_search_paginator_parse_page_author_title PASSED")
+
+# Add the new test to the main execution block if desired
+# For example, find the line `print("\\nRunning close matches banner test...")`
+# and add before it:
+# print("\\nRunning search paginator author/title tests...")
+# await test_search_paginator_parse_page_author_title()
+# print("All search paginator author/title tests called.")
 async def run_new_download_tests():
     print("\\nRunning NEW download book error handling tests...")
     await test_download_book_missing_url_in_details()

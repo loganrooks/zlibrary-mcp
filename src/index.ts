@@ -88,6 +88,34 @@ const GetMetadataParamsSchema = z.object({
 });
 
 // Zod schema for the output of get_metadata, based on project plan and spec-pseudocode
+// Define Zod schema for individual book items in search results
+const BookItemOutputSchema = z.object({
+  id: z.string().optional().nullable(),
+  isbn: z.string().optional().nullable(),
+  url: z.string().url().optional().nullable(),
+  cover: z.string().url().optional().nullable(),
+  publisher: z.string().optional().nullable(),
+  authors: z.array(z.string()).optional().nullable().describe("List of authors, potentially from a JSON string attribute on the book card"),
+  title: z.string().nullable().optional().describe("The main title of the book, extracted from div[slot='title']"),
+  author: z.string().nullable().optional().describe("The main author string of the book, extracted from div[slot='author']"),
+  // Other fields from BookItem in abs.py might include:
+  // year, series, language, pages, size, extension, etc.
+  // .passthrough() will allow these.
+}).passthrough();
+
+// Define Zod schema for the output of search_books tool
+const SearchBooksOutputSchema = z.object({
+  books: z.array(BookItemOutputSchema),
+  retrieved_from_url: z.string().url().optional().describe("The URL from which the search results were retrieved"),
+  // Potentially other fields like total_results, current_page, total_pages
+}).passthrough();
+
+// Define Zod schema for the output of full_text_search tool
+const FullTextSearchOutputSchema = z.object({
+  books: z.array(BookItemOutputSchema),
+  retrieved_from_url: z.string().url().optional().describe("The URL from which the full-text search results were retrieved"),
+  // Potentially other fields like total_results, current_page, total_pages
+}).passthrough();
 const BookMetadataOutputSchema = z.object({
   title: z.string().describe('Title of the book/article'),
   authors: z.array(z.string()).describe('List of authors'), // Not nullable, should be empty array if none
@@ -272,11 +300,13 @@ const toolRegistry: Record<string, ToolRegistryEntry> = {
   search_books: {
     description: 'Search for books in Z-Library',
     schema: SearchBooksParamsSchema,
+    outputSchema: SearchBooksOutputSchema, // Added output schema
     handler: handlers.searchBooks,
   },
   full_text_search: {
     description: 'Search for books containing specific text in their content',
     schema: FullTextSearchParamsSchema,
+    outputSchema: FullTextSearchOutputSchema, // Added output schema
     handler: handlers.fullTextSearch,
   },
   get_download_history: {

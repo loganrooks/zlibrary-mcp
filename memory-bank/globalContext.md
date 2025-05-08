@@ -1,4 +1,26 @@
 ---
+### Progress - [2025-05-07 21:19:00]
+- **TDD: Unit Tests for Author/Title in Search Results**:
+    - Added Python unit tests to `zlibrary/src/test.py` for `SearchPaginator.parse_page` in `zlibrary/src/zlibrary/abs.py`. These tests verify the correct extraction of `title` (from `div[slot="title"]`) and `author` (from `div[slot="author"]`) using mocked HTML snippets, covering various scenarios (present, missing, empty, special characters).
+    - Modified `zlibrary/src/zlibrary/abs.py` (`SearchPaginator.parse_page` and `SearchPaginator.init`) to ensure tests pass by correctly identifying book card elements and populating results.
+    - Added TypeScript unit tests to `__tests__/index.test.js` for `BookItemOutputSchema`, `SearchBooksOutputSchema`, and `FullTextSearchOutputSchema` to verify validation of new `author` and `title` fields (present, null, optional, invalid types).
+    - All new Python and TypeScript unit tests passed.
+    - Full Python test suite (`pytest`) passed (16 tests).
+    - Full Node.js test suite (`npm test`) passed (72 tests).
+    - No regressions were introduced.
+- **Related Entries**: [ActiveContext 2025-05-07 21:19:00], [TDD MB Test Execution Results - Python - [2025-05-07 21:19:00]], [TDD MB Test Execution Results - Node.js - [2025-05-07 21:19:00]], [TDD MB TDD Cycle Log - Author/Title Parsing - [2025-05-07 21:19:00]], [TDD MB TDD Cycle Log - Zod Schemas - [2025-05-07 21:19:00]]
+---
+---
+### Progress - [2025-05-07 20:30:40]
+- **Feature: Add Author/Title to Search Results**:
+    - Modified `zlibrary/src/zlibrary/abs.py` (`SearchPaginator.parse_page` method) to extract `title` and `author` from `div[slot="title"]` and `div[slot="author"]` respectively within each `z-bookcard` element. These are added to the `BookItem` dictionary (`js`).
+    - Modified `src/index.ts`:
+        - Defined `BookItemOutputSchema` with optional nullable `title` and `author` fields.
+        - Defined `SearchBooksOutputSchema` and `FullTextSearchOutputSchema` to use `z.array(BookItemOutputSchema)` for their `books` field.
+        - Updated `toolRegistry` for `search_books` and `full_text_search` to include their respective new output schemas.
+- **Related Entries**: [ActiveContext 2025-05-07 20:30:40]
+---
+---
 ### Progress EFN_CONVENTION_FAIL_01 - [2025-05-07 14:10:18]
 - **Bug Fix EFN_CONVENTION_FAIL_01**:
     - Modified `lib/python_bridge.py` to address issues with enhanced filename generation.

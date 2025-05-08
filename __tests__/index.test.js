@@ -474,6 +474,104 @@ describe('Tool Handlers (Direct)', () => {
       });
     }); // End Tool Schemas describe
 
+    describe('BookItemOutputSchema, SearchBooksOutputSchema, and FullTextSearchOutputSchema', () => {
+      const BookItemOutputSchema = toolRegistry.search_books.outputSchema.shape.books.element; // Assuming this path based on MB
+      const SearchBooksOutputSchema = toolRegistry.search_books.outputSchema;
+      const FullTextSearchOutputSchema = toolRegistry.full_text_search.outputSchema;
+
+      const validBookItem = {
+        id: '123',
+        url: 'http://example.com/book/123',
+        name: 'Test Book',
+        authors: ['Author A'],
+        title: 'Test Book',
+        author: 'Author A',
+        // other optional fields can be null or undefined
+        publisher: null,
+        year: '2023',
+        language: 'English',
+        extension: 'epub',
+        size: '1.2 MB',
+        rating: '4.5',
+        quality: 'good',
+        cover: 'http://example.com/cover.jpg',
+        isbn: '978-1234567890',
+      };
+
+      const bookItemWithNulls = {
+        ...validBookItem,
+        title: null,
+        author: null,
+      };
+      
+      const bookItemWithMissingOptionals = { // Only required fields + new ones
+        id: '123',
+        url: 'http://example.com/book/123',
+        name: 'Test Book', // name is often derived from title
+        title: 'Test Book',
+        author: 'Author A',
+        authors: ['Author A']
+      };
+
+
+      test('BookItemOutputSchema should validate a valid book item with title and author', () => {
+        expect(BookItemOutputSchema.safeParse(validBookItem).success).toBe(true);
+      });
+
+      test('BookItemOutputSchema should validate a book item with null title and author', () => {
+        const item = { ...validBookItem, title: null, author: null, name: null, authors: [] }; // name and authors might be empty/null if title/author are null
+        expect(BookItemOutputSchema.safeParse(item).success).toBe(true);
+      });
+      
+      test('BookItemOutputSchema should validate a book item with missing optional title and author', () => {
+        const item = { ...validBookItem };
+        delete item.title; // Make it optional by removing
+        delete item.author;
+        // 'name' and 'authors' might still be derived or present from other attributes in real scenarios
+        // For schema testing, if title/author are truly optional, this should pass
+        // However, the current BookItemOutputSchema in MB makes them z.string().nullable().optional()
+        // So, they can be null, undefined, or a string.
+        expect(BookItemOutputSchema.safeParse(item).success).toBe(true);
+      });
+
+
+      test('BookItemOutputSchema should invalidate if title is not a string or null/undefined', () => {
+        expect(BookItemOutputSchema.safeParse({ ...validBookItem, title: 123 }).success).toBe(false);
+      });
+
+      test('BookItemOutputSchema should invalidate if author is not a string or null/undefined', () => {
+        expect(BookItemOutputSchema.safeParse({ ...validBookItem, author: 123 }).success).toBe(false);
+      });
+
+      test('SearchBooksOutputSchema should validate with valid book items including title/author', () => {
+        const validOutput = { books: [validBookItem, bookItemWithNulls], retrieved_from_url: "http://example.com/search" };
+        expect(SearchBooksOutputSchema.safeParse(validOutput).success).toBe(true);
+      });
+      
+      test('SearchBooksOutputSchema should validate with book items missing optional title/author', () => {
+        const item1 = { ...validBookItem };
+        delete item1.title;
+        delete item1.author;
+        const item2 = { ...validBookItem, title: "Another Title", author: "Another Author" }; // A complete one
+        const validOutput = { books: [item1, item2], retrieved_from_url: "http://example.com/search" };
+        expect(SearchBooksOutputSchema.safeParse(validOutput).success).toBe(true);
+      });
+
+      test('SearchBooksOutputSchema should invalidate if a book item has incorrect title type', () => {
+        const invalidOutput = { books: [{ ...validBookItem, title: 123 }], retrieved_from_url: "http://example.com/search" };
+        expect(SearchBooksOutputSchema.safeParse(invalidOutput).success).toBe(false);
+      });
+
+      test('FullTextSearchOutputSchema should validate with valid book items including title/author', () => {
+        const validOutput = { books: [validBookItem, bookItemWithMissingOptionals], retrieved_from_url: "http://example.com/ftsearch" };
+        expect(FullTextSearchOutputSchema.safeParse(validOutput).success).toBe(true);
+      });
+
+      test('FullTextSearchOutputSchema should invalidate if a book item has incorrect author type', () => {
+        const invalidOutput = { books: [{ ...validBookItem, author: true }], retrieved_from_url: "http://example.com/ftsearch" };
+        expect(FullTextSearchOutputSchema.safeParse(invalidOutput).success).toBe(false);
+      });
+    });
 
  describe('Handler Logic', () => {
 

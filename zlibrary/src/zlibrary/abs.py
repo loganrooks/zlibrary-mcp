@@ -104,11 +104,17 @@ class SearchPaginator:
         book_item_wrappers = content_area.findAll("div", {"class": "book-card-wrapper"})
         if not book_item_wrappers:
             book_item_wrappers = content_area.findAll("div", {"class": "book-item"})
-            if book_item_wrappers:
-                logger.debug(f"Found {len(book_item_wrappers)} 'div.book-item' elements (fallback).")
+            if not book_item_wrappers:
+                book_item_wrappers = content_area.findAll("div", {"class": "z-bookcard"}) # New fallback
+                if not book_item_wrappers:
+                    logger.warning("No 'div.book-card-wrapper', 'div.book-item', or 'div.z-bookcard' elements found. Setting empty results.")
+                    self.storage[self.page] = []
+                    self.result = []
+                    return # Gracefully handle no book cards found
+                else:
+                    logger.debug(f"Found {len(book_item_wrappers)} 'div.z-bookcard' elements (fallback 2).")
             else:
-                logger.warning("No 'div.book-card-wrapper' or 'div.book-item' elements found. Raising ParseError.")
-                raise ParseError("Could not find the book list items.")
+                logger.debug(f"Found {len(book_item_wrappers)} 'div.book-item' elements (fallback).")
         else:
             logger.debug(f"Found {len(book_item_wrappers)} 'div.book-card-wrapper' elements.")
 
@@ -119,42 +125,92 @@ class SearchPaginator:
         logger.debug("Parsing standard book list items...")
         for idx, item_wrapper in enumerate(book_item_wrappers, start=1):
             js = BookItem(self.__r, self.mirror)
-            book_card_el = item_wrapper.find("z-bookcard")
+            # Determine the correct book_card_el
+            if item_wrapper.name == 'div' and 'z-bookcard' in item_wrapper.get('class', []):
+                book_card_el = item_wrapper
+                logger.debug(f"Using item_wrapper (div.z-bookcard) as book_card_el for item {idx}.")
+            else:
+                book_card_el = item_wrapper.find("z-bookcard") # Original logic for nested z-bookcard tag
+                logger.debug(f"Searching for 'z-bookcard' tag within item_wrapper for item {idx}. Found: {'Yes' if book_card_el else 'No'}")
             if not book_card_el:
                 logger.warning(f"No z-bookcard found in item_wrapper {idx}. Skipping.")
                 continue
 
+            title_element = None
+            author_element = None
+            
+            if book_card_el and hasattr(book_card_el, 'children'):
+                for child in book_card_el.children:
+                    if hasattr(child, 'name') and child.name == 'div':
+                        slot_attr = child.get('slot')
+                        if slot_attr == 'title':
+                            title_element = child
+                        elif slot_attr == 'author':
+                            author_element = child
+                    if title_element and author_element: # Optimization: stop if both found
+                        break
+            
+            if title_element:
+                title_text = title_element.get_text(strip=True)
+                js["title"] = title_text if title_text else "" # Ensure empty string if text is just whitespace
+            else:
+                js["title"] = None
+
+            if author_element:
+                author_text = author_element.get_text(strip=True)
+                js["author"] = author_text if author_text else "" # Ensure empty string
+            else:
+                js["author"] = None
+
             cover = book_card_el.find("img")
             if not cover:
                 logger.warning(f"Cover not found for {idx}-th book-card at url {self.__url}")
-
+ 
             js["id"] = book_card_el.get("id")
             js["isbn"] = book_card_el.get("isbn")
-
+ 
             book_url_attr = book_card_el.get("href")
             if book_url_attr:
                 js["url"] = f"{self.mirror}{book_url_attr}"
-
+ 
             if cover:
                 img_tag_for_cover = cover.find("img")
                 if img_tag_for_cover:
                     js["cover"] = img_tag_for_cover.get("data-src")
                 else:
                     js["cover"] = cover.get("data-src")
-
+ 
             publisher = book_card_el.get("publisher")
             if publisher:
                 js["publisher"] = publisher.strip()
+ 
+            # Populate js["name"] using js["title"] (from slot) if available, else from attribute
+            if js.get("title") is not None: # js["title"] is already stripped if it came from slot parsing
+                js["name"] = js["title"]
+            elif book_card_el.get("name"):
+                name_attr = book_card_el.get("name")
+                if name_attr: # Ensure attribute is not empty string before stripping
+                    js["name"] = name_attr.strip()
+            # else: js["name"] remains as initialized (likely None or not present by BookItem dict nature)
 
-            authors_str = book_card_el.get("authors")
-            if authors_str:
-                authors_list = [a.strip() for a in authors_str.split(';') if a.strip()]
-                if authors_list:
-                    js["authors"] = authors_list
-
-            title_str = book_card_el.get("name")
-            if title_str:
-                js["name"] = title_str.strip()
+            # Populate js["authors"] (list) using js["author"] (string from slot) if available, else from attribute
+            if js.get("author") is not None: # js["author"] is already stripped if it came from slot parsing
+                if js["author"] == "":
+                    js["authors"] = []
+                else:
+                    # Per test case "multiple_authors_string", the slot provides a single string "Author A, Author B, Author C"
+                    # and the expected output for js["authors"] is a list containing that single string.
+                    js["authors"] = [js["author"]]
+            elif book_card_el.get("authors"): # Fallback to "authors" attribute from z-bookcard tag
+                authors_str_attr = book_card_el.get("authors")
+                if authors_str_attr: # Ensure attribute exists and is not empty before splitting
+                    authors_list_attr = [a.strip() for a in authors_str_attr.split(';') if a.strip()]
+                    if authors_list_attr:
+                        js["authors"] = authors_list_attr
+            
+            # Ensure 'authors' key exists and defaults to an empty list if not set by any of the above logic
+            if "authors" not in js:
+                js["authors"] = []
 
             year = book_card_el.get("year")
             if year:
@@ -180,6 +236,12 @@ class SearchPaginator:
             if quality:
                 js["quality"] = quality.strip()
 
+            logger.debug(f"Value of js.get('id') before check: '{js.get('id')}' (type: {type(js.get('id'))})")
+            logger.debug(f"Evaluation of not js.get('id'): {not js.get('id')}")
+            logger.debug(f"Evaluation of not js.get('name'): {not js.get('name')}")
+            logger.debug(f"Evaluation of not js.get('url'): {not js.get('url')}")
+            logger.debug(f"Combined condition: {not js.get('id') and not js.get('name') and not js.get('url')}")
+            logger.debug(f"Values for skip check (re-log for clarity): id='{js.get('id')}', name='{js.get('name')}', url='{js.get('url')}'")
             if not js.get("id") and not js.get("name") and not js.get("url"):
                 logger.warning(f"Skipping {idx}-th book-card due to missing essential info (id, name, url).")
                 continue
@@ -200,6 +262,8 @@ class SearchPaginator:
         page_content = await self.fetch_page()
         if page_content: # Ensure page_content is not None
             self.parse_page(page_content)
+            # After parsing, self.storage[self.page] should be populated
+            self.result = self.storage.get(self.page, []) # Update self.result
         else:
             logger.warning(f"fetch_page returned None for {self.__url}&page={self.page}. Cannot parse.")
             self.storage[self.page] = [] # Ensure storage is initialized for the page

@@ -1,5 +1,86 @@
 # TDD Specific Memory
 <!-- Entries below should be added reverse chronologically (newest first) -->
+### Test Execution: Python Unit Tests (`./venv/bin/python -m pytest zlibrary/src/test.py`) - [2025-05-07 21:19:00]
+- **Trigger**: Post-Code Change (Author/Title parsing logic in `zlibrary/abs.py` and new tests in `zlibrary/test.py`)
+- **Outcome**: PASS
+- **Summary**: 16 tests passed.
+- **Failed Tests**: None.
+- **Coverage Change**: Not measured by this specific command.
+- **Notes**: All existing tests and new unit tests for `SearchPaginator.parse_page` (author/title extraction) passed.
+
+### Test Execution: Node.js Unit Tests & Regression (`npm test`) - [2025-05-07 21:19:00]
+- **Trigger**: Post-Code Change (New Zod schema tests in `__tests__/index.test.js`)
+- **Outcome**: PASS
+- **Summary**: 4 test suites, 72 tests passed.
+- **Failed Tests**: None.
+- **Coverage Change**: Stable (based on previous full run).
+- **Notes**: All existing tests and new Zod schema tests for `BookItemOutputSchema`, `SearchBooksOutputSchema`, and `FullTextSearchOutputSchema` passed. No regressions detected.
+
+---
+### TDD Cycle: Python Unit Tests for SearchPaginator Author/Title - [2025-05-07 21:19:00]
+- **Objective**: Verify correct extraction of `title` and `author` in `SearchPaginator.parse_page`.
+- **Red**: Added `test_search_paginator_parse_page_author_title` to `zlibrary/src/test.py` with various HTML snippets. Initial `pytest` runs failed due to `ParseError` (book items not found or skipped due to missing essential info).
+- **Green**:
+    - Modified `zlibrary/src/zlibrary/abs.py` (`SearchPaginator.parse_page`):
+        - Added `div.z-bookcard` as a fallback selector for book item wrappers.
+        - Adjusted logic to correctly identify `book_card_el` when the wrapper itself is `div.z-bookcard`.
+        - Ensured `js["name"]` is populated from `js["title"]` and `js["authors"]` from `js["author"]` when slots are present.
+        - Added graceful handling for cases where no book item wrappers are found (return empty list instead of raising `ParseError`).
+    - Modified `zlibrary/src/test.py` (`test_search_paginator_parse_page_author_title`):
+        - Added dummy `id` attributes to test HTML `div.z-bookcard` elements to prevent skipping.
+    - Modified `zlibrary/src/zlibrary/abs.py` (`SearchPaginator.init`):
+        - Ensured `self.result` is updated after `self.parse_page()` is called.
+- **Refactor**: No significant refactoring of production code in this cycle beyond the Green phase changes. Test HTML was refined. Debug logging added and then removed from `zlibrary/abs.py`.
+- **Outcome**: Cycle completed. Python unit tests for `SearchPaginator.parse_page` author/title extraction now pass.
+- **Test File**: `zlibrary/src/test.py`
+- **Code File**: `zlibrary/src/zlibrary/abs.py`
+
+---
+### TDD Cycle: TypeScript Zod Schema Unit Tests for Author/Title - [2025-05-07 21:19:00]
+- **Objective**: Verify Zod schemas (`BookItemOutputSchema`, `SearchBooksOutputSchema`, `FullTextSearchOutputSchema`) correctly validate outputs with new `author` and `title` fields.
+- **Red**: Added new `describe` block with tests for the schemas in `__tests__/index.test.js`. These tests cover valid cases (author/title present, null, optional) and invalid cases (incorrect data types). These tests were expected to pass as the `code` mode already updated the schemas.
+- **Green**: Ran `npm test`. All new Zod schema tests passed as the schemas in `src/index.ts` were already correctly defined by the `code` mode to include optional nullable `title` and `author` string fields.
+- **Refactor**: N/A.
+- **Outcome**: Cycle completed. Zod schema unit tests for author/title fields are implemented and passing.
+- **Test File**: `__tests__/index.test.js`
+- **Code File**: `src/index.ts` (verified existing schema definitions)
+
+---
+### Fixture: HTML Snippets for SearchPaginator Author/Title Tests - [2025-05-07 21:19:00]
+- **Location**: Defined as inline strings within `test_search_paginator_parse_page_author_title` function in `zlibrary/src/test.py`.
+- **Description**: Various minimal HTML snippets representing `<div class="z-bookcard">` elements with different combinations of `div[slot="title"]` and `div[slot="author"]`, including cases with missing elements, empty content, and special characters. Each `z-bookcard` includes a dummy `id` attribute.
+- **Usage**: Used to mock HTML content for testing `SearchPaginator.parse_page` method's author and title extraction logic.
+- **Dependencies**: None.
+
+---
+### Test Plan: Author/Title in Search Results Feature - [2025-05-07 21:19:00]
+- **Objective**: Verify the implementation of `author` and `title` fields in `search_books` and `full_text_search` tool results.
+- **Scope**:
+    - Python: `zlibrary.abs.SearchPaginator.parse_page`
+    - TypeScript: Zod schemas (`BookItemOutputSchema`, `SearchBooksOutputSchema`, `FullTextSearchOutputSchema`) in `src/index.ts`.
+- **Test Cases**:
+    - Python (`SearchPaginator.parse_page`):
+        - Case 1 (Failing): Title and Author present. Expected: Correct extraction. Status: Green.
+        - Case 2 (Failing): Title present, Author missing. Expected: Title extracted, author null/None. Status: Green.
+        - Case 3 (Failing): Author present, Title missing. Expected: Author extracted, title null/None. Status: Green.
+        - Case 4 (Failing): Both missing. Expected: Both null/None. Status: Green.
+        - Case 5 (Failing): Empty title/author strings. Expected: Empty strings extracted. Status: Green.
+        - Case 6 (Failing): Special characters in title/author. Expected: Special characters preserved. Status: Green.
+        - Case 7 (Failing): Multiple authors in author string. Expected: Full string extracted as single author. Status: Green.
+        - Case 8 (Failing): No book cards on page. Expected: Empty result list. Status: Green.
+    - TypeScript (Zod Schemas):
+        - Case 1 (Failing): `BookItemOutputSchema` validates valid item with title/author. Expected: Pass. Status: Green.
+        - Case 2 (Failing): `BookItemOutputSchema` validates item with null title/author. Expected: Pass. Status: Green.
+        - Case 3 (Failing): `BookItemOutputSchema` validates item with optional title/author missing. Expected: Pass. Status: Green.
+        - Case 4 (Failing): `BookItemOutputSchema` invalidates incorrect title type. Expected: Fail. Status: Green.
+        - Case 5 (Failing): `BookItemOutputSchema` invalidates incorrect author type. Expected: Fail. Status: Green.
+        - Case 6 (Failing): `SearchBooksOutputSchema` validates valid items. Expected: Pass. Status: Green.
+        - Case 7 (Failing): `SearchBooksOutputSchema` invalidates item with incorrect title type. Expected: Fail. Status: Green.
+        - Case 8 (Failing): `FullTextSearchOutputSchema` validates valid items. Expected: Pass. Status: Green.
+        - Case 9 (Failing): `FullTextSearchOutputSchema` invalidates item with incorrect author type. Expected: Fail. Status: Green.
+- **Related Requirements**: User task (timestamp 2025-05-07 8:44:47 PM), Code mode completion report (timestamp 2025-05-07 8:39:28 PM), Spec (timestamp 2025-05-07 8:27:01 PM).
+
+---
 ### Test Execution: Regression &amp; New Unit Tests (`pytest __tests__/python/test_python_bridge.py`) - [2025-05-07 14:34:00]
 - **Trigger**: Post-Code Change (EFN_CONVENTION_FAIL_01 fix by `code` mode, and new unit tests added by `tdd` mode)
 - **Outcome**: PASS

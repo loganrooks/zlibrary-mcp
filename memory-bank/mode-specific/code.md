@@ -1,5 +1,19 @@
 # Auto-Coder Specific Memory
 <!-- Entries below should be added reverse chronologically (newest first) -->
+### [2025-05-07 20:30:40] Feature: Add Author/Title to Search Results
+- **Purpose**: Enhance `search_books` and `full_text_search` tools to include `author` and `title` in their results.
+- **Files**:
+    - `zlibrary/src/zlibrary/abs.py`: Modified `SearchPaginator.parse_page` to extract title and author from `div[slot="title"]` and `div[slot="author"]` within `z-bookcard`.
+    - `src/index.ts`:
+        - Added `BookItemOutputSchema` with `title: z.string().nullable().optional()` and `author: z.string().nullable().optional()`.
+        - Added `SearchBooksOutputSchema` and `FullTextSearchOutputSchema` using `BookItemOutputSchema`.
+        - Updated `toolRegistry` for `search_books` and `full_text_search` to include these new output schemas.
+- **Status**: Implemented.
+- **Dependencies**: `BeautifulSoup` (for Python parsing), `zod` (for TypeScript schemas).
+- **API Surface**:
+    - Output of `search_books` and `full_text_search` tools will now include `title` and `author` fields for each book item.
+- **Tests**: Manual verification and potentially new TDD tests will be needed to confirm correct data extraction and schema validation.
+- **Related**: [ActiveContext 2025-05-07 20:30:40], [GlobalContext Progress - [2025-05-07 20:30:40]]
 ### [2025-05-07 14:10:18] EFN_CONVENTION_FAIL_01 Fix: Regex and Logging
 - **Location**: `lib/python_bridge.py`
 - **Nature**: Bug Fix / Data Integrity Investigation

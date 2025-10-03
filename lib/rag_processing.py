@@ -650,7 +650,9 @@ def detect_pdf_quality(pdf_path: str) -> dict: # Renamed from _analyze_pdf_quali
              return {'quality_category': 'ENCRYPTED', 'ocr_needed': False, 'reason': f'Error opening PDF (likely encrypted): {e}'}
         return {'quality_category': 'ERROR', 'ocr_needed': False, 'reason': f'Error analyzing PDF: {e}'}
     finally:
-        if doc: doc.close()
+        # Close document if it exists and is not already closed
+        if doc is not None and not doc.is_closed:
+            doc.close()
 
 def _determine_pdf_quality_category(
     avg_chars: float, img_ratio: float, char_diversity: float, space_ratio: float
@@ -828,7 +830,9 @@ def process_pdf(file_path: Path, output_format: str = "txt") -> str:
         final_output = "\n\n".join(part for part in final_output_parts if part).strip()
 
         # Close doc before returning
-        if doc: doc.close() # Moved close here
+        if doc is not None and not doc.is_closed:
+            doc.close()
+            logging.debug(f"Closed PDF document before return: {file_path}")
         return final_output
 
     except Exception as fitz_err: # Broaden exception type for PyMuPDF errors
@@ -849,7 +853,11 @@ def process_pdf(file_path: Path, output_format: str = "txt") -> str:
              raise RuntimeError(f"Error opening or processing PDF {file_path}: {fitz_err}") from fitz_err
     # Removed the separate ValueError and Exception catches as they are covered above.
     finally:
-        if doc: doc.close() # Ensure doc is closed even if standard extraction fails before return
+        # Close document if it exists and is not already closed
+        # Note: PyMuPDF's __len__() raises ValueError when closed, so we can't use 'if doc:'
+        if doc is not None and not doc.is_closed:
+            doc.close()
+            logging.debug(f"Closed PDF document: {file_path}")
 
 
 def process_epub(file_path: Path, output_format: str = "txt") -> str:
@@ -1055,7 +1063,9 @@ def run_ocr_on_pdf(pdf_path: str, lang: str = 'eng') -> str: # Cycle 21 Refactor
         logging.error(f"Unexpected error during OCR for {pdf_path}: {e}", exc_info=True)
         raise RuntimeError(f"Unexpected OCR error: {e}") from e
     finally:
-        if doc: doc.close()
+        # Close document if it exists and is not already closed
+        if doc is not None and not doc.is_closed:
+            doc.close()
 
 
 # --- File Saving ---

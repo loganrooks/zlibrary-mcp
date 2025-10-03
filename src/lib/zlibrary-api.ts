@@ -5,6 +5,9 @@ import { appendFile as appendFileAsyncFS, mkdir as mkdirAsyncFS } from 'fs/promi
 // Removed unused https, http imports
 // path is already imported on line 2
 import { fileURLToPath } from 'url';
+import { withRetry, isRetryableError } from './retry-manager.js';
+import { CircuitBreaker } from './circuit-breaker.js';
+import { ZLibraryError, PythonBridgeError } from './errors.js';
 
 // Recreate __dirname for ESM
 const __filename = fileURLToPath(import.meta.url);
@@ -16,78 +19,129 @@ const __dirname = path.dirname(__filename);
 const BRIDGE_SCRIPT_PATH = path.resolve(__dirname, '..', '..', 'lib');
 const BRIDGE_SCRIPT_NAME = 'python_bridge.py';
 
+// Create a circuit breaker for all Python bridge operations
+const pythonBridgeCircuitBreaker = new CircuitBreaker({
+  threshold: parseInt(process.env.CIRCUIT_BREAKER_THRESHOLD || '5'),
+  timeout: parseInt(process.env.CIRCUIT_BREAKER_TIMEOUT || '60000'),
+  onStateChange: (oldState, newState) => {
+    console.log(`Python bridge circuit breaker: ${oldState} -> ${newState}`);
+  }
+});
+
 /**
  * Execute a Python function from the Z-Library repository
  * @param functionName - Name of the Python function to call
  * @param args - Arguments to pass to the function
  * @returns Promise resolving with the result from the Python function
- * @throws {Error} If the Python process fails or returns an error.
+ * @throws {ZLibraryError} If the Python process fails or returns an error.
  */
-async function callPythonFunction(functionName: string, args: Record<string, any> = {}): Promise<any> { // Changed args type to Record<string, any>
+async function callPythonFunction(functionName: string, args: Record<string, any> = {}): Promise<any> {
+  // Wrap the entire operation with retry logic and circuit breaker
+  return withRetry(
+    async () => {
+      return pythonBridgeCircuitBreaker.execute(async () => {
+        try {
+          // Get the python path asynchronously INSIDE the try block
+          const venvPythonPath = await getManagedPythonPath();
+          // Serialize arguments as JSON *before* creating options
+          const serializedArgs = JSON.stringify(args);
+          const options: PythonShellOptions = {
+            mode: 'text', // Revert back to text mode
+            pythonPath: venvPythonPath, // Use the Python from our managed venv
+            scriptPath: BRIDGE_SCRIPT_PATH, // Use the calculated path to the source lib dir
+            args: [functionName, serializedArgs] // Pass serialized string directly
+          };
 
-  try {
-    // Get the python path asynchronously INSIDE the try block
-    const venvPythonPath = await getManagedPythonPath();
-    // Serialize arguments as JSON *before* creating options
-    const serializedArgs = JSON.stringify(args);
-    const options: PythonShellOptions = {
-      mode: 'text', // Revert back to text mode
-      pythonPath: venvPythonPath, // Use the Python from our managed venv
-      scriptPath: BRIDGE_SCRIPT_PATH, // Use the calculated path to the source lib dir
-      args: [functionName, serializedArgs] // Pass serialized string directly
-    };
+          // PythonShell.run call is already inside the try block (from line 33 in original)
+          // PythonShell.run returns Promise<string[] | undefined>
+          // We expect JSON, so results[0] should be the JSON string if successful
+          // PythonShell with mode: 'json' should return an array of parsed JSON objects (or throw an error)
+          const results = await PythonShell.run(BRIDGE_SCRIPT_NAME, options); // results will be string[] | undefined
 
-    // PythonShell.run call is already inside the try block (from line 33 in original)
-    // PythonShell.run returns Promise<string[] | undefined>
-    // We expect JSON, so results[0] should be the JSON string if successful
-    // PythonShell with mode: 'json' should return an array of parsed JSON objects (or throw an error)
-    const results = await PythonShell.run(BRIDGE_SCRIPT_NAME, options); // results will be string[] | undefined
+          // Check if results exist and contain at least one element
+          if (!results || results.length === 0) {
+            throw new PythonBridgeError(`No output received from Python script.`, {
+              functionName,
+              args
+            });
+          }
 
-    // Check if results exist and contain at least one element
-    if (!results || results.length === 0) {
-        throw new Error(`No output received from Python script.`);
+          // Join the lines and parse manually
+          const stdoutString = results.join('\n');
+          let mcpResponseData: any;
+          try {
+            // First parse: Get the MCP response object { content: [{ type: 'text', text: '...' }] }
+            mcpResponseData = JSON.parse(stdoutString);
+          } catch (parseError: any) {
+            throw new PythonBridgeError(
+              `Failed to parse initial JSON output from Python script: ${parseError.message}`,
+              { functionName, args, rawOutput: stdoutString },
+              false // Parse errors are not retryable
+            );
+          }
+
+          // Validate the MCP response structure and extract the nested JSON string
+          if (!mcpResponseData || !Array.isArray(mcpResponseData.content) || mcpResponseData.content.length === 0 || typeof mcpResponseData.content[0].text !== 'string') {
+            throw new PythonBridgeError(
+              `Invalid MCP response structure received from Python script.`,
+              { functionName, args, rawOutput: stdoutString },
+              false // Structure errors are not retryable
+            );
+          }
+
+          const nestedJsonString = mcpResponseData.content[0].text;
+          let resultData: any;
+          try {
+            // Second parse: Get the actual result object from the nested string
+            resultData = JSON.parse(nestedJsonString);
+          } catch (parseError: any) {
+            throw new PythonBridgeError(
+              `Failed to parse nested JSON result from Python script: ${parseError.message}`,
+              { functionName, args, nestedString: nestedJsonString },
+              false // Parse errors are not retryable
+            );
+          }
+
+          // Check if the *actual* Python result contained an error structure
+          if (resultData && typeof resultData === 'object' && 'error' in resultData && resultData.error) {
+            throw new PythonBridgeError(resultData.error, { functionName, args });
+          }
+
+          // Return the successful result object from Python
+          return resultData;
+        } catch (err: any) {
+          // Log the full error object from python-shell
+          console.error(`[callPythonFunction Error - ${functionName}] Raw error object:`, err);
+
+          // If it's already a ZLibraryError, just rethrow
+          if (err instanceof ZLibraryError) {
+            throw err;
+          }
+
+          // Capture stderr if available
+          const stderrOutput = err.stderr ? ` Stderr: ${err.stderr}` : '';
+
+          // Wrap in PythonBridgeError with context
+          throw new PythonBridgeError(
+            `Python bridge execution failed for ${functionName}: ${err.message || err}.${stderrOutput}`,
+            {
+              functionName,
+              args,
+              stderr: err.stderr,
+              originalError: err
+            }
+          );
+        }
+      });
+    },
+    {
+      maxRetries: parseInt(process.env.RETRY_MAX_RETRIES || '3'),
+      initialDelay: parseInt(process.env.RETRY_INITIAL_DELAY || '1000'),
+      maxDelay: parseInt(process.env.RETRY_MAX_DELAY || '30000'),
+      factor: parseFloat(process.env.RETRY_FACTOR || '2'),
+      shouldRetry: isRetryableError
     }
-
-    // Join the lines and parse manually
-    const stdoutString = results.join('\n');
-    let mcpResponseData: any;
-    try {
-        // First parse: Get the MCP response object { content: [{ type: 'text', text: '...' }] }
-        mcpResponseData = JSON.parse(stdoutString);
-    } catch (parseError: any) {
-        throw new Error(`Failed to parse initial JSON output from Python script: ${parseError.message}. Raw output: ${stdoutString}`);
-    }
-
-    // Validate the MCP response structure and extract the nested JSON string
-    if (!mcpResponseData || !Array.isArray(mcpResponseData.content) || mcpResponseData.content.length === 0 || typeof mcpResponseData.content[0].text !== 'string') {
-        throw new Error(`Invalid MCP response structure received from Python script. Raw output: ${stdoutString}`);
-    }
-
-    const nestedJsonString = mcpResponseData.content[0].text;
-    let resultData: any;
-    try {
-        // Second parse: Get the actual result object from the nested string
-        resultData = JSON.parse(nestedJsonString);
-    } catch (parseError: any) {
-        throw new Error(`Failed to parse nested JSON result from Python script: ${parseError.message}. Nested string: ${nestedJsonString}`);
-    }
-
-    // Check if the *actual* Python result contained an error structure
-    if (resultData && typeof resultData === 'object' && 'error' in resultData && resultData.error) {
-        throw new Error(resultData.error); // Throw the specific Python error
-    }
-
-    // Return the successful result object from Python
-    return resultData;
-  } catch (err: any) {
-    // Log the full error object from python-shell
-    console.error(`[callPythonFunction Error - ${functionName}] Raw error object:`, err);
-    // Capture stderr if available
-    const stderrOutput = err.stderr ? ` Stderr: ${err.stderr}` : '';
-    // Explicitly create the wrapped message and throw a new error
-    const wrappedMessage = `Python bridge execution failed for ${functionName}: ${err.message || err}.${stderrOutput}`;
-    throw new Error(wrappedMessage);
-  }
+  );
 }
 
 // Define interfaces for function arguments for better type safety
@@ -302,6 +356,85 @@ export async function downloadBookToFile({
     // Re-throw errors from callPythonFunction or validation checks
     throw new Error(`Failed to download book: ${error.message || 'Unknown error'}`);
   }
+}
+
+/**
+ * Phase 3 Research Tools - Exported wrappers for advanced search and metadata features
+ */
+
+export async function getBookMetadata(bookId: string, bookHash: string): Promise<any> {
+  return callPythonFunction('get_book_metadata_complete', {
+    book_id: bookId,
+    book_hash: bookHash
+  });
+}
+
+export async function searchByTerm(args: {
+  term: string;
+  yearFrom?: number;
+  yearTo?: number;
+  languages?: string[];
+  extensions?: string[];
+  limit?: number;
+}): Promise<any> {
+  return callPythonFunction('search_by_term_bridge', {
+    term: args.term,
+    year_from: args.yearFrom,
+    year_to: args.yearTo,
+    languages: args.languages,
+    extensions: args.extensions,
+    limit: args.limit || 25
+  });
+}
+
+export async function searchByAuthor(args: {
+  author: string;
+  exact?: boolean;
+  yearFrom?: number;
+  yearTo?: number;
+  languages?: string[];
+  extensions?: string[];
+  limit?: number;
+}): Promise<any> {
+  return callPythonFunction('search_by_author_bridge', {
+    author: args.author,
+    exact: args.exact || false,
+    year_from: args.yearFrom,
+    year_to: args.yearTo,
+    languages: args.languages,
+    extensions: args.extensions,
+    limit: args.limit || 25
+  });
+}
+
+export async function fetchBooklist(args: {
+  booklistId: string;
+  booklistHash: string;
+  topic: string;
+  page?: number;
+}): Promise<any> {
+  return callPythonFunction('fetch_booklist_bridge', {
+    booklist_id: args.booklistId,
+    booklist_hash: args.booklistHash,
+    topic: args.topic,
+    page: args.page || 1
+  });
+}
+
+export async function searchAdvanced(args: {
+  query: string;
+  exact?: boolean;
+  yearFrom?: number;
+  yearTo?: number;
+  count?: number;
+}): Promise<any> {
+  return callPythonFunction('search_advanced', {
+    query: args.query,
+    exact: args.exact || false,
+    from_year: args.yearFrom,
+    to_year: args.yearTo,
+    count: args.count || 10
+  });
 }
 
 // Removed unused downloadFile helper function

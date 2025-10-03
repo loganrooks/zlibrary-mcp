@@ -10,7 +10,7 @@ from unittest.mock import patch, MagicMock, mock_open, AsyncMock
 import httpx
 import aiofiles
 from pathlib import Path
-from zlibrary.exception import DownloadError, ParseError # Added ParseError
+from zlibrary.exception import ParseError  # DownloadError removed - doesn't exist
 from zlibrary import Extension # Import Extension enum
 # Add lib directory to sys.path explicitly
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'lib')))

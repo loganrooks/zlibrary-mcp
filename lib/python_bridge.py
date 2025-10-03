@@ -23,7 +23,13 @@ from urllib.parse import urljoin
 
 # Import the new RAG processing functions
 from lib import rag_processing
-# Global zlibrary client
+# Import enhanced metadata extraction
+from lib import enhanced_metadata
+# Import client manager for dependency injection
+from lib import client_manager
+
+# DEPRECATED: Global zlibrary client (for backward compatibility)
+# New code should use dependency injection with ZLibraryClient
 zlib_client = None
 logger = logging.getLogger('zlibrary') # Get the 'zlibrary' logger instance
 
@@ -51,14 +57,103 @@ DEFAULT_HEADERS = {
 DEFAULT_SEARCH_TIMEOUT = 20
 DEFAULT_DETAIL_TIMEOUT = 15
 
+
+def extract_book_hash_from_href(href: str) -> str:
+    """
+    Extract book hash from href path.
+
+    Z-Library hrefs follow format: /book/ID/HASH/title
+
+    Args:
+        href: Book href like '/book/1252896/882753/encyclopaedia-philosophical-sciences'
+
+    Returns:
+        Book hash or None if not extractable
+
+    Example:
+        >>> extract_book_hash_from_href('/book/1252896/882753/title')
+        '882753'
+    """
+    if not href:
+        return None
+
+    parts = href.strip('/').split('/')
+
+    # Expected format: ['book', 'ID', 'HASH', 'title']
+    if len(parts) >= 3 and parts[0] == 'book':
+        return parts[2]
+
+    return None
+
+
+def normalize_book_details(book: dict, mirror: str = None) -> dict:
+    """
+    Normalize book details to ensure all required fields present.
+
+    Handles field inconsistencies between search results and download requirements:
+    - Adds 'url' from 'href' (constructs full URL from relative path)
+    - Extracts 'book_hash' from 'href' if missing
+    - Ensures all required fields for downstream operations
+
+    Args:
+        book: Book dictionary from search results
+        mirror: Z-Library mirror URL (optional, will use environment if not provided)
+
+    Returns:
+        Normalized book dictionary with guaranteed 'url' and 'book_hash' fields
+
+    Example:
+        >>> book = {'id': '123', 'href': '/book/123/abc/title'}
+        >>> normalized = normalize_book_details(book)
+        >>> assert 'url' in normalized
+        >>> assert 'book_hash' in normalized
+    """
+    normalized = book.copy()
+
+    # Add 'url' from 'href' if missing
+    if 'url' not in normalized and 'href' in normalized:
+        href = normalized['href']
+
+        if href.startswith('http'):
+            # Already full URL
+            normalized['url'] = href
+        else:
+            # Relative path - construct full URL
+            mirror_url = mirror or os.getenv('ZLIBRARY_MIRROR', 'https://z-library.sk')
+            normalized['url'] = f"{mirror_url.rstrip('/')}/{href.lstrip('/')}"
+
+    # Extract book_hash if missing
+    if 'book_hash' not in normalized and 'href' in normalized:
+        hash_value = extract_book_hash_from_href(normalized['href'])
+        if hash_value:
+            normalized['book_hash'] = hash_value
+
+    return normalized
+
+
 def _sanitize_component(text: str, max_length: int, is_title: bool = False) -> str:
-    """Sanitizes a filename component."""
+    """
+    Sanitize a filename component for filesystem safety.
+
+    Removes characters that are problematic on Windows/Linux/macOS:
+    / \ ? % * : | " < >
+
+    Also removes: . , ; = for cleaner filenames
+
+    Args:
+        text: Text to sanitize
+        max_length: Maximum length after sanitization
+        is_title: If True, replace spaces with underscores
+
+    Returns:
+        Sanitized text suitable for filenames
+    """
     if not text:
         return ""
-    
-    # Remove problematic characters
+
+    # Remove problematic filesystem characters
     # / \ ? % * : | " < > . , ; =
-    sanitized = re.sub(r'[\\/\?%\*:\ attentes|"<>.,;=]', '', text)
+    sanitized = re.sub(r'[\\/\?%\*:|"<>.,;=]', '', text)
     
     if is_title:
         # Replace spaces with underscores for title
@@ -143,19 +238,47 @@ def _create_enhanced_filename(book_details: dict) -> str:
 
     return f"{base_filename}{formatted_extension}"
 
+async def _get_client(client: AsyncZlib = None) -> AsyncZlib:
+    """
+    Get Z-Library client instance.
+
+    Supports dependency injection for testing and resource management.
+    Falls back to module-level default for backward compatibility.
+
+    Args:
+        client: Optional AsyncZlib instance (for dependency injection)
+
+    Returns:
+        AsyncZlib instance (authenticated)
+    """
+    if client is not None:
+        return client
+
+    # Backward compatibility: use deprecated default client
+    return await client_manager.get_default_client()
+
+
 async def initialize_client():
+    """
+    Initialize module-level default client.
+
+    DEPRECATED: This function maintains backward compatibility but uses
+    global state. New code should use:
+        async with ZLibraryClient() as client:
+            ...
+
+    Returns:
+        Authenticated AsyncZlib instance
+    """
     global zlib_client
 
-    # Load credentials from environment variables or config file
-    email = os.environ.get('ZLIBRARY_EMAIL')
-    password = os.environ.get('ZLIBRARY_PASSWORD')
+    logger.warning(
+        "initialize_client() is deprecated. "
+        "Use ZLibraryClient() with dependency injection instead."
+    )
 
-    if not email or not password:
-        raise Exception("ZLIBRARY_EMAIL and ZLIBRARY_PASSWORD environment variables must be set")
-
-    # Initialize the AsyncZlib client
-    zlib_client = AsyncZlib()
-    await zlib_client.login(email, password)
+    # Use the new client manager
+    zlib_client = await client_manager.get_default_client()
     return zlib_client
 
 # Helper function to parse string lists into ZLibrary enums
@@ -180,26 +303,50 @@ def _parse_enums(items, enum_class):
     logger.debug(f"_parse_enums: returning parsed_items={parsed_items}")
     return parsed_items
 
-async def search(query, exact=False, from_year=None, to_year=None, languages=None, extensions=None, content_types=None, count=10):
-    """Search for books based on title, author, etc."""
-    if not zlib_client:
-        await initialize_client()
+async def search(query, exact=False, from_year=None, to_year=None, languages=None, extensions=None, content_types=None, count=10, client: AsyncZlib = None):
+    """
+    Search for books based on title, author, etc.
+
+    Args:
+        query: Search query string
+        exact: Use exact matching
+        from_year: Filter by start year
+        to_year: Filter by end year
+        languages: List of language codes
+        extensions: List of file extensions
+        content_types: List of content types
+        count: Number of results
+        client: Optional AsyncZlib instance (for dependency injection)
+
+    Returns:
+        dict with 'retrieved_from_url' and 'books'
+    """
+    # Use dependency injection or fallback to default
+    zlib = await _get_client(client)
 
     langs = _parse_enums(languages, Language)
     exts = _parse_enums(extensions, Extension)
 
     # Execute the search
-    logger.info(f"python_bridge.search: Calling zlib_client.search with query='{query}', exact={exact}, from_year={from_year}, to_year={to_year}, lang={langs}, extensions={exts}, content_types={content_types}, count={count}")
-    paginator, constructed_url = await zlib_client.search( # Unpack tuple
+    logger.info(f"python_bridge.search: Calling zlib.search with query='{query}', exact={exact}, from_year={from_year}, to_year={to_year}, lang={langs}, extensions={exts}, content_types={content_types}, count={count}")
+
+    # Build search kwargs (content_types not supported by base zlibrary)
+    search_result = await zlib.search(
         q=query,
         exact=exact,
         from_year=from_year,
         to_year=to_year,
         lang=langs,
         extensions=exts,
-        content_types=content_types, # Pass content_types
         count=count
     )
+
+    # Handle both tuple and non-tuple returns
+    if isinstance(search_result, tuple):
+        paginator, constructed_url = search_result
+    else:
+        paginator = search_result
+        constructed_url = f"Search for: {query}"
 
     # Get the first page of results
     book_results = await paginator.next()
@@ -209,6 +356,58 @@ async def search(query, exact=False, from_year=None, to_year=None, languages=Non
         "retrieved_from_url": constructed_url_to_return,
         "books": book_results
     }
+
+async def search_advanced(query, exact=False, from_year=None, to_year=None, languages=None, extensions=None, content_types=None, count=10):
+    """
+    Advanced search with exact and fuzzy match separation.
+
+    Returns search results separated into exact matches and fuzzy matches
+    based on Z-Library's fuzzyMatchesLine divider.
+
+    Returns:
+        dict with keys:
+            - has_fuzzy_matches: bool
+            - exact_matches: list of book dicts
+            - fuzzy_matches: list of book dicts
+            - total_results: int
+            - query: str
+            - retrieved_from_url: str
+    """
+    if not zlib_client:
+        await initialize_client()
+
+    # Import advanced search module
+    from lib import advanced_search
+
+    # Get credentials from environment
+    email = os.environ.get('ZLIBRARY_EMAIL')
+    password = os.environ.get('ZLIBRARY_PASSWORD')
+    mirror = os.environ.get('ZLIBRARY_MIRROR', '')
+
+    # Convert languages and extensions to comma-separated strings if needed
+    langs_str = ','.join(languages) if languages else None
+    exts_str = ','.join(extensions) if extensions else None
+
+    # Call advanced search
+    logger.info(f"python_bridge.search_advanced: Calling advanced_search with query='{query}', exact={exact}, from_year={from_year}, to_year={to_year}")
+
+    result = await advanced_search.search_books_advanced(
+        query=query,
+        email=email,
+        password=password,
+        mirror=mirror,
+        year_from=from_year,
+        year_to=to_year,
+        languages=langs_str,
+        extensions=exts_str,
+        page=1,
+        limit=count
+    )
+
+    # Add retrieved_from_url for consistency with other search functions
+    result['retrieved_from_url'] = f"Advanced search for: {query}"
+
+    return result
 
 async def full_text_search(query, exact=False, phrase=True, words=False, languages=None, extensions=None, content_types=None, count=10):
     """Search for text within book contents"""
@@ -332,14 +531,28 @@ async def process_document(
 async def download_book(book_details: dict, output_dir: str, process_for_rag: bool = False, processed_output_format: str = "txt"):
     """
     Downloads a book using scraping, optionally processes it, and returns file paths.
+
+    Args:
+        book_details: Book dictionary from search (must have 'url' or 'href')
+        output_dir: Directory to save downloaded file
+        process_for_rag: If True, also extract text for RAG
+        processed_output_format: Format for RAG output ('txt' or 'markdown')
+
+    Returns:
+        dict with 'file_path' and optional 'processed_file_path'
     """
     if not zlib_client:
         await initialize_client()
 
+    # Normalize book details to ensure 'url' and 'book_hash' fields
+    book_details = normalize_book_details(book_details)
+
+    # Now get the URL (normalized function ensures it exists)
     book_page_url = book_details.get('url')
-    if not book_page_url: # Should not happen if ADR-002 is followed (book_details always has URL)
-        logger.error("Critical: 'url' key missing in book_details for download_book. This indicates a deviation from ADR-002.")
-        raise ValueError("Missing 'url' key in bookDetails object.")
+
+    if not book_page_url:
+        logger.error(f"Critical: Neither 'url' nor 'href' found in book_details: {list(book_details.keys())}")
+        raise ValueError("Missing 'url' or 'href' key in bookDetails object. Cannot download without book page URL.")
 
     downloaded_file_path_str = None
     final_file_path_str = None # Path with enhanced filename
@@ -391,8 +604,256 @@ async def download_book(book_details: dict, output_dir: str, process_for_rag: bo
         logger.exception(f"Error in download_book for book ID {book_details.get('id')}, URL {book_page_url}")
         raise e
 
+
+async def get_book_metadata_complete(book_id: str, book_hash: str = None) -> dict:
+    """
+    Fetch complete metadata for a book by ID, including enhanced fields.
+
+    This function fetches the book detail page HTML and extracts comprehensive metadata:
+    - Description (500-1000 chars)
+    - Terms (50-60+ conceptual keywords)
+    - Booklists (10+ curated collections)
+    - Rating (user ratings with count)
+    - IPFS CIDs (2 formats for decentralized access)
+    - Series information
+    - Categories (hierarchical classification)
+    - ISBNs (10 and 13)
+    - Quality score
+    - All standard book properties
+
+    Args:
+        book_id: Z-Library book ID (e.g., "1252896")
+        book_hash: Optional book hash (will be fetched if not provided)
+
+    Returns:
+        Dictionary with complete metadata including enhanced fields
+    """
+    if not zlib_client:
+        await initialize_client()
+
+    try:
+        # Construct book detail page URL
+        # Z-Library book detail URLs: https://z-library.sk/book/{id}/{hash}/title
+        # We need the hash to construct the URL, but we can also try without it
+
+        # Get current mirror URL from authenticated client
+        # The zlibrary client maintains the correct domain after login
+        mirror_url = zlib_client.domain if zlib_client and hasattr(zlib_client, 'domain') else None
+        if not mirror_url:
+            # Fallback to environment or try common domains
+            mirror_url = os.environ.get('ZLIBRARY_MIRROR')
+            if not mirror_url:
+                # This shouldn't happen after successful login, but provide fallback
+                logger.warning("No mirror URL available from client, using fallback")
+                mirror_url = 'https://z-library.sk'
+
+        # If we don't have the hash, we need to search for the book first to get its URL
+        if not book_hash:
+            logger.info(f"No book_hash provided, searching for book ID {book_id} to get detail URL")
+            # Search by ID (this is a fallback, ideally book_hash is provided)
+            # Note: Z-Library doesn't support search by ID directly, so we'd need the title
+            # For now, we'll require the book_hash or construct a minimal URL
+            raise ValueError("book_hash is required for get_book_metadata_complete")
+
+        # Construct book detail URL
+        book_url = f"{mirror_url.rstrip('/')}/book/{book_id}/{book_hash}/"
+
+        logger.info(f"Fetching book metadata from: {book_url}")
+
+        # Fetch the book detail page HTML
+        async with httpx.AsyncClient(headers=DEFAULT_HEADERS, timeout=DEFAULT_DETAIL_TIMEOUT) as client:
+            response = await client.get(book_url)
+            response.raise_for_status()
+            html = response.text
+
+        logger.info(f"Fetched {len(html)} bytes of HTML for book {book_id}")
+
+        # Extract enhanced metadata
+        metadata = enhanced_metadata.extract_complete_metadata(html, mirror_url=mirror_url)
+
+        # Add book ID and URL to metadata
+        metadata['id'] = book_id
+        metadata['book_hash'] = book_hash
+        metadata['book_url'] = book_url
+
+        # Log extraction results
+        logger.info(f"Extracted metadata for book {book_id}: "
+                   f"{len(metadata.get('terms', []))} terms, "
+                   f"{len(metadata.get('booklists', []))} booklists, "
+                   f"description length: {len(metadata.get('description', '') or '')}")
+
+        return metadata
+
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 404:
+            raise InternalBookNotFoundError(f"Book ID {book_id} not found (404)")
+        else:
+            raise InternalFetchError(f"HTTP error fetching book metadata: {e}")
+
+    except Exception as e:
+        logger.exception(f"Error fetching complete metadata for book {book_id}")
+        raise RuntimeError(f"Failed to fetch complete metadata for book {book_id}: {e}") from e
+
+
 # --- Main Execution Block ---
 import argparse # Moved import here
+
+# ===== PHASE 3: TERM, AUTHOR, AND BOOKLIST TOOLS =====
+
+async def search_by_term_bridge(
+    term: str,
+    year_from: int = None,
+    year_to: int = None,
+    languages: list = None,
+    extensions: list = None,
+    limit: int = 25
+) -> dict:
+    """
+    Search for books by conceptual term.
+
+    Args:
+        term: Conceptual term (e.g., "dialectic", "reflection")
+        year_from: Optional start year filter
+        year_to: Optional end year filter
+        languages: Optional list of language codes
+        extensions: Optional list of file extensions
+        limit: Results per page (default: 25)
+
+    Returns:
+        dict with 'term', 'books', 'total_results'
+    """
+    if not zlib_client:
+        await initialize_client()
+
+    # Import term tools
+    from lib import term_tools
+
+    # Get credentials
+    email = os.environ.get('ZLIBRARY_EMAIL')
+    password = os.environ.get('ZLIBRARY_PASSWORD')
+    mirror = os.environ.get('ZLIBRARY_MIRROR', '')
+
+    # Convert lists to comma-separated strings if needed
+    langs_str = ','.join(languages) if languages else None
+    exts_str = ','.join(extensions) if extensions else None
+
+    logger.info(f"python_bridge.search_by_term: term='{term}', year_from={year_from}, year_to={year_to}")
+
+    result = await term_tools.search_by_term(
+        term=term,
+        email=email,
+        password=password,
+        mirror=mirror,
+        year_from=year_from,
+        year_to=year_to,
+        languages=langs_str,
+        extensions=exts_str,
+        limit=limit
+    )
+
+    return result
+
+
+async def search_by_author_bridge(
+    author: str,
+    exact: bool = False,
+    year_from: int = None,
+    year_to: int = None,
+    languages: list = None,
+    extensions: list = None,
+    limit: int = 25
+) -> dict:
+    """
+    Search for books by author with advanced options.
+
+    Args:
+        author: Author name (supports various formats)
+        exact: If True, exact author name matching
+        year_from: Optional start year filter
+        year_to: Optional end year filter
+        languages: Optional list of language codes
+        extensions: Optional list of file extensions
+        limit: Results per page (default: 25)
+
+    Returns:
+        dict with 'author', 'books', 'total_results'
+    """
+    if not zlib_client:
+        await initialize_client()
+
+    # Import author tools
+    from lib import author_tools
+
+    # Get credentials
+    email = os.environ.get('ZLIBRARY_EMAIL')
+    password = os.environ.get('ZLIBRARY_PASSWORD')
+    mirror = os.environ.get('ZLIBRARY_MIRROR', '')
+
+    # Convert lists to comma-separated strings if needed
+    langs_str = ','.join(languages) if languages else None
+    exts_str = ','.join(extensions) if extensions else None
+
+    logger.info(f"python_bridge.search_by_author: author='{author}', exact={exact}")
+
+    result = await author_tools.search_by_author(
+        author=author,
+        email=email,
+        password=password,
+        exact=exact,
+        mirror=mirror,
+        year_from=year_from,
+        year_to=year_to,
+        languages=langs_str,
+        extensions=exts_str,
+        limit=limit
+    )
+
+    return result
+
+
+async def fetch_booklist_bridge(
+    booklist_id: str,
+    booklist_hash: str,
+    topic: str,
+    page: int = 1
+) -> dict:
+    """
+    Fetch a Z-Library booklist.
+
+    Args:
+        booklist_id: Numeric ID of the booklist
+        booklist_hash: Hash code for the booklist
+        topic: Topic name (URL-safe)
+        page: Page number (default: 1)
+
+    Returns:
+        dict with 'booklist_id', 'metadata', 'books', 'page'
+    """
+    if not zlib_client:
+        await initialize_client()
+
+    # Import booklist tools
+    from lib import booklist_tools
+
+    # Get credentials
+    email = os.environ.get('ZLIBRARY_EMAIL')
+    password = os.environ.get('ZLIBRARY_PASSWORD')
+    mirror = os.environ.get('ZLIBRARY_MIRROR', '')
+
+    logger.info(f"python_bridge.fetch_booklist: id={booklist_id}, hash={booklist_hash}, topic='{topic}'")
+
+    result = await booklist_tools.fetch_booklist(
+        booklist_id=booklist_id,
+        booklist_hash=booklist_hash,
+        topic=topic,
+        email=email,
+        password=password,
+        page=page,
+        mirror=mirror
+    )
+
+    return result
+
 
 async def main():
     parser = argparse.ArgumentParser(description='Z-Library Python Bridge')
@@ -455,6 +916,8 @@ async def main():
              if 'file_path' in args_dict:
                  args_dict['file_path_str'] = args_dict.pop('file_path')
              result = await process_document(**args_dict)
+        elif function_name == 'get_book_metadata_complete':
+             result = await get_book_metadata_complete(**args_dict)
         else:
             raise ValueError(f"Unknown function: {function_name}")
 

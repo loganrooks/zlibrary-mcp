@@ -136,10 +136,14 @@ interface RAGDocument {
 5. **Review**: Check against DEBUGGING.md scenarios
 
 ### Branch Strategy
-- `main` - Stable, production-ready
+- `master` - Stable, production-ready (primary branch)
+- `development` - Integration branch for features
 - `feature/*` - New features
 - `fix/*` - Bug fixes
+- `hotfix/*` - Emergency production fixes
 - `docs/*` - Documentation only
+
+**Note**: See `.claude/VERSION_CONTROL.md` for comprehensive Git workflow guide.
 
 ### Commit Convention
 ```

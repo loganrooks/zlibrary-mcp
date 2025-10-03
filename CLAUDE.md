@@ -6,11 +6,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Essential Reading Order**:
 1. `.claude/PROJECT_CONTEXT.md` - Complete project understanding
-2. `.claude/ISSUES.md` - Known problems and priorities
-3. `.claude/PATTERNS.md` - Code patterns to follow
-4. `.claude/DEBUGGING.md` - Troubleshooting guide
-5. `.claude/MCP_SERVERS.md` - Development tools setup
-6. `.claude/META_LEARNING.md` - Lessons learned and insights
+2. `ISSUES.md` - Known problems and priorities (at project root)
+3. `.claude/IMPLEMENTATION_ROADMAP.md` - Concrete action plan and fixes
+4. `.claude/PATTERNS.md` - Code patterns to follow
+5. `.claude/DEBUGGING.md` - Troubleshooting guide
+6. `.claude/VERSION_CONTROL.md` - Git workflow and best practices
+7. `.claude/CI_CD.md` - CI/CD strategy and implementation
+8. `.claude/MCP_SERVERS.md` - Development tools setup
+9. `.claude/META_LEARNING.md` - Lessons learned and insights
 
 ## Project Overview
 
@@ -66,6 +69,25 @@ pytest __tests__/python/test_rag_processing.py::TestProcessDocumentForRAG::test_
 node --experimental-vm-modules node_modules/jest/bin/jest.js --coverage
 ```
 
+### Git Workflow
+```bash
+# Create feature branch (see .claude/VERSION_CONTROL.md for naming conventions)
+git checkout -b feature/your-feature-name
+
+# Check status before committing
+git status
+git diff
+
+# Stage and commit with conventional format
+git add .
+git commit -m "feat: add new feature" # See VERSION_CONTROL.md for commit format
+
+# Push to remote and create PR
+git push -u origin feature/your-feature-name
+```
+
+For complete Git workflow, branching strategy, and PR process, see `.claude/VERSION_CONTROL.md`.
+
 ### Running the Server
 ```bash
 # Build and run
@@ -84,10 +106,25 @@ node dist/index.js
 
 ## Environment Configuration
 
-Required environment variables:
+### Required Variables
 - `ZLIBRARY_EMAIL`: Z-Library account email
 - `ZLIBRARY_PASSWORD`: Z-Library account password
 - `ZLIBRARY_MIRROR`: (Optional) Custom Z-Library mirror URL
+
+### Retry Logic Configuration (Optional)
+All API operations include automatic retry with exponential backoff and circuit breaker protection.
+
+**Retry Settings**:
+- `RETRY_MAX_RETRIES` (default: `3`): Maximum retry attempts
+- `RETRY_INITIAL_DELAY` (default: `1000`): Initial retry delay in ms
+- `RETRY_MAX_DELAY` (default: `30000`): Maximum retry delay in ms
+- `RETRY_FACTOR` (default: `2`): Exponential backoff multiplier
+
+**Circuit Breaker Settings**:
+- `CIRCUIT_BREAKER_THRESHOLD` (default: `5`): Failures before opening circuit
+- `CIRCUIT_BREAKER_TIMEOUT` (default: `60000`): Time in ms before retry after circuit opens
+
+See [docs/RETRY_CONFIGURATION.md](docs/RETRY_CONFIGURATION.md) for detailed configuration guide.
 
 ## Important Design Decisions
 
@@ -158,6 +195,7 @@ The project maintains its own Python venv (`.venv/`) with these key dependencies
 Working on: `feature/rag-robustness-enhancement`
 - Focus: PDF quality analysis and extraction improvements
 - Key files: `lib/rag_processing.py`, related tests
+- Branching Strategy: See `.claude/VERSION_CONTROL.md` for feature branch conventions and workflow
 
 ## Development Ecosystem
 
@@ -166,15 +204,18 @@ Working on: `feature/rag-robustness-enhancement`
 The `.claude` folder contains comprehensive documentation for development:
 
 - **PROJECT_CONTEXT.md**: Mission, architecture principles, domain model, performance targets
-- **ISSUES.md**: All known issues categorized by severity with action items
+- **ISSUES.md** (root): All known issues categorized by severity with action items
+- **IMPLEMENTATION_ROADMAP.md**: Concrete action plan, priority fixes, 3-week roadmap
 - **PATTERNS.md**: Code patterns for error handling, logging, caching, testing
 - **DEBUGGING.md**: Troubleshooting guides, diagnostic scripts, common solutions
+- **VERSION_CONTROL.md**: Git workflows, branching strategy, commit conventions
+- **CI_CD.md**: CI/CD pipelines, quality gates, deployment automation
 - **MCP_SERVERS.md**: Playwright, SQLite, and other MCP server configurations
 - **META_LEARNING.md**: Lessons learned, architectural insights, future predictions
 
 ### 🎯 Current Priorities
 
-Check `.claude/ISSUES.md` for the complete list. Top priorities:
+Check `ISSUES.md` (project root) for the complete list. Top priorities:
 1. Fix venv manager test warnings (ISSUE-002)
 2. Implement retry logic with exponential backoff (ISSUE-005)
 3. Add fuzzy search capabilities (SRCH-001)
@@ -182,24 +223,39 @@ Check `.claude/ISSUES.md` for the complete list. Top priorities:
 
 ### 🔧 Development Workflow
 
-1. **Before Starting**: Read `.claude/PROJECT_CONTEXT.md`
-2. **Check Issues**: Review `.claude/ISSUES.md` for known problems
-3. **Follow Patterns**: Use code patterns from `.claude/PATTERNS.md`
-4. **Debug Issues**: Consult `.claude/DEBUGGING.md` for solutions
-5. **Learn from History**: Check `.claude/META_LEARNING.md` for insights
+1. **Setup Version Control**: Create feature branch per `.claude/VERSION_CONTROL.md`
+2. **Before Coding**: Read `.claude/PROJECT_CONTEXT.md` for architecture
+3. **Check Issues**: Review `ISSUES.md` (root) for known problems
+4. **Follow Patterns**: Use code patterns from `.claude/PATTERNS.md`
+5. **Write & Test**: Implement with tests, following TDD when possible
+6. **Debug Issues**: Consult `.claude/DEBUGGING.md` for solutions
+7. **Commit Properly**: Use conventional commits per `.claude/VERSION_CONTROL.md`
+8. **Create PR**: Follow PR template and review process in VERSION_CONTROL.md
+9. **Learn & Document**: Update `.claude/META_LEARNING.md` with insights
 
 ### 🚦 Quick Status Check
 
 ```bash
+# Git status - current branch and changes
+git status
+git branch --show-current
+git diff --stat
+
 # Run health check
 bash .claude/scripts/health_check.sh
 
 # Check for critical issues
-grep "CRITICAL\|HIGH" .claude/ISSUES.md
+grep "CRITICAL\|HIGH" ISSUES.md
 
 # View recent errors
 tail -f logs/error.log | grep -i error
+
+# Check uncommitted changes before PR
+git diff --check  # Check for whitespace errors
+git log --oneline -5  # Review recent commits
 ```
+
+For detailed Git operations, see `.claude/VERSION_CONTROL.md`.
 
 ### 💡 Key Architectural Decisions
 
@@ -218,3 +274,32 @@ For optimal development with Claude Code, configure these MCP servers:
 4. **Sequential**: Complex debugging and analysis
 
 See `.claude/MCP_SERVERS.md` for complete configuration.
+
+## 🤝 Contributing
+
+Before contributing to this project, please review our comprehensive version control guidelines:
+
+📖 **Required Reading: `.claude/VERSION_CONTROL.md`**
+
+This document covers:
+- **Branching Strategy**: Feature branches, naming conventions, and workflow
+- **Commit Standards**: Conventional commits format with examples
+- **Pull Request Process**: Templates, review guidelines, and merge requirements
+- **Code Review**: Best practices and checklist
+- **Release Process**: Semantic versioning and changelog management
+
+### Quick Contribution Steps
+1. Fork the repository and clone locally
+2. Create a feature branch: `git checkout -b feature/your-feature`
+3. Make changes following patterns in `.claude/PATTERNS.md`
+4. Commit using conventional format (see VERSION_CONTROL.md)
+5. Push and create PR with our template
+6. Ensure CI passes and address review feedback
+
+### Development Standards
+- Follow existing code patterns (`.claude/PATTERNS.md`)
+- Add tests for new functionality
+- Update documentation as needed
+- Check for issues (`ISSUES.md`) you might address
+
+For CI/CD pipeline details, see `.claude/CI_CD.md`.

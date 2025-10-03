@@ -86,6 +86,46 @@ const ProcessDocumentForRagParamsSchema = z.object({
   output_format: z.string().optional().describe('Desired output format (e.g., "text", "markdown")') // Re-applying again: Ensure it's purely optional, no default
 });
 
+// Phase 3 Tool Schemas
+const GetBookMetadataParamsSchema = z.object({
+  bookId: z.string().describe('Z-Library book ID'),
+  bookHash: z.string().describe('Book hash (can be extracted from book URL)'),
+});
+
+const SearchByTermParamsSchema = z.object({
+  term: z.string().describe('Conceptual term to search for (e.g., "dialectic", "phenomenology")'),
+  yearFrom: z.number().int().optional().describe('Filter by minimum publication year'),
+  yearTo: z.number().int().optional().describe('Filter by maximum publication year'),
+  languages: z.array(z.string()).optional().default([]).describe('Filter by languages'),
+  extensions: z.array(z.string()).optional().default([]).describe('Filter by file extensions'),
+  count: z.number().int().optional().default(25).describe('Number of results to return'),
+});
+
+const SearchByAuthorParamsSchema = z.object({
+  author: z.string().describe('Author name (supports "Lastname, Firstname" format)'),
+  exact: z.boolean().optional().default(false).describe('Use exact author name matching'),
+  yearFrom: z.number().int().optional().describe('Filter by minimum publication year'),
+  yearTo: z.number().int().optional().describe('Filter by maximum publication year'),
+  languages: z.array(z.string()).optional().default([]).describe('Filter by languages'),
+  extensions: z.array(z.string()).optional().default([]).describe('Filter by file extensions'),
+  count: z.number().int().optional().default(25).describe('Number of results to return'),
+});
+
+const FetchBooklistParamsSchema = z.object({
+  booklistId: z.string().describe('Booklist ID from book metadata'),
+  booklistHash: z.string().describe('Booklist hash from book metadata'),
+  topic: z.string().describe('Booklist topic name'),
+  page: z.number().int().optional().default(1).describe('Page number for pagination'),
+});
+
+const SearchAdvancedParamsSchema = z.object({
+  query: z.string().describe('Search query'),
+  exact: z.boolean().optional().default(false).describe('Whether to perform exact match search'),
+  yearFrom: z.number().int().optional().describe('Filter by minimum publication year'),
+  yearTo: z.number().int().optional().describe('Filter by maximum publication year'),
+  count: z.number().int().optional().default(10).describe('Number of results to return'),
+});
+
 // Define a type for the handler map
 type HandlerMap = {
     [key: string]: (args: any) => Promise<any>;
@@ -196,6 +236,73 @@ const handlers: HandlerMap = {
     } catch (error: any) {
       return { error: { message: error.message || 'Failed to process document for RAG' } };
     }
+  },
+
+  // Phase 3 Research Tools
+  getBookMetadata: async (args: z.infer<typeof GetBookMetadataParamsSchema>) => {
+    try {
+      return await zlibraryApi.getBookMetadata(args.bookId, args.bookHash);
+    } catch (error: any) {
+      return { error: { message: error.message || 'Failed to get book metadata' } };
+    }
+  },
+
+  searchByTerm: async (args: z.infer<typeof SearchByTermParamsSchema>) => {
+    try {
+      return await zlibraryApi.searchByTerm({
+        term: args.term,
+        yearFrom: args.yearFrom,
+        yearTo: args.yearTo,
+        languages: args.languages,
+        extensions: args.extensions,
+        limit: args.count
+      });
+    } catch (error: any) {
+      return { error: { message: error.message || 'Failed to search by term' } };
+    }
+  },
+
+  searchByAuthor: async (args: z.infer<typeof SearchByAuthorParamsSchema>) => {
+    try {
+      return await zlibraryApi.searchByAuthor({
+        author: args.author,
+        exact: args.exact,
+        yearFrom: args.yearFrom,
+        yearTo: args.yearTo,
+        languages: args.languages,
+        extensions: args.extensions,
+        limit: args.count
+      });
+    } catch (error: any) {
+      return { error: { message: error.message || 'Failed to search by author' } };
+    }
+  },
+
+  fetchBooklist: async (args: z.infer<typeof FetchBooklistParamsSchema>) => {
+    try {
+      return await zlibraryApi.fetchBooklist({
+        booklistId: args.booklistId,
+        booklistHash: args.booklistHash,
+        topic: args.topic,
+        page: args.page
+      });
+    } catch (error: any) {
+      return { error: { message: error.message || 'Failed to fetch booklist' } };
+    }
+  },
+
+  searchAdvanced: async (args: z.infer<typeof SearchAdvancedParamsSchema>) => {
+    try {
+      return await zlibraryApi.searchAdvanced({
+        query: args.query,
+        exact: args.exact,
+        yearFrom: args.yearFrom,
+        yearTo: args.yearTo,
+        count: args.count
+      });
+    } catch (error: any) {
+      return { error: { message: error.message || 'Failed to perform advanced search' } };
+    }
   }
 };
 
@@ -244,6 +351,32 @@ const toolRegistry: Record<string, ToolRegistryEntry> = {
     description: 'Process a downloaded document (EPUB, TXT, PDF) to extract text content for RAG',
     schema: ProcessDocumentForRagParamsSchema,
     handler: handlers.processDocumentForRag,
+  },
+  // Phase 3 Research Tools
+  get_book_metadata: {
+    description: 'Get complete metadata for a book including 60+ terms, 11+ booklists, descriptions, IPFS CIDs, ratings, and more',
+    schema: GetBookMetadataParamsSchema,
+    handler: handlers.getBookMetadata,
+  },
+  search_by_term: {
+    description: 'Search for books by conceptual term (enables navigation through 60+ terms per book)',
+    schema: SearchByTermParamsSchema,
+    handler: handlers.searchByTerm,
+  },
+  search_by_author: {
+    description: 'Advanced author search with support for various name formats and exact matching',
+    schema: SearchByAuthorParamsSchema,
+    handler: handlers.searchByAuthor,
+  },
+  fetch_booklist: {
+    description: 'Fetch books from an expert-curated booklist (11+ booklists per book, up to 954 books per list)',
+    schema: FetchBooklistParamsSchema,
+    handler: handlers.fetchBooklist,
+  },
+  search_advanced: {
+    description: 'Advanced search with exact and fuzzy match detection and separation',
+    schema: SearchAdvancedParamsSchema,
+    handler: handlers.searchAdvanced,
   },
 };
 

@@ -243,7 +243,14 @@ export async function readVenvPathConfig(deps: VenvManagerDependencies): Promise
     const configPath = await getConfigPath();
     try {
         if (deps.fs.existsSync(configPath)) {
-            const venvPythonPath = deps.fs.readFileSync(configPath, 'utf8').trim();
+            const configContent = deps.fs.readFileSync(configPath, 'utf8');
+            // Check if config content is valid before trimming
+            if (!configContent || typeof configContent !== 'string') {
+                console.warn(`Invalid or empty venv config at ${configPath}`);
+                deps.fs.unlinkSync(configPath); // Remove invalid config
+                return null;
+            }
+            const venvPythonPath = configContent.trim();
             // Basic validation: check if the file exists
             if (deps.fs.existsSync(venvPythonPath)) {
                 // console.log(`Read venv Python path from config: ${venvPythonPath}`); // Removed debug log

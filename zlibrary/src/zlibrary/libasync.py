@@ -453,7 +453,7 @@ class AsyncZlib:
                       downloaded_size = 0
                       logger.info(f"Starting download ({total_size} bytes)...")
 
-                      async with (await aiofiles.open(actual_output_path, 'wb')) as f:
+                      async with aiofiles.open(actual_output_path, 'wb') as f:
                           async for chunk in response.aiter_bytes():
                               await f.write(chunk)
                               downloaded_size += len(chunk)

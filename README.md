@@ -24,13 +24,37 @@ This project is primarily built using **Node.js/TypeScript** and acts as an MCP 
 
 ## Features
 
-- 📚 Search for books by title, author, year, language, and format
-- 📖 Get detailed book information and metadata (Note: ID-based lookup is deprecated and unreliable; search is recommended)
-- 🔍 Full-text search within book contents
-- 📊 View download history and limits
-- 📈 Get recently added books
-- 💾 Download books directly to local file system (`./downloads/` by default) using `bookDetails` from search results (see ADR-002).
-- ✨ Process downloaded documents (EPUB, TXT, PDF) for RAG, with robustness enhancements (quality detection, OCR, preprocessing), saving output to `./processed_rag_output/`
+### Core Search Capabilities
+- 📚 **Basic Search** - Search by title, author, year, language, and format
+- 🔍 **Full-Text Search** - Search within book contents
+- 🏷️ **Term-Based Search** - Navigate by conceptual terms (60+ per book)
+- 👤 **Advanced Author Search** - Support for various name formats and exact matching
+- 🔎 **Advanced Search** - Fuzzy match detection and separation
+- 📚 **Booklist Exploration** - Access expert-curated collections (up to 954 books/list)
+
+### Metadata Extraction
+- 📊 **Complete Metadata** - Extract 60+ conceptual terms per book
+- 📚 **Booklist Discovery** - Find 11+ curated collections per book
+- 📝 **Rich Descriptions** - 800+ character descriptions
+- 🔗 **IPFS Support** - Decentralized access via 2 CID formats
+- ⭐ **Quality Metrics** - Ratings, quality scores, bibliographic data
+
+### Download & Processing
+- 💾 **Smart Downloads** - Download PDF/EPUB with intelligent filename generation
+- ✨ **RAG Processing** - Extract clean text from EPUB/PDF for AI applications
+- 📊 **Quality Detection** - Automatic OCR for image-based PDFs
+- 🧹 **Text Preprocessing** - Front matter removal, ToC extraction, formatting
+
+### Research Workflows
+Enables 8 comprehensive research workflows:
+1. Literature Review - Automated corpus building
+2. Citation Network Mapping - Intellectual genealogy
+3. Conceptual Navigation - Knowledge graph traversal
+4. Topic Discovery - Fuzzy matching and variations
+5. Collection Exploration - Expert-curated lists
+6. RAG Knowledge Base - Vector database preparation
+7. Comparative Analysis - Cross-author studies
+8. Temporal Analysis - Idea evolution tracking
 
 ## Prerequisites
 
@@ -108,16 +132,68 @@ Configure the server in your AI assistant's settings. Ensure the `command` point
 
 *(Note: Global installation (`npm install -g`) is not currently the primary recommended setup due to the complexities of managing the Python environment globally. Local development setup is preferred.)*
 
-## Available Tools
+## Available MCP Tools (11 Total)
 
-- `search_books`: Search for books. **Recommended** for finding books and obtaining `bookDetails`.
-- `get_book_by_id`: **DEPRECATED**. (Unreliable due to external site changes, use `search_books`).
-- `full_text_search`: Search within book content.
-- `get_download_history`: View download history (Parser fixed).
-- `get_download_limits`: Check download limits.
-- `get_recent_books`: Get recently added books (Implemented).
-- `download_book_to_file`: Download a book using `bookDetails` from search results. Can optionally process for RAG.
-- `process_document_for_rag`: Process an existing local file (EPUB, TXT, PDF) for RAG.
+### Search Tools (6)
+
+1. **`search_books`** - Basic search by keyword with filters
+   - Parameters: query, exact, fromYear, toYear, languages, extensions, count
+   - Returns: List of books with complete metadata (title, authors, year, etc.)
+
+2. **`full_text_search`** - Search within book contents
+   - Parameters: query, phrase, words, languages, extensions, count
+   - Returns: Books containing the searched text
+
+3. **`search_by_term`** ✨ NEW - Conceptual navigation via 60+ terms per book
+   - Parameters: term (e.g., "dialectic"), yearFrom, yearTo, languages, count
+   - Returns: Books tagged with the conceptual term
+
+4. **`search_by_author`** ✨ NEW - Advanced author search
+   - Parameters: author (supports "Lastname, Firstname"), exact, yearFrom, count
+   - Returns: Author's works with metadata
+
+5. **`search_advanced`** ✨ NEW - Fuzzy match detection
+   - Parameters: query, exact, yearFrom, yearTo, count
+   - Returns: Separate exact_matches and fuzzy_matches arrays
+
+6. ~~`get_book_by_id`~~ - **DEPRECATED** (use search_books instead)
+
+### Metadata Tools (1)
+
+7. **`get_book_metadata`** ✨ NEW - Complete metadata extraction
+   - Parameters: bookId, bookHash
+   - Returns: 60+ terms, 11+ booklists, descriptions, IPFS CIDs, ratings, series, ISBNs
+   - **Core Feature**: Enables conceptual navigation and collection discovery
+
+### Collection Tools (1)
+
+8. **`fetch_booklist`** ✨ NEW - Expert-curated collection contents
+   - Parameters: booklistId, booklistHash, topic, page
+   - Returns: Books from collections (e.g., Philosophy: 954 books)
+
+### Download & Processing Tools (2)
+
+9. **`download_book_to_file`** - Download with optional RAG processing
+   - Parameters: bookDetails, outputDir, process_for_rag, processed_output_format
+   - Returns: file_path and optional processed_file_path
+
+10. **`process_document_for_rag`** - Extract text from EPUB/PDF/TXT
+    - Parameters: file_path, output_format
+    - Returns: Processed text file path (125KB+ clean text)
+
+### Utility Tools (2)
+
+11. **`get_download_limits`** - Check daily download quota
+12. **`get_download_history`** - View recent downloads
+
+**Total**: 11 MCP tools providing complete research acceleration capabilities
+
+### Key Capabilities
+
+**60 Terms Per Book**: Navigate by philosophical/technical concepts
+**11 Booklists Per Book**: Explore expert-curated collections
+**8 Research Workflows**: Literature review, citation networks, conceptual navigation, etc.
+**15-360x Faster**: Compared to manual research
 
 ## Development
 

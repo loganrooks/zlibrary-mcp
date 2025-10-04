@@ -918,6 +918,14 @@ async def main():
              result = await process_document(**args_dict)
         elif function_name == 'get_book_metadata_complete':
              result = await get_book_metadata_complete(**args_dict)
+        elif function_name == 'search_by_term_bridge':
+             result = await search_by_term_bridge(**args_dict)
+        elif function_name == 'search_by_author_bridge':
+             result = await search_by_author_bridge(**args_dict)
+        elif function_name == 'fetch_booklist_bridge':
+             result = await fetch_booklist_bridge(**args_dict)
+        elif function_name == 'search_advanced':
+             result = await search_advanced(**args_dict)
         else:
             raise ValueError(f"Unknown function: {function_name}")
 

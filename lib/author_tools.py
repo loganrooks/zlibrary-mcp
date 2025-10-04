@@ -153,44 +153,42 @@ async def search_by_author(
     query = format_author_query(author, exact=exact)
 
     # Initialize zlibrary client
-    if mirror:
-        zlib = AsyncZlib(email=email, password=password, remix_userkey='', mirror=mirror)
-    else:
-        zlib = AsyncZlib(email=email, password=password, remix_userkey='')
+    zlib = AsyncZlib()
+    await zlib.login(email, password)
 
-    # Build search parameters
+    # Build search parameters matching AsyncZlib.search() signature
     search_kwargs = {
-        'page': page,
+        'q': query,
         'count': limit,
         'exact': exact
     }
 
     if year_from is not None:
-        search_kwargs['yearFrom'] = year_from
+        search_kwargs['from_year'] = year_from
     if year_to is not None:
-        search_kwargs['yearTo'] = year_to
+        search_kwargs['to_year'] = year_to
     if languages:
-        search_kwargs['languages'] = languages
+        search_kwargs['lang'] = languages.split(',') if isinstance(languages, str) else languages
     if extensions:
-        search_kwargs['extensions'] = extensions
+        search_kwargs['extensions'] = extensions.split(',') if isinstance(extensions, str) else extensions
 
     # Execute search
-    search_result = await zlib.search(query, **search_kwargs)
+    search_result = await zlib.search(**search_kwargs)
 
-    # Handle both tuple and non-tuple returns
+    # Handle both tuple and non-tuple returns (AsyncZlib.search returns Paginator or tuple)
     if isinstance(search_result, tuple):
-        html, total_count = search_result
+        paginator, constructed_url = search_result
     else:
-        html = str(search_result)
-        total_count = 0
+        paginator = search_result
+        constructed_url = f"Search for author: {author}"
 
-    # Parse results (reuse parsing logic from term_tools)
-    books = _parse_author_search_results(html)
+    # Get the first page of results (paginator.next() returns list of book dicts)
+    books = await paginator.next()
 
     return {
         'author': author,
         'books': books,
-        'total_results': total_count
+        'total_results': len(books)  # For now, return books in this page
     }
 
 

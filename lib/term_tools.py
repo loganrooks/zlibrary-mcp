@@ -157,44 +157,41 @@ async def search_by_term(
         >>> print(f"Found {len(result['books'])} books on {result['term']}")
     """
     # Initialize zlibrary client
-    if mirror:
-        zlib = AsyncZlib(email=email, password=password, remix_userkey='', mirror=mirror)
-    else:
-        zlib = AsyncZlib(email=email, password=password, remix_userkey='')
+    zlib = AsyncZlib()
+    await zlib.login(email, password)
 
-    # Build search parameters
+    # Build search parameters matching AsyncZlib.search() signature
     search_kwargs = {
-        'page': page,
+        'q': term,
         'count': limit
     }
 
     if year_from is not None:
-        search_kwargs['yearFrom'] = year_from
+        search_kwargs['from_year'] = year_from
     if year_to is not None:
-        search_kwargs['yearTo'] = year_to
+        search_kwargs['to_year'] = year_to
     if languages:
-        search_kwargs['languages'] = languages
+        search_kwargs['lang'] = languages.split(',') if isinstance(languages, str) else languages
     if extensions:
-        search_kwargs['extensions'] = extensions
+        search_kwargs['extensions'] = extensions.split(',') if isinstance(extensions, str) else extensions
 
-    # Execute search using the term as query
-    # Z-Library's term search is essentially a specialized text search
-    search_result = await zlib.search(term, **search_kwargs)
+    # Execute search
+    search_result = await zlib.search(**search_kwargs)
 
-    # Handle both tuple and non-tuple returns
+    # Handle both tuple and non-tuple returns (AsyncZlib.search returns Paginator or tuple)
     if isinstance(search_result, tuple):
-        html, total_count = search_result
+        paginator, constructed_url = search_result
     else:
-        html = str(search_result)
-        total_count = 0
+        paginator = search_result
+        constructed_url = f"Search for term: {term}"
 
-    # Parse results
-    books = parse_term_search_results(html)
+    # Get the first page of results (paginator.next() returns list of book dicts)
+    books = await paginator.next()
 
     return {
         'term': term,
         'books': books,
-        'total_results': total_count
+        'total_results': len(books)  # For now, return books in this page
     }
 
 

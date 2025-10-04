@@ -196,36 +196,40 @@ async def search_books_advanced(
         }
     """
     # Initialize zlibrary client
-    if mirror:
-        zlib = AsyncZlib(email=email, password=password, remix_userkey='', mirror=mirror)
-    else:
-        zlib = AsyncZlib(email=email, password=password, remix_userkey='')
+    zlib = AsyncZlib()
+    await zlib.login(email, password)
 
-    # Perform search
+    # Perform search with parameters matching AsyncZlib.search() signature
     search_kwargs = {
-        'page': page,
+        'q': query,
         'count': limit
     }
 
     if year_from is not None:
-        search_kwargs['yearFrom'] = year_from
+        search_kwargs['from_year'] = year_from
     if year_to is not None:
-        search_kwargs['yearTo'] = year_to
+        search_kwargs['to_year'] = year_to
     if languages:
-        search_kwargs['languages'] = languages
+        search_kwargs['lang'] = languages.split(',') if isinstance(languages, str) else languages
     if extensions:
-        search_kwargs['extensions'] = extensions
+        search_kwargs['extensions'] = extensions.split(',') if isinstance(extensions, str) else extensions
 
-    # Execute search
-    search_result = await zlib.search(query, **search_kwargs)
+    # For advanced search with fuzzy detection, we need raw HTML
+    # Use the paginator's internal URL to fetch HTML directly
+    search_result = await zlib.search(**search_kwargs)
 
-    # Handle both tuple and non-tuple returns
+    # Get paginator (AsyncZlib.search now returns paginator or tuple)
     if isinstance(search_result, tuple):
-        html, total_count = search_result
+        paginator, constructed_url = search_result
     else:
-        # If it's a paginator object, we need to extract differently
-        html = str(search_result)
-        total_count = 0
+        paginator = search_result
+        constructed_url = paginator._SearchPaginator__url if hasattr(paginator, '_SearchPaginator__url') else f"https://z-library.sk/s/{query}"
+
+    # Fetch raw HTML to detect fuzzy matches
+    import httpx
+    async with httpx.AsyncClient(cookies=zlib.cookies if hasattr(zlib, 'cookies') else None) as client:
+        response = await client.get(constructed_url)
+        html = response.text
 
     # Detect fuzzy matches
     has_fuzzy = detect_fuzzy_matches_line(html)
@@ -237,7 +241,7 @@ async def search_books_advanced(
         'has_fuzzy_matches': has_fuzzy,
         'exact_matches': exact_matches,
         'fuzzy_matches': fuzzy_matches,
-        'total_results': total_count,
+        'total_results': len(exact_matches) + len(fuzzy_matches),
         'query': query
     }
 

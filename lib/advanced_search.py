@@ -69,16 +69,28 @@ def _parse_bookcard(card) -> Dict:
         result['href'] = card.get('href', '')
         result['type'] = 'article'
     else:
-        # Regular books use attributes
+        # Regular books - try both attributes and slot structure
         result['id'] = card.get('id', '')
-        result['title'] = card.get('title', '')
-        result['authors'] = card.get('author', '')
+        result['href'] = card.get('href', '')
         result['year'] = card.get('year', '')
         result['language'] = card.get('language', '')
         result['extension'] = card.get('extension', '')
         result['size'] = card.get('size', '')
-        result['href'] = card.get('href', '')
         result['type'] = 'book'
+
+        # Title - try attribute first, then slot
+        title = card.get('title', '') or card.get('name', '')
+        if not title:
+            title_slot = card.find('div', attrs={'slot': 'title'})
+            title = title_slot.get_text(strip=True) if title_slot else ''
+        result['title'] = title
+
+        # Authors - try attribute first, then slot
+        authors = card.get('author', '') or card.get('authors', '')
+        if not authors:
+            author_slot = card.find('div', attrs={'slot': 'author'})
+            authors = author_slot.get_text(strip=True) if author_slot else ''
+        result['authors'] = authors
 
     return result
 

@@ -137,13 +137,27 @@ class SearchPaginator:
             if publisher:
                 js["publisher"] = publisher.strip()
 
+            # Try attribute first, then slot element for authors
             authors_str = book_card_el.get("authors")
+            if not authors_str:
+                # Try slot structure: <div slot="author">Name</div>
+                author_slot = book_card_el.find("div", {"slot": "author"})
+                if author_slot:
+                    authors_str = author_slot.get_text(strip=True)
+
             if authors_str:
                 authors_list = [a.strip() for a in authors_str.split(';') if a.strip()]
                 if authors_list:
                     js["authors"] = authors_list
 
+            # Try attribute first, then slot element for title
             title_str = book_card_el.get("name")
+            if not title_str:
+                # Try slot structure: <div slot="title">Title</div>
+                title_slot = book_card_el.find("div", {"slot": "title"})
+                if title_slot:
+                    title_str = title_slot.get_text(strip=True)
+
             if title_str:
                 js["name"] = title_str.strip()
 

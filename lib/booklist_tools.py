@@ -113,16 +113,28 @@ def parse_booklist_page(html: str) -> List[Dict]:
             book_data['href'] = card.get('href', '')
             book_data['type'] = 'article'
         else:
-            # Regular books use attributes
+            # Regular books - try both attributes and slot structure
             book_data['id'] = card.get('id', '')
-            book_data['title'] = card.get('title', '')
-            book_data['authors'] = card.get('author', '')
+            book_data['href'] = card.get('href', '')
             book_data['year'] = card.get('year', '')
             book_data['language'] = card.get('language', '')
             book_data['extension'] = card.get('extension', '')
             book_data['size'] = card.get('size', '')
-            book_data['href'] = card.get('href', '')
             book_data['type'] = 'book'
+
+            # Title - try attribute first, then slot
+            title = card.get('title', '') or card.get('name', '')
+            if not title:
+                title_slot = card.find('div', attrs={'slot': 'title'})
+                title = title_slot.get_text(strip=True) if title_slot else ''
+            book_data['title'] = title
+
+            # Authors - try attribute first, then slot
+            authors = card.get('author', '') or card.get('authors', '')
+            if not authors:
+                author_slot = card.find('div', attrs={'slot': 'author'})
+                authors = author_slot.get_text(strip=True) if author_slot else ''
+            book_data['authors'] = authors
 
         results.append(book_data)
 

@@ -7,12 +7,22 @@ exact name matching, multiple authors, and syntax variations.
 """
 
 import pytest
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch, MagicMock, AsyncMock
 from lib.author_tools import (
     format_author_query,
     search_by_author,
     validate_author_name
 )
+
+
+class MockPaginator:
+    """Mock Paginator object for testing."""
+
+    def __init__(self, books):
+        self.books = books
+
+    async def next(self):
+        return self.books
 
 
 class TestAuthorQueryFormatting:
@@ -96,14 +106,19 @@ class TestSearchByAuthor:
         mock_zlib = MagicMock()
         mock_zlib_class.return_value = mock_zlib
 
-        mock_html = '''
-        <div class="resItemBox">
-            <z-bookcard id="123" title="Science of Logic" author="Hegel"></z-bookcard>
-        </div>
-        '''
+        # Mock login
+        mock_zlib.login = AsyncMock()
+
+        # Mock login as AsyncMock
+        mock_zlib.login = AsyncMock()
+
+        # Mock search to return Paginator with books
+        mock_books = [
+            {'id': '123', 'name': 'Science of Logic', 'authors': ['Hegel']}
+        ]
 
         async def mock_search(*args, **kwargs):
-            return (mock_html, 1)
+            return MockPaginator(mock_books)
 
         mock_zlib.search = mock_search
 
@@ -116,6 +131,7 @@ class TestSearchByAuthor:
         assert result['author'] == 'Hegel'
         assert result['total_results'] >= 1
         assert len(result['books']) >= 1
+        assert result['books'][0]['name'] == 'Science of Logic'
 
     @patch('lib.author_tools.AsyncZlib')
     @pytest.mark.asyncio
@@ -124,12 +140,17 @@ class TestSearchByAuthor:
         mock_zlib = MagicMock()
         mock_zlib_class.return_value = mock_zlib
 
+        # Mock login
+        mock_zlib.login = AsyncMock()
+
+        # Mock login
+        mock_zlib.login = AsyncMock()
+
         call_tracker = {}
 
         async def mock_search(*args, **kwargs):
-            call_tracker['query'] = args[0] if args else kwargs.get('q', '')
-            call_tracker['exact'] = kwargs.get('exact', False)
-            return ('<div></div>', 0)
+            call_tracker['kwargs'] = kwargs
+            return MockPaginator([])
 
         mock_zlib.search = mock_search
 
@@ -141,7 +162,7 @@ class TestSearchByAuthor:
         )
 
         # Should use exact matching
-        assert call_tracker.get('exact') is True or 'exact' in str(call_tracker)
+        assert call_tracker['kwargs'].get('exact') is True
 
     @patch('lib.author_tools.AsyncZlib')
     @pytest.mark.asyncio
@@ -150,11 +171,14 @@ class TestSearchByAuthor:
         mock_zlib = MagicMock()
         mock_zlib_class.return_value = mock_zlib
 
+        # Mock login
+        mock_zlib.login = AsyncMock()
+
         call_tracker = {}
 
         async def mock_search(*args, **kwargs):
             call_tracker['kwargs'] = kwargs
-            return ('<div></div>', 0)
+            return MockPaginator([])
 
         mock_zlib.search = mock_search
 
@@ -167,9 +191,9 @@ class TestSearchByAuthor:
             languages="German"
         )
 
-        assert call_tracker['kwargs']['yearFrom'] == 1800
-        assert call_tracker['kwargs']['yearTo'] == 1850
-        assert call_tracker['kwargs']['languages'] == "German"
+        assert call_tracker['kwargs']['from_year'] == 1800
+        assert call_tracker['kwargs']['to_year'] == 1850
+        assert 'German' in str(call_tracker['kwargs'].get('lang', []))
 
     @patch('lib.author_tools.AsyncZlib')
     @pytest.mark.asyncio
@@ -178,20 +202,18 @@ class TestSearchByAuthor:
         mock_zlib = MagicMock()
         mock_zlib_class.return_value = mock_zlib
 
-        mock_html = '''
-        <div class="resItemBox">
-            <z-bookcard id="1" title="Book 1" author="Hegel"></z-bookcard>
-        </div>
-        <div class="resItemBox">
-            <z-bookcard id="2" title="Book 2" author="Hegel"></z-bookcard>
-        </div>
-        <div class="resItemBox">
-            <z-bookcard id="3" title="Book 3" author="Hegel"></z-bookcard>
-        </div>
-        '''
+        # Mock login
+        mock_zlib.login = AsyncMock()
+
+        # Mock books data (Paginator returns book dicts, not HTML)
+        mock_books = [
+            {'id': '1', 'name': 'Book 1', 'authors': ['Hegel']},
+            {'id': '2', 'name': 'Book 2', 'authors': ['Hegel']},
+            {'id': '3', 'name': 'Book 3', 'authors': ['Hegel']}
+        ]
 
         async def mock_search(*args, **kwargs):
-            return (mock_html, 3)
+            return MockPaginator(mock_books)
 
         mock_zlib.search = mock_search
 
@@ -224,6 +246,9 @@ class TestSearchByAuthor:
         mock_zlib = MagicMock()
         mock_zlib_class.return_value = mock_zlib
 
+        # Mock login
+        mock_zlib.login = AsyncMock()
+
         async def mock_search(*args, **kwargs):
             raise Exception("Network error")
 
@@ -245,8 +270,11 @@ class TestSearchByAuthor:
         mock_zlib = MagicMock()
         mock_zlib_class.return_value = mock_zlib
 
+        # Mock login
+        mock_zlib.login = AsyncMock()
+
         async def mock_search(*args, **kwargs):
-            return ('<div>No results</div>', 0)
+            return MockPaginator([])
 
         mock_zlib.search = mock_search
 
@@ -266,11 +294,14 @@ class TestSearchByAuthor:
         mock_zlib = MagicMock()
         mock_zlib_class.return_value = mock_zlib
 
+        # Mock login
+        mock_zlib.login = AsyncMock()
+
         call_tracker = {}
 
         async def mock_search(*args, **kwargs):
             call_tracker['kwargs'] = kwargs
-            return ('<div></div>', 0)
+            return MockPaginator([])
 
         mock_zlib.search = mock_search
 
@@ -282,7 +313,8 @@ class TestSearchByAuthor:
             limit=50
         )
 
-        assert call_tracker['kwargs']['page'] == 2
+        # Note: page parameter isn't passed to AsyncZlib.search (handled by Paginator)
+        # Just verify count is passed
         assert call_tracker['kwargs']['count'] == 50
 
 
@@ -296,10 +328,13 @@ class TestPerformance:
         mock_zlib = MagicMock()
         mock_zlib_class.return_value = mock_zlib
 
+        # Mock login
+        mock_zlib.login = AsyncMock()
+
         mock_html = '<div class="resItemBox"><z-bookcard id="1" title="Test"></z-bookcard></div>'
 
         async def mock_search(*args, **kwargs):
-            return (mock_html, 1)
+            return MockPaginator([])
 
         mock_zlib.search = mock_search
 

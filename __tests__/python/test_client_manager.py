@@ -255,8 +255,9 @@ class TestErrorHandling:
     @patch('lib.client_manager.AsyncZlib')
     @pytest.mark.asyncio
     async def test_login_failure_propagates(self, mock_zlib_class):
-        """Should propagate login failures."""
+        """Should propagate login failures as AuthenticationError."""
         from zlibrary.exception import LoginFailed
+        from lib.client_manager import AuthenticationError
 
         mock_zlib = MagicMock()
         mock_zlib_class.return_value = mock_zlib
@@ -267,7 +268,8 @@ class TestErrorHandling:
 
         client_manager = ZLibraryClient("test@example.com", "wrongpass")
 
-        with pytest.raises(LoginFailed):
+        # Client manager wraps LoginFailed in AuthenticationError
+        with pytest.raises(AuthenticationError):
             await client_manager.get_client()
 
         # Should not be initialized after failure

@@ -12,6 +12,7 @@ import asyncio
 from typing import Dict, List, Tuple, Optional
 from bs4 import BeautifulSoup
 from bs4.element import Tag
+import httpx
 import sys
 import os
 
@@ -238,7 +239,6 @@ async def search_books_advanced(
         constructed_url = paginator._SearchPaginator__url if hasattr(paginator, '_SearchPaginator__url') else f"https://z-library.sk/s/{query}"
 
     # Fetch raw HTML to detect fuzzy matches
-    import httpx
     async with httpx.AsyncClient(cookies=zlib.cookies if hasattr(zlib, 'cookies') else None) as client:
         response = await client.get(constructed_url)
         html = response.text

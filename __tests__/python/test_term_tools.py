@@ -7,12 +7,22 @@ Term exploration enables conceptual navigation through Z-Library's
 """
 
 import pytest
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch, MagicMock, AsyncMock
 from lib.term_tools import (
     construct_term_search_url,
     search_by_term,
     parse_term_search_results
 )
+
+
+class MockPaginator:
+    """Mock Paginator object for testing."""
+
+    def __init__(self, books):
+        self.books = books
+
+    async def next(self):
+        return self.books
 
 
 class TestTermURLConstruction:
@@ -136,6 +146,12 @@ class TestSearchByTerm:
         mock_zlib = MagicMock()
         mock_zlib_class.return_value = mock_zlib
 
+
+        # Mock login
+
+        mock_zlib.login = AsyncMock()
+
+
         mock_html = '''
         <div class="resItemBox">
             <z-bookcard id="123" title="Dialectic Book"></z-bookcard>
@@ -143,7 +159,7 @@ class TestSearchByTerm:
         '''
 
         async def mock_search(*args, **kwargs):
-            return (mock_html, 1)
+            return MockPaginator([{'id': '1', 'name': 'Dialectic Book', 'authors': ['Test']}])
 
         mock_zlib.search = mock_search
 
@@ -156,7 +172,8 @@ class TestSearchByTerm:
         assert result['term'] == 'dialectic'
         assert result['total_results'] >= 1
         assert len(result['books']) >= 1
-        assert result['books'][0]['title'] == 'Dialectic Book'
+        # Books from Paginator have 'name' field
+        assert result['books'][0]['name'] == 'Dialectic Book'
 
     @patch('lib.term_tools.AsyncZlib')
     @pytest.mark.asyncio
@@ -165,11 +182,14 @@ class TestSearchByTerm:
         mock_zlib = MagicMock()
         mock_zlib_class.return_value = mock_zlib
 
+        # Mock login
+        mock_zlib.login = AsyncMock()
+
         call_tracker = {}
 
         async def mock_search(*args, **kwargs):
             call_tracker['kwargs'] = kwargs
-            return ('<div></div>', 0)
+            return MockPaginator([])
 
         mock_zlib.search = mock_search
 
@@ -189,11 +209,14 @@ class TestSearchByTerm:
         mock_zlib = MagicMock()
         mock_zlib_class.return_value = mock_zlib
 
+        # Mock login
+        mock_zlib.login = AsyncMock()
+
         call_tracker = {}
 
         async def mock_search(*args, **kwargs):
             call_tracker['kwargs'] = kwargs
-            return ('<div></div>', 0)
+            return MockPaginator([])
 
         mock_zlib.search = mock_search
 
@@ -206,9 +229,10 @@ class TestSearchByTerm:
             languages="English"
         )
 
-        assert call_tracker['kwargs']['yearFrom'] == 2000
-        assert call_tracker['kwargs']['yearTo'] == 2023
-        assert call_tracker['kwargs']['languages'] == "English"
+        # Check actual parameter names used by AsyncZlib.search
+        assert call_tracker['kwargs']['from_year'] == 2000
+        assert call_tracker['kwargs']['to_year'] == 2023
+        assert 'English' in str(call_tracker['kwargs'].get('lang', []))
 
     @patch('lib.term_tools.AsyncZlib')
     @pytest.mark.asyncio
@@ -216,6 +240,12 @@ class TestSearchByTerm:
         """Should handle search errors gracefully."""
         mock_zlib = MagicMock()
         mock_zlib_class.return_value = mock_zlib
+
+
+        # Mock login
+
+        mock_zlib.login = AsyncMock()
+
 
         async def mock_search(*args, **kwargs):
             raise Exception("Network error")
@@ -238,8 +268,14 @@ class TestSearchByTerm:
         mock_zlib = MagicMock()
         mock_zlib_class.return_value = mock_zlib
 
+
+        # Mock login
+
+        mock_zlib.login = AsyncMock()
+
+
         async def mock_search(*args, **kwargs):
-            return ('<div>No results</div>', 0)
+            return MockPaginator([])
 
         mock_zlib.search = mock_search
 
@@ -284,10 +320,16 @@ class TestPerformance:
         mock_zlib = MagicMock()
         mock_zlib_class.return_value = mock_zlib
 
+
+        # Mock login
+
+        mock_zlib.login = AsyncMock()
+
+
         mock_html = '<div class="resItemBox"><z-bookcard id="1" title="Test"></z-bookcard></div>'
 
         async def mock_search(*args, **kwargs):
-            return (mock_html, 1)
+            return MockPaginator([{'id': '1', 'name': 'Test', 'authors': ['Test']}])
 
         mock_zlib.search = mock_search
 

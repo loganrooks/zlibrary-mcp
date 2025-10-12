@@ -12,11 +12,148 @@
 
 ---
 
-## Installation
+## Installation Options
 
-### 1. Clone the Repository
+**Two approaches available**:
+
+### ✅ Option 1: System-Wide Installation (RECOMMENDED)
+
+**Best for**: Using the server across multiple projects
+
+**Advantages**:
+- Single installation, used by all projects
+- Easy updates (git pull in one place)
+- One set of credentials
+- Less disk space
+
+**Setup**:
 
 ```bash
+# 1. Create MCP servers directory
+mkdir -p ~/mcp-servers
+cd ~/mcp-servers
+
+# 2. Clone the repository
+git clone https://github.com/loganrooks/zlibrary-mcp.git
+cd zlibrary-mcp
+
+# 3. Install and build
+npm install
+npm run build
+./setup_venv.sh
+```
+
+**Configure credentials globally**:
+```bash
+# Add to ~/.bashrc or ~/.zshrc
+echo 'export ZLIBRARY_EMAIL="your@email.com"' >> ~/.bashrc
+echo 'export ZLIBRARY_PASSWORD="your_password"' >> ~/.bashrc
+source ~/.bashrc
+```
+
+**In each project's `.mcp.json`**:
+```json
+{
+  "mcpServers": {
+    "zlibrary": {
+      "command": "node",
+      "args": ["/home/username/mcp-servers/zlibrary-mcp/dist/index.js"],
+      "env": {
+        "ZLIBRARY_EMAIL": "your@email.com",
+        "ZLIBRARY_PASSWORD": "your_password"
+      }
+    }
+  }
+}
+```
+
+**Updating later**:
+```bash
+cd ~/mcp-servers/zlibrary-mcp
+git pull
+npm run build
+# All projects now use updated version!
+```
+
+---
+
+### Option 2: Per-Project Installation
+
+**Best for**: Project-specific customizations
+
+**Advantages**:
+- Project-specific modifications possible
+- Isolated from other projects
+- No global dependencies
+
+**Disadvantages**:
+- More disk space (duplicated for each project)
+- Updates needed per project
+- Credentials duplicated
+
+**Setup**:
+
+```bash
+# In your project directory
+cd /path/to/your-project
+git clone https://github.com/loganrooks/zlibrary-mcp.git
+cd zlibrary-mcp
+npm install && npm run build && ./setup_venv.sh
+```
+
+**In project's `.mcp.json`** (relative path):
+```json
+{
+  "mcpServers": {
+    "zlibrary": {
+      "command": "node",
+      "args": ["zlibrary-mcp/dist/index.js"],
+      "env": {
+        "ZLIBRARY_EMAIL": "your@email.com",
+        "ZLIBRARY_PASSWORD": "your_password"
+      }
+    }
+  }
+}
+```
+
+---
+
+### 🎯 Recommended Approach
+
+**For most users**: Use **Option 1 (System-Wide)** ✅
+
+**Benefits**:
+- Install once, use everywhere
+- Single source of truth
+- Easy maintenance
+- Professional setup
+
+**Directory structure**:
+```
+~/mcp-servers/
+├── zlibrary-mcp/        # This server
+├── other-mcp-server/    # Other servers
+└── another-server/      # More servers
+
+~/projects/
+├── project-a/.mcp.json  # References ~/mcp-servers/zlibrary-mcp
+├── project-b/.mcp.json  # References ~/mcp-servers/zlibrary-mcp
+└── project-c/.mcp.json  # References ~/mcp-servers/zlibrary-mcp
+```
+
+---
+
+## Detailed Setup (System-Wide - Recommended)
+
+### 1. Clone to System Location
+
+```bash
+# Create MCP servers directory
+mkdir -p ~/mcp-servers
+cd ~/mcp-servers
+
+# Clone repository
 git clone https://github.com/loganrooks/zlibrary-mcp.git
 cd zlibrary-mcp
 ```
@@ -43,7 +180,7 @@ npm run build
 
 ---
 
-### 3. Configure Credentials
+### 3. Configure Credentials (Global)
 
 Set your Z-Library credentials as environment variables:
 

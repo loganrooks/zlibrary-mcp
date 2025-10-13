@@ -12,8 +12,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / 'lib'))
 
 from filename_utils import (
+    to_camel_case,
     slugify,
-    extract_author_lastname,
+    format_author_camelcase,
     create_unified_filename,
     create_metadata_filename,
     parse_filename
@@ -57,44 +58,61 @@ class TestSlugify:
         assert result == "a" * 50
 
 
-class TestExtractAuthorLastname:
-    """Test author lastname extraction."""
+class TestToCamelCase:
+    """Test CamelCase conversion."""
 
-    def test_extract_simple_name(self):
-        """Test simple single-word names."""
-        assert extract_author_lastname("Plato") == "plato"
-        assert extract_author_lastname("Aristotle") == "aristotle"
+    def test_basic_camelcase(self):
+        """Test basic CamelCase conversion."""
+        assert to_camel_case("Byung-Chul Han") == "ByungChulHan"
+        assert to_camel_case("The Burnout Society") == "TheBurnoutSociety"
 
-    def test_extract_two_word_name(self):
-        """Test two-word names."""
-        assert extract_author_lastname("Byung-Chul Han") == "han"
-        assert extract_author_lastname("Giorgio Agamben") == "agamben"
+    def test_camelcase_with_hyphens(self):
+        """Test that hyphens are removed."""
+        assert to_camel_case("Jean-Luc Nancy") == "JeanLucNancy"
+        assert to_camel_case("Being-in-the-World") == "BeingInTheWorld"
 
-    def test_extract_comma_separated(self):
-        """Test comma-separated format (Lastname, Firstname)."""
-        assert extract_author_lastname("Han, Byung-Chul") == "han"
-        assert extract_author_lastname("Agamben, Giorgio") == "agamben"
+    def test_camelcase_with_apostrophes(self):
+        """Test apostrophes are removed."""
+        assert to_camel_case("L'Être et le Néant") == "LEtreEtLeNeant"
 
-    def test_extract_hyphenated_lastname(self):
-        """Test hyphenated last names."""
-        assert extract_author_lastname("Jean-Luc Nancy") == "nancy"
-        assert extract_author_lastname("Jean-François Lyotard") == "lyotard"
+    def test_camelcase_empty(self):
+        """Test empty string."""
+        assert to_camel_case("") == "Unknown"
 
-    def test_extract_empty_or_none(self):
-        """Test empty/None author."""
-        assert extract_author_lastname("") == "unknown-author"
-        assert extract_author_lastname("   ") == "unknown-author"
 
-    def test_extract_with_titles(self):
-        """Test names with titles."""
-        assert extract_author_lastname("Dr. Byung-Chul Han") == "han"
+class TestFormatAuthorCamelcase:
+    """Test author CamelCase formatting (LastNameFirstName)."""
+
+    def test_format_simple_name(self):
+        """Test simple names (no reordering needed)."""
+        assert format_author_camelcase("Plato") == "Plato"
+        assert format_author_camelcase("Aristotle") == "Aristotle"
+
+    def test_format_two_word_name(self):
+        """Test two-word names (LastName first)."""
+        assert format_author_camelcase("Byung-Chul Han") == "HanByungChul"
+        assert format_author_camelcase("Giorgio Agamben") == "AgambenGiorgio"
+
+    def test_format_comma_separated(self):
+        """Test comma-separated format (already LastName, FirstName)."""
+        assert format_author_camelcase("Han, Byung-Chul") == "HanByungChul"
+        assert format_author_camelcase("Agamben, Giorgio") == "AgambenGiorgio"
+
+    def test_format_hyphenated_name(self):
+        """Test hyphenated names (hyphens removed, LastName first)."""
+        assert format_author_camelcase("Jean-Luc Nancy") == "NancyJeanLuc"
+
+    def test_format_empty(self):
+        """Test empty author."""
+        assert format_author_camelcase("") == "UnknownAuthor"
+        assert format_author_camelcase("   ") == "UnknownAuthor"
 
 
 class TestCreateUnifiedFilename:
     """Test unified filename generation."""
 
     def test_basic_filename_generation(self):
-        """Test basic filename generation."""
+        """Test basic filename generation with CamelCase_Underscores (LastNameFirstName)."""
         book_details = {
             'author': 'Byung-Chul Han',
             'title': 'The Burnout Society',
@@ -102,10 +120,10 @@ class TestCreateUnifiedFilename:
             'extension': 'pdf'
         }
         result = create_unified_filename(book_details)
-        assert result == "han-the-burnout-society-3505318.pdf"
+        assert result == "HanByungChul_TheBurnoutSociety_3505318.pdf"
 
     def test_filename_with_comma_author(self):
-        """Test with comma-separated author."""
+        """Test with comma-separated author (already LastName, FirstName format)."""
         book_details = {
             'author': 'Agamben, Giorgio',
             'title': 'The Coming Community',
@@ -113,7 +131,7 @@ class TestCreateUnifiedFilename:
             'extension': 'epub'
         }
         result = create_unified_filename(book_details)
-        assert result == "agamben-the-coming-community-6035827.epub"
+        assert result == "AgambenGiorgio_TheComingCommunity_6035827.epub"
 
     def test_filename_missing_author(self):
         """Test with missing author."""
@@ -123,20 +141,20 @@ class TestCreateUnifiedFilename:
             'extension': 'pdf'
         }
         result = create_unified_filename(book_details)
-        assert result == "unknown-author-unknown-work-12345.pdf"
+        assert result == "UnknownAuthor_UnknownWork_12345.pdf"
 
     def test_filename_missing_title(self):
-        """Test with missing title."""
+        """Test with missing title (LastNameFirstName: Author is lastname, Test is firstname)."""
         book_details = {
             'author': 'Test Author',
             'id': '12345',
             'extension': 'pdf'
         }
         result = create_unified_filename(book_details)
-        assert result == "author-untitled-12345.pdf"
+        assert result == "AuthorTest_UntitledBook_12345.pdf"
 
     def test_filename_with_special_chars(self):
-        """Test with special characters in title."""
+        """Test with special characters in title (removed in CamelCase)."""
         book_details = {
             'author': 'Test Author',
             'title': 'Book: A Study (Part 1)',
@@ -144,8 +162,7 @@ class TestCreateUnifiedFilename:
             'extension': 'pdf'
         }
         result = create_unified_filename(book_details)
-        assert "book-a-study-part-1" in result
-        assert result.endswith(".pdf")
+        assert result == "AuthorTest_BookAStudyPart1_99999.pdf"
 
     def test_filename_with_suffix(self):
         """Test with suffix parameter."""
@@ -186,66 +203,70 @@ class TestCreateMetadataFilename:
     """Test metadata filename generation."""
 
     def test_metadata_from_original(self):
-        """Test metadata filename from original."""
-        original = "han-burnout-society-3505318.pdf"
+        """Test metadata filename from original (LastNameFirstName format)."""
+        original = "HanByungChul_TheBurnoutSociety_3505318.pdf"
         result = create_metadata_filename(original)
-        assert result == "han-burnout-society-3505318.pdf.metadata.json"
+        assert result == "HanByungChul_TheBurnoutSociety_3505318.pdf.metadata.json"
 
     def test_metadata_from_processed(self):
         """Test metadata filename from processed file."""
-        processed = "han-burnout-society-3505318.pdf.processed.markdown"
+        processed = "HanByungChul_TheBurnoutSociety_3505318.pdf.processed.markdown"
         result = create_metadata_filename(processed)
         # Should remove .processed.markdown
-        assert result == "han-burnout-society-3505318.pdf.metadata.json"
+        assert result == "HanByungChul_TheBurnoutSociety_3505318.pdf.metadata.json"
 
     def test_metadata_with_path(self):
         """Test with full path."""
-        full_path = "/downloads/han-burnout-society-3505318.pdf"
+        full_path = "/downloads/HanByungChul_TheBurnoutSociety_3505318.pdf"
         result = create_metadata_filename(full_path)
-        assert result == "han-burnout-society-3505318.pdf.metadata.json"
+        assert result == "HanByungChul_TheBurnoutSociety_3505318.pdf.metadata.json"
 
 
 class TestParseFilename:
-    """Test filename parsing."""
+    """Test filename parsing (CamelCase_Underscores format)."""
 
     def test_parse_basic_filename(self):
-        """Test parsing basic filename."""
-        filename = "han-burnout-society-3505318.pdf"
+        """Test parsing basic CamelCase filename (LastNameFirstName)."""
+        filename = "HanByungChul_TheBurnoutSociety_3505318.pdf"
         result = parse_filename(filename)
 
-        assert result['author_slug'] == 'han'
-        assert result['title_slug'] == 'burnout-society'
+        assert result['author_camel'] == 'HanByungChul'
+        assert result['title_camel'] == 'TheBurnoutSociety'
         assert result['book_id'] == '3505318'
         assert result['extension'] == 'pdf'
 
     def test_parse_processed_filename(self):
         """Test parsing processed filename."""
-        filename = "han-burnout-society-3505318.pdf.processed.markdown"
+        filename = "HanByungChul_TheBurnoutSociety_3505318.pdf.processed.markdown"
         result = parse_filename(filename)
 
-        assert result['author_slug'] == 'han'
-        assert result['title_slug'] == 'burnout-society'
+        assert result['author_camel'] == 'HanByungChul'
+        assert result['title_camel'] == 'TheBurnoutSociety'
         assert result['book_id'] == '3505318'
         assert result['extension'] == 'processed.markdown'
 
     def test_parse_with_path(self):
         """Test parsing with full path."""
-        filename = "/downloads/agamben-community-6035827.epub"
+        filename = "/downloads/AgambenGiorgio_TheComingCommunity_6035827.epub"
         result = parse_filename(filename)
 
-        assert result['author_slug'] == 'agamben'
-        assert result['title_slug'] == 'community'
+        assert result['author_camel'] == 'AgambenGiorgio'
+        assert result['title_camel'] == 'TheComingCommunity'
         assert result['book_id'] == '6035827'
         assert result['extension'] == 'epub'
 
-    def test_parse_multi_word_title(self):
-        """Test parsing multi-word title."""
-        filename = "nancy-inoperative-community-1234567.pdf"
+    def test_parse_multi_author(self):
+        """Test parsing multiple authors (parser treats first component as author)."""
+        filename = "DerridaJacques_NancyJeanLuc_TheInoperativeCommunity_1234567.pdf"
         result = parse_filename(filename)
 
-        assert result['author_slug'] == 'nancy'
-        assert result['title_slug'] == 'inoperative-community'
+        # Parser can't distinguish multi-author from multi-word-title
+        # It treats first component as author, rest as title
+        assert result['author_camel'] == 'DerridaJacques'
+        assert result['title_camel'] == 'NancyJeanLuc_TheInoperativeCommunity'
         assert result['book_id'] == '1234567'
+
+        # Note: For accurate parsing of multi-author files, use the metadata JSON
 
 
 if __name__ == '__main__':

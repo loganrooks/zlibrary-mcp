@@ -35,7 +35,9 @@ describe('Python Bridge', () => {
     const result = await pythonBridge.callPythonFunction('test_function', ['arg1', 'arg2']);
 
     // --- Assert ---
-    expect(spawn).toHaveBeenCalledWith('/mock/venv/python', ['/home/loganrooks/Code/zlibrary-mcp/dist/lib/python_bridge.py', 'test_function', JSON.stringify(['arg1', 'arg2'])]); // Expect mock python path and corrected script path
+    // Use dynamic path resolution instead of hardcoded path for portability
+    const expectedScriptPath = path.resolve(process.cwd(), 'lib', 'python_bridge.py');
+    expect(spawn).toHaveBeenCalledWith('/mock/venv/python', [expectedScriptPath, 'test_function', JSON.stringify(['arg1', 'arg2'])]);
 
     expect(result).toEqual({ success: true, data: 'test data' });
   });

@@ -126,11 +126,49 @@ node dist/index.js
 
 The server will start, connect via Stdio, and register its tools.
 
-### Integration with RooCode / Cline
+### Integration with MCP Clients
 
-Configure the server in your AI assistant's settings. Ensure the `command` points to the correct execution path (e.g., `node /path/to/zlibrary-mcp/dist/index.js`) and provide the necessary environment variables (`ZLIBRARY_EMAIL`, `ZLIBRARY_PASSWORD`).
+**Important**: The MCP server is a **Node.js application**, so you use `node` to run it (not `uv`).
 
-**Example RooCode `mcp_settings.json`:**
+**UV's Role**: Setup only (creates .venv with Python dependencies)
+**Node's Role**: Runtime (runs the MCP server which calls Python internally)
+
+```
+Setup:  uv sync → creates .venv/
+Build:  npm run build → compiles TypeScript to dist/
+Runtime: node dist/index.js → runs MCP server → calls .venv/bin/python internally
+```
+
+---
+
+#### Claude Code
+
+**Configuration**: Create or edit `.mcp.json` in your project:
+
+```json
+{
+  "mcpServers": {
+    "zlibrary": {
+      "command": "node",
+      "args": ["/absolute/path/to/zlibrary-mcp/dist/index.js"],
+      "env": {
+        "ZLIBRARY_EMAIL": "your-email@example.com",
+        "ZLIBRARY_PASSWORD": "your-password"
+      }
+    }
+  }
+}
+```
+
+**Note**: Use **absolute path** to `dist/index.js`, not relative.
+
+**Then**: Restart Claude Code to load the MCP server.
+
+---
+
+#### RooCode / Cline
+
+**Configuration**: Edit `mcp_settings.json` in RooCode/Cline settings:
 
 ```json
 {
@@ -228,7 +266,76 @@ Configure the server in your AI assistant's settings. Ensure the `command` point
 npm test
 ```
 
-### Contributing
+## FAQ
+
+### Why use `node` in .mcp.json instead of `uv`?
+
+**TL;DR**: The MCP server is a Node.js application. UV is only used for setup.
+
+**Explanation**:
+- **UV**: Used during setup (`uv sync`) to create `.venv/` and install Python dependencies
+- **Node.js**: Runs the MCP server at runtime (`node dist/index.js`)
+- **Python**: Called internally by Node.js when needed (from `.venv/bin/python`)
+
+**Setup vs Runtime**:
+```bash
+# Setup (one-time):
+uv sync                    # Creates .venv with Python packages
+
+# Runtime (in .mcp.json):
+"command": "node",         # Runs the Node.js MCP server
+"args": ["dist/index.js"]  # Which internally calls .venv/bin/python
+```
+
+The MCP client runs the Node.js server, which then uses Python for Z-Library operations.
+
+---
+
+### Which Python does the server use?
+
+**v2.0.0**: Uses project-local `.venv/bin/python` (created by UV)
+
+**Not used**: System Python, cache venv (~/.cache/)
+
+**Verification**:
+```bash
+# When server runs, you'll see:
+[venv-manager] Using Python: Python 3.x.x from .venv
+```
+
+---
+
+### Do I need UV installed on the machine running the MCP server?
+
+**For initial setup**: Yes, to run `uv sync` and create `.venv/`
+
+**For runtime**: No, once `.venv/` is created, only Node.js is needed
+
+**Deployment note**: If you commit `.venv/` (not recommended) or use Docker, UV isn't needed at runtime.
+
+---
+
+### What if I move the project directory?
+
+**v2.0.0**: ✅ No problem! `.venv/` moves with the project.
+
+**v1.x (old)**: ❌ Cache venv became stale (this was fixed in v2.0.0)
+
+---
+
+### Can I use this without UV?
+
+**Not easily in v2.0.0**. UV is required for proper dependency management.
+
+**Alternatives**:
+1. Use v1.9.x (old cache venv approach)
+2. Manually create venv and install from requirements.txt (not recommended)
+
+**Recommendation**: Just install UV (one-time, takes 30 seconds)
+
+---
+
+## Contributing
 
 Contributions are welcome! Please review the architecture documents (`docs/`) and ADRs (`docs/adr/`) before submitting a Pull Request. Ensure changes align with the project's direction and include relevant tests.
 

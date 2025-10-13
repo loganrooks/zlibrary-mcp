@@ -143,8 +143,14 @@ def extract_toc_from_content(content: str, format_type: str = "markdown") -> Lis
     """
     toc_entries = []
     lines = content.split('\n')
+    last_page_num = None  # Track most recent page marker
 
     for line_num, line in enumerate(lines, start=1):
+        # Check for page markers (standalone or in text)
+        page_marker_match = re.search(r'`\[p\.(\d+)\]`', line)
+        if page_marker_match:
+            last_page_num = int(page_marker_match.group(1))
+
         # Markdown headings
         if format_type == "markdown":
             heading_match = re.match(r'^(#{1,6})\s+(.+)$', line)
@@ -152,11 +158,14 @@ def extract_toc_from_content(content: str, format_type: str = "markdown") -> Lis
                 level = len(heading_match.group(1))
                 title = heading_match.group(2).strip()
 
-                # Extract page number if present
+                # Extract page number from title if present, otherwise use last seen
                 page_match = re.search(r'`\[p\.(\d+)\]`', title)
-                page_num = int(page_match.group(1)) if page_match else None
+                if page_match:
+                    page_num = int(page_match.group(1))
+                else:
+                    page_num = last_page_num
 
-                # Remove page marker from title
+                # Remove page marker from title if present
                 clean_title = re.sub(r'`\[p\.\d+\]`\s*', '', title)
 
                 toc_entries.append({

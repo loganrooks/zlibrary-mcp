@@ -1,6 +1,7 @@
 import { spawn } from 'child_process';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
+import { existsSync } from 'fs';
 import { getManagedPythonPath } from './venv-manager.js'; // Import from the TS file
 
 // Recreate __dirname for ESM
@@ -24,6 +25,15 @@ export async function callPythonFunction(functionName: string, args: Record<stri
       // Navigate from dist/lib/ up to project root, then into source lib/ directory
       // This keeps Python scripts in a single source of truth location (lib/)
       const scriptPath = path.resolve(__dirname, '..', '..', 'lib', 'python_bridge.py');
+
+      // Validate script exists before attempting to spawn
+      if (!existsSync(scriptPath)) {
+        throw new Error(
+          `Python bridge script not found at: ${scriptPath}\n` +
+          `This usually indicates a build or installation issue.\n` +
+          `Expected location: <project_root>/lib/python_bridge.py`
+        );
+      }
 
       // Serialize arguments as JSON
       const serializedArgs = JSON.stringify(args);

@@ -196,7 +196,7 @@ class TestGenerateMetadataSidecar:
     """Test metadata sidecar generation."""
 
     def test_basic_metadata_sidecar(self):
-        """Test basic metadata generation."""
+        """Test basic metadata generation with new schema."""
         book_details = {
             'title': 'Test Book',
             'author': 'Test Author',
@@ -218,14 +218,20 @@ Some content.
             output_format="markdown"
         )
 
+        # Check new schema structure
+        assert 'document_type' in metadata
+        assert metadata['document_type'] == 'book'
+
         assert 'source' in metadata
+        assert metadata['source']['zlibrary_id'] == '12345'
+
+        assert 'frontmatter' in metadata
+        assert metadata['frontmatter']['title'] == 'Test Book'
+        assert metadata['frontmatter']['author'] == 'Test Author'
+
         assert 'toc' in metadata
         assert 'page_line_mapping' in metadata
-        assert 'processing_metadata' in metadata
-
-        assert metadata['source']['title'] == 'Test Book'
-        assert metadata['source']['author'] == 'Test Author'
-        assert metadata['source']['id'] == '12345'
+        assert 'processing' in metadata
 
     def test_metadata_with_corrections(self):
         """Test metadata with corrections applied."""
@@ -236,8 +242,8 @@ Some content.
             corrections_applied=['letter_spacing_correction', 'ocr_enhancement']
         )
 
-        assert 'letter_spacing_correction' in metadata['processing_metadata']['corrections_applied']
-        assert 'ocr_enhancement' in metadata['processing_metadata']['corrections_applied']
+        assert 'letter_spacing_correction' in metadata['processing']['corrections_applied']
+        assert 'ocr_enhancement' in metadata['processing']['corrections_applied']
 
     def test_metadata_with_ocr_quality(self):
         """Test metadata with OCR quality score."""
@@ -248,7 +254,7 @@ Some content.
             ocr_quality_score=0.92
         )
 
-        assert metadata['processing_metadata']['ocr_quality_score'] == 0.92
+        assert metadata['processing']['ocr_quality_score'] == 0.92
 
     def test_metadata_word_count(self):
         """Test word count calculation."""
@@ -260,7 +266,7 @@ Some content.
             book_details={'title': 'Test'}
         )
 
-        assert metadata['processing_metadata']['word_count'] == 10
+        assert metadata['processing']['word_count'] == 10
 
 
 class TestSaveMetadataSidecar:

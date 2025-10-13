@@ -1287,23 +1287,10 @@ async def save_processed_text(
         PROCESSED_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
         output_path = PROCESSED_OUTPUT_DIR / processed_filename
 
-        # --- Add YAML Frontmatter for Markdown ---
-        final_content = processed_content
-        if output_format == "markdown" and book_details:
-            # Determine format type from extension
-            format_type = original_path.suffix.lower().lstrip('.')
-
-            # Add YAML frontmatter
-            final_content = add_yaml_frontmatter_to_content(
-                processed_content,
-                book_details=book_details,
-                ocr_quality=ocr_quality_score,
-                format_type=format_type
-            )
-
-        # --- Write Content Asynchronously ---
+        # --- Write Content Asynchronously (NO YAML frontmatter) ---
+        # Main markdown should be CLEAN for RAG (only content + page markers)
         async with aiofiles.open(output_path, mode='w', encoding='utf-8') as f:
-            await f.write(final_content)
+            await f.write(processed_content)
 
         logging.info(f"Successfully saved processed content to: {output_path}")
 

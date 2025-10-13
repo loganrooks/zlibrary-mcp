@@ -267,19 +267,37 @@ def generate_metadata_sidecar(
     word_count = len(processed_content.split())
     page_count = len(page_mappings)
 
+    # Build frontmatter from API data (basic for now, extensible)
+    frontmatter = {
+        "title": book_details.get('title', 'Unknown'),
+        "author": book_details.get('author', 'Unknown'),
+        "translator": book_details.get('translator'),
+        "publisher": book_details.get('publisher'),
+        "year": book_details.get('year'),
+        "isbn": book_details.get('isbn'),
+        # Extensible: can add copyright, dedication, epigraph, etc. later
+    }
+
+    # Remove None values
+    frontmatter = {k: v for k, v in frontmatter.items() if v is not None}
+
     # Build metadata structure
     metadata = {
+        "document_type": "book",  # Can detect article type later
+
         "source": {
-            "title": book_details.get('title', 'Unknown'),
-            "author": book_details.get('author', 'Unknown'),
-            "id": book_details.get('id'),
-            "format": format_type,
-            "original_filename": Path(original_filename).name
+            "zlibrary_id": book_details.get('id'),
+            "original_filename": Path(original_filename).name,
+            "format": format_type
         },
+
+        "frontmatter": frontmatter,  # Universal for books AND articles
+
         "toc": toc,
         "page_line_mapping": page_mappings,
-        "processing_metadata": {
-            "processing_date": datetime.now().isoformat(),
+
+        "processing": {
+            "date": datetime.now().isoformat(),
             "output_format": output_format,
             "word_count": word_count,
             "page_count": page_count if page_count > 0 else None,
@@ -289,13 +307,7 @@ def generate_metadata_sidecar(
 
     # Add OCR quality if available
     if ocr_quality_score is not None:
-        metadata["processing_metadata"]["ocr_quality_score"] = round(ocr_quality_score, 2)
-
-    # Add optional source metadata
-    optional_fields = ['publisher', 'year', 'isbn', 'translator', 'pages', 'extension']
-    for field in optional_fields:
-        if field in book_details and book_details[field]:
-            metadata["source"][field] = book_details[field]
+        metadata["processing"]["ocr_quality_score"] = round(ocr_quality_score, 2)
 
     return metadata
 

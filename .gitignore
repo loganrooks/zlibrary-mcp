@@ -74,3 +74,5 @@ test_output/
 MagicMock/
 # Log files
 logs/
+*.mcp.json
+.mcp.json

@@ -2,7 +2,7 @@
 
 import { z, ZodObject, ZodRawShape } from 'zod';
 import { zodToJsonSchema } from 'zod-to-json-schema'; // Reverted back to named import (correct for types)
-import { ensureVenvReady } from './lib/venv-manager.js'; // Use .js extension
+// UV Migration Note: ensureVenvReady removed - user runs `uv sync` before build
 import * as fs from 'fs'; // For sync operations if any
 import { appendFile as appendFileAsync, mkdir as mkdirAsync } from 'fs/promises'; // For async file logging
 import * as path from 'path';
@@ -430,8 +430,9 @@ async function start(opts: StartOptions = {}): Promise<{ server: Server; transpo
       // Decide if this is fatal or if we can continue without file logging
     }
 
-    // Ensure the Python virtual environment is ready
-    await ensureVenvReady();
+    // UV Migration Note: venv management is now external via `uv sync`
+    // No need to call ensureVenvReady() - venv is expected to exist
+    // User must run: uv sync before building
 
     // Generate the tools capability object BEFORE creating the server
     const toolsCapabilityObject = generateToolsCapability();

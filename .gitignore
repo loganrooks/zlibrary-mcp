@@ -76,3 +76,4 @@ MagicMock/
 logs/
 *.mcp.json
 .mcp.json
+.venv/

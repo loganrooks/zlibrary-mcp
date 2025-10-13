@@ -74,10 +74,14 @@ const libDir = getPythonLibDirectory();
 
 ## Development Commands
 
-### Setup
+### Setup (v2.0.0 - UV-based)
 ```bash
-# Initial setup (creates venv and installs dependencies)
-./setup_venv.sh
+# Prerequisites: Install UV (one-time)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Initial setup (UV creates .venv and installs all dependencies)
+bash setup-uv.sh
+# Or manually: uv sync
 
 # Install Node dependencies
 npm install
@@ -86,17 +90,25 @@ npm install
 npm run build
 ```
 
+**UV Migration (v2.0.0)**:
+- Uses UV for Python dependency management (2025 best practice)
+- Creates `.venv/` in project (portable, moves with project)
+- Generates `uv.lock` for reproducible builds
+- **Code Simplification**: 77% reduction (406 → 92 lines in venv-manager.ts)
+- **Test Simplification**: 90% reduction (833 → 85 lines in tests)
+- See `docs/MIGRATION_V2.md` for details
+
 ### Testing
 ```bash
 # Run all tests (Jest for Node.js + Pytest for Python)
 npm test
 
 # Run Python tests only
-source venv/bin/activate
-pytest
+uv run pytest
+# Or: .venv/bin/python -m pytest
 
 # Run specific Python test
-pytest __tests__/python/test_rag_processing.py::TestProcessDocumentForRAG::test_process_epub
+uv run pytest __tests__/python/test_rag_processing.py::TestProcessDocumentForRAG::test_process_epub
 
 # Run Jest tests with coverage
 node --experimental-vm-modules node_modules/jest/bin/jest.js --coverage

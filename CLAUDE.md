@@ -39,6 +39,39 @@ Z-Library MCP (Model Context Protocol) server that enables AI assistants to sear
 3. Python → Z-Library API or document processing
 4. Results flow back through the same chain
 
+### Path Resolution Strategy
+
+**Design Decision**: Python scripts remain in source `lib/` directory (not copied to `dist/`)
+
+**Runtime Path Logic**:
+```typescript
+// From dist/lib/python-bridge.js at runtime:
+const scriptPath = path.resolve(__dirname, '..', '..', 'lib', 'python_bridge.py');
+
+// Navigation: dist/lib/ → dist/ → project_root/ → lib/python_bridge.py
+```
+
+**Path Helper Module** (Recommended for new code):
+```typescript
+import { getPythonScriptPath, getPythonLibDirectory } from './lib/paths.js';
+
+const scriptPath = getPythonScriptPath('python_bridge.py');
+// Returns: /project/lib/python_bridge.py
+
+const libDir = getPythonLibDirectory();
+// Returns: /project/lib
+```
+
+**Benefits**:
+- ✅ Single source of truth (Python scripts in `lib/`)
+- ✅ No build process changes needed
+- ✅ No file duplication
+- ✅ Development-friendly (edit Python directly)
+
+**Validation**: Build automatically validates all Python files exist (`npm run build`)
+
+**Documentation**: See [ADR-004](docs/adr/ADR-004-Python-Bridge-Path-Resolution.md) for complete rationale and [DEPLOYMENT.md](docs/DEPLOYMENT.md) for edge cases.
+
 ## Development Commands
 
 ### Setup

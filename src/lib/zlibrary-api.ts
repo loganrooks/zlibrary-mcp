@@ -104,7 +104,10 @@ async function callPythonFunction(functionName: string, args: Record<string, any
 
           // Check if the *actual* Python result contained an error structure
           if (resultData && typeof resultData === 'object' && 'error' in resultData && resultData.error) {
-            throw new PythonBridgeError(resultData.error, { functionName, args });
+            throw new PythonBridgeError(
+              `Python bridge execution failed for ${functionName}: ${resultData.error}`,
+              { functionName, args }
+            );
           }
 
           // Return the successful result object from Python

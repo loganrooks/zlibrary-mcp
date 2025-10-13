@@ -1,45 +1,71 @@
 # Known Test Issues
 
-## Pre-Existing Test Failures
+## ✅ All Issues Resolved
 
-### zlibrary-api.test.js: Error message format mismatch
+All previously documented test issues have been fixed.
+
+---
+
+## Historical Issues (Resolved)
+
+### ~~zlibrary-api.test.js: Error message format mismatch~~ ✅ FIXED
 
 **Test**: "should throw error if Python script returns an error object"
 
-**Status**: FAILING (pre-existing issue, not related to path resolution fixes)
+**Status**: ✅ **RESOLVED** (Fixed 2025-10-12)
 
-**Error**:
+**Original Error**:
 ```
 Expected substring: "Python bridge execution failed for search: Something went wrong in Python"
 Received message: "Something went wrong in Python"
 ```
 
 **Root Cause**:
-The test expects error messages to include the function name prefix ("Python bridge execution failed for search:"), but the actual error thrown from `PythonBridgeError` doesn't include this prefix in all cases.
+Error messages didn't include function name prefix when thrown from `PythonBridgeError`.
 
-**Location**: `__tests__/zlibrary-api.test.js` line 174-176
+**Fix Applied**:
+Updated `src/lib/zlibrary-api.ts` line 107 to include function name in error message:
+```typescript
+throw new PythonBridgeError(
+  `Python bridge execution failed for ${functionName}: ${resultData.error}`,
+  { functionName, args }
+);
+```
 
-**Fix Required**:
-Update either:
-1. The error message format in `src/lib/errors.ts` to consistently include function name, OR
-2. The test expectation to match the actual error message format
+**Benefits**:
+- ✅ Test now passes
+- ✅ Better error messages for users (function name context)
+- ✅ Consistent error format across all Python bridge errors
 
-**Impact**: Low - Does not affect runtime functionality, only test assertion
-
-**Related Files**:
-- `src/lib/errors.ts:109` - PythonBridgeError constructor
-- `src/lib/zlibrary-api.ts:107` - Error throwing location
+**Commit**: TBD
 
 ---
 
-## Test Summary After Phase 1 Path Fixes
+## Test Summary
 
-**Date**: 2025-10-12
+**Current Status** (2025-10-12):
 
-**Results**: 81 passed, 1 failed (pre-existing)
+**Results**: ✅ **85 passed, 0 failed**
 
-**Path-Related Tests**: ✅ ALL PASSING
+**Test Suites**: ✅ **7 passed, 7 total**
 
-**Coverage**: 74.68% statements
+**Coverage**: 75.31% statements
 
-The single failing test is unrelated to the path resolution improvements implemented in Phase 1.
+**Test Categories**:
+- ✅ Unit tests: All passing
+- ✅ Integration tests: All passing (3 tests)
+- ✅ Path-related tests: All passing
+- ✅ Error handling tests: All passing
+
+---
+
+## Improvement Timeline
+
+1. **Phase 1** (2025-10-12): Fixed hardcoded test paths
+   - Result: 81 passed, 1 failed (pre-existing)
+
+2. **Phase 2** (2025-10-12): Build validation + ADR + Integration tests
+   - Result: 84 passed, 1 failed (pre-existing)
+
+3. **Pre-existing Fix** (2025-10-12): Fixed error message format
+   - Result: ✅ **85 passed, 0 failed**

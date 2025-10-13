@@ -136,7 +136,7 @@ def _sanitize_component(text: str, max_length: int, is_title: bool = False) -> s
     Sanitize a filename component for filesystem safety.
 
     Removes characters that are problematic on Windows/Linux/macOS:
-    / \ ? % * : | " < >
+    / \\ ? % * : | " < >
 
     Also removes: . , ; = for cleaner filenames
 

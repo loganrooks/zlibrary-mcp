@@ -183,60 +183,16 @@ describe('MCP Server', () => {
     });
 
 
-  test('should log error and not connect if venv setup fails', async () => {
-    // --- Setup Mocks for this test ---
-    jest.resetModules(); // Reset modules for this specific test
-    jest.clearAllMocks();
-
-    const mockTransport = { send: jest.fn() };
-    const mockServer = {
-      connect: jest.fn().mockResolvedValue(undefined),
-      handle: jest.fn(),
-      registerCapabilities: jest.fn(),
-      setRequestHandler: jest.fn(),
-      disconnect: jest.fn().mockResolvedValue(undefined),
-      close: jest.fn().mockResolvedValue(undefined),
-    };
-    mockServerInstance = mockServer;
-
-    // Mock SDK modules INSIDE the test
-    jest.unstable_mockModule('@modelcontextprotocol/sdk/server/index.js', () => ({
-      Server: jest.fn().mockImplementation(() => mockServer),
-    }));
-    jest.unstable_mockModule('@modelcontextprotocol/sdk/server/stdio.js', () => ({
-      StdioServerTransport: jest.fn().mockImplementation(() => mockTransport),
-    }));
-    jest.unstable_mockModule('@modelcontextprotocol/sdk/types.js', () => ({
-      ListToolsRequestSchema: { name: 'ListToolsRequestSchema' },
-      CallToolRequestSchema: { name: 'CallToolRequestSchema' },
-      ListResourcesRequestSchema: { name: 'ListResourcesRequestSchema' },
-      ListPromptsRequestSchema: { name: 'ListPromptsRequestSchema' },
-    }));
-    // Mock zod-to-json-schema INSIDE the test
-    jest.unstable_mockModule('zod-to-json-schema', () => ({
-       zodToJsonSchema: jest.fn((schema) => ({ /* basic mock */ type: 'object', properties: {} })),
-    }));
-    // Mock venv-manager to fail for THIS test
-    const mockEnsureVenvReady = jest.fn().mockRejectedValue(new Error('Venv setup failed'));
-    jest.unstable_mockModule('../lib/venv-manager.js', () => ({
-      ensureVenvReady: mockEnsureVenvReady,
-      getManagedPythonPath: jest.fn().mockReturnValue('/fake/python'),
-    }));
-
-    // Dynamically import index
-    // Dynamically import start AFTER mocks
-    const { start } = await import('../dist/index.js');
-
-    await start({ testing: true });
-
-    // --- Assert ---
-    expect(mockEnsureVenvReady).toHaveBeenCalled(); // Check the specific mock function
-    expect(console.error).toHaveBeenCalledWith(
-      'Failed to start MCP server:',
-      expect.objectContaining({ message: 'Venv setup failed' })
-    );
-    expect(mockServer.connect).not.toHaveBeenCalled(); // Check the instance connect
-  });
+  // UV Migration Note: This test removed
+  // Old behavior: ensureVenvReady() called during startup
+  // New behavior: User runs `uv sync` before building
+  // If .venv missing, error occurs when Python tool is called (not at startup)
+  //
+  // The new behavior is tested in:
+  // - venv-manager.test.js: Tests getManagedPythonPath() error handling
+  // - integration tests: Tests actual Python execution
+  //
+  // Startup no longer validates venv - it's expected to exist from `uv sync`
 
   test('should handle Server instantiation exceptions gracefully', async () => {
     // --- Setup Mocks for this test ---

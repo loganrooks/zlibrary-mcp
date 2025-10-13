@@ -1,7 +1,7 @@
 {
   "name": "zlibrary-mcp",
-  "version": "1.0.0",
-  "description": "Z-Library MCP server for AI assistants",
+  "version": "2.0.0",
+  "description": "Z-Library MCP server for AI assistants (UV-based)",
   "main": "index.js",
   "type": "module",
   "exports": {

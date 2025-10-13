@@ -8,6 +8,15 @@ import os # Ensure os is imported if needed for path manipulation later
 import io # Added for OCR image handling
 import string # Added for garbled text detection
 import collections # Added for garbled text detection
+import json # For metadata sidecar generation
+import sys # For path manipulation
+sys.path.insert(0, str(Path(__file__).parent))
+from filename_utils import create_unified_filename, create_metadata_filename
+from metadata_generator import (
+    generate_metadata_sidecar,
+    save_metadata_sidecar,
+    add_yaml_frontmatter_to_content
+)
 
 # Check if libraries are available
 # OCR Dependencies (Optional)
@@ -682,6 +691,98 @@ def _determine_pdf_quality_category(
 
 # --- Garbled Text Detection ---
 
+def detect_letter_spacing_issue(text: str, sample_size: int = 500) -> bool:
+    """
+    Detects if text has excessive letter spacing (e.g., "T H E" instead of "THE").
+
+    This is a common OCR issue in scanned PDFs where spaces appear between every letter.
+
+    Args:
+        text: Text to analyze
+        sample_size: Number of characters to sample for analysis
+
+    Returns:
+        True if letter spacing issue detected
+    """
+    if len(text) < 20:
+        return False
+
+    # Sample text for analysis (first N characters)
+    sample = text[:sample_size] if len(text) > sample_size else text
+
+    # Pattern: Single letter followed by space, repeated
+    # Example: "T H E  B U R N O U T" matches this pattern extensively
+    single_letter_spaces = len(re.findall(r'\b\w\s+\b', sample))
+
+    # Calculate ratio of single-letter-space patterns to total characters
+    ratio = single_letter_spaces / len(sample.split())
+
+    # If more than 60% of "words" are single letters followed by spaces, it's likely a spacing issue
+    if ratio > 0.6:
+        logging.debug(f"Letter spacing issue detected: {single_letter_spaces} single-letter patterns in sample")
+        return True
+
+    return False
+
+
+def correct_letter_spacing(text: str) -> str:
+    """
+    Corrects excessive letter spacing in OCR text.
+
+    Transforms: "T H E  B U R N O U T" → "THE BURNOUT"
+
+    Algorithm:
+    1. Identify sequences of single letters separated by single spaces
+    2. Collapse them into words
+    3. Preserve intentional spacing and punctuation
+
+    Args:
+        text: Text with potential letter spacing issues
+
+    Returns:
+        Corrected text
+    """
+    if not text or not detect_letter_spacing_issue(text):
+        return text
+
+    logging.info("Applying letter spacing correction...")
+
+    # Pattern: Captures sequences like "T H E" (letters separated by single spaces)
+    # Uses word boundaries to avoid affecting normal text
+    # Matches: single letter + space, repeated 2+ times
+    pattern = r'\b([A-Za-z])\s+(?=[A-Za-z]\s|\b[A-Za-z](?:\s+[A-Za-z])+)'
+
+    def collapse_letters(match):
+        # Extract the matched text and remove spaces
+        matched_text = match.group(0)
+        # Get all letters from the match
+        letters = re.findall(r'[A-Za-z]', matched_text)
+        return ''.join(letters)
+
+    # More aggressive pattern: Find all sequences of "letter space letter space..."
+    # Split into lines to preserve paragraph structure
+    lines = text.split('\n')
+    corrected_lines = []
+
+    for line in lines:
+        # Find sequences of single letters with spaces: "T H E"
+        # Replace with collapsed version: "THE"
+        corrected_line = re.sub(
+            r'\b([A-Za-z](?:\s+[A-Za-z])+)\b',
+            lambda m: m.group(0).replace(' ', ''),
+            line
+        )
+        corrected_lines.append(corrected_line)
+
+    corrected_text = '\n'.join(corrected_lines)
+
+    # Clean up any excessive spaces that may have been introduced
+    corrected_text = re.sub(r'\s{3,}', '  ', corrected_text)
+
+    logging.info(f"Letter spacing correction complete. Length: {len(text)} → {len(corrected_text)}")
+    return corrected_text
+
+
 def detect_garbled_text(text: str, non_alpha_threshold: float = 0.25, repetition_threshold: float = 0.7, min_length: int = 10) -> bool:
     """
     Detects potentially garbled text based on heuristics like non-alphanumeric ratio
@@ -736,6 +837,10 @@ def process_pdf(file_path: Path, output_format: str = "txt") -> str:
                     ocr_text = run_ocr_on_pdf(str(file_path))
                     if ocr_text:
                          logging.info(f"OCR successful for {file_path}.")
+
+                         # Apply letter spacing correction if needed
+                         ocr_text = correct_letter_spacing(ocr_text)
+
                          # Preprocess OCR text (basic for now, can be expanded)
                          try: # Add try block for preprocessing OCR text
                              ocr_lines = ocr_text.splitlines()
@@ -786,46 +891,47 @@ def process_pdf(file_path: Path, output_format: str = "txt") -> str:
                 raise ValueError(f"PDF {file_path} is encrypted and cannot be opened.")
             logging.info(f"Successfully decrypted {file_path} with empty password.")
 
-        # 1. Extract RAW text from all pages
-        extracted_raw_lines = []
+        # 1. Extract structured content using block-level analysis
+        logging.debug("Performing structured PDF extraction with block analysis...")
         page_count = len(doc)
-        for i, page in enumerate(doc):
-            logging.debug(f"Extracting raw text from page {i+1}/{page_count}...")
-            page_text = page.get_text("text") # Always extract raw text
-            if page_text:
-                extracted_raw_lines.extend(page_text.splitlines())
+        page_contents = []  # Store content with page numbers
 
-        # 2. Preprocess the raw lines
-        logging.debug("Starting PDF preprocessing (front matter, ToC) on extracted text...")
-        (lines_after_fm, title) = _identify_and_remove_front_matter(extracted_raw_lines)
+        for i, page in enumerate(doc):
+            page_num = i + 1
+            logging.debug(f"Processing page {page_num}/{page_count} with block analysis...")
+
+            if output_format == "markdown":
+                # Use sophisticated _format_pdf_markdown for structure preservation
+                page_markdown = _format_pdf_markdown(page)
+                if page_markdown:
+                    # Add page marker for academic citations
+                    page_with_marker = f"`[p.{page_num}]`\n\n{page_markdown}"
+                    page_contents.append(page_with_marker)
+            else:
+                # For plain text, use basic extraction
+                page_text = page.get_text("text")
+                if page_text:
+                    # Add page marker
+                    page_with_marker = f"[Page {page_num}]\n\n{page_text}"
+                    page_contents.append(page_with_marker)
+
+        # 2. Combine all pages
+        full_content = "\n\n".join(page_contents)
+
+        # 3. Preprocess the content (front matter, ToC extraction)
+        # For structured markdown, we already have good structure, just extract front matter
+        content_lines = full_content.splitlines()
+        (lines_after_fm, title) = _identify_and_remove_front_matter(content_lines)
         (final_content_lines, formatted_toc) = _extract_and_format_toc(lines_after_fm, output_format)
 
-        # 3. Construct final output, applying Markdown formatting AFTER preprocessing if needed
+        # 4. Construct final output
         final_output_parts = []
         if title != "Unknown Title":
-            # Apply Markdown heading format only if output is markdown
             final_output_parts.append(f"# {title}" if output_format == "markdown" else title)
-        if formatted_toc: # Already formatted for markdown if needed
+        if formatted_toc:
             final_output_parts.append(formatted_toc)
 
-        # Apply final formatting based on output_format
-        if output_format == "markdown":
-            # Basic paragraph joining for preprocessed lines
-            # More sophisticated formatting could re-analyze blocks if needed
-            paragraphs = []
-            current_paragraph = []
-            for line in final_content_lines:
-                if line.strip():
-                    current_paragraph.append(line)
-                elif current_paragraph:
-                    paragraphs.append(" ".join(current_paragraph))
-                    current_paragraph = []
-            if current_paragraph: # Add last paragraph
-                paragraphs.append(" ".join(current_paragraph))
-            main_content = "\n\n".join(paragraphs)
-        else: # Plain text
-            main_content = "\n".join(final_content_lines)
-
+        main_content = "\n".join(final_content_lines)
         final_output_parts.append(main_content.strip())
         final_output = "\n\n".join(part for part in final_output_parts if part).strip()
 
@@ -875,7 +981,10 @@ def process_epub(file_path: Path, output_format: str = "txt") -> str:
         # --- Extract Content (HTML) ---
         items = list(book.get_items_of_type(ebooklib.ITEM_DOCUMENT))
         logging.debug(f"Found {len(items)} items of type ITEM_DOCUMENT.")
+
+        section_counter = 0
         for item in items:
+            section_counter += 1
             logging.debug(f"Processing item: {item.get_name()}")
             try:
                 content = item.get_content()
@@ -894,6 +1003,16 @@ def process_epub(file_path: Path, output_format: str = "txt") -> str:
                     html_content = content
 
                 if not html_content: continue
+
+                # Add section marker for academic citations
+                item_name = item.get_name()
+                if output_format == "markdown":
+                    section_marker = f"`[section.{section_counter}: {item_name}]`\n"
+                    all_lines.append(section_marker)
+                else:
+                    section_marker = f"[Section {section_counter}: {item_name}]\n"
+                    all_lines.append(section_marker)
+
                 logging.debug(f"Converting item {item.get_name()} content to {output_format}...")
                 # --- Convert HTML to Text or Markdown ---
                 try: # Add try block around conversion
@@ -1101,13 +1220,22 @@ async def process_document(file_path_str: str, output_format: str = "txt", book_
             # Return None for path if no content, but keep content list for consistency
             return {"processed_file_path": None, "content": []}
 
-        # Save the processed text
+        # Save the processed text with metadata
+        # Determine corrections applied (for metadata)
+        corrections = []
+        if file_extension == '.pdf':
+            # Check if letter spacing correction was applied
+            if detect_letter_spacing_issue(processed_text[:500]):
+                corrections.append("letter_spacing_correction")
+
         # Pass book_details to save_processed_text for filename generation
         saved_path = await save_processed_text(
             original_file_path=file_path,
             processed_content=processed_text,
             output_format=output_format, # This should be the format of the processed_text (e.g. 'md' or 'txt')
-            book_details=book_details
+            book_details=book_details,
+            ocr_quality_score=None,  # TODO: Calculate if OCR was used
+            corrections_applied=corrections
         )
         # The 'content' key is expected by some client-side logic, even if empty.
         # For RAG, the primary output is the file path.
@@ -1121,7 +1249,9 @@ async def save_processed_text(
     original_file_path: str,
     processed_content: str,
     output_format: str = "txt",
-    book_details: dict | None = None # Added book_details for slug
+    book_details: dict | None = None, # Added book_details for slug
+    ocr_quality_score: float | None = None, # For metadata
+    corrections_applied: list | None = None # For metadata
 ) -> str:
     """Saves the processed text content to a file in the output directory."""
     try:
@@ -1129,28 +1259,66 @@ async def save_processed_text(
         original_filename = original_path.stem
         original_extension = original_path.suffix.lower()
 
-        # --- Generate Filename ---
+        # --- Generate Filename using unified format ---
         if book_details:
-            author = _slugify(book_details.get('author', 'unknown-author'))
-            title = _slugify(book_details.get('title', 'unknown-title'))
-            book_id = book_details.get('id', 'no-id') # Use 'id' if available
-            # Format: author-title-id.original_ext.processed.output_ext
-            base_name = f"{author}-{title}-{book_id}"
+            # Use unified filename generation
+            base_name = create_unified_filename(book_details, extension=None)
+            processed_filename = f"{base_name}{original_extension}.processed.{output_format}"
         else:
             # Fallback if no book_details
             base_name = _slugify(original_filename)
-
-        processed_filename = f"{base_name}{original_extension}.processed.{output_format}"
+            processed_filename = f"{base_name}{original_extension}.processed.{output_format}"
 
         # --- Ensure Output Directory Exists ---
         PROCESSED_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
         output_path = PROCESSED_OUTPUT_DIR / processed_filename
 
+        # --- Add YAML Frontmatter for Markdown ---
+        final_content = processed_content
+        if output_format == "markdown" and book_details:
+            # Determine format type from extension
+            format_type = original_path.suffix.lower().lstrip('.')
+
+            # Add YAML frontmatter
+            final_content = add_yaml_frontmatter_to_content(
+                processed_content,
+                book_details=book_details,
+                ocr_quality=ocr_quality_score,
+                format_type=format_type
+            )
+
         # --- Write Content Asynchronously ---
         async with aiofiles.open(output_path, mode='w', encoding='utf-8') as f:
-            await f.write(processed_content)
+            await f.write(final_content)
 
         logging.info(f"Successfully saved processed content to: {output_path}")
+
+        # --- Generate and Save Metadata Sidecar ---
+        if book_details:
+            try:
+                format_type = original_path.suffix.lower().lstrip('.')
+
+                # Generate metadata
+                metadata = generate_metadata_sidecar(
+                    original_filename=str(original_path),
+                    processed_content=final_content,
+                    book_details=book_details,
+                    ocr_quality_score=ocr_quality_score,
+                    corrections_applied=corrections_applied or [],
+                    format_type=format_type,
+                    output_format=output_format
+                )
+
+                # Save metadata sidecar
+                metadata_filename = create_metadata_filename(processed_filename)
+                metadata_path = PROCESSED_OUTPUT_DIR / metadata_filename
+                save_metadata_sidecar(metadata, metadata_path)
+
+                logging.info(f"Successfully saved metadata sidecar to: {metadata_path}")
+            except Exception as meta_err:
+                logging.warning(f"Failed to generate metadata sidecar: {meta_err}")
+                # Don't fail the whole operation if metadata generation fails
+
         return str(output_path) # Return the string representation of the path
 
     except ValueError as ve: # Catch the specific error for None content

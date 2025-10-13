@@ -119,7 +119,12 @@ def create_unified_filename(
         Filesystem-safe filename
     """
     # Extract and process author
-    author_str = book_details.get('author', '') or book_details.get('authors', [''])[0] if isinstance(book_details.get('authors'), list) else ''
+    author_str = book_details.get('author', '')
+    if not author_str:
+        # Try 'authors' list as fallback
+        authors_list = book_details.get('authors', [])
+        if isinstance(authors_list, list) and authors_list:
+            author_str = authors_list[0]
     author_slug = extract_author_lastname(author_str)
 
     # Extract and process title
@@ -149,19 +154,19 @@ def create_unified_filename(
 
         base_name = f"{author_slug}-{title_slug}-{book_id}"
 
-    # Add suffix if provided
-    if suffix:
-        base_name = f"{base_name}{suffix}"
-
-    # Add extension
-    if extension:
-        ext = extension.lower().lstrip('.')
-        filename = f"{base_name}.{ext}"
-    elif 'extension' in book_details:
-        ext = book_details['extension'].lower().lstrip('.')
-        filename = f"{base_name}.{ext}"
+    # Add extension first (if no suffix provided)
+    if not suffix:
+        if extension:
+            ext = extension.lower().lstrip('.')
+            filename = f"{base_name}.{ext}"
+        elif 'extension' in book_details:
+            ext = book_details['extension'].lower().lstrip('.')
+            filename = f"{base_name}.{ext}"
+        else:
+            filename = base_name
     else:
-        filename = base_name
+        # If suffix provided, assume it includes extension handling
+        filename = f"{base_name}{suffix}"
 
     return filename
 
@@ -210,15 +215,24 @@ def parse_filename(filename: str) -> dict:
     # Remove directory if present
     filename = Path(filename).name
 
-    # Split extension
-    parts = filename.rsplit('.', 1)
-    base_name = parts[0]
-    extension = parts[1] if len(parts) > 1 else None
+    # Handle multi-part extensions (e.g., .pdf.processed.markdown)
+    # Look for .processed. pattern first
+    if '.processed.' in filename:
+        # Split at .processed. to separate base from processed extension
+        parts = filename.split('.processed.')
+        base_with_first_ext = parts[0]  # e.g., "han-burnout-society-3505318.pdf"
+        processed_ext = parts[1]  # e.g., "markdown"
 
-    # Handle .processed.markdown suffix
-    if extension and base_name.endswith('.processed'):
-        base_name = base_name[:-10]  # Remove '.processed'
-        extension = f"processed.{extension}"
+        # Remove the original extension to get the true base
+        base_parts = base_with_first_ext.rsplit('.', 1)
+        base_name = base_parts[0]  # e.g., "han-burnout-society-3505318"
+        # The extension is just the processed part
+        extension = f"processed.{processed_ext}"
+    else:
+        # Simple case - single extension
+        parts = filename.rsplit('.', 1)
+        base_name = parts[0]
+        extension = parts[1] if len(parts) > 1 else None
 
     # Split into components (author-title-id)
     # Find last dash followed by digits (book ID)

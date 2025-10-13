@@ -21,8 +21,9 @@ export async function callPythonFunction(functionName: string, args: Record<stri
       const pythonExecutable = await getManagedPythonPath();
 
       // Path to the Python bridge script
-      // Assuming python-bridge.py is in the same directory after compilation
-      const scriptPath = path.join(__dirname, 'python_bridge.py');
+      // Navigate from dist/lib/ up to project root, then into source lib/ directory
+      // This keeps Python scripts in a single source of truth location (lib/)
+      const scriptPath = path.resolve(__dirname, '..', '..', 'lib', 'python_bridge.py');
 
       // Serialize arguments as JSON
       const serializedArgs = JSON.stringify(args);

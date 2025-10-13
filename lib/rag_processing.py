@@ -704,22 +704,26 @@ def detect_letter_spacing_issue(text: str, sample_size: int = 500) -> bool:
     Returns:
         True if letter spacing issue detected
     """
-    if len(text) < 20:
+    if len(text) < 10:  # Lower threshold for short samples
         return False
 
     # Sample text for analysis (first N characters)
     sample = text[:sample_size] if len(text) > sample_size else text
 
-    # Pattern: Single letter followed by space, repeated
-    # Example: "T H E  B U R N O U T" matches this pattern extensively
-    single_letter_spaces = len(re.findall(r'\b\w\s+\b', sample))
+    # Count words that are single letters (the symptom of letter spacing)
+    words = sample.split()
+    if len(words) == 0:
+        return False
 
-    # Calculate ratio of single-letter-space patterns to total characters
-    ratio = single_letter_spaces / len(sample.split())
+    single_letter_words = sum(1 for word in words if len(word.strip()) == 1 and word.isalpha())
 
-    # If more than 60% of "words" are single letters followed by spaces, it's likely a spacing issue
-    if ratio > 0.6:
-        logging.debug(f"Letter spacing issue detected: {single_letter_spaces} single-letter patterns in sample")
+    # Calculate ratio of single-letter words to total words
+    ratio = single_letter_words / len(words)
+
+    # If more than 50% of words are single letters, it's likely a spacing issue
+    # Lowered threshold to catch "T h e  B o o k" style cases
+    if ratio > 0.5:
+        logging.debug(f"Letter spacing issue detected: {single_letter_words}/{len(words)} words are single letters ({ratio:.1%})")
         return True
 
     return False
@@ -732,7 +736,7 @@ def correct_letter_spacing(text: str) -> str:
     Transforms: "T H E  B U R N O U T" → "THE BURNOUT"
 
     Algorithm:
-    1. Identify sequences of single letters separated by single spaces
+    1. Identify sequences of single letters separated by spaces
     2. Collapse them into words
     3. Preserve intentional spacing and punctuation
 
@@ -747,31 +751,41 @@ def correct_letter_spacing(text: str) -> str:
 
     logging.info("Applying letter spacing correction...")
 
-    # Pattern: Captures sequences like "T H E" (letters separated by single spaces)
-    # Uses word boundaries to avoid affecting normal text
-    # Matches: single letter + space, repeated 2+ times
-    pattern = r'\b([A-Za-z])\s+(?=[A-Za-z]\s|\b[A-Za-z](?:\s+[A-Za-z])+)'
-
-    def collapse_letters(match):
-        # Extract the matched text and remove spaces
-        matched_text = match.group(0)
-        # Get all letters from the match
-        letters = re.findall(r'[A-Za-z]', matched_text)
-        return ''.join(letters)
-
-    # More aggressive pattern: Find all sequences of "letter space letter space..."
     # Split into lines to preserve paragraph structure
     lines = text.split('\n')
     corrected_lines = []
 
     for line in lines:
-        # Find sequences of single letters with spaces: "T H E"
-        # Replace with collapsed version: "THE"
-        corrected_line = re.sub(
-            r'\b([A-Za-z](?:\s+[A-Za-z])+)\b',
-            lambda m: m.group(0).replace(' ', ''),
-            line
-        )
+        # Pattern explanation:
+        # - Matches sequences of single letters with spaces between them
+        # - Handles: "T H E", "T h e", "T H E ,", etc.
+        # - Captures letters and spaces, excluding punctuation at boundaries
+        #
+        # Strategy: Find patterns like "X Y Z" where X, Y, Z are single letters
+        # This works by looking for: letter + (space + letter) repeated 1+ times
+
+        # First, handle case where letters are separated by single spaces
+        # This pattern captures "T H E" or "T h e" style sequences
+        corrected_line = line
+
+        # Multiple passes to handle all patterns
+        max_iterations = 5
+        for _ in range(max_iterations):
+            original = corrected_line
+
+            # Pattern: Single letter, space, another single letter (repeated)
+            # Matches: "T H E", "T h e", "B O O K", etc.
+            # Uses lookbehind and lookahead to avoid word boundaries issues
+            corrected_line = re.sub(
+                r'(?<!\S)([A-Za-z])(\s+[A-Za-z])+(?!\S)',
+                lambda m: m.group(0).replace(' ', ''),
+                corrected_line
+            )
+
+            # If no changes, we're done
+            if corrected_line == original:
+                break
+
         corrected_lines.append(corrected_line)
 
     corrected_text = '\n'.join(corrected_lines)

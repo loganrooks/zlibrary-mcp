@@ -2,23 +2,25 @@
 
 This Model Context Protocol (MCP) server provides access to Z-Library for AI coding assistants like RooCode and Cline for VSCode. It allows AI assistants to search for books, retrieve metadata, download files, and process document content for Retrieval-Augmented Generation (RAG) workflows.
 
-## Current Status (As of 2025-05-05 03:45 UTC-4)
+## Current Status (As of 2025-10-13)
 
-- **Stability:** Stable. Both Node.js (`npm test`) and Python (`pytest`) test suites are passing.
+- **Version:** 2.0.0 (Major Release - UV Migration)
+- **Stability:** Stable. All test suites passing (93/93 tests, 8/8 suites).
 - **Recent Updates:**
-    - **RAG Robustness Enhancements Implemented:** Added PDF quality detection, conditional OCR (via Tesseract), EPUB front matter/ToC handling, and garbled text detection to improve processing reliability (See `docs/rag-robustness-enhancement-spec.md`). [Ref: ActiveContext 2025-05-05 03:45:36]
+    - **v2.0.0 UV Migration (2025-10-13):** Migrated to UV-based Python dependency management following 2025 best practices. 86% code reduction (1,239 → 177 lines), massive simplification, and improved reliability. See `docs/MIGRATION_V2.md`.
+    - **Issue #6 Resolution (2025-10-12):** Fixed Python bridge import failure, implemented 3-phase improvement roadmap (path fixes, build validation, integration tests, path helpers, deployment docs).
+    - **RAG Robustness Enhancements:** Added PDF quality detection, conditional OCR (via Tesseract), EPUB front matter/ToC handling, and garbled text detection (See `docs/rag-robustness-enhancement-spec.md`).
     - Refactored RAG processing logic into `lib/rag_processing.py`.
-    - Fixed various test suite issues and regressions across multiple TDD cycles.
     - Deprecated `get_book_by_id` (ADR-003) and `get_download_info` tools.
     - RAG download workflow follows ADR-002.
-- **Branch:** `main` (Assumed, pending confirmation of merge)
+- **Branch:** `master`
 
 ## Architecture Overview
 
 This project is primarily built using **Node.js/TypeScript** and acts as an MCP server. Key architectural features include:
 
 - **Python Bridge:** Utilizes a Python bridge (`lib/python_bridge.py` for interfacing, `lib/rag_processing.py` for core document processing, `src/lib/python-bridge.ts` for Node interface) to leverage Python libraries for specific tasks, notably interacting with the Z-Library website and processing document formats (EPUB, TXT, PDF).
-- **Managed Python Environment:** The server manages its own Python virtual environment (`.venv`) to ensure consistent dependency handling (see `setup_venv.sh`).
+- **UV-Based Python Environment (v2.0.0):** Uses UV for modern Python dependency management with project-local `.venv/` for portability and reproducible builds via `uv.lock` (see `setup-uv.sh`).
 - **Vendored `zlibrary` Fork:** Includes a modified fork of the `sertraline/zlibrary` Python library within the `zlibrary/` directory. This fork contains specific modifications, particularly for the book download logic which involves scraping the book's detail page to find the actual download link (see ADR-002).
 - **RAG Pipeline:** Implements workflows for downloading books and processing their content (EPUB, TXT, PDF) into plain text or Markdown suitable for RAG. Includes robustness features like PDF quality detection, conditional OCR, front matter removal, and ToC extraction. Processed text is saved to `./processed_rag_output/` and the file path is returned to the agent to avoid context overload (see `docs/architecture/rag-pipeline.md`).
 

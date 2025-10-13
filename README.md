@@ -58,26 +58,47 @@ Enables 8 comprehensive research workflows:
 
 ## Prerequisites
 
-- Node.js 18 or newer (Updated based on recent dependencies/ESM)
-- Python 3.9 or newer (Updated based on recent dependencies)
+- Node.js 18 or newer
+- Python 3.9 or newer
+- [UV](https://docs.astral.sh/uv/) - Modern Python package manager (v2.0.0+)
 - Z-Library account (for authentication)
 
 ## Installation
+
+### 1. Install UV (one-time)
+
+```bash
+# macOS/Linux:
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Or via pip:
+pip install uv
+
+# Or via homebrew (macOS):
+brew install uv
+```
+
+See [UV installation guide](https://docs.astral.sh/uv/getting-started/installation/) for more options.
+
+### 2. Setup Project
 
 ```bash
 # Clone this repository
 git clone https://github.com/loganrooks/zlibrary-mcp.git
 cd zlibrary-mcp
 
+# Setup Python environment with UV (fast!)
+bash setup-uv.sh
+# Or manually: uv sync
+
 # Install Node.js dependencies
 npm install
 
-# Build TypeScript code
+# Build TypeScript
 npm run build
-
-# Run the setup script to create Python virtual environment and install Python dependencies
-./setup_venv.sh
 ```
+
+**That's it!** UV handles all Python dependency management automatically.
 
 ## Configuration
 

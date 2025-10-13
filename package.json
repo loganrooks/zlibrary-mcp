@@ -13,6 +13,8 @@
   },
   "scripts": {
     "build": "tsc",
+    "postbuild": "node scripts/validate-python-bridge.js",
+    "validate": "node scripts/validate-python-bridge.js",
     "start": "node dist/index.js",
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --coverage",
     "prepublishOnly": "npm run build"

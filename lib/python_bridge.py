@@ -18,6 +18,7 @@ from zlibrary.const import OrderOptions # Need this import
 import httpx
 # Removed re, aiofiles, ebooklib, epub, BeautifulSoup, fitz - moved to rag_processing
 from pathlib import Path
+from filename_utils import create_unified_filename
 import logging
 from urllib.parse import urljoin
 
@@ -572,8 +573,9 @@ async def download_book(book_details: dict, output_dir: str, process_for_rag: bo
              _, ext_from_path = os.path.splitext(original_download_path_str)
              book_details['extension'] = ext_from_path.lstrip('.')
 
-        enhanced_filename = _create_enhanced_filename(book_details)
-        final_file_path = Path(output_dir) / enhanced_filename
+        # Use unified filename generation
+        unified_filename = create_unified_filename(book_details)
+        final_file_path = Path(output_dir) / unified_filename
         final_file_path_str = str(final_file_path)
 
         # Step 3: Rename the downloaded file to the enhanced filename.

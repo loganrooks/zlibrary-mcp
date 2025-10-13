@@ -384,7 +384,8 @@ const toolRegistry: Record<string, ToolRegistryEntry> = {
 function getPackageVersion(): string {
   try {
     // Use import.meta.url to find package.json relative to the current module
-    const packageJsonPath = path.resolve(__dirname, '..', 'package.json'); // Go up one level from src/lib
+    // At runtime: Go up one level from dist/ to project root
+    const packageJsonPath = path.resolve(__dirname, '..', 'package.json');
     const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
     return packageJson.version || 'unknown';
   } catch (error: any) {

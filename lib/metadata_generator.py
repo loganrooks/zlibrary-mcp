@@ -229,7 +229,8 @@ def generate_metadata_sidecar(
     ocr_quality_score: float = None,
     corrections_applied: List[str] = None,
     format_type: str = "pdf",
-    output_format: str = "markdown"
+    output_format: str = "markdown",
+    pdf_toc: List[Tuple[int, str, int]] = None
 ) -> Dict:
     """
     Generate comprehensive metadata sidecar for processed document.
@@ -249,6 +250,7 @@ def generate_metadata_sidecar(
         corrections_applied: List of correction algorithms applied
         format_type: Original format (pdf, epub, etc.)
         output_format: Output format (markdown, txt)
+        pdf_toc: PDF table of contents from PyMuPDF (list of [level, title, page])
 
     Returns:
         Dictionary with complete metadata
@@ -259,8 +261,21 @@ def generate_metadata_sidecar(
     if corrections_applied is None:
         corrections_applied = []
 
-    # Extract TOC and page mappings
-    toc = extract_toc_from_content(processed_content, output_format)
+    # Extract TOC: use PDF ToC if available, otherwise extract from content
+    if pdf_toc:
+        # Convert PDF ToC to metadata format
+        toc = []
+        for level, title, page_num in pdf_toc:
+            toc.append({
+                "title": title,
+                "level": level,
+                "page": page_num,
+                "line_start": None  # PDF ToC doesn't have line numbers
+            })
+    else:
+        # Fallback: extract from processed content
+        toc = extract_toc_from_content(processed_content, output_format)
+
     page_mappings = extract_page_line_mapping(processed_content)
 
     # Count words and pages

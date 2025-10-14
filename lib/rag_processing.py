@@ -10,12 +10,20 @@ import string # Added for garbled text detection
 import collections # Added for garbled text detection
 import json # For metadata sidecar generation
 import sys # For path manipulation
+import subprocess # For ocrmypdf integration
+import tempfile # For temporary OCR file handling
 sys.path.insert(0, str(Path(__file__).parent))
 from filename_utils import create_unified_filename, create_metadata_filename
 from metadata_generator import (
     generate_metadata_sidecar,
     save_metadata_sidecar,
     add_yaml_frontmatter_to_content
+)
+from metadata_verification import (
+    extract_pdf_metadata,
+    extract_epub_metadata,
+    extract_txt_metadata,
+    verify_metadata
 )
 
 # Check if libraries are available
@@ -101,7 +109,7 @@ def _slugify(value, allow_unicode=False):
 
 # --- PDF Markdown Helpers ---
 
-def _analyze_pdf_block(block: dict) -> dict:
+def _analyze_pdf_block(block: dict, preserve_linebreaks: bool = False, detect_headings: bool = True) -> dict:
     """
     Analyzes a PyMuPDF text block dictionary to infer structure.
 
@@ -110,6 +118,10 @@ def _analyze_pdf_block(block: dict) -> dict:
 
     Args:
         block: A dictionary representing a text block from page.get_text("dict").
+        preserve_linebreaks: If True, preserve original line breaks from PDF (for citation accuracy).
+                           If False, join lines intelligently (for readability).
+        detect_headings: If True, use font-size heuristics to detect headings.
+                        If False, skip heading detection (use when ToC metadata is available).
 
     Returns:
         A dictionary containing analysis results:
@@ -126,10 +138,47 @@ def _analyze_pdf_block(block: dict) -> dict:
 
     if block.get('type') == 0: # Text block
         # Aggregate text and span info
+        # Handle line breaks intelligently to avoid word concatenation
+        line_texts = []
         for line in block.get('lines', []):
+            line_spans = []
             for span in line.get('spans', []):
                 spans.append(span)
-                text_content += span.get('text', '')
+                line_spans.append(span.get('text', ''))
+
+            # Join spans within a line - add space between spans to prevent concatenation
+            # (PDF spans can represent separate words/phrases on the same line)
+            line_text = ' '.join(line_spans)
+            # Clean up multiple spaces that might result from empty spans or formatting
+            line_text = re.sub(r'\s+', ' ', line_text)
+            if line_text:
+                line_texts.append(line_text)
+
+        # Join lines based on mode:
+        # Citation mode (preserve_linebreaks=True): Keep original line breaks for accurate citations
+        # RAG mode (preserve_linebreaks=False): Join intelligently for readability
+        if preserve_linebreaks:
+            # Keep line breaks as-is for citation accuracy
+            text_content = '\n'.join(line_texts)
+        else:
+            # Join lines intelligently:
+            # - If line ends with hyphen, join next line without space (word continuation)
+            # - Otherwise, add space between lines
+            text_content = ""
+            for i, line_text in enumerate(line_texts):
+                if i == 0:
+                    text_content = line_text
+                else:
+                    # Check if previous line ended with hyphen (word break)
+                    if text_content.endswith('-'):
+                        # Remove hyphen and join directly (e.g., "infor-\nmative" → "informative")
+                        text_content = text_content[:-1] + line_text
+                    else:
+                        # Add space between lines (e.g., "most\naccurate" → "most accurate")
+                        text_content += ' ' + line_text
+
+            # Clean up any multiple spaces that may have resulted
+            text_content = re.sub(r'\s+', ' ', text_content)
 
         # Apply cleaning (null chars, headers/footers) *before* analysis
         text_content = text_content.replace('\x00', '') # Remove null chars first
@@ -157,11 +206,12 @@ def _analyze_pdf_block(block: dict) -> dict:
             is_bold = flags & 2 # Font flag for bold
 
             # --- Heading Heuristic (Example based on size/boldness) ---
+            # Only apply if detect_headings is True (when ToC is unavailable)
             # Filter out pure page numbers (don't treat "420" as a heading)
             trimmed_text = text_content.strip()
             is_pure_number = re.match(r'^\d+$', trimmed_text)
 
-            if not is_pure_number:
+            if detect_headings and not is_pure_number:
                 # Reordered to check more specific conditions first
                 if font_size > 12 and font_size <= 14 and is_bold: # H3
                      heading_level = 3
@@ -175,6 +225,28 @@ def _analyze_pdf_block(block: dict) -> dict:
                      heading_level = 2
                 elif font_size > 18: # H1
                      heading_level = 1
+
+                # --- Validate heading characteristics to filter false positives ---
+                if heading_level > 0:
+                    # Filter 1: Text too long (headings are typically < 150 chars)
+                    if len(trimmed_text) > 150:
+                        heading_level = 0
+                    # Filter 2: Ends with period (typical paragraph, unless it's a colon for sections)
+                    elif trimmed_text.endswith('.') and not trimmed_text.endswith(':.'):
+                        heading_level = 0
+                    # Filter 3: Colon-ending text that's too long (> 50 chars) is likely a paragraph lead-in
+                    elif trimmed_text.endswith(':') and len(trimmed_text) > 50:
+                        heading_level = 0
+                    # Filter 4: List introduction patterns (e.g., "There are four main reasons:")
+                    elif re.match(r'^(There are|Here are|These are|Following are)\s', trimmed_text, re.IGNORECASE):
+                        heading_level = 0
+                    # Filter 5: Multiple sentences (count sentence-ending punctuation)
+                    else:
+                        sentence_enders = trimmed_text.count('.') + trimmed_text.count('?') + trimmed_text.count('!')
+                        # Exclude periods in abbreviations (e.g., "Ph.D.", "U.S.") by checking spacing
+                        # Simple heuristic: if more than 2 sentence enders, likely a paragraph
+                        if sentence_enders > 2:
+                            heading_level = 0
             # If is_pure_number, heading_level stays 0
 
             # --- List Heuristic (Example based on starting characters) ---
@@ -209,7 +281,713 @@ def _analyze_pdf_block(block: dict) -> dict:
         'spans': spans # Pass spans for footnote detection
     }
 
-def _format_pdf_markdown(page: fitz.Page) -> str:
+def _analyze_font_distribution(doc: 'fitz.Document', sample_pages: int = 10) -> float:
+    """
+    Analyze font size distribution across document to identify body text size.
+
+    Uses statistical mode of font sizes from a sample of pages to determine
+    the most common text size (body text). This serves as a baseline for
+    detecting headings via relative size comparison.
+
+    Args:
+        doc: PyMuPDF document object
+        sample_pages: Number of pages to sample (default: 10, max: total pages)
+
+    Returns:
+        float: Mode (most common) font size in points, or 10.0 if analysis fails
+    """
+    from collections import Counter
+
+    font_sizes = []
+    total_pages = len(doc)
+    pages_to_sample = min(sample_pages, total_pages)
+
+    # Sample pages evenly throughout document
+    if total_pages <= sample_pages:
+        page_indices = range(total_pages)
+    else:
+        # Spread samples evenly: beginning, middle, end
+        step = total_pages // sample_pages
+        page_indices = range(0, total_pages, step)[:sample_pages]
+
+    logging.debug(f"Analyzing font distribution across {pages_to_sample} pages")
+
+    try:
+        for page_num in page_indices:
+            page = doc[page_num]
+            blocks = page.get_text("dict", flags=fitz.TEXTFLAGS_DICT).get("blocks", [])
+
+            for block in blocks:
+                if block.get("type") == 0:  # Text block
+                    for line in block.get("lines", []):
+                        for span in line.get("spans", []):
+                            size = span.get("size")
+                            text = span.get("text", "").strip()
+
+                            # Only count substantial text (ignore page numbers, isolated chars)
+                            if size and text and len(text) >= 3:
+                                # Round to nearest 0.5 to group similar sizes
+                                font_sizes.append(round(size * 2) / 2)
+
+        if not font_sizes:
+            logging.warning("No font sizes extracted, using default body size of 10.0")
+            return 10.0
+
+        # Find mode (most common font size)
+        size_counts = Counter(font_sizes)
+        body_size = size_counts.most_common(1)[0][0]
+
+        logging.info(f"Detected body text size: {body_size}pt "
+                    f"(from {len(font_sizes)} text spans, "
+                    f"top 3 sizes: {size_counts.most_common(3)})")
+
+        return body_size
+
+    except Exception as e:
+        logging.warning(f"Error analyzing font distribution: {e}, using default 10.0")
+        return 10.0
+
+
+def _detect_headings_from_fonts(
+    doc: 'fitz.Document',
+    body_size: float,
+    threshold: float = 1.15,
+    min_heading_length: int = 3,
+    max_heading_length: int = 150
+) -> dict:
+    """
+    Detect headings across all pages using font-based heuristics.
+
+    Identifies potential headings by comparing font sizes against the body text
+    baseline. Larger font sizes indicate higher-level headings. Includes filters
+    to reduce false positives (page numbers, short text, overly long text).
+
+    Algorithm:
+    1. Scan all text spans in document
+    2. Compare each span's font size to body_size
+    3. If size >= body_size * threshold, consider as heading
+    4. Assign heading level based on relative size (larger = higher level)
+    5. Filter false positives based on length, content patterns
+
+    Args:
+        doc: PyMuPDF document object
+        body_size: Mode font size from _analyze_font_distribution (body text baseline)
+        threshold: Multiplier for minimum heading size (default: 1.15 = 15% larger)
+        min_heading_length: Minimum characters for valid heading (default: 3)
+        max_heading_length: Maximum characters for valid heading (default: 150)
+
+    Returns:
+        dict: Maps page_number (1-indexed) to list of (level, title) tuples
+              Empty dict if no headings detected
+    """
+    toc_map = {}
+    min_heading_size = body_size * threshold
+
+    logging.info(f"Detecting headings: body_size={body_size}pt, "
+                f"min_heading_size={min_heading_size:.1f}pt "
+                f"(threshold={threshold})")
+
+    try:
+        for page_num in range(len(doc)):
+            page = doc[page_num]
+            blocks = page.get_text("dict", flags=fitz.TEXTFLAGS_DICT).get("blocks", [])
+            page_headings = []
+
+            for block in blocks:
+                if block.get("type") == 0:  # Text block
+                    for line in block.get("lines", []):
+                        for span in line.get("spans", []):
+                            size = span.get("size", 0)
+                            text = span.get("text", "").strip()
+                            flags = span.get("flags", 0)
+                            is_bold = bool(flags & 2)  # Font flag for bold
+
+                            # Check if this span qualifies as a heading
+                            if size >= min_heading_size and text:
+                                # --- False Positive Filters ---
+
+                                # Filter 1: Length constraints
+                                if len(text) < min_heading_length or len(text) > max_heading_length:
+                                    continue
+
+                                # Filter 2: Pure numbers (likely page numbers)
+                                if re.match(r'^\d+$', text):
+                                    continue
+
+                                # Filter 3: Roman numerals alone (likely page numbers)
+                                if re.match(r'^[ivxlcdm]+$', text, re.IGNORECASE) and len(text) <= 5:
+                                    continue
+
+                                # Filter 4: Single letters or punctuation
+                                if len(text) == 1:
+                                    continue
+
+                                # Filter 5: Mostly numbers/punctuation (e.g., "1.2.3", "---")
+                                alpha_ratio = sum(c.isalpha() for c in text) / len(text)
+                                if alpha_ratio < 0.5:
+                                    continue
+
+                                # --- Determine Heading Level ---
+                                # Level based on relative font size (larger = higher level)
+                                # Also consider bold formatting for disambiguation
+
+                                size_ratio = size / body_size
+
+                                if size_ratio >= 1.8:
+                                    # 80%+ larger than body = H1
+                                    level = 1
+                                elif size_ratio >= 1.5:
+                                    # 50-80% larger = H2
+                                    level = 2
+                                elif size_ratio >= 1.3:
+                                    # 30-50% larger = H3 (or H2 if bold)
+                                    level = 2 if is_bold else 3
+                                elif size_ratio >= 1.15:
+                                    # 15-30% larger = H3 (or H4 if not bold)
+                                    level = 3 if is_bold else 4
+                                else:
+                                    # Below threshold (shouldn't happen due to initial check)
+                                    continue
+
+                                page_headings.append((level, text))
+
+            # Add headings to map (use 1-indexed page numbers for consistency)
+            if page_headings:
+                toc_map[page_num + 1] = page_headings
+
+        total_headings = sum(len(headings) for headings in toc_map.values())
+        logging.info(f"Font-based detection found {total_headings} headings "
+                    f"across {len(toc_map)} pages")
+
+        # Log sample headings for validation
+        if toc_map:
+            sample_page = next(iter(toc_map))
+            sample_headings = toc_map[sample_page][:3]
+            logging.debug(f"Sample headings from page {sample_page}: {sample_headings}")
+
+        return toc_map
+
+    except Exception as e:
+        logging.warning(f"Error detecting headings from fonts: {e}")
+        return {}
+
+
+def _extract_toc_from_pdf(doc: 'fitz.Document') -> dict:
+    """
+    Extract table of contents using hybrid approach: embedded metadata first,
+    font-based heuristics as fallback.
+
+    Strategy:
+    1. Try embedded ToC from PDF metadata (doc.get_toc())
+    2. If empty, analyze font distribution to find body text size
+    3. Use font size heuristics to detect headings (15%+ larger than body)
+    4. Build heading hierarchy based on relative font sizes
+
+    Font-based detection achieves 70-85% accuracy based on research findings.
+    Works best for PDFs with consistent heading formatting (size, boldness).
+
+    Args:
+        doc: PyMuPDF document object
+
+    Returns:
+        dict: Maps page_number (1-indexed) to list of (level, title) tuples
+              Empty dict if no ToC available via either method
+    """
+    toc_map = {}
+
+    # --- Phase 1: Try Embedded ToC (Primary Method) ---
+    try:
+        toc = doc.get_toc()  # Returns list of [level, title, page_num]
+        if toc:
+            for level, title, page_num in toc:
+                if page_num not in toc_map:
+                    toc_map[page_num] = []
+                toc_map[page_num].append((level, title))
+
+            logging.info(f"✓ Embedded ToC: {len(toc)} entries covering {len(toc_map)} pages")
+            return toc_map
+        else:
+            logging.info("✗ No embedded ToC metadata found, trying font-based detection")
+
+    except Exception as toc_err:
+        logging.warning(f"✗ Error reading embedded ToC: {toc_err}, trying font-based detection")
+
+    # --- Phase 2: Font-Based Heuristics (Fallback Method) ---
+    try:
+        # Step 1: Analyze font distribution to find body text size
+        body_size = _analyze_font_distribution(doc, sample_pages=10)
+
+        # Step 2: Detect headings using font size threshold (15% larger than body)
+        toc_map = _detect_headings_from_fonts(
+            doc,
+            body_size=body_size,
+            threshold=1.15,  # 15% larger than body text
+            min_heading_length=3,
+            max_heading_length=150
+        )
+
+        if toc_map:
+            total_headings = sum(len(headings) for headings in toc_map.values())
+            logging.info(f"✓ Font-based ToC: {total_headings} headings across {len(toc_map)} pages "
+                        f"(body_size={body_size:.1f}pt)")
+        else:
+            logging.info("✗ Font-based detection found no headings")
+
+        return toc_map
+
+    except Exception as font_err:
+        logging.warning(f"✗ Font-based ToC detection failed: {font_err}")
+        return {}
+
+
+def _extract_written_page_number(page: 'fitz.Page') -> str:
+    """
+    Try to extract the written page number from a page (e.g., "xxiii", "15", "A-3").
+    
+    Checks:
+    - First line of page (header position)
+    - Last line of page (footer position)
+    
+    Returns:
+        Written page number as string, or None if not found
+    """
+    try:
+        text = page.get_text('text')
+        lines = [line.strip() for line in text.split('\n') if line.strip()]
+        
+        if not lines:
+            return None
+        
+        # Check first line (common header position)
+        first_line = lines[0]
+        if first_line.isdigit() or re.match(r'^[ivxlc]+$', first_line, re.IGNORECASE):
+            return first_line
+        
+        # Check last line (common footer position)
+        last_line = lines[-1]
+        if last_line.isdigit() or re.match(r'^[ivxlc]+$', last_line, re.IGNORECASE):
+            return last_line
+        
+        # Check for patterns like "Page 15" or "p. 15"
+        for line in [first_line, last_line]:
+            match = re.search(r'\b(?:page|p\.?)\s*(\d+)\b', line, re.IGNORECASE)
+            if match:
+                return match.group(1)
+        
+        return None
+    
+    except Exception as e:
+        logging.debug(f"Error extracting written page number: {e}")
+        return None
+
+
+def _roman_to_int(roman: str) -> int:
+    """Convert roman numeral to integer (e.g., 'xxiii' -> 23)."""
+    roman_map = {'i': 1, 'v': 5, 'x': 10, 'l': 50, 'c': 100, 'd': 500, 'm': 1000}
+    roman = roman.lower()
+    total = 0
+    prev_value = 0
+    
+    for char in reversed(roman):
+        value = roman_map.get(char, 0)
+        if value < prev_value:
+            total -= value
+        else:
+            total += value
+        prev_value = value
+    
+    return total
+
+
+def _int_to_roman(num: int) -> str:
+    """Convert integer to roman numeral (e.g., 23 -> 'xxiii')."""
+    values = [1000, 900, 500, 400, 100, 90, 50, 40, 10, 9, 5, 4, 1]
+    symbols = ['m', 'cm', 'd', 'cd', 'c', 'xc', 'l', 'xl', 'x', 'ix', 'v', 'iv', 'i']
+    
+    result = ''
+    for i, value in enumerate(values):
+        count = num // value
+        if count:
+            result += symbols[i] * count
+            num -= value * count
+    
+    return result
+
+
+def _is_roman_numeral(text: str) -> bool:
+    """Check if text is a valid roman numeral."""
+    if not text:
+        return False
+    return bool(re.match(r'^[ivxlcdm]+$', text.lower()))
+
+
+def _detect_written_page_on_page(page: 'fitz.Page') -> tuple:
+    """
+    Try to detect written page number on a SINGLE page.
+
+    Checks common positions (header/footer) for:
+    - Roman numerals (i, ii, iii, iv, v, etc.)
+    - Arabic numbers (1, 2, 3, etc.)
+
+    Returns:
+        Tuple of (page_number, position, matched_text) where:
+        - page_number: The detected page number as string
+        - position: 'first' or 'last' indicating which line contained it
+        - matched_text: The exact text that matched (for removal)
+        Returns (None, None, None) if not found
+    """
+    try:
+        text = page.get_text('text')
+        lines = [line.strip() for line in text.split('\n') if line.strip()]
+
+        if not lines:
+            return (None, None, None)
+
+        # Check first and last lines (common header/footer positions)
+        candidates = [
+            (lines[0], 'first'),
+            (lines[-1], 'last')
+        ]
+
+        for candidate, position in candidates:
+            # Check for pure roman numeral
+            if _is_roman_numeral(candidate):
+                return (candidate.lower(), position, candidate)
+
+            # Check for pure arabic number
+            if candidate.isdigit():
+                return (candidate, position, candidate)
+
+            # Check for "Page N" or "p. N" patterns
+            match = re.search(r'\b(?:page|p\.?)\s*(\d+)\b', candidate, re.IGNORECASE)
+            if match:
+                return (match.group(1), position, candidate)
+
+        return (None, None, None)
+
+    except Exception as e:
+        logging.debug(f"Error detecting written page number: {e}")
+        return (None, None, None)
+
+
+def infer_written_page_numbers(doc: 'fitz.Document', scan_pages: int = 20) -> dict:
+    """
+    Infer written page numbers for entire PDF by finding anchor points.
+    
+    Algorithm:
+    1. Scan first N pages to find:
+       - First roman numeral (marks preface start)
+       - First arabic number (marks main content start)
+    2. Infer all subsequent pages by incrementing from anchor points
+    
+    This is much more reliable than OCRing every page.
+    
+    Args:
+        doc: PyMuPDF document
+        scan_pages: Number of pages to scan for anchor points (default 20)
+    
+    Returns:
+        dict mapping pdf_page_num (1-indexed) -> written_page_str
+    """
+    total_pages = len(doc)
+    scan_limit = min(scan_pages, total_pages)
+    
+    # Find anchor points
+    roman_start_pdf_page = None
+    roman_start_value = None
+    arabic_start_pdf_page = None
+    arabic_start_value = None
+    
+    logging.info(f"Scanning first {scan_limit} pages for written page number anchors...")
+    
+    for pdf_page_num in range(1, scan_limit + 1):
+        page = doc[pdf_page_num - 1]  # 0-indexed
+        written_num, position, matched_text = _detect_written_page_on_page(page)
+
+        if written_num:
+            # Check for roman numeral
+            if _is_roman_numeral(written_num) and roman_start_pdf_page is None:
+                roman_start_pdf_page = pdf_page_num
+                roman_start_value = _roman_to_int(written_num)
+                logging.info(f"Found roman numeral anchor: PDF page {pdf_page_num} = {written_num} ({roman_start_value})")
+
+            # Check for arabic number (only after roman numerals or if no roman found)
+            elif written_num.isdigit() and arabic_start_pdf_page is None:
+                arabic_start_pdf_page = pdf_page_num
+                arabic_start_value = int(written_num)
+                logging.info(f"Found arabic number anchor: PDF page {pdf_page_num} = {written_num}")
+    
+    # Generate full mapping by inference
+    page_map = {}
+    
+    # Infer roman numeral pages (preface)
+    if roman_start_pdf_page:
+        end_roman = arabic_start_pdf_page if arabic_start_pdf_page else total_pages + 1
+        for pdf_page in range(roman_start_pdf_page, end_roman):
+            offset = pdf_page - roman_start_pdf_page
+            roman_value = roman_start_value + offset
+            page_map[pdf_page] = _int_to_roman(roman_value)
+        
+        logging.info(f"Inferred roman numerals: PDF pages {roman_start_pdf_page}-{end_roman-1}")
+    
+    # Infer arabic number pages (main content)
+    if arabic_start_pdf_page:
+        for pdf_page in range(arabic_start_pdf_page, total_pages + 1):
+            offset = pdf_page - arabic_start_pdf_page
+            page_map[pdf_page] = str(arabic_start_value + offset)
+        
+        logging.info(f"Inferred arabic numbers: PDF pages {arabic_start_pdf_page}-{total_pages}")
+    
+    logging.info(f"Inferred written page numbers for {len(page_map)}/{total_pages} PDF pages")
+    
+    return page_map
+
+
+def _extract_publisher_from_front_matter(doc: 'fitz.Document', max_pages: int = 5) -> tuple:
+    """
+    Extract publisher and year from front matter text (title page, copyright page).
+
+    Scans first N pages for publisher patterns like:
+    - "Cambridge University Press"
+    - "Oxford University Press"
+    - "Published by [Publisher]"
+    - Copyright lines with publisher info
+    - "[Publisher Name], [Year]" patterns
+
+    Args:
+        doc: PyMuPDF document object
+        max_pages: Maximum pages to scan for publisher info
+
+    Returns:
+        tuple: (publisher: str|None, year: str|None)
+    """
+    # Common publisher patterns (ordered by specificity)
+    publisher_patterns = [
+        # Specific well-known publishers
+        r'(?i)(Cambridge University Press)',
+        r'(?i)(Oxford University Press)',
+        r'(?i)(MIT Press)',
+        r'(?i)(Princeton University Press)',
+        r'(?i)(Harvard University Press)',
+        r'(?i)(Yale University Press)',
+        r'(?i)(University of Chicago Press)',
+        r'(?i)(Routledge)',
+        r'(?i)(Springer)',
+        r'(?i)(Wiley)',
+        r'(?i)(Pearson)',
+        r'(?i)(McGraw[- ]Hill)',
+        r'(?i)(Elsevier)',
+        r'(?i)(Palgrave Macmillan)',
+
+        # Generic patterns
+        r'(?i)Published by ([A-Z][A-Za-z\s&]+(?:Press|Publishing|Publishers|Books))',
+        r'(?i)©\s*\d{4}\s+(?:by\s+)?([A-Z][A-Za-z\s&]+(?:Press|Publishing|Publishers|Books))',
+        r'(?i)Copyright\s+©?\s*\d{4}\s+(?:by\s+)?([A-Z][A-Za-z\s&]+(?:Press|Publishing|Publishers|Books))',
+        r'(?i)([A-Z][A-Za-z\s&]+(?:Press|Publishing|Publishers|Books)),?\s+\d{4}',
+    ]
+
+    # Year patterns
+    year_patterns = [
+        r'(?i)©\s*(\d{4})',
+        r'(?i)Copyright\s+©?\s*(\d{4})',
+        r'(?i)Published.*?(\d{4})',
+        r'(?i)\b(19\d{2}|20[0-2]\d)\b',  # Years 1900-2029
+    ]
+
+    # Filter out conversion tools that appear in metadata
+    conversion_tools = [
+        'calibre', 'adobe', 'acrobat', 'distiller', 'pdftex',
+        'latex', 'pdflatex', 'xelatex', 'luatex', 'context',
+        'prince', 'antenna house', 'ghostscript', 'ps2pdf'
+    ]
+
+    publisher = None
+    year = None
+
+    # Scan first few pages
+    for page_num in range(min(max_pages, len(doc))):
+        try:
+            page = doc[page_num]
+            text = page.get_text()
+
+            # Defensive: ensure text is a string
+            if not isinstance(text, str):
+                continue
+
+            # Try to find publisher
+            if not publisher:
+                for pattern in publisher_patterns:
+                    match = re.search(pattern, text)
+                    if match:
+                        # Extract publisher name (first capture group or full match)
+                        potential_publisher = match.group(1) if match.lastindex else match.group(0)
+                        potential_publisher = potential_publisher.strip()
+
+                        # Filter out conversion tools
+                        if not any(tool in potential_publisher.lower() for tool in conversion_tools):
+                            # Clean up common artifacts
+                            potential_publisher = re.sub(r'\s+', ' ', potential_publisher)  # Normalize whitespace
+
+                            # Validate it's not too long or too short
+                            if 5 < len(potential_publisher) < 60:
+                                publisher = potential_publisher
+                                break
+
+            # Try to find publication year
+            if not year:
+                for pattern in year_patterns:
+                    match = re.search(pattern, text)
+                    if match:
+                        potential_year = match.group(1)
+                        # Validate year range (1900-2029)
+                        if potential_year.isdigit() and 1900 <= int(potential_year) <= 2029:
+                            year = potential_year
+                            break
+
+            # Stop if we found both
+            if publisher and year:
+                break
+
+        except Exception as e:
+            logging.warning(f"Error extracting publisher from page {page_num}: {e}")
+            continue
+
+    return publisher, year
+
+
+def _generate_document_header(doc: 'fitz.Document') -> str:
+    """
+    Generate a clean document header from PDF metadata and front matter.
+
+    Extracts publisher from actual front matter text (not PDF metadata)
+    to avoid picking up conversion tools like "calibre 3.32.0".
+
+    Returns markdown formatted:
+    # Title
+    **Author:** Name
+    **Translator:** Name (if available)
+    **Publisher:** Name | **Year:** YYYY
+    """
+    metadata = doc.metadata
+
+    title = metadata.get('title', 'Untitled')
+    author = metadata.get('author', 'Unknown Author')
+
+    # Build header
+    lines = [f"# {title}", ""]
+
+    if author and author != 'Unknown Author':
+        lines.append(f"**Author:** {author}")
+
+    # Check for translator in subject or keywords (common places)
+    translator = None
+    subject = metadata.get('subject', '')
+    if 'translat' in subject.lower():
+        translator = subject
+
+    if translator:
+        lines.append(f"**Translator:** {translator}")
+
+    # Extract publisher and year from front matter text (NOT metadata)
+    publisher, year = _extract_publisher_from_front_matter(doc, max_pages=5)
+
+    # Fallback to metadata year if not found in text
+    if not year:
+        creation_date = metadata.get('creationDate', '')
+        if creation_date and isinstance(creation_date, str):
+            year_match = re.search(r'(\d{4})', creation_date)
+            if year_match:
+                year = year_match.group(1)
+
+    pub_info = []
+    if publisher:
+        pub_info.append(f"**Publisher:** {publisher}")
+    if year:
+        pub_info.append(f"**Year:** {year}")
+
+    if pub_info:
+        lines.append(" | ".join(pub_info))
+
+    lines.append("")  # Blank line after header
+    return "\n".join(lines)
+
+
+def _generate_markdown_toc_from_pdf(toc_map: dict, skip_front_matter: bool = True) -> str:
+    """
+    Generate markdown-formatted table of contents with links.
+    
+    Args:
+        toc_map: dict mapping page_num to list of (level, title) tuples
+        skip_front_matter: If True, skip entries like "Title Page", "Copyright Page", "Contents"
+    
+    Returns:
+        Markdown formatted ToC with links
+    """
+    front_matter_titles = {
+        'title page', 'copyright page', 'copyright', 
+        'contents', 'table of contents'
+    }
+    
+    toc_lines = ["## Table of Contents", ""]
+    
+    # Sort entries by page number
+    sorted_pages = sorted(toc_map.keys())
+    
+    for page_num in sorted_pages:
+        for level, title in toc_map[page_num]:
+            # Skip front matter if requested
+            if skip_front_matter and title.lower() in front_matter_titles:
+                continue
+            
+            # Create markdown link (GitHub-style anchor)
+            # Convert title to anchor: lowercase, spaces to hyphens, remove special chars
+            anchor = title.lower()
+            anchor = anchor.replace(' ', '-')
+            anchor = ''.join(c for c in anchor if c.isalnum() or c == '-')
+            anchor = anchor.strip('-')
+            
+            # Indent based on level
+            indent = "  " * (level - 1)
+            
+            # Format as markdown list with link
+            toc_lines.append(f"{indent}* [{title}](#{anchor}) - [[PDF_page_{page_num}]]")
+    
+    toc_lines.append("")  # Blank line after ToC
+    return "\n".join(toc_lines)
+
+
+def _find_first_content_page(toc_map: dict) -> int:
+    """
+    Find the first real content page (skip front matter entries).
+    
+    Returns page number of first non-front-matter ToC entry.
+    """
+    front_matter_titles = {
+        'title page', 'copyright page', 'copyright',
+        'contents', 'table of contents'
+    }
+    
+    sorted_pages = sorted(toc_map.keys())
+    
+    for page_num in sorted_pages:
+        for level, title in toc_map[page_num]:
+            if title.lower() not in front_matter_titles:
+                return page_num
+    
+    # Fallback: return first ToC page
+    return sorted_pages[0] if sorted_pages else 1
+
+
+def _format_pdf_markdown(
+    page: fitz.Page,
+    preserve_linebreaks: bool = False,
+    toc_entries: list = None,
+    pdf_page_num: int = None,
+    written_page_num: str = None,
+    written_page_position: str = None,
+    written_page_text: str = None,
+    use_toc_headings: bool = True
+) -> str:
     """
     Generates a Markdown string from a PyMuPDF page object.
 
@@ -219,6 +997,13 @@ def _format_pdf_markdown(page: fitz.Page) -> str:
 
     Args:
         page: A fitz.Page object.
+        preserve_linebreaks: If True, preserve original line breaks from PDF (for citation accuracy).
+        toc_entries: List of (level, title) tuples for ToC entries on this page (from PDF metadata)
+        pdf_page_num: PDF page number (1-indexed) for page markers
+        written_page_num: Written page number (e.g., "xxiii", "15") if detected
+        written_page_position: Position of written page number ('first' or 'last')
+        written_page_text: Exact text of written page number to remove from content
+        use_toc_headings: If True, use ToC for headings instead of font-size heuristics
 
     Returns:
         A string containing the generated Markdown.
@@ -230,48 +1015,137 @@ def _format_pdf_markdown(page: fitz.Page) -> str:
     footnote_defs = {} # Store footnote definitions [^id]: content
     current_list_type = None
     list_marker = None # Initialize list_marker
-    # list_level = 0 # Basic nesting tracker - deferred
 
-    for block in blocks:
-        analysis = _analyze_pdf_block(block)
+    # --- Page Markers (at the very start) ---
+    page_markers = []
+
+    # Always add PDF page number
+    if pdf_page_num:
+        page_markers.append(f"[[PDF_page_{pdf_page_num}]]")
+
+    # Add written page number if available
+    if written_page_num:
+        page_markers.append(f"((p.{written_page_num}))")
+
+    # Add page markers to output
+    if page_markers:
+        markdown_lines.append(" ".join(page_markers))
+        markdown_lines.append("")  # Blank line after markers
+
+    # --- ToC Headings (if this page has ToC entries) ---
+    if use_toc_headings and toc_entries:
+        for level, title in toc_entries:
+            # Shift ToC levels down by 1 (document title is H1, so ToC entries start at H2)
+            adjusted_level = level + 1
+            heading_marker = '#' * adjusted_level
+            markdown_lines.append(f"{heading_marker} {title}")
+        markdown_lines.append("")  # Blank line after ToC headings
+
+    # --- Extract and format blocks ---
+    # Count only text blocks for position tracking
+    text_blocks = [b for b in blocks if b.get("type") == 0]
+    text_block_idx = 0
+
+    for block_idx, block in enumerate(blocks):
+        # Skip non-text blocks
+        if block.get("type") != 0:
+            continue
+
+        # Pass use_toc_headings flag to disable font-size heading detection
+        analysis = _analyze_pdf_block(block, preserve_linebreaks=preserve_linebreaks, detect_headings=not use_toc_headings)
         text = analysis['text']
         spans = analysis['spans']
 
         # Cleaning is now done in _analyze_pdf_block
-        if not text: continue
+        if not text:
+            text_block_idx += 1
+            continue
+
+        # --- Remove written page number duplication ---
+        # If this is the first or last text block and contains the written page number, remove it
+        is_first_block = (text_block_idx == 0)
+        is_last_block = (text_block_idx == len(text_blocks) - 1)
+
+        if written_page_text and written_page_position:
+            should_filter = (
+                (written_page_position == 'first' and is_first_block) or
+                (written_page_position == 'last' and is_last_block)
+            )
+
+            if should_filter:
+                # Check if this block's text matches or contains the written page number
+                text_stripped = text.strip()
+
+                # If the entire block is just the page number, skip it entirely
+                if text_stripped == written_page_text.strip():
+                    logging.debug(f"Skipping block containing only written page number: '{text_stripped}'")
+                    text_block_idx += 1
+                    continue
+
+                # If the page number appears at start or end of the block, remove it
+                if text_stripped.startswith(written_page_text.strip()):
+                    # Remove from start and clean up any trailing whitespace
+                    text = text_stripped[len(written_page_text.strip()):].strip()
+                    logging.debug(f"Removed written page number from start of block: '{written_page_text}'")
+                elif text_stripped.endswith(written_page_text.strip()):
+                    # Remove from end and clean up any leading whitespace
+                    text = text_stripped[:-len(written_page_text.strip())].strip()
+                    logging.debug(f"Removed written page number from end of block: '{written_page_text}'")
+
+        # Re-check if text is empty after page number removal
+        if not text:
+            text_block_idx += 1
+            continue
 
         # Footnote Reference/Definition Detection (using superscript flag)
+        # Rebuild text WITH footnote markers at correct positions
         processed_text_parts = []
         potential_def_id = None
         first_span_in_block = True
-        fn_id = None # Initialize fn_id before the span loop
+        fn_id = None
+
+        # Process spans to rebuild text with footnote markers
         for span in spans:
             span_text = span.get('text', '')
             flags = span.get('flags', 0)
-            is_superscript = flags & 1 # Superscript flag
+            is_superscript = flags & 1
 
-            if is_superscript and span_text.isdigit():
+            # Detect both numeric (1, 2, 3) and letter (a, b, c) footnotes
+            is_footnote_marker = (
+                (span_text.isdigit()) or
+                (len(span_text) == 1 and span_text.isalpha() and span_text.islower())
+            )
+
+            if is_superscript and is_footnote_marker:
                 fn_id = span_text
-                # Definition heuristic: superscript number at start of block, possibly followed by '.' or ')'
-                if first_span_in_block and re.match(r"^\d+[\.\)]?\s*", text): # Use 'text' instead of 'text_content'
+                # Definition heuristic: at start of block
+                if first_span_in_block and re.match(r"^[a-z0-9]+[\.\)]?\s*", text, re.IGNORECASE):
                     potential_def_id = fn_id
-                    # Don't add the number itself to the text for definitions
-                else: # Reference
+                    # For definitions, add the marker as-is (will be detected later)
+                    processed_text_parts.append(span_text)
+                else:
+                    # Reference: insert markdown footnote marker
                     processed_text_parts.append(f"[^{fn_id}]")
             else:
+                # Regular text: add as-is
                 processed_text_parts.append(span_text)
+
             first_span_in_block = False
 
-        processed_text = "".join(processed_text_parts).strip()
+        # Join parts and clean up spacing
+        processed_text = ''.join(processed_text_parts)
+        # Clean up multiple spaces
+        processed_text = re.sub(r'\s+', ' ', processed_text).strip()
 
         # Store definition if found, otherwise format content
         if potential_def_id:
             # Store potentially uncleaned text (cleaning moved to final formatting)
             footnote_defs[potential_def_id] = processed_text # Store raw processed text
+            text_block_idx += 1
             continue # Don't add definition block as regular content
 
-        # Format based on analysis
-        if analysis['heading_level'] > 0:
+        # Format based on analysis (only if not using ToC headings)
+        if analysis['heading_level'] > 0 and not use_toc_headings:
             markdown_lines.append(f"{'#' * analysis['heading_level']} {processed_text}")
             current_list_type = None # Reset list context after heading
         elif analysis['is_list_item']:
@@ -295,6 +1169,9 @@ def _format_pdf_markdown(page: fitz.Page) -> str:
             if processed_text:
                 markdown_lines.append(processed_text)
             current_list_type = None # Reset list context
+
+        # Increment text block counter at the end of each iteration
+        text_block_idx += 1
 
     # Join main content lines with double newlines
     main_content = "\n\n".join(md_line for md_line in markdown_lines if not md_line.startswith("[^")) # Exclude footnote defs for now
@@ -453,9 +1330,11 @@ def _identify_and_remove_front_matter(content_lines: list[str]) -> tuple[list[st
 
     # --- Basic Title Identification Heuristic ---
     # Look for the first non-empty line within the first ~5 lines
+    # SKIP page markers (they're not titles)
     for line in content_lines[:5]:
         stripped_line = line.strip()
-        if stripped_line:
+        # Skip page markers like [[PDF_page_1]] or ((p.1))
+        if stripped_line and not (stripped_line.startswith('[[') or stripped_line.startswith('((')):
             title = stripped_line
             logging.debug(f"Identified potential title: {title}")
             break # Found the first non-empty line, assume it's the title
@@ -699,6 +1578,194 @@ def _determine_pdf_quality_category(
         return 'TEXT_HIGH', f'Sufficient average characters per page ({avg_chars:.1f}) and low image ratio ({img_ratio:.2f})', False
 
 
+# --- OCR Quality Assessment and Remediation ---
+
+def assess_pdf_ocr_quality(pdf_path: Path, sample_pages: int = 10) -> dict:
+    """
+    Assess OCR quality of a PDF by sampling pages and detecting common issues.
+
+    Samples pages strategically (beginning, middle, end) and checks for:
+    - Letter spacing issues (e.g., "T H E")
+    - Low text extraction rate
+    - High image-to-text ratio
+
+    Args:
+        pdf_path: Path to PDF file
+        sample_pages: Number of pages to sample (default 10)
+
+    Returns:
+        dict with:
+            - score: Quality score 0-1 (1 = perfect, 0 = terrible)
+            - has_text_layer: Whether PDF has embedded text
+            - issues: List of detected issues
+            - recommendation: "use_existing" | "redo_ocr" | "force_ocr"
+    """
+    try:
+        doc = fitz.open(pdf_path)
+        total_pages = doc.page_count
+
+        if total_pages == 0:
+            return {
+                "score": 0.0,
+                "has_text_layer": False,
+                "issues": ["no_pages"],
+                "recommendation": "error"
+            }
+
+        # Sample strategy: first 3 + middle 4 + last 3
+        # For small PDFs, sample all pages
+        if total_pages <= sample_pages:
+            sample_indices = list(range(total_pages))
+        else:
+            first = list(range(min(3, total_pages)))
+            last = list(range(max(total_pages - 3, 3), total_pages))
+            middle_start = total_pages // 2 - 2
+            middle = list(range(middle_start, min(middle_start + 4, total_pages)))
+            sample_indices = sorted(set(first + middle + last))[:sample_pages]
+
+        # Quality metrics
+        pages_with_issues = 0
+        pages_with_text = 0
+        total_chars = 0
+        issue_types = set()
+
+        for page_num in sample_indices:
+            page = doc[page_num]
+            text = page.get_text()
+
+            # Check if page has text
+            if len(text.strip()) > 50:  # Minimum threshold for "has text"
+                pages_with_text += 1
+                total_chars += len(text)
+
+                # Check for letter spacing issues
+                if detect_letter_spacing_issue(text):
+                    pages_with_issues += 1
+                    issue_types.add("letter_spacing")
+            else:
+                issue_types.add("missing_text")
+
+        doc.close()
+
+        # Calculate quality score
+        has_text_layer = pages_with_text > 0
+
+        if not has_text_layer:
+            return {
+                "score": 0.0,
+                "has_text_layer": False,
+                "issues": list(issue_types),
+                "recommendation": "force_ocr"
+            }
+
+        # Score based on percentage of clean pages
+        clean_pages_ratio = 1.0 - (pages_with_issues / len(sample_indices))
+
+        # Penalize if very few pages have text
+        text_coverage_ratio = pages_with_text / len(sample_indices)
+
+        # Average characters per sampled page
+        avg_chars = total_chars / max(pages_with_text, 1)
+
+        # Combined score (weighted)
+        score = (
+            clean_pages_ratio * 0.6 +  # Primary: how many pages are clean
+            text_coverage_ratio * 0.3 +  # Secondary: text coverage
+            min(avg_chars / 1000, 1.0) * 0.1  # Tertiary: text density
+        )
+
+        # Determine recommendation
+        if score >= 0.75:
+            recommendation = "use_existing"
+        elif score >= 0.3:
+            recommendation = "redo_ocr"
+        else:
+            recommendation = "force_ocr"
+
+        logging.info(
+            f"OCR quality assessment: score={score:.2f}, "
+            f"pages_sampled={len(sample_indices)}, "
+            f"pages_with_issues={pages_with_issues}, "
+            f"recommendation={recommendation}"
+        )
+
+        return {
+            "score": round(score, 2),
+            "has_text_layer": has_text_layer,
+            "issues": list(issue_types),
+            "recommendation": recommendation
+        }
+
+    except Exception as e:
+        logging.error(f"Error assessing PDF quality: {e}")
+        return {
+            "score": 0.5,  # Neutral score on error
+            "has_text_layer": True,  # Assume it exists
+            "issues": ["assessment_error"],
+            "recommendation": "use_existing"  # Safe fallback
+        }
+
+
+def redo_ocr_with_tesseract(input_pdf: Path, output_dir: Path = None) -> Path:
+    """
+    Re-OCR a PDF using Tesseract via ocrmypdf.
+
+    Strips existing (poor quality) text layer and performs fresh OCR.
+
+    Args:
+        input_pdf: Path to input PDF with poor OCR quality
+        output_dir: Directory for output PDF (default: temp directory)
+
+    Returns:
+        Path to OCR'd PDF file
+
+    Raises:
+        subprocess.CalledProcessError: If ocrmypdf fails
+        FileNotFoundError: If tesseract is not installed
+    """
+    if output_dir is None:
+        output_dir = Path(tempfile.gettempdir())
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Output filename: original_name.ocr.pdf
+    output_pdf = output_dir / f"{input_pdf.stem}.ocr.pdf"
+
+    logging.info(f"Re-OCRing PDF with Tesseract: {input_pdf.name}")
+
+    try:
+        # ocrmypdf command: strip bad OCR, re-OCR with Tesseract
+        result = subprocess.run(
+            [
+                'ocrmypdf',
+                '--redo-ocr',  # Strip existing text layer, re-OCR
+                '--optimize', '1',  # Light optimization
+                '--output-type', 'pdf',  # Output as PDF
+                '--jobs', '4',  # Parallel processing (4 threads)
+                '--skip-big', '50',  # Skip pages > 50MB (likely images)
+                str(input_pdf),
+                str(output_pdf)
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=600  # 10 minute timeout
+        )
+
+        logging.info(f"OCR complete: {output_pdf}")
+        return output_pdf
+
+    except subprocess.TimeoutExpired:
+        logging.error(f"OCR timeout after 10 minutes: {input_pdf.name}")
+        raise
+    except subprocess.CalledProcessError as e:
+        logging.error(f"OCR failed: {e.stderr}")
+        raise
+    except FileNotFoundError:
+        logging.error("Tesseract not found. Install with: apt-get install tesseract-ocr")
+        raise
+
+
 # --- Garbled Text Detection ---
 
 def detect_letter_spacing_issue(text: str, sample_size: int = 500) -> bool:
@@ -841,13 +1908,48 @@ def detect_garbled_text(text: str, non_alpha_threshold: float = 0.25, repetition
 
 # --- Main Processing Functions ---
 
-def process_pdf(file_path: Path, output_format: str = "txt") -> str:
-    """Processes a PDF file, extracts text, applies preprocessing, and returns content."""
+def process_pdf(file_path: Path, output_format: str = "txt", preserve_linebreaks: bool = False) -> str:
+    """
+    Processes a PDF file, extracts text, applies preprocessing, and returns content.
+
+    Args:
+        file_path: Path to PDF file
+        output_format: Output format ("txt" or "markdown")
+        preserve_linebreaks: If True, preserve original line breaks from PDF for citation accuracy.
+                           If False, join lines intelligently for readability (default).
+
+    Returns:
+        Processed text content
+    """
     if not PYMUPDF_AVAILABLE: raise ImportError("Required library 'PyMuPDF' (fitz) is not installed.")
     logging.info(f"Processing PDF: {file_path} for format: {output_format}")
     doc = None
+
+    # Track if we created a temp OCR file (for cleanup)
+    temp_ocr_file = None
+
     try:
-        # --- Quality Analysis ---
+        # --- OCR Quality Assessment and Remediation ---
+        # Check if PDF needs re-OCRing BEFORE processing
+        quality_assessment = assess_pdf_ocr_quality(file_path)
+        logging.info(f"PDF quality assessment: {quality_assessment}")
+
+        if quality_assessment["recommendation"] in ["redo_ocr", "force_ocr"]:
+            logging.info(f"Quality score {quality_assessment['score']:.2f} - Re-OCRing PDF for better extraction")
+            try:
+                # Re-OCR with Tesseract, save to temp directory
+                ocr_pdf = redo_ocr_with_tesseract(file_path)
+                temp_ocr_file = ocr_pdf
+
+                # Process the OCR'd version instead of original
+                file_path = ocr_pdf
+                logging.info(f"Using OCR'd PDF: {ocr_pdf}")
+
+            except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired) as ocr_err:
+                logging.warning(f"OCR remediation failed, using original PDF: {ocr_err}")
+                # Fall back to original file_path
+
+        # --- Quality Analysis (legacy system - keeping for compatibility) ---
         quality_info = detect_pdf_quality(str(file_path))
         quality_category = quality_info.get("quality_category", "UNKNOWN")
         ocr_needed = quality_info.get("ocr_recommended", False) # Use correct key 'ocr_recommended'
@@ -862,8 +1964,8 @@ def process_pdf(file_path: Path, output_format: str = "txt") -> str:
                     if ocr_text:
                          logging.info(f"OCR successful for {file_path}.")
 
-                         # Apply letter spacing correction if needed
-                         ocr_text = correct_letter_spacing(ocr_text)
+                         # DISABLED: Letter spacing correction (now using ocrmypdf re-OCR instead)
+                         # ocr_text = correct_letter_spacing(ocr_text)
 
                          # Preprocess OCR text (basic for now, can be expanded)
                          try: # Add try block for preprocessing OCR text
@@ -915,22 +2017,91 @@ def process_pdf(file_path: Path, output_format: str = "txt") -> str:
                 raise ValueError(f"PDF {file_path} is encrypted and cannot be opened.")
             logging.info(f"Successfully decrypted {file_path} with empty password.")
 
-        # 1. Extract structured content using block-level analysis
+        # 1. Extract ToC and infer written page numbers BEFORE processing pages
+        logging.debug("Extracting ToC and inferring written page numbers...")
+        toc_map = _extract_toc_from_pdf(doc)
+        written_page_map = infer_written_page_numbers(doc)
+
+        # 1.5. Generate document header and markdown ToC
+        document_header = ""
+        markdown_toc = ""
+        if output_format == "markdown":
+            document_header = _generate_document_header(doc)
+            markdown_toc = _generate_markdown_toc_from_pdf(toc_map, skip_front_matter=True)
+
+        # 2. Determine first content page (skip front matter like "Title Page", "Copyright", "Contents")
+        first_content_page = 1
+        if toc_map:
+            first_content_page = _find_first_content_page(toc_map)
+            logging.info(f"Starting content at page {first_content_page} (first real content after front matter)")
+
+        # 2. Extract structured content using block-level analysis
         logging.debug("Performing structured PDF extraction with block analysis...")
         page_count = len(doc)
         page_contents = []  # Store content with page numbers
 
         for i, page in enumerate(doc):
             page_num = i + 1
+
+            # Skip front matter pages (before first ToC entry)
+            if page_num < first_content_page:
+                logging.debug(f"Skipping front matter page {page_num}")
+                continue
+
             logging.debug(f"Processing page {page_num}/{page_count} with block analysis...")
 
             if output_format == "markdown":
+                # Get ToC entries and written page number for this page
+                toc_entries = toc_map.get(page_num, [])
+                written_page = written_page_map.get(page_num)
+
+                # Detect written page number with position for duplication removal
+                written_page_position = None
+                written_page_text = None
+                if written_page:
+                    # Re-detect to get position and matched text
+                    detected_num, detected_pos, detected_text = _detect_written_page_on_page(page)
+                    if detected_num == written_page:
+                        written_page_position = detected_pos
+                        written_page_text = detected_text
+
                 # Use sophisticated _format_pdf_markdown for structure preservation
-                page_markdown = _format_pdf_markdown(page)
-                if page_markdown:
-                    # Add page marker for academic citations (no backticks - they render as code)
-                    page_with_marker = f"[p.{page_num}]\n\n{page_markdown}"
-                    page_contents.append(page_with_marker)
+                # Pass ToC and page numbering info
+                page_markdown = _format_pdf_markdown(
+                    page,
+                    preserve_linebreaks=preserve_linebreaks,
+                    toc_entries=toc_entries,
+                    pdf_page_num=page_num,
+                    written_page_num=written_page,
+                    written_page_position=written_page_position,
+                    written_page_text=written_page_text,
+                    use_toc_headings=bool(toc_map)  # Use ToC if available
+                )
+
+                # Skip empty/minimal pages (< 100 chars of actual content)
+                # Strip page markers to check actual content
+                content_only = page_markdown
+                for marker in [f'[[PDF_page_{page_num}]]', f'((p.{written_page}))'] if written_page else [f'[[PDF_page_{page_num}]]']:
+                    content_only = content_only.replace(marker, '')
+
+                # Also remove ToC heading if present (it will be in ToC anyway)
+                if toc_entries:
+                    for level, title in toc_entries:
+                        content_only = content_only.replace('#' * level + ' ' + title, '')
+
+                content_only = content_only.strip()
+
+                # Keep page if:
+                # 1. It has ToC entries (always keep pages with ToC headings)
+                # 2. OR it has substantial content (> 100 chars)
+                has_toc = bool(toc_entries)
+                has_content = len(content_only) > 100
+
+                if page_markdown and (has_toc or has_content):
+                    # Page markers now handled inside _format_pdf_markdown
+                    page_contents.append(page_markdown)
+                else:
+                    logging.debug(f"Skipping empty/minimal page {page_num} ({len(content_only)} chars, has_toc={has_toc})")
             else:
                 # For plain text, use basic extraction
                 page_text = page.get_text("text")
@@ -943,9 +2114,10 @@ def process_pdf(file_path: Path, output_format: str = "txt") -> str:
         full_content = "\n\n".join(page_contents)
 
         # 2.5. Apply letter spacing correction if needed (for digital-native PDFs too)
-        if detect_letter_spacing_issue(full_content[:1000]):
-            logging.info("Applying letter spacing correction to PDF content...")
-            full_content = correct_letter_spacing(full_content)
+        # DISABLED: Letter spacing correction (now using ocrmypdf re-OCR for poor quality PDFs)
+        # if detect_letter_spacing_issue(full_content[:1000]):
+        #     logging.info("Applying letter spacing correction to PDF content...")
+        #     full_content = correct_letter_spacing(full_content)
 
         # 3. Preprocess the content (front matter, ToC extraction)
         # For structured markdown, we already have good structure, just extract front matter
@@ -955,9 +2127,19 @@ def process_pdf(file_path: Path, output_format: str = "txt") -> str:
 
         # 4. Construct final output
         final_output_parts = []
-        if title != "Unknown Title":
+
+        # Add custom header and markdown ToC (if we have PDF ToC)
+        if toc_map and output_format == "markdown":
+            if document_header:
+                final_output_parts.append(document_header)
+            if markdown_toc:
+                final_output_parts.append(markdown_toc)
+        # Fallback: add extracted title if no ToC
+        elif title != "Unknown Title" and not toc_map:
             final_output_parts.append(f"# {title}" if output_format == "markdown" else title)
-        if formatted_toc:
+
+        # Old heuristic ToC (only if no PDF ToC available)
+        if formatted_toc and not toc_map:
             final_output_parts.append(formatted_toc)
 
         main_content = "\n".join(final_content_lines)
@@ -993,6 +2175,14 @@ def process_pdf(file_path: Path, output_format: str = "txt") -> str:
         if doc is not None and not doc.is_closed:
             doc.close()
             logging.debug(f"Closed PDF document: {file_path}")
+
+        # Clean up temporary OCR file if created
+        if temp_ocr_file and temp_ocr_file.exists():
+            try:
+                temp_ocr_file.unlink()
+                logging.debug(f"Cleaned up temporary OCR file: {temp_ocr_file}")
+            except Exception as cleanup_err:
+                logging.warning(f"Failed to clean up temp OCR file {temp_ocr_file}: {cleanup_err}")
 
 
 def process_epub(file_path: Path, output_format: str = "txt") -> str:
@@ -1307,7 +2497,9 @@ async def save_processed_text(
         # --- Generate Filename using unified format ---
         if book_details:
             # Use unified filename generation
-            base_name = create_unified_filename(book_details, extension=None)
+            # Remove 'extension' key to avoid double extension bug
+            clean_book_details = {k: v for k, v in book_details.items() if k != 'extension'}
+            base_name = create_unified_filename(clean_book_details, extension=None)
             processed_filename = f"{base_name}{original_extension}.processed.{output_format}"
         else:
             # Fallback if no book_details
@@ -1330,7 +2522,70 @@ async def save_processed_text(
             try:
                 format_type = original_path.suffix.lower().lstrip('.')
 
-                # Generate metadata
+                # --- Metadata Verification Step (NEW) ---
+                # Extract metadata from document for verification
+                extracted_metadata = {}
+                try:
+                    if format_type == 'pdf':
+                        extracted_metadata = extract_pdf_metadata(original_path)
+                    elif format_type == 'epub':
+                        extracted_metadata = extract_epub_metadata(original_path)
+                    elif format_type == 'txt':
+                        extracted_metadata = extract_txt_metadata(original_path)
+
+                    logging.info(f"Extracted document metadata for verification: {list(extracted_metadata.keys())}")
+                except Exception as extract_err:
+                    logging.warning(f"Could not extract document metadata for verification: {extract_err}")
+                    extracted_metadata = {}
+
+                # Verify API metadata against extracted metadata
+                verification_report = None
+                if extracted_metadata:
+                    try:
+                        # Prepare API metadata in consistent format
+                        api_metadata = {
+                            'title': book_details.get('title'),
+                            'author': book_details.get('author'),
+                            'publisher': book_details.get('publisher'),
+                            'year': book_details.get('year'),
+                            'isbn': book_details.get('isbn')
+                        }
+
+                        verification_report = verify_metadata(api_metadata, extracted_metadata)
+                        logging.info(f"Metadata verification: {verification_report['summary']}")
+
+                        # Log any discrepancies for review
+                        if verification_report['discrepancies']:
+                            logging.warning(f"Metadata discrepancies found: {verification_report['discrepancies']}")
+                    except Exception as verify_err:
+                        logging.warning(f"Could not verify metadata: {verify_err}")
+                        verification_report = None
+
+                # Extract PDF ToC and metadata for verification
+                pdf_toc = None
+                extracted_metadata = None
+
+                if format_type == 'pdf' and PYMUPDF_AVAILABLE:
+                    try:
+                        doc = fitz.open(str(original_path))
+                        pdf_toc = doc.get_toc()  # Returns list of [level, title, page]
+                        doc.close()
+                        logging.info(f"Extracted {len(pdf_toc)} ToC entries from PDF for metadata")
+                    except Exception as toc_err:
+                        logging.warning(f"Could not extract PDF ToC for metadata: {toc_err}")
+
+                    # Extract and verify metadata
+                    try:
+                        from metadata_verification import extract_pdf_metadata, verify_metadata
+                        extracted_metadata = extract_pdf_metadata(str(original_path))
+                        verification_report = verify_metadata(book_details, extracted_metadata)
+                        logging.info(f"Metadata verification: {verification_report.get('summary', 'N/A')}")
+                    except ImportError:
+                        logging.warning("metadata_verification module not available")
+                    except Exception as verify_err:
+                        logging.warning(f"Metadata verification failed: {verify_err}")
+
+                # Generate metadata with verification report
                 metadata = generate_metadata_sidecar(
                     original_filename=str(original_path),
                     processed_content=processed_content,  # Use processed_content, not final_content
@@ -1338,8 +2593,17 @@ async def save_processed_text(
                     ocr_quality_score=ocr_quality_score,
                     corrections_applied=corrections_applied or [],
                     format_type=format_type,
-                    output_format=output_format
+                    output_format=output_format,
+                    pdf_toc=pdf_toc
                 )
+
+                # Add verification report to metadata if available
+                if 'verification_report' in locals() and verification_report:
+                    metadata['verification'] = verification_report
+
+                # Add verification report to metadata if available
+                if verification_report:
+                    metadata['verification'] = verification_report
 
                 # Save metadata sidecar
                 metadata_filename = create_metadata_filename(processed_filename)

@@ -20,18 +20,16 @@ license = { text = "MIT" }
 dependencies = [
     # Vendored zlibrary (installed from local ./zlibrary directory)
     "zlibrary",
-
     # Document processing
-    "pymupdf>=1.26.0",           # PDF processing (fitz)
-    "ebooklib>=0.19",            # EPUB processing
-
+    "pymupdf>=1.26.0", # PDF processing (fitz)
+    "ebooklib>=0.19", # EPUB processing
     # HTTP and async
-    "httpx>=0.28.0",             # HTTP client (used in booklists, advanced_search)
-    "aiofiles>=24.1.0",          # Async file operations
-
+    "httpx>=0.28.0", # HTTP client (used in booklists, advanced_search)
+    "aiofiles>=24.1.0", # Async file operations
     # HTML parsing
-    "beautifulsoup4>=4.14.0",    # HTML parsing
-    "lxml>=6.0.0",               # XML/HTML parser (bs4 backend)
+    "beautifulsoup4>=4.14.0", # HTML parsing
+    "lxml>=6.0.0", # XML/HTML parser (bs4 backend)
+    "ocrmypdf>=15.4.4",
 ]
 
 # UV source configuration for vendored zlibrary

@@ -9,11 +9,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 2. `ISSUES.md` - Known problems and priorities (at project root)
 3. `.claude/IMPLEMENTATION_ROADMAP.md` - Concrete action plan and fixes
 4. `.claude/PATTERNS.md` - Code patterns to follow
-5. `.claude/DEBUGGING.md` - Troubleshooting guide
-6. `.claude/VERSION_CONTROL.md` - Git workflow and best practices
-7. `.claude/CI_CD.md` - CI/CD strategy and implementation
-8. `.claude/MCP_SERVERS.md` - Development tools setup
-9. `.claude/META_LEARNING.md` - Lessons learned and insights
+5. `.claude/RAG_QUALITY_FRAMEWORK.md` - Quality verification for RAG pipeline
+6. `.claude/DEBUGGING.md` - Troubleshooting guide
+7. `.claude/VERSION_CONTROL.md` - Git workflow and best practices
+8. `.claude/CI_CD.md` - CI/CD strategy and implementation
+9. `.claude/MCP_SERVERS.md` - Development tools setup
+10. `.claude/META_LEARNING.md` - Lessons learned and insights
 
 ## Project Overview
 
@@ -185,6 +186,7 @@ See [docs/RETRY_CONFIGURATION.md](docs/RETRY_CONFIGURATION.md) for detailed conf
 - Processes documents to text files rather than returning raw text
 - Returns file paths to avoid context overload
 - Supports combined download+process or separate operations
+- **Quality verification framework**: See `.claude/RAG_QUALITY_FRAMEWORK.md` for systematic quality checks
 
 ## Python Virtual Environment
 
@@ -252,6 +254,7 @@ The `.claude` folder contains comprehensive documentation for development:
 - **ISSUES.md** (root): All known issues categorized by severity with action items
 - **IMPLEMENTATION_ROADMAP.md**: Concrete action plan, priority fixes, 3-week roadmap
 - **PATTERNS.md**: Code patterns for error handling, logging, caching, testing
+- **RAG_QUALITY_FRAMEWORK.md**: Quality verification framework for RAG pipeline
 - **DEBUGGING.md**: Troubleshooting guides, diagnostic scripts, common solutions
 - **VERSION_CONTROL.md**: Git workflows, branching strategy, commit conventions
 - **CI_CD.md**: CI/CD pipelines, quality gates, deployment automation
@@ -273,10 +276,11 @@ Check `ISSUES.md` (project root) for the complete list. Top priorities:
 3. **Check Issues**: Review `ISSUES.md` (root) for known problems
 4. **Follow Patterns**: Use code patterns from `.claude/PATTERNS.md`
 5. **Write & Test**: Implement with tests, following TDD when possible
-6. **Debug Issues**: Consult `.claude/DEBUGGING.md` for solutions
-7. **Commit Properly**: Use conventional commits per `.claude/VERSION_CONTROL.md`
-8. **Create PR**: Follow PR template and review process in VERSION_CONTROL.md
-9. **Learn & Document**: Update `.claude/META_LEARNING.md` with insights
+6. **Verify Quality**: Run quality checks per `.claude/RAG_QUALITY_FRAMEWORK.md` for RAG changes
+7. **Debug Issues**: Consult `.claude/DEBUGGING.md` for solutions
+8. **Commit Properly**: Use conventional commits per `.claude/VERSION_CONTROL.md`
+9. **Create PR**: Follow PR template and review process in VERSION_CONTROL.md
+10. **Learn & Document**: Update `.claude/META_LEARNING.md` with insights
 
 ### 🚦 Quick Status Check
 

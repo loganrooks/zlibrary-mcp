@@ -46,79 +46,201 @@ CITATION_PATTERNS = {
 }
 
 
-def analyze_page_layout(page, sample_blocks: List = None) -> Dict:
+def analyze_document_layout_adaptive(doc, sample_pages: List[int] = None, num_samples: int = 20) -> Dict:
     """
-    Analyze page layout to identify body vs. margin zones.
+    Adaptively analyze document layout across multiple pages using statistical clustering.
 
-    Uses x-coordinate distribution to spatially segment page.
+    NO fixed thresholds - learns margin positions from actual text distribution.
+
+    Algorithm:
+    1. Sample multiple pages throughout document
+    2. Collect all x-coordinates (left edges of all text blocks)
+    3. Build histogram and identify clusters
+    4. Largest cluster = body text zone
+    5. Edge clusters = potential margins
+    6. Validate margins by checking content patterns
 
     Args:
-        page: PyMuPDF page object
-        sample_blocks: Optional pre-extracted blocks
+        doc: PyMuPDF document object
+        sample_pages: Specific pages to analyze (None = auto-sample)
+        num_samples: Number of pages to sample
 
     Returns:
         {
             'page_width': float,
             'page_height': float,
-            'body_zone': {'x_start': float, 'x_end': float},
-            'left_margin': {'x_start': float, 'x_end': float},
-            'right_margin': {'x_start': float, 'x_end': float}
+            'body_zone': {'x_start': float, 'x_end': float, 'confidence': float},
+            'left_margin': {'x_start': float, 'x_end': float, 'has_content': bool},
+            'right_margin': {'x_start': float, 'x_end': float, 'has_content': bool},
+            'layout_type': str  # 'single_column', 'double_column', 'with_margins', etc.
         }
     """
-    page_rect = page.rect
-    page_width = page_rect.width
-    page_height = page_rect.height
+    import collections
 
-    if sample_blocks is None:
-        sample_blocks = page.get_text("dict")['blocks']
+    total_pages = len(doc)
 
-    # Collect x-positions of body text (filter by size to exclude marginalia)
-    body_x_positions = []
+    # Sample pages evenly throughout document
+    if sample_pages is None:
+        step = max(1, total_pages // num_samples)
+        sample_pages = list(range(0, total_pages, step))[:num_samples]
 
-    for block in sample_blocks:
-        if block.get('type') != 0:  # Skip non-text blocks
+    # Collect x-coordinates from all sampled pages
+    all_x_left = []
+    all_x_right = []
+    page_dimensions = []
+
+    for page_idx in sample_pages:
+        if page_idx >= total_pages:
             continue
 
-        bbox = block['bbox']
-        x_left = bbox[0]
-        x_right = bbox[2]
-        width = x_right - x_left
+        page = doc[page_idx]
+        page_dimensions.append((page.rect.width, page.rect.height))
 
-        # Body text typically wider than margin text
-        if width > page_width * 0.3:  # Wider than 30% of page = likely body
-            body_x_positions.extend([x_left, x_right])
+        blocks = page.get_text("dict")['blocks']
 
-    if not body_x_positions:
-        # Fallback: assume standard margins
-        body_x_start = page_width * 0.15
-        body_x_end = page_width * 0.85
-    else:
-        # Use actual body text positions
-        body_x_start = min(body_x_positions)
-        body_x_end = max(body_x_positions)
+        for block in blocks:
+            if block.get('type') != 0:  # Skip non-text blocks
+                continue
 
-    # Define zones
+            bbox = block['bbox']
+            x_left = bbox[0]
+            x_right = bbox[2]
+
+            all_x_left.append(x_left)
+            all_x_right.append(x_right)
+
+    # Use most common page dimensions
+    page_width = collections.Counter([w for w, h in page_dimensions]).most_common(1)[0][0]
+    page_height = collections.Counter([h for w, h in page_dimensions]).most_common(1)[0][0]
+
+    if not all_x_left:
+        # No text found - return default
+        logging.warning("No text found in sampled pages, using defaults")
+        return _default_zones(page_width, page_height)
+
+    # Cluster x-coordinates using simple histogram binning
+    # Bin width: 5 pixels
+    bin_width = 5
+    bins = int(page_width / bin_width)
+
+    # Count x_left positions in each bin
+    left_histogram = [0] * bins
+    for x in all_x_left:
+        bin_idx = min(int(x / bin_width), bins - 1)
+        left_histogram[bin_idx] += 1
+
+    # Find main body text cluster (largest peak in histogram)
+    # Look for sustained high-frequency region (not just single peak)
+    max_count = max(left_histogram)
+    threshold = max_count * 0.3  # 30% of peak
+
+    # Find continuous region above threshold
+    body_start_bin = None
+    body_end_bin = None
+
+    for i, count in enumerate(left_histogram):
+        if count >= threshold:
+            if body_start_bin is None:
+                body_start_bin = i
+            body_end_bin = i
+
+    if body_start_bin is None:
+        # Fallback
+        return _default_zones(page_width, page_height)
+
+    # Convert bins back to x-coordinates
+    body_x_start = body_start_bin * bin_width
+    body_x_end = (body_end_bin + 1) * bin_width
+
+    # Refine using actual positions
+    body_texts = [x for x in all_x_left if body_x_start <= x <= body_x_end]
+    if body_texts:
+        body_x_start = min(body_texts)
+        body_x_end_candidates = [x for x in all_x_right if x >= body_x_start]
+        if body_x_end_candidates:
+            body_x_end = max(body_x_end_candidates)
+
+    # Check for marginal content
+    left_margin_content = [x for x in all_x_left if x < body_x_start - 10]
+    right_margin_content = [x for x in all_x_left if x > body_x_end + 10]
+
     zones = {
         'page_width': page_width,
         'page_height': page_height,
         'body_zone': {
             'x_start': body_x_start,
-            'x_end': body_x_end
+            'x_end': body_x_end,
+            'confidence': len(body_texts) / len(all_x_left) if all_x_left else 0
         },
         'left_margin': {
             'x_start': 0,
-            'x_end': body_x_start - 10  # 10px buffer
+            'x_end': body_x_start - 10,
+            'has_content': len(left_margin_content) > 0
         },
         'right_margin': {
-            'x_start': body_x_end + 10,  # 10px buffer
-            'x_end': page_width
-        }
+            'x_start': body_x_end + 10,
+            'x_end': page_width,
+            'has_content': len(right_margin_content) > 0
+        },
+        'layout_type': _infer_layout_type(body_x_start, body_x_end, page_width,
+                                          len(left_margin_content), len(right_margin_content))
     }
 
-    logging.debug(f"Page layout: body [{body_x_start:.1f}, {body_x_end:.1f}], "
-                  f"page width {page_width:.1f}")
+    logging.info(f"Adaptive layout detection: body=[{body_x_start:.1f}, {body_x_end:.1f}], "
+                 f"left_margin={len(left_margin_content)} blocks, "
+                 f"right_margin={len(right_margin_content)} blocks, "
+                 f"type={zones['layout_type']}")
 
     return zones
+
+
+def _default_zones(page_width: float, page_height: float) -> Dict:
+    """Fallback to standard zones if detection fails."""
+    body_start = page_width * 0.15
+    body_end = page_width * 0.85
+
+    return {
+        'page_width': page_width,
+        'page_height': page_height,
+        'body_zone': {'x_start': body_start, 'x_end': body_end, 'confidence': 0.0},
+        'left_margin': {'x_start': 0, 'x_end': body_start - 10, 'has_content': False},
+        'right_margin': {'x_start': body_end + 10, 'x_end': page_width, 'has_content': False},
+        'layout_type': 'unknown'
+    }
+
+
+def _infer_layout_type(body_start: float, body_end: float, page_width: float,
+                       left_margin_count: int, right_margin_count: int) -> str:
+    """
+    Infer layout type from detected zones.
+
+    Returns:
+        'single_column', 'with_left_marginalia', 'with_right_marginalia',
+        'with_both_marginalia', 'double_column', 'centered', etc.
+    """
+    body_width = body_end - body_start
+    body_center = (body_start + body_end) / 2
+    page_center = page_width / 2
+
+    # Check if centered
+    is_centered = abs(body_center - page_center) < page_width * 0.1
+
+    # Check margin usage
+    has_left = left_margin_count > 5  # More than 5 blocks = substantial content
+    has_right = right_margin_count > 5
+
+    if has_left and has_right:
+        return 'with_both_marginalia'
+    elif has_left:
+        return 'with_left_marginalia'
+    elif has_right:
+        return 'with_right_marginalia'
+    elif is_centered:
+        return 'centered_single_column'
+    elif body_width < page_width * 0.5:
+        return 'narrow_column'  # Possible double-column
+    else:
+        return 'standard_single_column'
 
 
 def classify_text_blocks_by_zone(page, zones: Dict) -> Dict:

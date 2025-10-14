@@ -932,6 +932,11 @@ def process_pdf(file_path: Path, output_format: str = "txt") -> str:
         # 2. Combine all pages
         full_content = "\n\n".join(page_contents)
 
+        # 2.5. Apply letter spacing correction if needed (for digital-native PDFs too)
+        if detect_letter_spacing_issue(full_content[:1000]):
+            logging.info("Applying letter spacing correction to PDF content...")
+            full_content = correct_letter_spacing(full_content)
+
         # 3. Preprocess the content (front matter, ToC extraction)
         # For structured markdown, we already have good structure, just extract front matter
         content_lines = full_content.splitlines()
@@ -1243,6 +1248,7 @@ async def process_document(file_path_str: str, output_format: str = "txt", book_
                 corrections.append("letter_spacing_correction")
 
         # Pass book_details to save_processed_text for filename generation
+        # This also generates and saves the metadata sidecar
         saved_path = await save_processed_text(
             original_file_path=file_path,
             processed_content=processed_text,
@@ -1251,9 +1257,24 @@ async def process_document(file_path_str: str, output_format: str = "txt", book_
             ocr_quality_score=None,  # TODO: Calculate if OCR was used
             corrections_applied=corrections
         )
-        # The 'content' key is expected by some client-side logic, even if empty.
-        # For RAG, the primary output is the file path.
-        return {"processed_file_path": str(saved_path), "content": [processed_text]} # Return list for content
+
+        # Determine metadata file path
+        from filename_utils import create_metadata_filename
+        processed_filename = Path(saved_path).name
+        metadata_filename = create_metadata_filename(processed_filename)
+        metadata_path = PROCESSED_OUTPUT_DIR / metadata_filename
+
+        # Return ONLY paths, not content (prevents MCP token overflow)
+        # User can selectively read portions of the processed file
+        return {
+            "processed_file_path": str(saved_path),
+            "metadata_file_path": str(metadata_path) if metadata_path.exists() else None,
+            "stats": {
+                "word_count": len(processed_text.split()),
+                "char_count": len(processed_text),
+                "format": output_format
+            }
+        }
 
     except Exception as e:
         logging.error(f"Error processing document {file_path}: {e}")
@@ -1302,7 +1323,7 @@ async def save_processed_text(
                 # Generate metadata
                 metadata = generate_metadata_sidecar(
                     original_filename=str(original_path),
-                    processed_content=final_content,
+                    processed_content=processed_content,  # Use processed_content, not final_content
                     book_details=book_details,
                     ocr_quality_score=ocr_quality_score,
                     corrections_applied=corrections_applied or [],

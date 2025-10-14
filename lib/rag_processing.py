@@ -157,20 +157,25 @@ def _analyze_pdf_block(block: dict) -> dict:
             is_bold = flags & 2 # Font flag for bold
 
             # --- Heading Heuristic (Example based on size/boldness) ---
-            # Reordered to check more specific conditions first
-            if font_size > 12 and font_size <= 14 and is_bold: # H3 (Adjusted condition slightly for clarity)
-                 heading_level = 3
-            elif font_size > 11 and font_size <= 12 and is_bold: # H3 (Adjusted condition slightly for clarity)
-                 heading_level = 3
-            elif font_size > 14 and font_size <= 18 and is_bold: # H2
-                 heading_level = 2
-            elif font_size > 12 and font_size <= 14: # H3
-                 heading_level = 3
-            elif font_size > 14 and font_size <= 18: # H2
-                 heading_level = 2
-            elif font_size > 18: # H1
-                 heading_level = 1
-            # TODO: Consider adding more levels or refining based on document analysis.
+            # Filter out pure page numbers (don't treat "420" as a heading)
+            trimmed_text = text_content.strip()
+            is_pure_number = re.match(r'^\d+$', trimmed_text)
+
+            if not is_pure_number:
+                # Reordered to check more specific conditions first
+                if font_size > 12 and font_size <= 14 and is_bold: # H3
+                     heading_level = 3
+                elif font_size > 11 and font_size <= 12 and is_bold: # H3
+                     heading_level = 3
+                elif font_size > 14 and font_size <= 18 and is_bold: # H2
+                     heading_level = 2
+                elif font_size > 12 and font_size <= 14: # H3
+                     heading_level = 3
+                elif font_size > 14 and font_size <= 18: # H2
+                     heading_level = 2
+                elif font_size > 18: # H1
+                     heading_level = 1
+            # If is_pure_number, heading_level stays 0
 
             # --- List Heuristic (Example based on starting characters) ---
             # This is basic and doesn't handle indentation/nesting reliably.
@@ -455,11 +460,16 @@ def _identify_and_remove_front_matter(content_lines: list[str]) -> tuple[list[st
             logging.debug(f"Identified potential title: {title}")
             break # Found the first non-empty line, assume it's the title
 
-    # --- Front Matter Removal Logic (Refactored - Attempt 2) ---
-    # Define keywords based on combined test requirements
+    # --- Front Matter Removal Logic ---
+    # Define keywords for publisher info, copyright, etc.
     FRONT_MATTER_SKIP_TWO = ["dedication", "copyright notice"] # Skip line + next
-    # Ensure SKIP_ONE doesn't overlap with SKIP_TWO for clarity
-    FRONT_MATTER_SKIP_ONE = ["copyright", "isbn", "published by", "copyright info", "acknowledgments"] # Skip only current line
+    FRONT_MATTER_SKIP_ONE = [
+        "copyright", "isbn", "published by", "acknowledgments",
+        "cambridge university press", "stanford university press",
+        "library of congress", "cataloging in publication",
+        "all rights reserved", "printed in", "reprinted",
+        "first published", "permissions", "without permission"
+    ]
 
     i = 0
     while i < len(content_lines):
@@ -918,8 +928,8 @@ def process_pdf(file_path: Path, output_format: str = "txt") -> str:
                 # Use sophisticated _format_pdf_markdown for structure preservation
                 page_markdown = _format_pdf_markdown(page)
                 if page_markdown:
-                    # Add page marker for academic citations
-                    page_with_marker = f"`[p.{page_num}]`\n\n{page_markdown}"
+                    # Add page marker for academic citations (no backticks - they render as code)
+                    page_with_marker = f"[p.{page_num}]\n\n{page_markdown}"
                     page_contents.append(page_with_marker)
             else:
                 # For plain text, use basic extraction

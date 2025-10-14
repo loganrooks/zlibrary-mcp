@@ -146,8 +146,8 @@ def extract_toc_from_content(content: str, format_type: str = "markdown") -> Lis
     last_page_num = None  # Track most recent page marker
 
     for line_num, line in enumerate(lines, start=1):
-        # Check for page markers (standalone or in text)
-        page_marker_match = re.search(r'`\[p\.(\d+)\]`', line)
+        # Check for page markers (standalone or in text) - NO backticks
+        page_marker_match = re.search(r'\[p\.(\d+)\]', line)
         if page_marker_match:
             last_page_num = int(page_marker_match.group(1))
 
@@ -159,14 +159,14 @@ def extract_toc_from_content(content: str, format_type: str = "markdown") -> Lis
                 title = heading_match.group(2).strip()
 
                 # Extract page number from title if present, otherwise use last seen
-                page_match = re.search(r'`\[p\.(\d+)\]`', title)
+                page_match = re.search(r'\[p\.(\d+)\]', title)
                 if page_match:
                     page_num = int(page_match.group(1))
                 else:
                     page_num = last_page_num
 
                 # Remove page marker from title if present
-                clean_title = re.sub(r'`\[p\.\d+\]`\s*', '', title)
+                clean_title = re.sub(r'\[p\.\d+\]\s*', '', title)
 
                 toc_entries.append({
                     "title": clean_title,
@@ -197,8 +197,8 @@ def extract_page_line_mapping(content: str) -> Dict[int, Dict[str, int]]:
     page_start_line = None
 
     for line_num, line in enumerate(lines, start=1):
-        # Look for page markers
-        page_match = re.search(r'`\[p\.(\d+)\]`', line)
+        # Look for page markers (no backticks)
+        page_match = re.search(r'\[p\.(\d+)\]', line)
 
         if page_match:
             # End previous page if exists

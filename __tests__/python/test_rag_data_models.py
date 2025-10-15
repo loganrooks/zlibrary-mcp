@@ -39,7 +39,7 @@ class TestValidFormats:
     def test_valid_formats_contains_expected(self):
         """VALID_FORMATS should contain all expected formatting types."""
         expected = {
-            "bold", "italic", "strikethrough", "underline",
+            "bold", "italic", "strikethrough", "sous-erasure", "underline",
             "superscript", "subscript", "serifed", "monospaced"
         }
         assert VALID_FORMATS == expected
@@ -48,7 +48,8 @@ class TestValidFormats:
         """Test fast membership checks."""
         assert "bold" in VALID_FORMATS
         assert "italic" in VALID_FORMATS
-        assert "strikethrough" in VALID_FORMATS  # Critical for Derrida
+        assert "strikethrough" in VALID_FORMATS  # Horizontal line (editorial)
+        assert "sous-erasure" in VALID_FORMATS   # X-mark (Derridean technique)
         assert "invalid_format" not in VALID_FORMATS
 
 
@@ -218,15 +219,27 @@ class TestTextSpan:
         assert span.has_format("italic")
 
     def test_derrida_sous_rature(self):
-        """Test strikethrough for Derrida's philosophical technique."""
+        """Test sous-erasure (X-mark) for Derrida's philosophical technique."""
         span = TextSpan(
             text="Being",
+            formatting={"sous-erasure"},
+            font_size=12.0
+        )
+
+        assert "sous-erasure" in span.formatting
+        assert span.has_format("sous-erasure")
+
+    def test_regular_strikethrough(self):
+        """Test regular strikethrough (horizontal line) for editorial deletion."""
+        span = TextSpan(
+            text="deleted text",
             formatting={"strikethrough"},
             font_size=12.0
         )
 
         assert "strikethrough" in span.formatting
         assert span.has_format("strikethrough")
+        assert "sous-erasure" not in span.formatting  # These are distinct
 
     def test_validation_rejects_invalid_format(self):
         """Test that invalid formatting types raise ValueError."""

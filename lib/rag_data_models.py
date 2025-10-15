@@ -31,8 +31,9 @@ from typing import Set, Optional, List
 VALID_FORMATS: Set[str] = {
     "bold",          # Strong emphasis (flags & 16)
     "italic",        # Emphasis (flags & 2)
-    "strikethrough", # Derrida's sous rature - philosophically significant!
-    "underline",     # Text decoration
+    "strikethrough", # Horizontal line through text (editorial deletion)
+    "sous-erasure",  # X-mark/crossing - Derridean philosophical technique
+    "underline",     # Line below text (text decoration)
     "superscript",   # Footnote markers (flags & 1)
     "subscript",     # Chemical formulas, mathematical notation
     "serifed",       # Font characteristic (flags & 4)

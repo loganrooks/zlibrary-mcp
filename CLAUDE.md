@@ -271,16 +271,28 @@ Check `ISSUES.md` (project root) for the complete list. Top priorities:
 
 ### 🔧 Development Workflow
 
+**🚨 CRITICAL: ALL RAG pipeline features MUST follow `.claude/TDD_WORKFLOW.md` (rigorous real-world TDD)**
+
 1. **Setup Version Control**: Create feature branch per `.claude/VERSION_CONTROL.md`
 2. **Before Coding**: Read `.claude/PROJECT_CONTEXT.md` for architecture
 3. **Check Issues**: Review `ISSUES.md` (root) for known problems
-4. **Follow Patterns**: Use code patterns from `.claude/PATTERNS.md`
-5. **Write & Test**: Implement with tests, following TDD when possible
-6. **Verify Quality**: Run quality checks per `.claude/RAG_QUALITY_FRAMEWORK.md` for RAG changes
-7. **Debug Issues**: Consult `.claude/DEBUGGING.md` for solutions
-8. **Commit Properly**: Use conventional commits per `.claude/VERSION_CONTROL.md`
-9. **Create PR**: Follow PR template and review process in VERSION_CONTROL.md
-10. **Learn & Document**: Update `.claude/META_LEARNING.md` with insights
+4. **📋 TDD Foundation** (MANDATORY for RAG features):
+   - a. Acquire REAL test PDF with feature
+   - b. Create ground truth (test_files/ground_truth/{feature}.json)
+   - c. Write failing test using real PDF (NO mocks)
+   - d. See `.claude/TDD_WORKFLOW.md` for complete process
+5. **Follow Patterns**: Use code patterns from `.claude/PATTERNS.md`
+6. **Write & Test**: Implement with TDD loop (red → green → refactor)
+7. **Manual Verification**: Side-by-side PDF vs output review (REQUIRED)
+8. **Verify Quality**: Run quality checks per `.claude/RAG_QUALITY_FRAMEWORK.md`
+9. **Performance Budget**: Validate against test_files/performance_budgets.json
+10. **Debug Issues**: Consult `.claude/DEBUGGING.md` for solutions
+11. **Regression Check**: Run ALL real PDF tests (no regressions allowed)
+12. **Commit Properly**: Use conventional commits per `.claude/VERSION_CONTROL.md`
+13. **Create PR**: Follow PR template and review process in VERSION_CONTROL.md
+14. **Learn & Document**: Update `.claude/META_LEARNING.md` with insights
+
+**Quality Gates**: Pre-commit runs real PDF tests + performance validation (automatic)
 
 ### 🚦 Quick Status Check
 

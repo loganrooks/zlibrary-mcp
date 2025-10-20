@@ -2,6 +2,7 @@ import asyncio
 import re
 import logging
 from pathlib import Path
+from typing import Optional
 import aiofiles
 import unicodedata # Added for slugify
 import os # Ensure os is imported if needed for path manipulation later
@@ -13,6 +14,23 @@ import sys # For path manipulation
 import subprocess # For ocrmypdf integration
 import tempfile # For temporary OCR file handling
 sys.path.insert(0, str(Path(__file__).parent))
+
+# Phase 2: Enhanced data model imports for structured RAG output
+from lib.rag_data_models import (
+    TextSpan,
+    PageRegion,
+    ListInfo,
+    create_text_span_from_pymupdf
+)
+
+# Phase 2.2: Garbled text detection (extracted to separate module)
+from lib.garbled_text_detection import (
+    detect_garbled_text,
+    detect_garbled_text_enhanced,
+    GarbledDetectionConfig,
+    GarbledDetectionResult
+)
+
 from filename_utils import create_unified_filename, create_metadata_filename
 from metadata_generator import (
     generate_metadata_sidecar,
@@ -61,6 +79,16 @@ except ImportError:
     PYMUPDF_AVAILABLE = False
     fitz = None # Define as None if not available
 
+# X-mark detection (opencv) - Phase 2.3
+try:
+    import cv2
+    import numpy as np
+    XMARK_AVAILABLE = True
+except ImportError:
+    XMARK_AVAILABLE = False
+    cv2 = None
+    np = None
+
 # Custom Exception (Consider moving if used elsewhere, but keep here for now)
 class FileSaveError(Exception):
     """Custom exception for errors during processed file saving."""
@@ -78,6 +106,73 @@ _PDF_QUALITY_THRESHOLD_HIGH_IMAGE_RATIO = 0.7
 _PDF_QUALITY_MIN_CHAR_DIVERSITY_RATIO = 0.15
 _PDF_QUALITY_MIN_SPACE_RATIO = 0.05
 PROCESSED_OUTPUT_DIR = Path("./processed_rag_output")
+
+# ============================================================================
+# Phase 2: Quality Pipeline Configuration (Integration 2025-10-18)
+# ============================================================================
+
+# Strategy profiles for quality pipeline
+# See: docs/specifications/PHASE_2_INTEGRATION_SPECIFICATION.md
+STRATEGY_CONFIGS = {
+    'philosophy': {
+        'garbled_threshold': 0.9,        # Very conservative (preserve ambiguous text)
+        'recovery_threshold': 0.95,      # Almost never auto-recover
+        'enable_strikethrough': True,    # Always check for sous-rature
+        'priority': 'preservation'       # Err on side of keeping original
+    },
+    'technical': {
+        'garbled_threshold': 0.6,        # Aggressive detection
+        'recovery_threshold': 0.7,       # More likely to recover
+        'enable_strikethrough': False,   # Technical docs rarely have strikethrough
+        'priority': 'quality'            # Err on side of recovery
+    },
+    'hybrid': {  # DEFAULT
+        'garbled_threshold': 0.75,       # Balanced
+        'recovery_threshold': 0.8,       # Moderate confidence required
+        'enable_strikethrough': True,    # Check for visual markers
+        'priority': 'balanced'           # Case-by-case decisions
+    }
+}
+
+
+from dataclasses import dataclass
+
+@dataclass
+class QualityPipelineConfig:
+    """Configuration for the quality pipeline stages."""
+
+    # Feature toggles
+    enable_pipeline: bool = True
+    detect_garbled: bool = True
+    detect_strikethrough: bool = True
+    enable_ocr_recovery: bool = True
+
+    # Strategy
+    strategy: str = 'hybrid'  # 'philosophy' | 'technical' | 'hybrid'
+
+    # Thresholds (from strategy)
+    garbled_threshold: float = 0.75
+    recovery_threshold: float = 0.8
+
+    # Performance
+    batch_size: int = 10
+
+    @classmethod
+    def from_env(cls) -> 'QualityPipelineConfig':
+        """Load configuration from environment variables."""
+        strategy_name = os.getenv('RAG_QUALITY_STRATEGY', 'hybrid')
+        strategy = STRATEGY_CONFIGS.get(strategy_name, STRATEGY_CONFIGS['hybrid'])
+
+        return cls(
+            enable_pipeline=os.getenv('RAG_ENABLE_QUALITY_PIPELINE', 'true').lower() == 'true',
+            detect_garbled=os.getenv('RAG_DETECT_GARBLED', 'true').lower() == 'true',
+            detect_strikethrough=os.getenv('RAG_DETECT_STRIKETHROUGH', 'true').lower() == 'true',
+            enable_ocr_recovery=os.getenv('RAG_ENABLE_OCR_RECOVERY', 'true').lower() == 'true',
+            strategy=strategy_name,
+            garbled_threshold=strategy['garbled_threshold'],
+            recovery_threshold=strategy['recovery_threshold'],
+            batch_size=int(os.getenv('RAG_QUALITY_BATCH_SIZE', '10'))
+        )
 
 # --- Slugify Helper ---
 
@@ -109,7 +204,12 @@ def _slugify(value, allow_unicode=False):
 
 # --- PDF Markdown Helpers ---
 
-def _analyze_pdf_block(block: dict, preserve_linebreaks: bool = False, detect_headings: bool = True) -> dict:
+def _analyze_pdf_block(
+    block: dict,
+    preserve_linebreaks: bool = False,
+    detect_headings: bool = True,
+    return_structured: bool = None
+) -> dict:  # Can return dict or PageRegion depending on flag
     """
     Analyzes a PyMuPDF text block dictionary to infer structure.
 
@@ -122,11 +222,18 @@ def _analyze_pdf_block(block: dict, preserve_linebreaks: bool = False, detect_he
                            If False, join lines intelligently (for readability).
         detect_headings: If True, use font-size heuristics to detect headings.
                         If False, skip heading detection (use when ToC metadata is available).
+        return_structured: If True, return PageRegion object with TextSpan list.
+                          If False, return legacy dict format.
+                          If None, defaults to RAG_USE_STRUCTURED_DATA env var (default 'true').
 
     Returns:
-        A dictionary containing analysis results:
-        'heading_level', 'is_list_item', 'list_type', 'list_indent', 'text', 'spans'.
+        PageRegion object if return_structured=True, dict otherwise.
+        Legacy dict contains: 'heading_level', 'is_list_item', 'list_type', 'list_indent', 'text', 'spans'.
     """
+    # Feature flag: default to structured output per Phase 2 design
+    if return_structured is None:
+        return_structured = os.getenv('RAG_USE_STRUCTURED_DATA', 'true').lower() == 'true'
+
     # Heuristic logic based on font size, flags, position, text patterns
     heading_level = 0
     is_list_item = False
@@ -271,15 +378,44 @@ def _analyze_pdf_block(block: dict, preserve_linebreaks: bool = False, detect_he
 
             # TODO: Use block['bbox'][0] (x-coordinate) to infer indentation/nesting.
 
-    return {
-        'heading_level': heading_level,
-        'list_marker': list_marker, # Add marker to return dict
-        'is_list_item': is_list_item,
-        'list_type': list_type,
-        'list_indent': list_indent, # Placeholder for future nesting use
-        'text': text_content.strip(),
-        'spans': spans # Pass spans for footnote detection
-    }
+    # Phase 2: Conditional return based on feature flag
+    if return_structured:
+        # Convert PyMuPDF span dicts to TextSpan objects
+        text_spans = [create_text_span_from_pymupdf(span) for span in spans]
+
+        # Create ListInfo if this is a list item
+        list_info_obj = None
+        if is_list_item:
+            list_info_obj = ListInfo(
+                is_list_item=True,
+                list_type=list_type if list_type else 'ul',  # Default to 'ul' if not set
+                marker=list_marker if list_marker else '',
+                indent_level=list_indent
+            )
+
+        # Get bounding box from block
+        bbox = tuple(block.get('bbox', (0.0, 0.0, 0.0, 0.0)))
+
+        # Return structured PageRegion object
+        return PageRegion(
+            region_type='body',  # Default region type for now
+            spans=text_spans,
+            bbox=bbox,
+            page_num=0,  # Default, caller can override if needed
+            heading_level=heading_level if heading_level > 0 else None,
+            list_info=list_info_obj
+        )
+    else:
+        # Legacy dict return for backward compatibility
+        return {
+            'heading_level': heading_level,
+            'list_marker': list_marker,
+            'is_list_item': is_list_item,
+            'list_type': list_type,
+            'list_indent': list_indent,
+            'text': text_content.strip(),
+            'spans': spans  # Pass raw PyMuPDF spans for legacy callers
+        }
 
 def _analyze_font_distribution(doc: 'fitz.Document', sample_pages: int = 10) -> float:
     """
@@ -986,7 +1122,10 @@ def _format_pdf_markdown(
     written_page_num: str = None,
     written_page_position: str = None,
     written_page_text: str = None,
-    use_toc_headings: bool = True
+    use_toc_headings: bool = True,
+    pdf_path: Path = None,
+    quality_config: QualityPipelineConfig = None,
+    xmark_cache: dict = None
 ) -> str:
     """
     Generates a Markdown string from a PyMuPDF page object.
@@ -1052,7 +1191,41 @@ def _format_pdf_markdown(
             continue
 
         # Pass use_toc_headings flag to disable font-size heading detection
-        analysis = _analyze_pdf_block(block, preserve_linebreaks=preserve_linebreaks, detect_headings=not use_toc_headings)
+        # Phase 2: Get structured PageRegion if quality pipeline enabled
+        use_quality_pipeline = (quality_config is not None and quality_config.enable_pipeline)
+        analysis = _analyze_pdf_block(
+            block,
+            preserve_linebreaks=preserve_linebreaks,
+            detect_headings=not use_toc_headings,
+            return_structured=use_quality_pipeline
+        )
+
+        # Phase 2: Apply quality pipeline if enabled and got PageRegion
+        if use_quality_pipeline and isinstance(analysis, PageRegion):
+            # Apply quality pipeline (garbled detection, X-marks, OCR recovery)
+            # Pass xmark_cache for page-level caching
+            analysis = _apply_quality_pipeline(analysis, pdf_path, (pdf_page_num - 1) if pdf_page_num else 0, quality_config, xmark_cache)
+
+            # Convert PageRegion to dict for existing code (temporary until full migration)
+            text = analysis.get_text()
+            spans = analysis.spans  # List[TextSpan] objects
+            heading_level = analysis.heading_level or 0
+            is_list_item_region = analysis.is_list_item()
+
+            # Create dict for existing code
+            analysis = {
+                'text': text,
+                'spans': [{'text': span.text, 'flags': 0, 'formatting': span.formatting} for span in spans],
+                'heading_level': heading_level,
+                'is_list_item': is_list_item_region,
+                'list_type': analysis.list_info.list_type if analysis.list_info else None,
+                'list_marker': analysis.list_info.marker if analysis.list_info else None,
+                'list_indent': analysis.list_info.indent_level if analysis.list_info else 0,
+                'quality_flags': analysis.quality_flags,
+                'quality_score': analysis.quality_score
+            }
+
+        # Extract from dict (works for both legacy and converted PageRegion)
         text = analysis['text']
         spans = analysis['spans']
 
@@ -1874,36 +2047,722 @@ def correct_letter_spacing(text: str) -> str:
     return corrected_text
 
 
-def detect_garbled_text(text: str, non_alpha_threshold: float = 0.25, repetition_threshold: float = 0.7, min_length: int = 10) -> bool:
-    """
-    Detects potentially garbled text based on heuristics like non-alphanumeric ratio
-    and character repetition.
-    """
-    text_length = len(text)
-    if text_length < min_length:
-        return False # Too short to reliably analyze
+# NOTE: detect_garbled_text() now imported from lib.garbled_text_detection
+# (Phase 2.2 refactoring - extracted to separate module for better maintainability)
 
-    # 1. Non-Alphanumeric Ratio
-    non_alpha_count = sum(1 for char in text if not char.isalnum() and not char.isspace())
-    non_alpha_ratio = non_alpha_count / text_length
-    if non_alpha_ratio > non_alpha_threshold:
-        logging.debug(f"Garbled text detected: High non-alpha ratio ({non_alpha_ratio:.2f} > {non_alpha_threshold})")
-        return True
 
-    # 2. Character Repetition Ratio
-    # Count occurrences of each character (excluding spaces)
-    char_counts = collections.Counter(c for c in text if not c.isspace())
-    if not char_counts: # Handle case of only spaces
+# ============================================================================
+# Phase 2: Quality Pipeline Functions (Integration 2025-10-18)
+# ============================================================================
+
+def _stage_1_statistical_detection(page_region: PageRegion, config: QualityPipelineConfig) -> PageRegion:
+    """
+    Stage 1: Detect garbled text via statistical analysis.
+
+    Uses detect_garbled_text_enhanced() from lib.garbled_text_detection to analyze
+    text quality based on entropy, symbol density, and character repetition.
+
+    Args:
+        page_region: PageRegion object from _analyze_pdf_block()
+        config: Pipeline configuration
+
+    Returns:
+        PageRegion with populated quality_flags and quality_score (if garbled)
+    """
+    # Get full text from all spans
+    full_text = page_region.get_text()
+
+    if not full_text or len(full_text) < 10:
+        # Too short to analyze reliably
+        page_region.quality_flags = set()
+        page_region.quality_score = 1.0
+        return page_region
+
+    # Create garbled detection config from pipeline config
+    garbled_config = GarbledDetectionConfig(
+        symbol_density_threshold=0.25,
+        repetition_threshold=0.7,
+        entropy_threshold=config.garbled_threshold,
+        min_text_length=10
+    )
+
+    # Detect garbled text
+    garbled_result = detect_garbled_text_enhanced(full_text, garbled_config)
+
+    # Populate quality metadata
+    if garbled_result.is_garbled:
+        page_region.quality_flags = garbled_result.flags.copy()
+        page_region.quality_score = 1.0 - garbled_result.confidence  # Convert to quality score (1.0 = perfect)
+
+        logging.debug(f"Stage 1: Garbled text detected (confidence: {garbled_result.confidence:.2f}), "
+                     f"flags: {garbled_result.flags}")
+    else:
+        page_region.quality_flags = set()
+        page_region.quality_score = 1.0  # Perfect quality
+
+    return page_region
+
+
+def _stage_2_visual_analysis(
+    page_region: PageRegion,
+    pdf_path: Path,
+    page_num: int,
+    config: QualityPipelineConfig,
+    xmark_cache: dict = None
+) -> tuple:
+    """
+    Stage 2: Detect X-marks/strikethrough via opencv.
+
+    CRITICAL: Runs INDEPENDENTLY of Stage 1 (not conditionally).
+
+    Rationale: Sous-rature PDFs often have CLEAN TEXT with VISUAL X-marks.
+    If we only check garbled text, we miss clean sous-rature!
+
+    Design Change (2025-10-18): Originally designed to run only on garbled text,
+    but real PDF validation showed this misses sous-rature on clean text.
+    Now runs on ALL regions (performance cost: ~5ms/region acceptable).
+
+    Args:
+        page_region: PageRegion from Stage 1 (with quality_flags)
+        pdf_path: Path to PDF file for visual analysis
+        page_num: Page number (0-indexed)
+        config: Pipeline configuration
+        xmark_cache: Optional cache of X-mark detection results
+
+    Returns:
+        Tuple of (PageRegion, XMarkDetectionResult)
+        PageRegion with 'sous_rature' flag if X-marks detected
+        XMarkDetectionResult for use in Stage 3 recovery
+    """
+    # REMOVED: "Only run if garbled" check (2025-10-18 fix)
+    # Sous-rature can appear on clean text, so always check for X-marks
+
+    # Initialize quality_flags if not set (may be None from Stage 1 if text clean)
+    if page_region.quality_flags is None:
+        page_region.quality_flags = set()
+
+    xmark_result = None
+
+    # Check if opencv available
+    if not XMARK_AVAILABLE:
+        logging.warning("X-mark detection requested but opencv not available")
+        page_region.quality_flags.add('xmark_detection_unavailable')
+        return page_region, None
+
+    try:
+        from lib.strikethrough_detection import detect_strikethrough_enhanced, XMarkDetectionConfig
+
+        # Page-level caching: Detect once per page, reuse for all blocks
+        if xmark_cache is not None and page_num in xmark_cache:
+            # Use cached result
+            xmark_result = xmark_cache[page_num]
+            logging.debug(f"Stage 2: Using cached X-mark detection for page {page_num}")
+        else:
+            # Configure X-mark detection
+            xmark_config = XMarkDetectionConfig(
+                min_line_length=10,
+                diagonal_tolerance=15,  # degrees from 45°
+                proximity_threshold=20,  # pixels
+                confidence_threshold=0.5
+            )
+
+            # Detect X-marks in entire page (not just region bbox)
+            xmark_result = detect_strikethrough_enhanced(pdf_path, page_num, bbox=None, config=xmark_config)
+
+            # Cache result for this page
+            if xmark_cache is not None:
+                xmark_cache[page_num] = xmark_result
+                logging.debug(f"Stage 2: Cached X-mark detection for page {page_num} (found {xmark_result.xmark_count})")
+
+        # Check if ANY X-marks on page (cached result is page-level)
+        # For block-level precision, could check bbox overlap, but for now use page-level
+
+        # If X-marks found, this is sous-rature (needs recovery in Stage 3!)
+        if xmark_result.has_xmarks:
+            page_region.quality_flags.add('sous_rature')
+            page_region.quality_flags.add('strikethrough')  # For is_strikethrough() check
+            page_region.quality_flags.add('intentional_deletion')
+            page_region.quality_score = 1.0  # Perfect quality (philosophical content)
+
+            logging.info(f"Stage 2: Sous-rature detected on page {page_num} "
+                        f"({xmark_result.xmark_count} X-marks, confidence: {xmark_result.confidence:.2f})")
+            # Continue to Stage 3 for text recovery!
+
+        logging.debug(f"Stage 2: X-mark detection complete, has_xmarks={xmark_result.has_xmarks}")
+
+    except Exception as e:
+        logging.error(f"Stage 2: X-mark detection error: {e}", exc_info=True)
+        page_region.quality_flags.add('xmark_detection_error')
+
+    return page_region, xmark_result
+
+
+def _stage_3_ocr_recovery(
+    page_region: PageRegion,
+    pdf_path: Path,
+    page_num: int,
+    config: QualityPipelineConfig,
+    ocr_cache: dict = None,
+    xmark_result: 'XMarkDetectionResult' = None
+) -> PageRegion:
+    """
+    Stage 3: OCR recovery - BOTH sous-rature AND corruption.
+
+    Critical: Recovers text under X-marks (sous-rature) AND corrupted text.
+
+    Two recovery paths:
+    1. Sous-rature recovery (has X-marks):
+       - OCR region under X-mark to recover original word
+       - Apply strikethrough formatting
+       - Preserve BOTH word and deletion
+
+    2. Corruption recovery (garbled, no X-marks):
+       - OCR corrupted region
+       - Replace with recovered text
+
+    Args:
+        page_region: PageRegion from Stages 1-2
+        pdf_path: Path to PDF file
+        page_num: Page number (0-indexed)
+        config: Pipeline configuration
+        ocr_cache: Optional cache of OCR results
+        xmark_result: X-mark detection result from Stage 2 (if available)
+
+    Returns:
+        PageRegion with recovered text and appropriate quality flags
+    """
+    # Priority 1: Sous-rature text recovery (even if text appears clean!)
+    # X-marks indicate intentional deletion - need to recover text UNDER the X-mark
+    if page_region.is_strikethrough() and xmark_result and xmark_result.has_xmarks:
+        logging.info(f"Stage 3: Recovering sous-rature text on page {page_num}")
+
+        if not OCR_AVAILABLE:
+            logging.warning("OCR unavailable - cannot recover sous-rature text")
+            page_region.quality_flags.add('sous_rature_recovery_unavailable')
+            return page_region
+
+        try:
+            # For each X-mark on this page, OCR the region to recover original text
+            import fitz
+            from PIL import Image
+            import pytesseract
+            import io
+            import re
+
+            doc = fitz.open(str(pdf_path))
+            page = doc[page_num]
+
+            # Get OCR'd text (cache to avoid re-running on same page)
+            if ocr_cache is not None and page_num in ocr_cache:
+                recovered_text = ocr_cache[page_num]
+                logging.debug(f"Stage 3: Using cached OCR for page {page_num}")
+            else:
+                # OCR entire page at high resolution
+                pix = page.get_pixmap(dpi=300)
+                img_bytes = pix.tobytes("png")
+                img = Image.open(io.BytesIO(img_bytes))
+
+                # Run Tesseract to recover text
+                recovered_text = pytesseract.image_to_string(img, lang='eng')
+                
+                if ocr_cache is not None:
+                    ocr_cache[page_num] = recovered_text
+                
+                logging.debug(f"Stage 3: OCR'd page {page_num} ({len(recovered_text)} chars)")
+
+            doc.close()
+
+            # Common corrupted representations of X-marks
+            corrupted_patterns = [')(', '~', ')  (', ') (', '( )', '()', '><']
+            
+            # Track if any recovery happened
+            recovery_count = 0
+
+            # Build full region text for context extraction
+            # CRITICAL: Look at neighboring spans for context!
+            all_span_texts = [span.text for span in page_region.spans]
+            
+            # Process each span to find and recover corrupted text
+            for span_idx, span in enumerate(page_region.spans):
+                original_text = span.text
+                
+                # Check for corrupted patterns
+                for pattern in corrupted_patterns:
+                    if pattern not in original_text:
+                        continue
+                    
+                    # Find all occurrences of pattern
+                    matches = list(re.finditer(re.escape(pattern), original_text))
+                    
+                    for match in matches:
+                        # Extract context from NEIGHBORING SPANS (not just current span)
+                        # Look at previous and next spans for context words
+                        
+                        before_words = []
+                        after_words = []
+                        
+                        # Get words from previous spans
+                        for prev_idx in range(max(0, span_idx - 3), span_idx):
+                            prev_text = all_span_texts[prev_idx].strip()
+                            if prev_text:
+                                before_words.extend(prev_text.split())
+                        
+                        # Get words from current span before pattern
+                        start_pos = match.start()
+                        before_text = original_text[:start_pos].strip()
+                        if before_text:
+                            before_words.extend(before_text.split())
+                        
+                        # Get words from current span after pattern
+                        end_pos = match.end()
+                        after_text = original_text[end_pos:].strip()
+                        if after_text:
+                            after_words.extend(after_text.split())
+                        
+                        # Get words from next spans
+                        for next_idx in range(span_idx + 1, min(len(all_span_texts), span_idx + 4)):
+                            next_text = all_span_texts[next_idx].strip()
+                            if next_text:
+                                after_words.extend(next_text.split())
+                        
+                        # Limit to last 3 before and first 3 after
+                        before_words = before_words[-3:] if before_words else []
+                        after_words = after_words[:3] if after_words else []
+                        
+                        # Try to find matching context in OCR'd text
+                        if not before_words and not after_words:
+                            logging.warning(f"Stage 3: No context for pattern '{pattern}' - cannot recover")
+                            continue
+                        
+                        recovered_word = _find_word_between_contexts(
+                            recovered_text,
+                            before_words,
+                            after_words
+                        )
+                        
+                        if recovered_word:
+                            # Replace corrupted pattern with recovered word
+                            new_text = (
+                                original_text[:start_pos] +
+                                recovered_word +
+                                original_text[end_pos:]
+                            )
+                            span.text = new_text
+                            
+                            # Add strikethrough formatting
+                            span.formatting.add('strikethrough')
+                            span.formatting.add('sous-erasure')
+                            
+                            recovery_count += 1
+                            
+                            logging.info(
+                                f"Stage 3: Recovered '{recovered_word}' from pattern '{pattern}' "
+                                f"(context: {' '.join(before_words[-2:])} ___ {' '.join(after_words[:2])})"
+                            )
+                        else:
+                            logging.warning(
+                                f"Stage 3: Could not recover word for pattern '{pattern}' "
+                                f"(context: {' '.join(before_words)} ___ {' '.join(after_words)})"
+                            )
+
+            # Update quality flags
+            if recovery_count > 0:
+                page_region.quality_flags.add('sous_rature_recovered')
+                logging.info(f"Stage 3: Recovered {recovery_count} sous-rature word(s) on page {page_num}")
+            else:
+                page_region.quality_flags.add('sous_rature_recovery_attempted')
+                logging.warning(f"Stage 3: No sous-rature words recovered on page {page_num}")
+
+        except Exception as e:
+            logging.error(f"Stage 3: Sous-rature recovery failed: {e}", exc_info=True)
+            page_region.quality_flags.add('sous_rature_recovery_failed')
+
+        return page_region
+
+    # Priority 2: Corruption recovery (garbled text, no X-marks)
+    elif page_region.is_garbled() and not page_region.is_strikethrough():
+        # Check if OCR available
+        if not OCR_AVAILABLE:
+            logging.warning("OCR recovery requested but dependencies not available")
+            page_region.quality_flags.add('recovery_unavailable')
+            return page_region
+
+        # Check confidence threshold (only recover high-confidence garbled text)
+        # Note: quality_score = 1.0 - garbled_confidence, so low quality_score = high garbled_confidence
+        if page_region.quality_score is None or page_region.quality_score > (1.0 - config.recovery_threshold):
+            # Confidence too low for recovery
+            page_region.quality_flags.add('low_confidence')
+            logging.debug(f"Stage 3: Garbled confidence below threshold, preserving original")
+            return page_region
+
+        # Flag as needing OCR recovery (full implementation in Week 2)
+        page_region.quality_flags.add('recovery_needed')
+        logging.info(f"Stage 3: OCR recovery needed (implementation pending - Week 2)")
+
+    return page_region
+
+
+def _find_word_between_contexts(
+    text: str,
+    before_words: list,
+    after_words: list,
+    max_word_length: int = 20
+) -> Optional[str]:
+    """
+    Find a word in text that appears between given context words.
+
+    Strategy: Search for context pattern in text, extract word between.
+
+    Args:
+        text: Full text to search in (OCR'd text)
+        before_words: List of words expected before target word
+        after_words: List of words expected after target word
+        max_word_length: Maximum length of word to extract (sanity check)
+
+    Returns:
+        Recovered word if found, None otherwise
+
+    Example:
+        >>> text = "the sign is that ill-named thing"
+        >>> before = ["the", "sign"]
+        >>> after = ["that", "ill-named"]
+        >>> _find_word_between_contexts(text, before, after)
+        'is'
+    """
+    import re
+    
+    if not text:
+        return None
+    
+    # Normalize text and context words
+    text_normalized = ' '.join(text.split())  # Normalize whitespace
+    
+    # Build regex pattern for context matching
+    # Pattern: (before_words) WORD (after_words)
+    # Allow for some flexibility in whitespace and case
+    
+    # Build before pattern
+    if before_words:
+        before_pattern = r'\s+'.join(re.escape(w) for w in before_words[-2:])  # Last 2 words
+    else:
+        before_pattern = ''
+    
+    # Build after pattern
+    if after_words:
+        after_pattern = r'\s+'.join(re.escape(w) for w in after_words[:2])  # First 2 words
+    else:
+        after_pattern = ''
+    
+    # Build full pattern: before + (capture word) + after
+    if before_pattern and after_pattern:
+        # Both context available
+        pattern = (
+            before_pattern +
+            r'\s+(\w{1,' + str(max_word_length) + r'})\s+' +
+            after_pattern
+        )
+    elif before_pattern:
+        # Only before context
+        pattern = before_pattern + r'\s+(\w{1,' + str(max_word_length) + r'})'
+    elif after_pattern:
+        # Only after context
+        pattern = r'(\w{1,' + str(max_word_length) + r'})\s+' + after_pattern
+    else:
+        # No context - cannot reliably extract
+        return None
+    
+    # Try case-insensitive match first
+    match = re.search(pattern, text_normalized, re.IGNORECASE)
+    
+    if match:
+        recovered_word = match.group(1)
+        
+        # Sanity checks
+        if len(recovered_word) > max_word_length:
+            return None
+        if not recovered_word.strip():
+            return None
+        
+        return recovered_word
+    
+    return None
+
+
+
+
+def _detect_xmarks_parallel(pdf_path: Path, page_count: int, max_workers: int = 4, pages_to_check: list = None) -> dict:
+    """
+    Detect X-marks across pages in parallel.
+
+    Uses ProcessPoolExecutor for true parallel execution (opencv is CPU-bound).
+    Detects specified pages or all pages, caches results for sequential processing.
+
+    OPTIMIZATION (2025-10-18): Now accepts pages_to_check for selective detection.
+    Use with fast pre-filter for 31× speedup (only check flagged pages).
+
+    Args:
+        pdf_path: Path to PDF file
+        page_count: Number of pages in PDF
+        max_workers: Number of parallel workers (default: 4)
+        pages_to_check: List of page numbers to check (default: all pages)
+
+    Returns:
+        Dict mapping page_num → XMarkDetectionResult (only for checked pages)
+    """
+    from concurrent.futures import ProcessPoolExecutor, as_completed
+    import os
+
+    # Determine which pages to check
+    if pages_to_check is None:
+        pages_to_check = list(range(page_count))
+
+    # Determine optimal worker count
+    cpu_count = os.cpu_count() or 4
+    workers = min(max_workers, cpu_count, len(pages_to_check))  # Don't spawn more workers than pages
+
+    logging.info(f"Parallel X-mark detection: {len(pages_to_check)} pages with {workers} workers")
+
+    xmark_cache = {}
+
+    try:
+        with ProcessPoolExecutor(max_workers=workers) as executor:
+            # Submit only specified pages for parallel detection
+            future_to_page = {
+                executor.submit(_detect_xmarks_single_page, pdf_path, page_num): page_num
+                for page_num in pages_to_check
+            }
+
+            # Collect results as they complete
+            for future in as_completed(future_to_page):
+                page_num = future_to_page[future]
+                try:
+                    result = future.result()
+                    xmark_cache[page_num] = result
+
+                    if result and result.has_xmarks:
+                        logging.debug(f"Page {page_num}: {result.xmark_count} X-marks detected (parallel)")
+                except Exception as e:
+                    logging.error(f"Page {page_num}: X-mark detection failed in parallel: {e}")
+                    # Store None to indicate failure
+                    xmark_cache[page_num] = None
+
+    except Exception as e:
+        logging.error(f"Parallel X-mark detection failed: {e}, falling back to sequential")
+        # Return empty cache, will fallback to sequential detection
+        return {}
+
+    detected_count = sum(1 for r in xmark_cache.values() if r and r.has_xmarks)
+    logging.info(f"Parallel detection complete: {detected_count} pages with X-marks (out of {len(pages_to_check)} checked)")
+
+    return xmark_cache
+
+
+def _detect_xmarks_single_page(pdf_path: Path, page_num: int):
+    """
+    Detect X-marks on a single page (for parallel execution).
+
+    This function is called by ProcessPoolExecutor workers.
+    Must be picklable (top-level function, not nested).
+
+    Args:
+        pdf_path: Path to PDF file
+        page_num: Page number (0-indexed)
+
+    Returns:
+        XMarkDetectionResult or None if detection fails
+    """
+    try:
+        from lib.strikethrough_detection import detect_strikethrough_enhanced, XMarkDetectionConfig
+
+        config = XMarkDetectionConfig(
+            min_line_length=10,
+            diagonal_tolerance=15,
+            proximity_threshold=20,
+            confidence_threshold=0.5
+        )
+
+        result = detect_strikethrough_enhanced(pdf_path, page_num, bbox=None, config=config)
+        return result
+
+    except Exception as e:
+        # Return None to indicate failure (will be handled by caller)
+        logging.error(f"Single page X-mark detection failed for page {page_num}: {e}")
+        return None
+
+
+def _page_needs_xmark_detection_fast(page_text: str, threshold: float = 0.02) -> bool:
+    """
+    Ultra-fast pre-filter: Determine if page might have X-marks or corruption.
+
+    Uses simplified garbled detection (symbol density only, no entropy).
+    Cost: ~0.01ms (after text extraction, nearly free)
+
+    Strategy:
+    - Page-level symbol density check
+    - Lower threshold (2%) than region-level (25%)
+    - Catches localized issues (X-marks add ~1-2% symbols)
+
+    Args:
+        page_text: Full page text (already extracted)
+        threshold: Symbol density threshold (default: 2% for page-level)
+
+    Returns:
+        True if page might have X-marks/corruption (run expensive detection)
+        False if page is clean (skip detection, save 5ms)
+
+    Performance:
+    - Clean page (97%): 0.01ms → skip X-mark (save 5ms)
+    - Flagged page (3%): 0.01ms → run X-mark (5ms)
+    - Net: 31× speedup on X-mark detection
+
+    Rationale:
+    - X-marks corrupt text extraction (")(" instead of "is")
+    - This adds ~1-2% symbols to page
+    - 2% threshold catches all X-marked pages
+    - Normal academic text: 1-1.5% symbols (below threshold)
+    - False positives: <5% (acceptable)
+    """
+    if not page_text or len(page_text) < 100:
         return False
-    most_common_char, most_common_count = char_counts.most_common(1)[0]
-    repetition_ratio = most_common_count / (text_length - text.count(' ')) # Ratio based on non-space chars
-    if repetition_ratio > repetition_threshold:
-        logging.debug(f"Garbled text detected: High repetition ratio ({repetition_ratio:.2f} > {repetition_threshold}) for char '{most_common_char}'")
+
+    # Fast character counting (no entropy calculation!)
+    total = len(page_text)
+    alpha = sum(1 for c in page_text if c.isalpha())
+    digits = sum(1 for c in page_text if c.isdigit())
+    spaces = sum(1 for c in page_text if c.isspace())
+    symbols = total - alpha - digits - spaces
+
+    symbol_density = symbols / total
+
+    # Page-level threshold (2% catches X-marks)
+    if symbol_density > threshold:
+        return True  # Might have X-marks or corruption
+
+    # Additional check: alphabetic ratio
+    alpha_ratio = alpha / total
+    if alpha_ratio < 0.70 or alpha_ratio > 0.90:
+        return True  # Unusual distribution
+
+    return False  # Clean page, skip expensive X-mark detection
+
+def _should_enable_xmark_detection_for_document(metadata: dict) -> bool:
+    """
+    Determine if X-mark detection should be enabled for this document.
+
+    Uses ROBUST criteria - NO text pattern matching:
+    - User configuration (explicit control)
+    - Metadata heuristics (author, subject from Z-Library)
+    - Conservative default (enable when uncertain)
+
+    Args:
+        metadata: Document metadata (from Z-Library or PDF)
+
+    Returns:
+        True if X-mark detection should be enabled for this document
+    """
+    # User explicit control via environment variable
+    mode = os.getenv('RAG_XMARK_DETECTION_MODE', 'auto').lower()
+
+    if mode == 'always':
         return True
+    if mode == 'never':
+        return False
 
-    # TODO: Add more heuristics? (e.g., dictionary word check, common pattern matching)
+    # Auto mode: Use metadata heuristics
+    if mode in ['auto', 'philosophy_only']:
+        author = metadata.get('authors', '').lower() if isinstance(metadata.get('authors'), str) else ''
+        subject = metadata.get('subject', '').lower() if metadata.get('subject') else ''
+        title = metadata.get('title', '').lower() if metadata.get('title') else ''
 
-    return False
+        # Known philosophy authors who use sous-rature
+        philosophy_authors = ['derrida', 'heidegger', 'levinas', 'nancy', 'agamben', 'deleuze']
+        if any(name in author for name in philosophy_authors):
+            logging.info(f"X-mark detection enabled: Philosophy author detected ({author})")
+            return True
+
+        # Philosophy subject classification
+        philosophy_terms = ['philosophy', 'phenomenology', 'ontology', 'metaphysics', 'deconstruction']
+        if any(term in subject or term in title for term in philosophy_terms):
+            logging.info(f"X-mark detection enabled: Philosophy subject detected")
+            return True
+
+        # For 'philosophy_only' mode, disable if not philosophy
+        if mode == 'philosophy_only':
+            logging.info(f"X-mark detection disabled: Not philosophy corpus")
+            return False
+
+    # Auto mode default: ENABLE (conservative)
+    # Rationale: Better to run unnecessarily than miss sous-rature
+    logging.debug(f"X-mark detection enabled: Default (corpus unknown)")
+    return True
+
+def _apply_quality_pipeline(
+    page_region: PageRegion,
+    pdf_path: Path,
+    page_num: int,
+    config: QualityPipelineConfig,
+    xmark_cache: dict = None,
+    ocr_cache: dict = None
+) -> PageRegion:
+    """
+    Apply sequential waterfall quality pipeline to a PageRegion.
+
+    Stages:
+    1. Statistical Detection - Analyze text for garbled patterns
+    2. Visual Analysis - Check for X-marks/strikethrough
+    3. OCR Recovery - Recover text under X-marks OR garbled text
+
+    CRITICAL: Stage 3 now runs for BOTH sous-rature AND corruption:
+    - If X-marks: Recover text UNDER X-marks (sous-rature)
+    - If garbled (no X-marks): Replace with OCR'd text (corruption)
+
+    See: docs/specifications/PHASE_2_INTEGRATION_SPECIFICATION.md
+
+    Args:
+        page_region: PageRegion object from _analyze_pdf_block()
+        pdf_path: Path to PDF file for visual/OCR analysis
+        page_num: Page number (0-indexed)
+        config: Pipeline configuration (feature flags, thresholds)
+        xmark_cache: Optional cache of X-mark detection results
+        ocr_cache: Optional cache of OCR results
+
+    Returns:
+        PageRegion with populated quality_flags and quality_score
+    """
+    if not config.enable_pipeline:
+        return page_region
+
+    # Stage 1: Statistical Detection
+    if config.detect_garbled:
+        page_region = _stage_1_statistical_detection(page_region, config)
+
+    # Stage 2: Visual X-mark Detection (INDEPENDENT - not conditional on Stage 1)
+    # CRITICAL FIX (2025-10-18): Sous-rature has clean text with visual X-marks.
+    # Running only on garbled text misses clean sous-rature! Run unconditionally.
+    # OPTIMIZATION (2025-10-18): Uses page-level caching to avoid redundant detection
+    xmark_result = None
+    if config.detect_strikethrough:
+        page_region, xmark_result = _stage_2_visual_analysis(
+            page_region, pdf_path, page_num, config, xmark_cache
+        )
+
+    # Stage 3: OCR Recovery
+    # CRITICAL (2025-10-18): TWO recovery paths:
+    # 1. Sous-rature: Recover text UNDER X-marks (even if text looks clean)
+    # 2. Corruption: Replace garbled text with OCR
+    if config.enable_ocr_recovery:
+        # Path 1: Sous-rature recovery (has X-marks)
+        if page_region.is_strikethrough():
+            page_region = _stage_3_ocr_recovery(
+                page_region, pdf_path, page_num, config, ocr_cache, xmark_result
+            )
+        # Path 2: Corruption recovery (garbled, no X-marks)
+        elif page_region.is_garbled():
+            page_region = _stage_3_ocr_recovery(
+                page_region, pdf_path, page_num, config, ocr_cache, xmark_result
+            )
+
+    return page_region
 
 
 # --- Main Processing Functions ---
@@ -1924,6 +2783,33 @@ def process_pdf(file_path: Path, output_format: str = "txt", preserve_linebreaks
     if not PYMUPDF_AVAILABLE: raise ImportError("Required library 'PyMuPDF' (fitz) is not installed.")
     logging.info(f"Processing PDF: {file_path} for format: {output_format}")
     doc = None
+
+    # Phase 2: Load quality pipeline configuration
+    quality_config = QualityPipelineConfig.from_env()
+    logging.debug(f"Quality pipeline config: enabled={quality_config.enable_pipeline}, "
+                 f"strategy={quality_config.strategy}")
+
+    # Phase 2 Optimization: X-mark detection filtering and caching
+    # Create page-level cache (detect once per page, not per block)
+    xmark_cache = {}
+
+    # Determine if X-mark detection should be enabled for this document
+    # Uses metadata (author, subject) - NO text pattern matching
+    doc_metadata = {}  # Will be populated from PDF metadata or book_details
+    enable_xmark_for_doc = _should_enable_xmark_detection_for_document(doc_metadata)
+
+    # Check if parallel detection is enabled
+    parallel_xmark = os.getenv('RAG_PARALLEL_XMARK_DETECTION', 'false').lower() == 'true'
+    xmark_workers = int(os.getenv('RAG_XMARK_WORKERS', '4'))
+
+    if not enable_xmark_for_doc:
+        logging.info("X-mark detection DISABLED for this document (not philosophy corpus)")
+        # Disable strikethrough detection in config for this document
+        quality_config.detect_strikethrough = False
+    elif parallel_xmark and quality_config.detect_strikethrough and XMARK_AVAILABLE:
+        logging.info(f"X-mark detection ENABLED with PARALLEL mode ({xmark_workers} workers)")
+    else:
+        logging.info("X-mark detection ENABLED for this document (sequential mode)")
 
     # Track if we created a temp OCR file (for cleanup)
     temp_ocr_file = None
@@ -2017,6 +2903,41 @@ def process_pdf(file_path: Path, output_format: str = "txt", preserve_linebreaks
                 raise ValueError(f"PDF {file_path} is encrypted and cannot be opened.")
             logging.info(f"Successfully decrypted {file_path} with empty password.")
 
+        # Phase 2: Optimized X-mark detection (if enabled)
+        # OPTIMIZATION: Use fast pre-filter to identify pages needing expensive detection
+        if enable_xmark_for_doc and quality_config.detect_strikethrough and XMARK_AVAILABLE:
+            # Fast pre-filter: Check all pages for anomalies (~0.01ms per page)
+            logging.info(f"Running fast pre-filter on {len(doc)} pages...")
+            pages_needing_xmark_check = []
+
+            for page_num in range(len(doc)):
+                page = doc[page_num]
+                page_text = page.get_text()  # Need anyway for processing
+
+                # Fast garbled check (symbol density only, no entropy)
+                if _page_needs_xmark_detection_fast(page_text, threshold=0.02):
+                    pages_needing_xmark_check.append(page_num)
+
+            logging.info(f"Pre-filter: {len(pages_needing_xmark_check)}/{len(doc)} pages flagged for X-mark detection "
+                        f"({len(pages_needing_xmark_check)/len(doc)*100:.1f}%)")
+
+            # Parallel X-mark detection ONLY on flagged pages
+            if pages_needing_xmark_check:
+                if parallel_xmark:
+                    logging.info(f"Starting parallel X-mark detection on {len(pages_needing_xmark_check)} flagged pages "
+                                f"with {xmark_workers} workers...")
+                    xmark_cache = _detect_xmarks_parallel(file_path, len(doc), max_workers=xmark_workers,
+                                                         pages_to_check=pages_needing_xmark_check)
+                else:
+                    logging.info(f"Sequential X-mark detection on {len(pages_needing_xmark_check)} flagged pages...")
+                    xmark_cache = {}  # Will populate on-demand during processing
+
+                logging.info(f"X-mark detection complete: {sum(1 for r in xmark_cache.values() if r and r.has_xmarks)} pages with X-marks")
+            else:
+                logging.info("Pre-filter: No pages flagged, skipping X-mark detection entirely (100% clean corpus)")
+                xmark_cache = {}
+                quality_config.detect_strikethrough = False  # Disable for this document
+
         # 1. Extract ToC and infer written page numbers BEFORE processing pages
         logging.debug("Extracting ToC and inferring written page numbers...")
         toc_map = _extract_toc_from_pdf(doc)
@@ -2067,6 +2988,7 @@ def process_pdf(file_path: Path, output_format: str = "txt", preserve_linebreaks
 
                 # Use sophisticated _format_pdf_markdown for structure preservation
                 # Pass ToC and page numbering info
+                # Phase 2: Pass pdf_path, quality_config, and xmark_cache for quality pipeline
                 page_markdown = _format_pdf_markdown(
                     page,
                     preserve_linebreaks=preserve_linebreaks,
@@ -2075,7 +2997,10 @@ def process_pdf(file_path: Path, output_format: str = "txt", preserve_linebreaks
                     written_page_num=written_page,
                     written_page_position=written_page_position,
                     written_page_text=written_page_text,
-                    use_toc_headings=bool(toc_map)  # Use ToC if available
+                    use_toc_headings=bool(toc_map),  # Use ToC if available
+                    pdf_path=file_path,
+                    quality_config=quality_config,
+                    xmark_cache=xmark_cache
                 )
 
                 # Skip empty/minimal pages (< 100 chars of actual content)

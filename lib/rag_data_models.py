@@ -294,6 +294,8 @@ class PageRegion:
         page_num: Page number (1-indexed), defaults to 0 in Phase 1
         heading_level: Argumentative organization (0=not heading, 1-6=H1-H6)
         list_info: Enumerated logic structure if this is a list item
+        quality_flags: Quality issues detected (Phase 2.2: garbled text, OCR errors, etc.)
+        quality_score: Overall quality metric 0.0-1.0 (None if not assessed)
 
     Example:
         # Heading region
@@ -328,6 +330,10 @@ class PageRegion:
     heading_level: Optional[int] = None  # 0=not heading, 1-6=H1-H6
     list_info: Optional[ListInfo] = None  # List structure if applicable
 
+    # Phase 2.2: Quality metadata for RAG assurance
+    quality_flags: Optional[Set[str]] = None  # {'garbled', 'recovered', 'low_confidence', 'low_entropy', 'high_symbols', 'repeated_chars'}
+    quality_score: Optional[float] = None  # 0.0=poor quality, 1.0=excellent quality
+
     def get_text(self) -> str:
         """Get plain text from all spans."""
         return ''.join(span.text for span in self.spans)
@@ -343,6 +349,79 @@ class PageRegion:
     def is_list_item(self) -> bool:
         """Check if this region is a list item."""
         return self.list_info is not None and self.list_info.is_list_item
+
+    def has_quality_issues(self) -> bool:
+        """
+        Check if this region has any quality issues.
+
+        Returns:
+            True if quality_flags is not None and non-empty, False otherwise
+        """
+        return self.quality_flags is not None and len(self.quality_flags) > 0
+
+    def is_garbled(self) -> bool:
+        """
+        Check if this region is flagged as garbled.
+
+        Returns:
+            True if 'garbled' or detection flags present in quality_flags
+        """
+        if self.quality_flags is None:
+            return False
+        garbled_indicators = {'garbled', 'low_entropy', 'high_symbols', 'repeated_chars'}
+        return bool(self.quality_flags & garbled_indicators)
+
+    def is_strikethrough(self) -> bool:
+        """
+        Check if this region contains strikethrough/sous-rature.
+
+        Returns:
+            True if flagged as strikethrough or sous_rature
+        """
+        if self.quality_flags is None:
+            return False
+        return 'strikethrough' in self.quality_flags or 'sous_rature' in self.quality_flags
+
+    def was_recovered(self) -> bool:
+        """
+        Check if this region was recovered via OCR.
+
+        Returns:
+            True if flagged as 'recovered'
+        """
+        if self.quality_flags is None:
+            return False
+        return 'recovered' in self.quality_flags
+
+    def get_quality_summary(self) -> str:
+        """
+        Get human-readable quality summary.
+
+        Returns:
+            String describing quality status
+
+        Example:
+            "Quality: excellent (score: 1.0)"
+            "Quality: garbled (low_entropy, high_symbols), confidence: 0.85"
+            "Quality: strikethrough detected (sous-rature)"
+            "Quality: recovered via OCR"
+        """
+        if not self.has_quality_issues():
+            score_str = f"score: {self.quality_score:.2f}" if self.quality_score is not None else "no issues"
+            return f"Quality: excellent ({score_str})"
+
+        # Build summary from flags
+        flags_str = ', '.join(sorted(self.quality_flags))
+        score_str = f", score: {self.quality_score:.2f}" if self.quality_score is not None else ""
+
+        if self.is_strikethrough():
+            return f"Quality: strikethrough detected ({flags_str})"
+        elif self.was_recovered():
+            return f"Quality: recovered via OCR ({flags_str})"
+        elif self.is_garbled():
+            return f"Quality: garbled ({flags_str}{score_str})"
+        else:
+            return f"Quality: issues detected ({flags_str}{score_str})"
 
 
 @dataclass

@@ -1,0 +1,55 @@
+{
+  "test_name": "derrida_of_grammatology",
+  "pdf_file": "test_files/derrida_pages_110_135.pdf",
+  "pages": 2,
+  "created_date": "2025-10-18",
+  "verified_by": "manual_inspection",
+  "description": "Derrida - Of Grammatology pages with sous-rature (crossed-out 'is')",
+
+  "features": {
+    "xmarks": [
+      {
+        "page": 0,
+        "word_under_erasure": "is",
+        "bbox": [264.88, 55.81, 273.75, 69.01],
+        "context_before": "the sign ",
+        "context_after": " that ill-named",
+        "corrupted_extraction": ")(",
+        "expected_recovery": "is",
+        "expected_output": "~~is~~",
+        "confidence_min": 0.6,
+        "notes": "Derrida's famous sous-rature of 'is' - philosophically critical (bbox from actual text extraction)"
+      }
+    ],
+    "footnotes": [],
+    "formatting": [
+      {
+        "page": 1,
+        "text": "différance",
+        "formats": ["italic"],
+        "expected_output": "*différance*"
+      }
+    ],
+    "citations": []
+  },
+
+  "expected_quality": {
+    "quality_score_min": 0.85,
+    "quality_flags": ["sous_rature"],
+    "processing_time_max_ms": 30000,
+    "xmark_detection_required": true,
+    "text_recovery_required": false,
+    "notes": "30s budget includes OCR attempt (even though recovery not working yet)"
+  },
+
+  "validation_criteria": {
+    "all_xmarks_detected": true,
+    "all_text_recovered": true,
+    "formatting_preserved": true,
+    "no_false_positives": true,
+    "no_hallucinations": true,
+    "output_deterministic": true
+  },
+
+  "notes": "Ground truth created from manual PDF inspection. X-mark locations confirmed with validation scripts (100% recall)."
+}

@@ -1,0 +1,56 @@
+{
+  "test_name": "heidegger_being_time",
+  "pdf_file": "test_files/heidegger_pages_79-88.pdf",
+  "pages": 10,
+  "created_date": "2025-10-18",
+  "verified_by": "manual_inspection",
+  "description": "Heidegger - Being and Time pages with Durchkreuzung (crossing-out)",
+
+  "features": {
+    "xmarks": [
+      {
+        "page": 2,
+        "word_under_erasure": "Being",
+        "bbox": [91.68, 138.93, 379.99, 150.0],
+        "context": "Das Zeichen der Durchkreuzung",
+        "corrupted_extraction": "~",
+        "expected_recovery": "Being",
+        "expected_output": "~~Being~~",
+        "confidence_min": 0.7,
+        "language": "en",
+        "notes": "English translation with German term crossed out"
+      },
+      {
+        "page": 1,
+        "word_under_erasure": "Sein",
+        "bbox": [94.32, 141.88, 377.76, 154.06],
+        "corrupted_extraction": null,
+        "expected_recovery": "Sein",
+        "expected_output": "~~Sein~~",
+        "confidence_min": 0.7,
+        "language": "de",
+        "notes": "German original term under erasure"
+      }
+    ],
+    "footnotes": [],
+    "formatting": [],
+    "citations": []
+  },
+
+  "expected_quality": {
+    "quality_score_min": 0.82,
+    "quality_flags": ["sous_rature"],
+    "processing_time_max_ms": 15000,
+    "xmark_detection_required": true,
+    "text_recovery_required": true
+  },
+
+  "validation_criteria": {
+    "all_xmarks_detected": true,
+    "all_text_recovered": true,
+    "no_false_positives": true,
+    "no_hallucinations": true
+  },
+
+  "notes": "Ground truth from Phase 1.5-1.7 validation (100% recall confirmed)."
+}

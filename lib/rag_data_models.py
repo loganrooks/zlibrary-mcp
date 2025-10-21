@@ -233,6 +233,11 @@ class TextSpan:
         """
         Convert span to markdown with formatting.
 
+        CRITICAL: Handles trailing/leading whitespace correctly to prevent
+        malformed markdown when spans are joined.
+
+        Strategy: Strip whitespace → Apply formatting → Restore whitespace
+
         Handles multiple formats correctly:
             - Bold: **text**
             - Italic: *text*
@@ -243,29 +248,47 @@ class TextSpan:
 
         Returns:
             Formatted markdown string
+
+        Example:
+            >>> span = TextSpan("word ", formatting={"bold"})
+            >>> span.to_markdown()
+            '**word** '  # Whitespace outside markers
         """
         text = self.text
+        
+        # Handle empty or whitespace-only
+        if not text or not text.strip():
+            return text
+        
+        # Preserve leading/trailing whitespace
+        leading_space = text[:len(text) - len(text.lstrip())]
+        trailing_space = text[len(text.rstrip()):]
+        text_stripped = text.strip()
+        
+        # Apply formatting to stripped text only
+        formatted = text_stripped
 
         # Handle bold + italic together (must check before individual)
         if "bold" in self.formatting and "italic" in self.formatting:
-            text = f"***{text}***"
+            formatted = f"***{formatted}***"
         elif "bold" in self.formatting:
-            text = f"**{text}**"
+            formatted = f"**{formatted}**"
         elif "italic" in self.formatting:
-            text = f"*{text}*"
+            formatted = f"*{formatted}*"
 
         # Other formatting (can combine with bold/italic)
         if "strikethrough" in self.formatting:
-            text = f"~~{text}~~"
+            formatted = f"~~{formatted}~~"
         if "underline" in self.formatting:
             # Markdown doesn't have native underline, use HTML
-            text = f"<u>{text}</u>"
+            formatted = f"<u>{formatted}</u>"
         if "superscript" in self.formatting:
-            text = f"^{text}^"
+            formatted = f"^{formatted}^"
         if "subscript" in self.formatting:
-            text = f"~{text}~"
+            formatted = f"~{formatted}~"
 
-        return text
+        # Restore whitespace OUTSIDE formatting markers
+        return leading_space + formatted + trailing_space
 
 
 @dataclass

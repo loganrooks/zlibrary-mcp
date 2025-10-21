@@ -23,6 +23,9 @@ from lib.rag_data_models import (
     create_text_span_from_pymupdf
 )
 
+# Phase 2: Formatting group merger for correct markdown generation
+from lib.formatting_group_merger import FormattingGroupMerger
+
 # Phase 2.2: Garbled text detection (extracted to separate module)
 from lib.garbled_text_detection import (
     detect_garbled_text,
@@ -1114,6 +1117,59 @@ def _find_first_content_page(toc_map: dict) -> int:
     return sorted_pages[0] if sorted_pages else 1
 
 
+def _apply_formatting_to_text(text: str, formatting: set) -> str:
+    """
+    Apply markdown formatting to text based on formatting set.
+    
+    IMPORTANT: Only applies if text doesn't already end with whitespace.
+    This prevents malformed markdown like "*word *" which should be "*word* "
+    
+    Args:
+        text: Plain text content
+        formatting: Set of formatting types ('bold', 'italic', 'strikethrough', etc.)
+    
+    Returns:
+        Text with markdown formatting applied (or plain if has trailing space)
+        
+    Examples:
+        >>> _apply_formatting_to_text("hello", {"bold"})
+        '**hello**'
+        >>> _apply_formatting_to_text("hello ", {"bold"})  # Has trailing space
+        'hello '  # Don't format - will be grouped later
+    """
+    if not formatting:
+        return text
+    
+    # Don't apply formatting if text ends with whitespace
+    # This prevents: "*word *" + "*another *" → malformed "*word **another *"
+    # Instead: "word " + "another " → will be grouped and formatted together
+    if text.endswith((' ', '\t', '\n')):
+        return text
+    
+    # Apply formatting (same logic as TextSpan.to_markdown())
+    # Handle bold + italic together (must check before individual)
+    if "bold" in formatting and "italic" in formatting:
+        text = f"***{text}***"
+    elif "bold" in formatting:
+        text = f"**{text}**"
+    elif "italic" in formatting:
+        text = f"*{text}*"
+    
+    # Other formatting (can combine with bold/italic)
+    if "strikethrough" in formatting:
+        text = f"~~{text}~~"
+    if "sous-erasure" in formatting and "strikethrough" not in formatting:
+        text = f"~~{text}~~"
+    if "underline" in formatting:
+        text = f"<u>{text}</u>"
+    if "superscript" in formatting:
+        text = f"^{text}^"
+    if "subscript" in formatting:
+        text = f"~{text}~"
+    
+    return text
+
+
 def _format_pdf_markdown(
     page: fitz.Page,
     preserve_linebreaks: bool = False,
@@ -1213,6 +1269,11 @@ def _format_pdf_markdown(
             is_list_item_region = analysis.is_list_item()
 
             # Create dict for existing code
+            # DEBUG: Check if formatting is being preserved
+            formatted_count = sum(1 for s in spans if s.formatting)
+            if formatted_count > 0:
+                logging.debug(f"Block has {formatted_count}/{len(spans)} spans with formatting")
+
             analysis = {
                 'text': text,
                 'spans': [{'text': span.text, 'flags': 0, 'formatting': span.formatting} for span in spans],
@@ -1270,43 +1331,15 @@ def _format_pdf_markdown(
             text_block_idx += 1
             continue
 
-        # Footnote Reference/Definition Detection (using superscript flag)
-        # Rebuild text WITH footnote markers at correct positions
-        processed_text_parts = []
-        potential_def_id = None
-        first_span_in_block = True
-        fn_id = None
+        # Apply formatting group merger for correct markdown generation
+        # Groups consecutive spans with identical formatting to prevent malformed markdown
+        merger = FormattingGroupMerger()
+        processed_text, potential_def_id = merger.process_spans_to_markdown(
+            spans=spans,
+            is_first_block=(text_block_idx == 0),
+            block_text=text
+        )
 
-        # Process spans to rebuild text with footnote markers
-        for span in spans:
-            span_text = span.get('text', '')
-            flags = span.get('flags', 0)
-            is_superscript = flags & 1
-
-            # Detect both numeric (1, 2, 3) and letter (a, b, c) footnotes
-            is_footnote_marker = (
-                (span_text.isdigit()) or
-                (len(span_text) == 1 and span_text.isalpha() and span_text.islower())
-            )
-
-            if is_superscript and is_footnote_marker:
-                fn_id = span_text
-                # Definition heuristic: at start of block
-                if first_span_in_block and re.match(r"^[a-z0-9]+[\.\)]?\s*", text, re.IGNORECASE):
-                    potential_def_id = fn_id
-                    # For definitions, add the marker as-is (will be detected later)
-                    processed_text_parts.append(span_text)
-                else:
-                    # Reference: insert markdown footnote marker
-                    processed_text_parts.append(f"[^{fn_id}]")
-            else:
-                # Regular text: add as-is
-                processed_text_parts.append(span_text)
-
-            first_span_in_block = False
-
-        # Join parts and clean up spacing
-        processed_text = ''.join(processed_text_parts)
         # Clean up multiple spaces
         processed_text = re.sub(r'\s+', ' ', processed_text).strip()
 

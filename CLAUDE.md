@@ -150,6 +150,34 @@ node dist/index.js
 - **Test Fixtures**: Located in `test_files/` for Python tests
 - **Documentation**: Architecture decisions in `docs/adr/`, specifications in `docs/`
 
+### 📝 Documentation Guidelines
+
+**Where to Put New Documentation**:
+
+| Document Type | Location | Naming |
+|--------------|----------|--------|
+| Session summaries | `claudedocs/session-notes/` | `YYYY-MM-DD-topic.md` (kebab-case) |
+| Research findings | `claudedocs/research/{topic}/` | `findings.md`, `validation-YYYY-MM-DD.md` |
+| Phase reports | `claudedocs/phase-reports/phase-X/` | `milestone.md` (kebab-case) |
+| Architecture analysis | `claudedocs/architecture/` | `component-analysis.md` |
+| Technical specs | `docs/specifications/` | `FEATURE_SPEC.md` (SCREAMING_SNAKE) |
+| Architecture decisions | `docs/adr/` | `ADR-NNN-Title.md` |
+| Development guides | `.claude/` | `TOPIC_WORKFLOW.md` (SCREAMING_SNAKE) |
+
+**Naming Convention**: **kebab-case** for all documentation (except formal specs/workflows)
+- ✅ `sous-rature-detection.md`
+- ✅ `performance-optimization-report.md`
+- ❌ `SCREAMING_CASE_ANALYSIS.md` (only for specs in docs/)
+- ❌ `snake_case_notes.md` (use kebab-case)
+
+**Timestamp When**:
+- Session notes: Always (`2025-10-21-formatting-implementation.md`)
+- Research validations: Always (`validation-2025-10-20.md`)
+- Phase reports: Always (`phase-2-complete-2025-10-18.md`)
+- Living docs: Never (git tracks history)
+
+**See [claudedocs/QUICK_REFERENCE.md](claudedocs/QUICK_REFERENCE.md) for complete guide**
+
 ## Environment Configuration
 
 ### Required Variables

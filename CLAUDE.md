@@ -5,16 +5,25 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## 🚀 Quick Start for Claude Code
 
 **Essential Reading Order**:
-1. `.claude/PROJECT_CONTEXT.md` - Complete project understanding
-2. `ISSUES.md` - Known problems and priorities (at project root)
-3. `.claude/IMPLEMENTATION_ROADMAP.md` - Concrete action plan and fixes
-4. `.claude/PATTERNS.md` - Code patterns to follow
-5. `.claude/RAG_QUALITY_FRAMEWORK.md` - Quality verification for RAG pipeline
-6. `.claude/DEBUGGING.md` - Troubleshooting guide
-7. `.claude/VERSION_CONTROL.md` - Git workflow and best practices
-8. `.claude/CI_CD.md` - CI/CD strategy and implementation
-9. `.claude/MCP_SERVERS.md` - Development tools setup
-10. `.claude/META_LEARNING.md` - Lessons learned and insights
+1. `.claude/PROJECT_CONTEXT.md` - Complete project understanding (mission, domain)
+2. `.claude/ROADMAP.md` - **Strategic plan** (1-3 weeks, current priorities)
+3. `.claude/ARCHITECTURE.md` - **System structure** (components, design decisions, status)
+4. `ISSUES.md` - Known problems and priorities (at project root)
+5. `.claude/IMPLEMENTATION_ROADMAP.md` - Concrete action plan and fixes
+6. `.claude/PATTERNS.md` - Code patterns to follow
+7. `.claude/RAG_QUALITY_FRAMEWORK.md` - Quality verification for RAG pipeline
+8. `.claude/TDD_WORKFLOW.md` - Rigorous real-world testing process
+9. `.claude/DEBUGGING.md` - Troubleshooting guide
+10. `.claude/VERSION_CONTROL.md` - Git workflow and best practices
+11. `.claude/CI_CD.md` - CI/CD strategy and implementation
+12. `.claude/MCP_SERVERS.md` - Development tools setup
+13. `.claude/META_LEARNING.md` - Lessons learned and insights
+
+**Session Resumption** (for AI assistants):
+- **Start**: Use `/sc:load` to restore context from Serena memory
+- **Orient**: Review ROADMAP.md (strategic direction) → ARCHITECTURE.md (system state)
+- **Work**: Follow TDD_WORKFLOW.md for RAG features, PATTERNS.md for code
+- **End**: Use `/sc:save` to preserve session state in Serena memory
 
 ## Project Overview
 

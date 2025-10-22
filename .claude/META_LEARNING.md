@@ -475,3 +475,55 @@ class TestFixtures {
 ---
 
 *This document captures institutional knowledge. Update it with new learnings to help future developers avoid repeated mistakes.*
+---
+
+## Monthly Reflection Ritual
+
+**Purpose**: Systematic learning and continuous improvement
+**Frequency**: First Sunday of each month  
+**Duration**: ~1 hour
+**Established**: 2025-10-21
+
+### Reflection Questions
+
+1. **What patterns emerged this month?** (code, workflow, collaboration)
+2. **What mistakes were repeated?** (should be codified to prevent)
+3. **What worked exceptionally well?** (should be documented and amplified)
+4. **What slowed us down unnecessarily?** (friction points to remove)
+5. **What technical debt accumulated?** (prioritize in ROADMAP)
+
+### Process
+
+**Preparation** (15 min):
+- Review Serena memories: `list_memories() | grep "lesson_"`
+- Review session notes: `ls claudedocs/session-notes/2025-MM-*.md`
+- Review git log: `git log --since="1 month ago" --oneline`
+
+**Analysis** (30 min):
+- Answer all 5 reflection questions
+- Extract generalizable patterns
+- Identify improvements for ROADMAP
+
+**Documentation** (15 min):
+- Update META_LEARNING.md with month's insights
+- Update DEVELOPMENT_STANDARDS.md with patterns/anti-patterns
+- Update ROADMAP.md with technical debt priorities
+
+### Integration
+
+After reflection:
+```python
+write_memory(f"monthly_reflection_{month}", {
+  "period": "YYYY-MM-01 to YYYY-MM-31",
+  "patternsEmerged": [...],
+  "successes": [...],
+  "actionsToken": [...],
+  "nextMonthFocus": "..."
+})
+```
+
+**Benefit**: Serena surfaces historical lessons during similar future work
+
+---
+
+*Updated 2025-10-21: Added monthly reflection ritual based on Claude Code best practices research*

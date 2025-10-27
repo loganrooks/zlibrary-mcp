@@ -2,7 +2,7 @@ import asyncio
 import re
 import logging
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Any, Dict, List
 import aiofiles
 import unicodedata # Added for slugify
 import os # Ensure os is imported if needed for path manipulation later
@@ -25,6 +25,14 @@ from lib.rag_data_models import (
 
 # Phase 2: Formatting group merger for correct markdown generation
 from lib.formatting_group_merger import FormattingGroupMerger
+
+# Phase 2.6: Footnote corruption recovery (Bayesian symbol inference)
+from lib.footnote_corruption_model import (
+    SymbolCorruptionModel,
+    FootnoteSchemaValidator,
+    apply_corruption_recovery,
+    SymbolInference
+)
 
 # Phase 2.2: Garbled text detection (extracted to separate module)
 from lib.garbled_text_detection import (
@@ -2798,9 +2806,241 @@ def _apply_quality_pipeline(
     return page_region
 
 
+def _detect_footnotes_in_page(page: Any, page_num: int) -> Dict[str, List[Dict[str, Any]]]:
+    """
+    Detect footnotes/endnotes in a PDF page.
+
+    Strategy:
+    1. Scan body text for footnote markers (superscript, special symbols)
+    2. Scan bottom 20% of page for footnote content
+    3. Match markers to content by proximity and sequence
+
+    Args:
+        page: PyMuPDF page object
+        page_num: Page number (0-indexed)
+
+    Returns:
+        Dictionary with 'markers' and 'definitions' lists:
+        {
+            'markers': [{'marker': '1', 'bbox': [...], 'context': '...'}],
+            'definitions': [{'marker': '1', 'content': '...', 'bbox': [...]}]
+        }
+    """
+    import re
+
+    result = {
+        'markers': [],
+        'definitions': []
+    }
+
+    # Get page dimensions
+    page_height = page.rect.height
+    footnote_threshold = page_height * 0.75  # Bottom 25% of page
+
+    # Get all text blocks with position
+    blocks = page.get_text("dict")["blocks"]
+
+    # Common footnote marker patterns
+    # - Numeric: 1, 2, 3, ... (as superscript or regular)
+    # - Symbols: *, †, ‡, §, ¶, #
+    # - Letters: a, b, c, ... (as superscript)
+    # - Roman numerals: i, ii, iii, iv, ...
+
+    marker_patterns = {
+        'numeric': r'\d+',
+        'roman': r'(?:i{1,3}|iv|v|vi{0,3}|ix|x|xi{0,3})',  # i-xiii
+        'letter': r'[a-z]',
+        'symbol': r'[*†‡§¶#]'
+    }
+
+    body_text_blocks = []
+    footnote_text_blocks = []
+
+    # Separate body text from potential footnote area
+    for block in blocks:
+        if "lines" not in block:
+            continue
+
+        y_pos = block["bbox"][1]  # Top y-coordinate
+
+        if y_pos < footnote_threshold:
+            body_text_blocks.append(block)
+        else:
+            footnote_text_blocks.append(block)
+
+    # Scan body text for footnote markers
+    # Look for: superscripts, symbols after headings, symbols in brackets [p. 23†]
+    for block in body_text_blocks:
+        for line in block.get("lines", []):
+            line_text = ""
+            for span in line["spans"]:
+                text = span["text"]
+                line_text += text
+
+                # Check for superscript markers (font flags)
+                # PyMuPDF flag 2^0 = superscript
+                is_superscript = (span.get("flags", 0) & (1 << 0)) != 0
+
+                # Check for footnote symbols (even if not superscript)
+                is_footnote_symbol = text.strip() in ['*', '†', '‡', '§', '¶', '°', '∥', '#']
+
+                # Detect markers in multiple contexts:
+                # 1. Superscript text (numbers or symbols) - HIGH CONFIDENCE
+                # 2. Footnote symbols after headings/text - MEDIUM CONFIDENCE
+                # 3. Symbols within brackets [p. 23†] - HIGH CONFIDENCE
+                is_in_bracket = '[' in line_text and ']' in line_text and is_footnote_symbol
+
+                # IMPORTANT: Only accept as marker if:
+                # - Superscript (any character) OR
+                # - Known footnote symbol (*, †, ‡, etc.) OR
+                # - In bracket context
+                # Reject: random letters that aren't superscript
+
+                marker_text = text.strip()
+                is_likely_marker = (
+                    is_superscript or  # Superscript anything
+                    is_footnote_symbol or  # Known symbols
+                    is_in_bracket  # Bracketed symbols
+                )
+
+                # Extra filter: if it's a letter and NOT superscript, reject
+                # (prevents false positives from body text)
+                if marker_text.isalpha() and len(marker_text) == 1 and not is_superscript:
+                    is_likely_marker = False
+
+                if is_likely_marker:
+                    # Potential footnote marker
+                    marker_text = text.strip()
+
+                    # For symbols, match against patterns
+                    for pattern_type, pattern in marker_patterns.items():
+                        if re.match(pattern, marker_text):
+                            result['markers'].append({
+                                'marker': marker_text,
+                                'text': marker_text,  # Add explicit text field
+                                'bbox': span.get("bbox", block["bbox"]),
+                                'context': line_text[:100],
+                                'type': pattern_type,
+                                'is_superscript': is_superscript,
+                                'source': 'body'  # Mark as from body (more reliable)
+                            })
+                            break  # Don't match multiple patterns
+
+    # Scan footnote area for definitions
+    # Process line-by-line to handle multiple footnotes in same block
+    # Each footnote starts with a marker, continuation lines append to current footnote
+    for block in footnote_text_blocks:
+        current_footnote = None
+        marker_priority = ['numeric', 'roman', 'symbol', 'letter']
+
+        for line in block.get("lines", []):
+            # Extract text from line
+            line_text = ""
+            for span in line["spans"]:
+                line_text += span["text"]
+            line_text = line_text.strip()
+
+            if not line_text:
+                continue
+
+            # Try to match marker at line start
+            # Accept: period, space, or tab after marker (Kant uses tabs!)
+            matched_marker = False
+            for pattern_type in marker_priority:
+                pattern = marker_patterns[pattern_type]
+                match = re.match(rf'^({pattern})[\.\s\t]', line_text)
+
+                if match:
+                    marker = match.group(1)
+                    content_start = line_text[match.end():].strip()
+
+                    # Extra validation for single-letter markers to avoid false positives
+                    if pattern_type == 'letter':
+                        # Relaxed validation: just need some content (min 3 chars)
+                        # Academic footnotes can start with lowercase (German), quotes, etc.
+                        if not content_start or len(content_start) < 3:
+                            continue  # Skip empty or too-short content
+
+                    # Save previous footnote if exists
+                    # Reduced threshold: 3+ chars (academic footnotes can be short: "ibid.", "op. cit.")
+                    if current_footnote and len(current_footnote['content']) >= 3:
+                        result['definitions'].append(current_footnote)
+
+                    # Start new footnote
+                    current_footnote = {
+                        'marker': marker,
+                        'content': content_start,
+                        'bbox': block["bbox"],
+                        'type': pattern_type,
+                        'source': 'footer'  # Mark as from footer (corrupted)
+                    }
+                    matched_marker = True
+                    break  # Found marker, don't try other patterns
+
+            # If no marker matched, this is a continuation line
+            if not matched_marker and current_footnote:
+                current_footnote['content'] += ' ' + line_text
+
+        # Don't forget to save the last footnote in this block
+        # DON'T add to markers list - definitions stay separate
+        # Reduced threshold: 3+ chars (academic footnotes can be short)
+        if current_footnote and len(current_footnote['content']) >= 3:
+            result['definitions'].append(current_footnote)
+
+    # Apply corruption recovery using Bayesian inference
+    # Use schema from body markers to correct footer corruptions
+    corrected_markers, corrected_definitions = apply_corruption_recovery(
+        result.get('markers', []),
+        result.get('definitions', [])
+    )
+
+    # Return corrected results
+    return {
+        'markers': corrected_markers,
+        'definitions': corrected_definitions,
+        'corruption_applied': True
+    }
+
+
+def _format_footnotes_markdown(footnotes: Dict[str, Any]) -> str:
+    """
+    Format detected footnotes as markdown footnote syntax.
+
+    Uses corrected symbols from corruption recovery if available.
+
+    Args:
+        footnotes: Dictionary from _detect_footnotes_in_page() with corruption recovery
+
+    Returns:
+        Markdown footnote definitions: [^*]: Content or [^†]: Content
+    """
+    lines = []
+
+    for definition in footnotes.get('definitions', []):
+        # Use actual_marker if corruption recovery was applied
+        marker = definition.get('actual_marker', definition.get('marker', '?'))
+        content = definition.get('content', '')
+
+        # Add confidence information as HTML comment if low confidence
+        confidence = definition.get('confidence', 1.0)
+        if confidence < 0.75:
+            confidence_note = f"<!-- Confidence: {confidence:.2f}, Method: {definition.get('inference_method', 'unknown')} -->"
+            lines.append(f"[^{marker}]: {content}\n{confidence_note}")
+        else:
+            # Markdown footnote syntax
+            lines.append(f"[^{marker}]: {content}")
+
+    return "\n\n".join(lines)
+
+
 # --- Main Processing Functions ---
 
-def process_pdf(file_path: Path, output_format: str = "txt", preserve_linebreaks: bool = False) -> str:
+def process_pdf(
+    file_path: Path,
+    output_format: str = "txt",
+    preserve_linebreaks: bool = False,
+    detect_footnotes: bool = False
+) -> str:
     """
     Processes a PDF file, extracts text, applies preprocessing, and returns content.
 
@@ -2809,6 +3049,7 @@ def process_pdf(file_path: Path, output_format: str = "txt", preserve_linebreaks
         output_format: Output format ("txt" or "markdown")
         preserve_linebreaks: If True, preserve original line breaks from PDF for citation accuracy.
                            If False, join lines intelligently for readability (default).
+        detect_footnotes: If True, detect and format footnotes/endnotes (default: False)
 
     Returns:
         Processed text content
@@ -2993,6 +3234,7 @@ def process_pdf(file_path: Path, output_format: str = "txt", preserve_linebreaks
         logging.debug("Performing structured PDF extraction with block analysis...")
         page_count = len(doc)
         page_contents = []  # Store content with page numbers
+        all_footnotes = []  # Collect footnotes from all pages
 
         for i, page in enumerate(doc):
             page_num = i + 1
@@ -3003,6 +3245,13 @@ def process_pdf(file_path: Path, output_format: str = "txt", preserve_linebreaks
                 continue
 
             logging.debug(f"Processing page {page_num}/{page_count} with block analysis...")
+
+            # Detect footnotes on this page if requested
+            if detect_footnotes:
+                page_footnotes = _detect_footnotes_in_page(page, i)
+                if page_footnotes.get('definitions'):
+                    all_footnotes.extend(page_footnotes['definitions'])
+                    logging.debug(f"Found {len(page_footnotes['definitions'])} footnotes on page {page_num}")
 
             if output_format == "markdown":
                 # Get ToC entries and written page number for this page
@@ -3102,6 +3351,14 @@ def process_pdf(file_path: Path, output_format: str = "txt", preserve_linebreaks
 
         main_content = "\n".join(final_content_lines)
         final_output_parts.append(main_content.strip())
+
+        # Add footnotes at the end if detected
+        if detect_footnotes and all_footnotes:
+            footnote_section = _format_footnotes_markdown({'definitions': all_footnotes})
+            if footnote_section:
+                final_output_parts.append("\n\n---\n\n## Footnotes\n\n" + footnote_section)
+                logging.info(f"Added {len(all_footnotes)} footnotes to output")
+
         final_output = "\n\n".join(part for part in final_output_parts if part).strip()
 
         # Close doc before returning

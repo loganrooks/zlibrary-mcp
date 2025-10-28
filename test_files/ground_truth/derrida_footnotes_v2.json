@@ -55,7 +55,10 @@
           "sequence_index": 0,
           "expected_next": "†"
         },
-        "note_type": "translator_note"
+        "note_type": "translator_note",
+        "note_source": "translator",
+        "classification_confidence": 0.92,
+        "classification_method": "schema_based"
       },
       {
         "page_index": 1,
@@ -102,7 +105,10 @@
           "expected_prev": "*",
           "schema_validates": true
         },
-        "note_type": "translator_note"
+        "note_type": "translator_note",
+        "note_source": "translator",
+        "classification_confidence": 0.90,
+        "classification_method": "schema_based"
       }
     ],
     "citations": [],

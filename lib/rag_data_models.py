@@ -81,6 +81,32 @@ class NoteScope(Enum):
     DOCUMENT = auto()    # Document-level endnotes
 
 
+class NoteSource(Enum):
+    """
+    Source/authorship of the note.
+    
+    Critical for scholarly texts where multiple layers of annotation exist:
+    - Original author's notes (e.g., Kant's own footnotes)
+    - Translator's glosses (e.g., German word translations)
+    - Editor's commentary (e.g., textual variants, modern context)
+    - Modern annotator's additions (e.g., scholarly edition notes)
+    
+    Classification strategy:
+    - Primary: Schema-based (alphabetic=translator, numeric=author, symbolic=mixed)
+    - Validation: Content analysis (editorial phrases, translation markers)
+    
+    Example (Kant's Critique):
+        [^2]: Kant's original philosophical argument → AUTHOR
+        [^a]: German word "aufgegeben" → TRANSLATOR  
+        [^*]: "As in the first edition..." → EDITOR
+    """
+    AUTHOR = auto()              # Original author's note
+    TRANSLATOR = auto()          # Translator's gloss or comment
+    EDITOR = auto()              # Editorial annotation or textual note
+    MODERN_ANNOTATOR = auto()    # Contemporary scholarly addition
+    UNKNOWN = auto()             # Cannot classify with confidence
+
+
 # =============================================================================
 # Data Classes
 # =============================================================================
@@ -88,11 +114,27 @@ class NoteScope(Enum):
 @dataclass
 class NoteInfo:
     """
-    Structured information about footnotes/endnotes.
+    Structured information about footnotes/endnotes with source classification.
 
     Philosophy: Footnotes vs endnotes are semantically different in scholarly
     texts. They have different locations, numbering schemes, and linking
-    strategies. This structure preserves those distinctions.
+    strategies. This structure preserves those distinctions and adds
+    classification to distinguish author vs translator vs editor notes.
+
+    Classification Strategy:
+        Primary: Schema-based detection (alphabetic=translator, numeric=author, symbolic=editor)
+        Validation: Content analysis (editorial phrases like "As in first edition",
+                    translation markers like "[German: aufgegeben]")
+
+        Example from Kant's Critique of Pure Reason:
+            [^2]: Kant's original philosophical argument → AUTHOR (numeric schema)
+            [^a]: "German: aufgegeben" → TRANSLATOR (alphabetic schema + translation marker)
+            [^*]: "As in the first edition..." → EDITOR (symbolic schema + editorial phrase)
+
+    Multi-Page Support:
+        Some scholarly notes span multiple pages (e.g., long translator glosses).
+        The `pages` field tracks all pages where this note appears, and
+        `continuation_confidence` scores the linking quality (0.0=uncertain, 1.0=certain).
 
     Attributes:
         note_type: FOOTNOTE (bottom of page) vs ENDNOTE (end section)
@@ -103,6 +145,11 @@ class NoteInfo:
         section_title: e.g., "Notes to Chapter 3"
         is_continued: True if note continues on next page
         continued_from: Marker of previous part if multi-page note
+        note_source: Classification (AUTHOR, TRANSLATOR, EDITOR, etc.)
+        classification_confidence: 0.0-1.0 score for source classification
+        classification_method: Strategy used ("schema_based", "content_validation", "schema+content")
+        pages: List of page numbers where this note appears (for multi-page notes)
+        continuation_confidence: 0.0-1.0 score for multi-page linking quality
 
     Example Usage:
         # Footnote reference in text
@@ -113,14 +160,18 @@ class NoteInfo:
             scope=NoteScope.PAGE
         )
 
-        # Endnote definition in notes section
-        endnote_def = NoteInfo(
+        # Translator's endnote with classification
+        translator_note = NoteInfo(
             note_type=NoteType.ENDNOTE,
             role=NoteRole.DEFINITION,
-            marker="23",
+            marker="a",
             scope=NoteScope.CHAPTER,
             chapter_number=3,
-            section_title="Notes to Chapter 3"
+            section_title="Notes to Chapter 3",
+            note_source=NoteSource.TRANSLATOR,
+            classification_confidence=0.95,
+            classification_method="schema+content",
+            pages=[45, 46]  # Multi-page note
         )
     """
     note_type: NoteType
@@ -135,6 +186,15 @@ class NoteInfo:
     # For multi-page notes (rare but exists)
     is_continued: bool = False
     continued_from: Optional[str] = None
+
+    # Classification: distinguish author vs translator vs editor notes
+    note_source: NoteSource = NoteSource.UNKNOWN
+    classification_confidence: float = 1.0  # 0.0-1.0 score
+    classification_method: str = "schema_based"  # "schema_based", "content_validation", "schema+content"
+
+    # Multi-page support: track all pages where note appears
+    pages: List[int] = field(default_factory=list)  # Empty list for single-page notes
+    continuation_confidence: float = 1.0  # 0.0-1.0 score for multi-page linking quality
 
 
 @dataclass
@@ -575,6 +635,7 @@ __all__ = [
     'NoteType',
     'NoteRole',
     'NoteScope',
+    'NoteSource',
     # Data classes
     'NoteInfo',
     'ListInfo',

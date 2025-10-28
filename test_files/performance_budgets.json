@@ -1,6 +1,6 @@
 {
-  "version": "1.0",
-  "updated": "2025-10-18",
+  "version": "1.1",
+  "updated": "2025-10-28",
   "description": "Performance budgets for RAG pipeline operations",
 
   "operations": {
@@ -45,6 +45,42 @@
       "max_ms": 5.0,
       "current_ms": 2.0,
       "status": "at_target"
+    },
+    "footnote_classification_per_note": {
+      "description": "Schema + content-based note source classification (Phase 3)",
+      "target_ms": 2.0,
+      "max_ms": 5.0,
+      "current_ms": 0.038,
+      "status": "excellent"
+    },
+    "footnote_incomplete_detection_cached": {
+      "description": "NLTK-based incomplete detection with LRU cache (Phase 3)",
+      "target_ms": 1.0,
+      "max_ms": 2.0,
+      "current_ms": 0.0004,
+      "status": "excellent"
+    },
+    "footnote_incomplete_detection_uncached": {
+      "description": "NLTK-based incomplete detection (first call per unique text)",
+      "target_ms": 5.0,
+      "max_ms": 10.0,
+      "current_ms": 0.011,
+      "status": "excellent"
+    },
+    "footnote_state_machine_per_page": {
+      "description": "Cross-page footnote continuation tracking (Phase 3)",
+      "target_ms": 0.5,
+      "max_ms": 1.0,
+      "current_ms": 0.005,
+      "status": "excellent"
+    },
+    "footnote_full_pipeline_per_page": {
+      "description": "Complete footnote processing (classification + incomplete + state machine)",
+      "target_ms": 10.0,
+      "max_ms": 20.0,
+      "current_ms": 0.29,
+      "status": "excellent",
+      "notes": "5 footnotes per page scenario; scales linearly"
     }
   },
 
@@ -109,5 +145,5 @@
     }
   },
 
-  "notes": "Budgets based on real measurements from 2025-10-18 validation session. Update as optimizations are implemented."
+  "notes": "Budgets based on real measurements. Last updated: 2025-10-28 (Phase 3 footnote features). All current measurements meet or significantly exceed targets."
 }

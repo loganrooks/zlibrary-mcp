@@ -461,7 +461,13 @@ def apply_corruption_recovery(
 
     # Now match definitions to expected sequence
     for i, definition in enumerate(detected_definitions):
-        observed = definition.get('marker', definition.get('text', ''))[:10].strip()
+        if definition is None:
+            continue
+
+        marker_text = definition.get('marker', definition.get('text', ''))
+        if marker_text is None:
+            continue
+        observed = marker_text[:10].strip()
 
         # Use expected symbol from sequence if available
         if i < len(expected_sequence):

@@ -29,6 +29,8 @@ dependencies = [
     # HTML parsing
     "beautifulsoup4>=4.14.0", # HTML parsing
     "lxml>=6.0.0", # XML/HTML parser (bs4 backend)
+    # NLP for footnote detection
+    "nltk>=3.8.1", # Sentence boundary detection
     "ocrmypdf>=15.4.4",
     "opencv-python>=4.12.0.88",
 ]

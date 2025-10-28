@@ -1,0 +1,42 @@
+{
+  "kant": {
+    "pdf_path": "test_files/kant_critique_pages_80_85.pdf",
+    "total_footnotes": 3,
+    "multipage_footnotes": 0,
+    "footnotes": [
+      {
+        "marker": "a",
+        "content": "Princip",
+        "pages": [
+          6
+        ],
+        "is_complete": true,
+        "continuation_confidence": 1.0
+      },
+      {
+        "marker": "c",
+        "content": "Princip",
+        "pages": [
+          6
+        ],
+        "is_complete": true,
+        "continuation_confidence": 1.0
+      },
+      {
+        "marker": "d",
+        "content": "\u201cDwell in your own house, and you will know how simple your possessions are\u201d (Per-",
+        "pages": [
+          6
+        ],
+        "is_complete": true,
+        "continuation_confidence": 1.0
+      }
+    ]
+  },
+  "derrida": {
+    "pdf_path": "test_files/derrida_footnote_pages_120_125.pdf",
+    "total_footnotes": 0,
+    "multipage_footnotes": 0,
+    "footnotes": []
+  }
+}

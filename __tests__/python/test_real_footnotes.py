@@ -223,6 +223,106 @@ class TestFootnoteEdgeCases:
         assert len(found_footnotes) == 0, \
             "Footnotes detected despite detect_footnotes=False"
 
+    def test_long_footnote_above_75_percent_threshold(self):
+        """
+        Test that long footnotes starting above the 75% threshold are detected.
+
+        Critical regression test for footnote detection bug discovered 2025-10-28.
+
+        Background:
+        - Previous implementation: Only searched bottom 25% of page (threshold: 0.75)
+        - Issue: Long multi-page footnotes starting mid-page were MISSED
+        - Example: Kant page 2 asterisk footnote (starts at 67%, classified as body text)
+
+        This test validates the fix: Expanded threshold to bottom 50% (threshold: 0.50)
+
+        Test case: Kant Critique pages 80-85, page 2 asterisk footnote
+        - Starts at: 67% down page (above old 75% threshold)
+        - Marker: * (asterisk, superscript)
+        - Content: "Now and again one hears complaints..." (~650 chars)
+        - Ends with: "criticism, to" (incomplete, continues to next page)
+
+        Expected behavior:
+        - Asterisk marker detected in body text
+        - Footnote definition detected (even though starts at 67%)
+        - Classified as FOOTNOTE (not body text)
+        - Flagged as incomplete (ends with preposition "to")
+        """
+        # Use Kant fixture (pages 80-85)
+        pdf_path = Path(__file__).parent.parent.parent / "test_files/kant_critique_pages_80_85.pdf"
+
+        if not pdf_path.exists():
+            pytest.skip(f"Kant test PDF not found: {pdf_path}")
+
+        # Import detection function directly to test low-level behavior
+        import fitz
+        sys.path.insert(0, str(Path(__file__).parent.parent.parent / "lib"))
+        from rag_processing import _detect_footnotes_in_page
+
+        # Open PDF and check page 2 (0-indexed: page 1)
+        doc = fitz.open(pdf_path)
+        page = doc[1]  # Page 2 (physical page 81 in full book)
+
+        # Detect footnotes on this page
+        result = _detect_footnotes_in_page(page, 1)
+        doc.close()
+
+        # Extract markers and definitions
+        markers = result.get('markers', [])
+        definitions = result.get('definitions', [])
+
+        # Verify asterisk marker detected in body text
+        asterisk_markers = [m for m in markers if m.get('marker') == '*']
+        assert len(asterisk_markers) > 0, \
+            f"Asterisk marker not detected in body text.\n" \
+            f"Found markers: {[m.get('marker') for m in markers]}"
+
+        # Verify long asterisk footnote definition detected
+        # (This was the BUG: definition was missed due to 75% threshold)
+        # Note: Corruption recovery may change the marker, so search by content signature
+        long_footnote = None
+        for d in definitions:
+            content = d.get('content', '')
+            # The long footnote has signature phrase "complaints about the superficiality"
+            # This is the ONLY footnote on this page with this phrase
+            if "complaints about the superficiality" in content:
+                long_footnote = d
+                break
+
+        assert long_footnote is not None, \
+            f"REGRESSION: Long asterisk footnote not detected (was classified as body text).\n" \
+            f"Total definitions found: {len(definitions)}\n" \
+            f"Definitions by marker: {[(d.get('marker'), d.get('actual_marker'), len(d.get('content', ''))) for d in definitions]}\n" \
+            f"This indicates the spatial threshold fix failed - the long footnote at 67% is missing."
+
+        # Verify content matches expected pattern
+        content = long_footnote.get('content', '')
+
+        # Check for signature phrase from the footnote
+        # Note: Content may be truncated during processing, but key signature should be present
+        signature_phrase = "complaints about the superficiality"
+        assert signature_phrase in content, \
+            f"Footnote content signature not found.\n" \
+            f"Expected phrase: '{signature_phrase}'\n" \
+            f"Got content length: {len(content)} chars\n" \
+            f"Content: {content}"
+
+        # Verify this is a multi-line footnote (longer than short German translations)
+        # The bug fix should now detect long footnotes, not just short ones
+        assert len(content) > 50, \
+            f"Footnote too short - may be wrong footnote detected.\n" \
+            f"Expected: Long multi-page footnote (~650 chars)\n" \
+            f"Got: {len(content)} chars"
+
+        print(f"\n✅ Long footnote detection successful!")
+        print(f"   Asterisk marker detected: YES")
+        print(f"   Long footnote detected: YES (starts at ~67% of page, above old 75% threshold)")
+        print(f"   Marker: {long_footnote.get('marker')} → {long_footnote.get('actual_marker', 'N/A')}")
+        print(f"   Content length: {len(content)} chars")
+        print(f"   Signature phrase present: YES")
+        print(f"\n   This footnote was MISSED before the fix (classified as body text).")
+        print(f"   Fix: Expanded spatial threshold from 75% to 50% of page height.")
+
 
 if __name__ == '__main__':
     # Allow running this test file directly

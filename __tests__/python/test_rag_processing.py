@@ -1172,3 +1172,70 @@ def test_analyze_pdf_block_handles_missing_span_keys(mocker):
         assert result['text'] == "Span 1 text Span 2 text"
     except (TypeError, AttributeError) as e:
         pytest.fail(f"_analyze_pdf_block raised unexpected error: {e}")
+
+
+def test_multiblock_footnote_collection():
+    """Test that multi-block footnote collection works correctly.
+
+    Regression test for ISSUE: Only collecting first block of multi-block footnotes.
+    Expected: Kant asterisk footnote should span 2 blocks and contain ~650+ chars.
+    """
+    import fitz
+    from lib.rag_processing import _find_definition_for_marker
+
+    # Open Kant PDF (real test file required)
+    doc = fitz.open('test_files/kant_critique_pages_80_85.pdf')
+    page = doc[1]  # Page 2 (0-indexed)
+
+    # Define marker patterns
+    marker_patterns = {
+        'numeric': r'\d+',
+        'roman': r'(?:i{1,3}|iv|v|vi{0,3}|ix|x)',
+        'symbol': r'[\*\†\‡§¶]',
+        'letter': r'[a-z]'
+    }
+
+    # Find asterisk marker in body text
+    blocks = page.get_text('dict')['blocks']
+    marker_y = None
+    for block in blocks:
+        if 'lines' not in block:
+            continue
+        for line in block['lines']:
+            line_text = ''.join(span['text'] for span in line['spans'])
+            # Look for asterisk in body (above y=400)
+            if '*' in line_text and block['bbox'][1] < 400:
+                marker_y = block['bbox'][1]
+                break
+        if marker_y:
+            break
+
+    assert marker_y is not None, "Could not find asterisk marker in body text"
+
+    # Call the function under test
+    result = _find_definition_for_marker(page, '*', marker_y, marker_patterns)
+
+    # Assertions for multi-block collection
+    assert result is not None, "No footnote definition found"
+    assert result['marker'] == '*', f"Wrong marker: {result['marker']}"
+
+    # Critical: Must collect multiple blocks
+    assert result.get('blocks_collected', 0) > 1, \
+        f"Should collect >1 blocks, got {result.get('blocks_collected', 0)}"
+
+    # Critical: Content length should be ~650+ chars (not 77)
+    assert len(result['content']) > 500, \
+        f"Content too short: {len(result['content'])} chars (expected 650+)"
+
+    # Content validation: Check beginning and end
+    assert 'superficiality' in result['content'].lower(), \
+        "Missing start of footnote content"
+
+    assert 'criticism' in result['content'].lower(), \
+        "Missing end of footnote content"
+
+    # Verify source classification
+    assert result['source'] == 'inline', \
+        f"Expected 'inline', got '{result['source']}'"
+
+    doc.close()

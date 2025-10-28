@@ -2850,9 +2850,74 @@ def _footnote_with_continuation_to_dict(footnote: FootnoteWithContinuation) -> D
     }
 
 
+def _starts_with_marker(text: str, marker_patterns: dict, marker_priority: list) -> bool:
+    """
+    Check if text starts with a footnote marker.
+
+    Args:
+        text: Text to check
+        marker_patterns: Dict of regex patterns for marker matching
+        marker_priority: List of pattern types to check
+
+    Returns:
+        True if text starts with any marker pattern
+    """
+    import re
+
+    text = text.strip()
+    for pattern_type in marker_priority:
+        pattern = marker_patterns[pattern_type]
+        if re.match(rf'^({pattern})[\.\s\t]', text):
+            return True
+    return False
+
+
+def _extract_text_from_block(block: dict) -> str:
+    """
+    Extract all text from a PyMuPDF block.
+
+    Args:
+        block: PyMuPDF block dict with 'lines' key
+
+    Returns:
+        Concatenated text from all lines and spans
+    """
+    if "lines" not in block:
+        return ""
+
+    block_text = ""
+    for line in block["lines"]:
+        for span in line.get("spans", []):
+            block_text += span.get("text", "")
+
+    return block_text.strip()
+
+
+def _merge_bboxes(blocks: List[dict]) -> dict:
+    """
+    Merge bounding boxes from multiple blocks into single bbox.
+
+    Args:
+        blocks: List of PyMuPDF block dicts with 'bbox' key
+
+    Returns:
+        Merged bbox dict with x0, y0, x1, y1 keys
+    """
+    if not blocks:
+        return {'x0': 0, 'y0': 0, 'x1': 0, 'y1': 0}
+
+    x0 = min(b['bbox'][0] for b in blocks)
+    y0 = min(b['bbox'][1] for b in blocks)
+    x1 = max(b['bbox'][2] for b in blocks)
+    y1 = max(b['bbox'][3] for b in blocks)
+
+    return [x0, y0, x1, y1]
+
+
 def _find_definition_for_marker(page: Any, marker: str, marker_y_position: float, marker_patterns: dict) -> Optional[Dict[str, Any]]:
     """
     Search ENTIRE page below marker position for definition.
+    Collects ALL blocks belonging to footnote (multi-block support).
 
     NOT restricted to bottom 20% - search wherever text appears.
     Handles inline footnotes (Kant at 50-60% down page) and traditional bottom footnotes.
@@ -2871,7 +2936,8 @@ def _find_definition_for_marker(page: Any, marker: str, marker_y_position: float
             'bbox': [...],
             'type': 'symbol',
             'source': 'inline' or 'footer',
-            'y_position': float
+            'y_position': float,
+            'blocks_collected': int
         }
     """
     import re
@@ -2883,10 +2949,10 @@ def _find_definition_for_marker(page: Any, marker: str, marker_y_position: float
     # This handles both inline (immediately below) and traditional (page bottom)
     marker_priority = ['numeric', 'roman', 'symbol', 'letter']
 
-    for block in blocks:
-        if "lines" not in block:
-            continue
+    # Sort blocks by y position for sequential processing
+    sorted_blocks = sorted([b for b in blocks if "lines" in b], key=lambda b: b["bbox"][1])
 
+    for block_idx, block in enumerate(sorted_blocks):
         # Only consider blocks BELOW the marker
         block_y = block["bbox"][1]  # Top y-coordinate
         if block_y <= marker_y_position:
@@ -2910,7 +2976,7 @@ def _find_definition_for_marker(page: Any, marker: str, marker_y_position: float
                 match = re.match(rf'^({pattern})[\.\s\t]', line_text)
 
                 if match and match.group(1) == marker:
-                    # Found definition start
+                    # Found definition start - collect content from multiple blocks
                     content_start = line_text[match.end():].strip()
 
                     # Validation
@@ -2918,10 +2984,18 @@ def _find_definition_for_marker(page: Any, marker: str, marker_y_position: float
                         if not content_start or len(content_start) < 3:
                             continue
 
-                    # Collect full content (may span multiple lines in same block)
+                    # MULTI-BLOCK COLLECTION STRATEGY:
+                    # 1. Collect remaining lines in current block
+                    # 2. Continue to subsequent blocks until stop condition
+                    # Stop conditions:
+                    #   - Hit another footnote marker
+                    #   - Vertical gap > 10 pixels (new section)
+                    #   - Reach end of page
+
+                    collected_blocks = [block]
                     full_content = content_start
 
-                    # Get remaining lines in this block
+                    # Collect remaining lines in first block
                     line_index = block.get("lines", []).index(line)
                     for continuation_line in block.get("lines", [])[line_index + 1:]:
                         continuation_text = ""
@@ -2931,16 +3005,38 @@ def _find_definition_for_marker(page: Any, marker: str, marker_y_position: float
 
                         if continuation_text:
                             # Check if this is a new footnote (starts with different marker)
-                            is_new_footnote = False
-                            for pt in marker_priority:
-                                if re.match(rf'^({marker_patterns[pt]})[\.\s\t]', continuation_text):
-                                    is_new_footnote = True
-                                    break
-
-                            if is_new_footnote:
+                            if _starts_with_marker(continuation_text, marker_patterns, marker_priority):
                                 break  # Stop collecting content
-
                             full_content += ' ' + continuation_text
+
+                    # Collect from subsequent blocks
+                    last_block_bottom = block["bbox"][3]  # Bottom y-coordinate
+
+                    for next_block in sorted_blocks[block_idx + 1:]:
+                        next_block_top = next_block["bbox"][1]
+
+                        # Check vertical gap (stop if > 10 pixels)
+                        vertical_gap = next_block_top - last_block_bottom
+                        if vertical_gap > 10:
+                            break
+
+                        # Extract text from next block
+                        block_text = _extract_text_from_block(next_block)
+
+                        if not block_text.strip():
+                            continue
+
+                        # Check if starts with new marker (stop condition)
+                        if _starts_with_marker(block_text, marker_patterns, marker_priority):
+                            break
+
+                        # Collect this block's content
+                        collected_blocks.append(next_block)
+                        full_content += ' ' + block_text.strip()
+                        last_block_bottom = next_block["bbox"][3]
+
+                    # Merge bounding boxes from all collected blocks
+                    merged_bbox = _merge_bboxes(collected_blocks)
 
                     # Determine if inline or footer based on y position
                     # Inline: within 200 pixels of marker (roughly same column/region)
@@ -2951,10 +3047,11 @@ def _find_definition_for_marker(page: Any, marker: str, marker_y_position: float
                     return {
                         'marker': marker,
                         'content': full_content,
-                        'bbox': block["bbox"],
+                        'bbox': merged_bbox,
                         'type': pattern_type,
                         'source': source,
-                        'y_position': block_y
+                        'y_position': block_y,
+                        'blocks_collected': len(collected_blocks)
                     }
 
     return None  # No definition found

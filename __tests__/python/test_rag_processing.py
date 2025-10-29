@@ -1212,8 +1212,8 @@ def test_multiblock_footnote_collection():
 
     assert marker_y is not None, "Could not find asterisk marker in body text"
 
-    # Call the function under test
-    result = _find_definition_for_marker(page, '*', marker_y, marker_patterns)
+    # Call the function under test (page_num is 1 since we're using page index 1)
+    result = _find_definition_for_marker(page, '*', marker_y, marker_patterns, page_num=1)
 
     # Assertions for multi-block collection
     assert result is not None, "No footnote definition found"

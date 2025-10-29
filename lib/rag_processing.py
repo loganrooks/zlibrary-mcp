@@ -2969,20 +2969,37 @@ def _find_definition_for_marker(page: Any, marker: str, marker_y_position: float
             if not line_text:
                 continue
 
-            # Try to match marker at line start
+            # Try to match ANY marker pattern at line start
             # Accept: period, space, or tab after marker (Kant uses tabs!)
+            # CRITICAL FIX (ISSUE-FN-001): Match ANY marker pattern, not just exact marker
+            # This allows corruption recovery to fix mismatches later (e.g., "iii" → "*")
             for pattern_type in marker_priority:
                 pattern = marker_patterns[pattern_type]
                 match = re.match(rf'^({pattern})[\.\s\t]', line_text)
 
-                if match and match.group(1) == marker:
-                    # Found definition start - collect content from multiple blocks
+                if match:
+                    # Found a marker-like pattern at definition start
+                    detected_marker = match.group(1)
                     content_start = line_text[match.end():].strip()
 
-                    # Validation
+                    # Enhanced validation for letter patterns to prevent false positives
+                    # Single letters like "a" or "b" should only match if they're likely footnote markers
                     if pattern_type == 'letter':
+                        # Reject if:
+                        # 1. Content too short (not a real footnote)
+                        # 2. Letter is not lowercase (footnotes typically use lowercase)
+                        # 3. Not in traditional footnote area (bottom 40% of page)
                         if not content_start or len(content_start) < 3:
                             continue
+
+                        page_height = page.rect.height
+                        footnote_area_threshold = page_height * 0.60  # Bottom 40%
+
+                        if not detected_marker.islower():
+                            continue
+
+                        if block_y < footnote_area_threshold:
+                            continue  # Skip letters in upper part of page (likely body text)
 
                     # MULTI-BLOCK COLLECTION STRATEGY:
                     # 1. Collect remaining lines in current block
@@ -3044,8 +3061,12 @@ def _find_definition_for_marker(page: Any, marker: str, marker_y_position: float
                     distance_from_marker = block_y - marker_y_position
                     source = 'inline' if distance_from_marker < 200 else 'footer'
 
+                    # CRITICAL FIX (ISSUE-FN-001 continued):
+                    # Use requested_marker as the primary marker (what body text has)
+                    # Store detected_marker as observed_text for corruption recovery
                     return {
-                        'marker': marker,
+                        'marker': marker,  # Use requested marker from body text
+                        'observed_marker': detected_marker,  # Store what we actually found in footer
                         'content': full_content,
                         'bbox': merged_bbox,
                         'type': pattern_type,
@@ -3335,10 +3356,27 @@ def _detect_footnotes_in_page(page: Any, page_num: int) -> Dict[str, List[Dict[s
                 # CRITICAL FILTER: Exclude markers at START of blocks that look like footnote definitions
                 # Example: "* Now and again..." → NOT a marker (it's the footnote definition start)
                 # Example: "text * text" → IS a marker (in body text)
-                is_at_block_start = (line_idx == 0 and span_start_pos == 0)
+                #
+                # CRITICAL FIX (ISSUE-FN-001): Check if marker is first CHARACTER in span TEXT,
+                # not if span is first in block. The bug was checking span_start_pos (span position
+                # in line) instead of checking if the marker is at the start of the span's text.
+                #
+                # Correct scenarios:
+                # - Definition: "* The title..." → marker IS first char in span → skip ✓
+                # - Body text: "text *" → marker IS NOT first char in span → detect ✓
+                #
+                # Buggy version checked: (line_idx == 0 and span_start_pos == 0)
+                # This gave false positives: "text *" had span_start_pos==0 (span is first)
+                # but marker "*" was NOT at start of span text!
 
-                if is_at_block_start and block_starts_with_marker and not is_superscript:
-                    # Skip: This is the start of a footnote definition, not a marker reference
+                # Check: Does this span's TEXT start with a marker pattern?
+                span_text_clean = text.strip()
+                marker_pattern_at_start = bool(re.match(r'^[*†‡§¶#\d]+', span_text_clean))
+                is_at_definition_start = (line_idx == 0 and marker_pattern_at_start)
+
+                if is_at_definition_start and block_starts_with_marker and not is_superscript:
+                    # This is a footnote DEFINITION start (e.g., "* The title...")
+                    # Skip it - we already detected the marker in body text
                     continue
 
                 # IMPORTANT: Only accept as marker if:
@@ -3350,14 +3388,37 @@ def _detect_footnotes_in_page(page: Any, page_num: int) -> Dict[str, List[Dict[s
                 marker_text = text.strip()
                 is_likely_marker = (
                     is_superscript or  # Superscript = always marker
-                    (is_footnote_symbol and not is_at_block_start) or  # Symbol in body (not definition start)
+                    (is_footnote_symbol and not is_at_definition_start) or  # Symbol in body (not definition start)
                     is_in_bracket  # Bracketed symbols
                 )
 
-                # Extra filter: if it's a letter and NOT superscript, reject
-                # (prevents false positives from body text)
+                # Extra filter for single letters: requires special handling
+                # Single letters can be:
+                # 1. Superscript markers (a, b, c) - ALWAYS accept
+                # 2. Corrupted symbols (t → †) - Accept if special formatting OR isolated
+                # 3. Random body text ("The", "And") - REJECT
                 if marker_text.isalpha() and len(marker_text) == 1 and not is_superscript:
-                    is_likely_marker = False
+                    # Check if letter has special formatting (bold, italic, etc.)
+                    has_special_formatting = (span.get("flags", 0) & ~(1 << 5)) != 0  # Any flag except serifed
+
+                    # Check if letter is isolated (surrounded by spaces/punctuation)
+                    # Extract context around this span
+                    span_pos = span_positions[span_idx]
+                    before_char = line_text[span_pos - 1] if span_pos > 0 else ' '
+                    after_pos = span_pos + len(marker_text)
+                    after_char = line_text[after_pos] if after_pos < len(line_text) else ' '
+                    is_isolated = before_char in ' \t([{' and after_char in ' \t)]}.,;:'
+
+                    # Accept letter if:
+                    # - Has special formatting (bold/italic - potential corruption)
+                    # - Is isolated (not part of a word)
+                    # - Is lowercase (footnote markers typically lowercase)
+                    if marker_text.islower() and (has_special_formatting or is_isolated):
+                        # Likely a corrupted symbol or valid footnote marker
+                        is_likely_marker = True
+                    else:
+                        # Likely body text
+                        is_likely_marker = False
 
                 if is_likely_marker:
                     # Potential footnote marker

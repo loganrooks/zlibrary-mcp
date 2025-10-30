@@ -563,7 +563,10 @@ class CrossPageFootnoteParser:
 
         # Step 2: Process new footnotes on this page
         for footnote_dict in page_footnotes:
-            marker = footnote_dict.get('marker')
+            # CRITICAL FIX: Use actual_marker from corruption recovery if available
+            # Corruption recovery corrects corrupted symbols (e.g., 'a' → '*', 't' → '†')
+            # If corruption recovery has run, use actual_marker; otherwise use raw marker
+            marker = footnote_dict.get('actual_marker', footnote_dict.get('marker'))
 
             # Skip continuation content (already processed)
             if marker is None and continuation_found:
@@ -578,7 +581,7 @@ class CrossPageFootnoteParser:
 
                 # Create FootnoteWithContinuation object
                 footnote = FootnoteWithContinuation(
-                    marker=marker,
+                    marker=marker,  # Now uses corrected marker from corruption recovery
                     content=footnote_dict.get('content', ''),
                     pages=[page_num],
                     bboxes=[footnote_dict.get('bbox', {})] if 'bbox' in footnote_dict else [],

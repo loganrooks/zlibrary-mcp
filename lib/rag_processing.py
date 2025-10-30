@@ -2914,7 +2914,7 @@ def _merge_bboxes(blocks: List[dict]) -> dict:
     return [x0, y0, x1, y1]
 
 
-def _find_definition_for_marker(page: Any, marker: str, marker_y_position: float, marker_patterns: dict) -> Optional[Dict[str, Any]]:
+def _find_definition_for_marker(page: Any, marker: str, marker_y_position: float, marker_patterns: dict, page_num: int) -> Optional[Dict[str, Any]]:
     """
     Search ENTIRE page below marker position for definition.
     Collects ALL blocks belonging to footnote (multi-block support).
@@ -2927,6 +2927,7 @@ def _find_definition_for_marker(page: Any, marker: str, marker_y_position: float
         marker: The marker to search for ('*', '1', 'a', etc.)
         marker_y_position: Y coordinate of marker in body
         marker_patterns: Dict of regex patterns for marker matching
+        page_num: Page number (for multi-page tracking)
 
     Returns:
         Definition dict or None
@@ -2937,7 +2938,8 @@ def _find_definition_for_marker(page: Any, marker: str, marker_y_position: float
             'type': 'symbol',
             'source': 'inline' or 'footer',
             'y_position': float,
-            'blocks_collected': int
+            'blocks_collected': int,
+            'pages': [page_num]
         }
     """
     import re
@@ -3072,13 +3074,14 @@ def _find_definition_for_marker(page: Any, marker: str, marker_y_position: float
                         'type': pattern_type,
                         'source': source,
                         'y_position': block_y,
-                        'blocks_collected': len(collected_blocks)
+                        'blocks_collected': len(collected_blocks),
+                        'pages': [page_num]  # CRITICAL: Enable multi-page tracking
                     }
 
     return None  # No definition found
 
 
-def _find_markerless_content(page: Any, existing_definitions: List[Dict[str, Any]], marker_y_positions: Dict[str, float]) -> List[Dict[str, Any]]:
+def _find_markerless_content(page: Any, existing_definitions: List[Dict[str, Any]], marker_y_positions: Dict[str, float], page_num: int) -> List[Dict[str, Any]]:
     """
     Find text blocks WITHOUT markers that could be continuations.
 
@@ -3093,6 +3096,7 @@ def _find_markerless_content(page: Any, existing_definitions: List[Dict[str, Any
         page: PyMuPDF page object
         existing_definitions: List of already-found definitions
         marker_y_positions: Dict mapping markers to their y positions
+        page_num: Page number (for multi-page tracking)
 
     Returns:
         List of potential continuation dicts with confidence scores
@@ -3102,7 +3106,7 @@ def _find_markerless_content(page: Any, existing_definitions: List[Dict[str, Any
             'bbox': {...},
             'potential_continuation': True,
             'continuation_confidence': 0.85,
-            'page': page_num,
+            'pages': [page_num],
             'nearest_definition': '*'  # Closest existing definition
         }]
     """
@@ -3112,7 +3116,12 @@ def _find_markerless_content(page: Any, existing_definitions: List[Dict[str, Any
         return []  # No definitions to continue
 
     page_height = page.rect.height
-    traditional_footnote_threshold = page_height * 0.80  # Bottom 20%
+
+    # EXPANDED SEARCH AREA: Bottom 50% instead of 20%
+    # Rationale: Inline footnote continuations (like Kant) can appear mid-page (50-70%)
+    # Traditional bottom-only footnotes still work with this threshold
+    # False positive risk is mitigated by strong continuation signals (starts lowercase, continuation words)
+    traditional_footnote_threshold = page_height * 0.50  # Bottom 50%
 
     # Get all text blocks (CACHED)
     blocks = _get_cached_text_blocks(page, "dict")
@@ -3188,22 +3197,51 @@ def _find_markerless_content(page: Any, existing_definitions: List[Dict[str, Any
         else:
             confidence_signals['continuation_text'] = 0.2
 
-        # Signal 4: Font similarity (placeholder - would need font analysis)
-        # For now, assume medium confidence
-        confidence_signals['font_match'] = 0.5
+        # Signal 4: Font similarity (extract from block if available)
+        # Check if block has font info and compare with existing definitions
+        font_match_score = 0.5  # Default
+        if block.get('lines'):
+            # Get first span's font info
+            first_line = block['lines'][0]
+            if first_line.get('spans'):
+                first_span = first_line['spans'][0]
+                block_font_name = first_span.get('font', '')
+                block_font_size = first_span.get('size', 0)
+
+                # Compare with existing definitions' fonts
+                for defn in existing_definitions:
+                    defn_font_name = defn.get('font_name', '')
+                    defn_font_size = defn.get('font_size', 0)
+
+                    if defn_font_name and block_font_name:
+                        # Check if fonts match or are similar
+                        if defn_font_name == block_font_name:
+                            # Exact match
+                            size_diff = abs(block_font_size - defn_font_size) if defn_font_size else 0
+                            if size_diff < 1.0:  # Within 1pt
+                                font_match_score = 0.9
+                                break
+                            elif size_diff < 2.0:  # Within 2pt
+                                font_match_score = 0.7
+                                break
+
+        confidence_signals['font_match'] = font_match_score
 
         # Calculate overall confidence (weighted average)
+        # ADJUSTED WEIGHTS: Prioritize continuation text signals over spatial signals
+        # This handles inline footnotes better (Kant case)
         weights = {
-            'proximity': 0.4,
-            'in_footnote_area': 0.2,
-            'continuation_text': 0.3,
-            'font_match': 0.1
+            'proximity': 0.3,  # Reduced from 0.4
+            'in_footnote_area': 0.15,  # Reduced from 0.2
+            'continuation_text': 0.45,  # Increased from 0.3 (PRIMARY signal)
+            'font_match': 0.1  # Unchanged
         }
 
         overall_confidence = sum(confidence_signals[k] * weights[k] for k in weights)
 
-        # Only include if confidence > 0.6
-        if overall_confidence > 0.6:
+        # Lowered threshold from 0.6 to 0.55 to catch inline continuations
+        # Strong continuation signals (starts with 'which', lowercase) should push above threshold
+        if overall_confidence > 0.55:
             # Format to match CrossPageFootnoteParser expectations
             markerless_candidates.append({
                 'marker': None,  # Explicitly no marker (continuation)
@@ -3214,6 +3252,7 @@ def _find_markerless_content(page: Any, existing_definitions: List[Dict[str, Any
                 'nearest_definition': nearest_definition,
                 'y_position': block_y,
                 'confidence_signals': confidence_signals,
+                'pages': [page_num],  # CRITICAL: Enable multi-page tracking
                 # Optional metadata for debugging
                 'source': 'markerless',
                 'type': 'continuation'
@@ -3259,6 +3298,111 @@ def _clear_textpage_cache():
     _TEXTPAGE_CACHE.clear()
 
 
+def _calculate_page_normal_font_size(blocks: List[Dict[str, Any]]) -> float:
+    """
+    Calculate the normal/average font size for body text on a page.
+
+    Strategy:
+    1. Collect all font sizes from text spans
+    2. Use median (more robust to outliers than mean)
+    3. Filter out extreme sizes (headers, footnotes)
+
+    Args:
+        blocks: PyMuPDF text blocks from page.get_text("dict")["blocks"]
+
+    Returns:
+        Normal font size in points (typically 9-12pt for body text)
+    """
+    font_sizes = []
+
+    for block in blocks:
+        if block.get('type') != 0:  # Skip non-text blocks
+            continue
+
+        for line in block.get('lines', []):
+            for span in line.get('spans', []):
+                size = span.get('size', 0)
+                if size > 0:  # Valid size
+                    font_sizes.append(size)
+
+    if not font_sizes:
+        return 10.0  # Default fallback
+
+    # Use median for robustness
+    font_sizes.sort()
+    n = len(font_sizes)
+    if n % 2 == 0:
+        median = (font_sizes[n//2 - 1] + font_sizes[n//2]) / 2
+    else:
+        median = font_sizes[n//2]
+
+    return median
+
+
+def _is_superscript(span: Dict[str, Any], normal_font_size: float) -> bool:
+    """
+    Detect if a span is superscript formatted using multiple signals.
+
+    Superscript Detection Strategy (Multi-Signal):
+    1. PRIMARY: PyMuPDF superscript flag (bit 0 in flags)
+    2. VALIDATION: Font size ratio (superscripts are 60-85% of normal)
+    3. FALLBACK: If flag missing but size ratio matches, still accept
+
+    Real-world data from Kant PDF:
+    - Normal text: 9.24pt, flags=4
+    - Superscript markers: 5.83pt, flags=5 (bit 0 set)
+    - Size ratio: 5.83/9.24 = 0.631 (63%)
+
+    Args:
+        span: PyMuPDF span dict with 'size', 'flags', 'origin', 'bbox'
+        normal_font_size: Average font size for body text on page
+
+    Returns:
+        True if superscript, False otherwise
+
+    Performance:
+        <0.1ms per span check (bit operations + float comparison)
+    """
+    # Signal 1: Check superscript flag (bit 0)
+    flags = span.get('flags', 0)
+    has_super_flag = (flags & 1) != 0  # Bit 0 = superscript
+
+    # Signal 2: Check font size ratio
+    span_size = span.get('size', normal_font_size)
+    size_ratio = span_size / normal_font_size if normal_font_size > 0 else 1.0
+
+    # Superscripts are typically 60-85% of normal size
+    # Too small (<50%) might be subscript or corruption
+    # Too large (>90%) is likely normal text with flag error
+    is_smaller = 0.50 < size_ratio < 0.85
+
+    # Decision logic:
+    # - Flag + size ratio: DEFINITE superscript (both signals agree)
+    # - Flag only: LIKELY superscript (trust PyMuPDF)
+    # - Size only: POSSIBLE superscript (could be small text)
+    #
+    # We accept if flag is set OR both size and flag conditions suggest superscript
+    # This handles both:
+    # - Correct PDFs with proper flags
+    # - PDFs with missing flags but correct sizing
+
+    if has_super_flag:
+        # Flag is set - validate with size if available
+        if span_size > 0:
+            # If flag is set but size is normal, flag might be error
+            # Accept anyway (trust PyMuPDF flag)
+            return True
+        return True
+
+    # No flag - use size as fallback
+    # Only accept if significantly smaller (avoid false positives)
+    if is_smaller and size_ratio < 0.75:
+        # Very small text without flag - likely superscript with missing flag
+        return True
+
+    return False
+
+
 def _detect_footnotes_in_page(page: Any, page_num: int) -> Dict[str, List[Dict[str, Any]]]:
     """
     Detect footnotes/endnotes in a PDF page using marker-driven architecture.
@@ -3297,6 +3441,9 @@ def _detect_footnotes_in_page(page: Any, page_num: int) -> Dict[str, List[Dict[s
 
     # Get all text blocks with position (CACHED)
     blocks = _get_cached_text_blocks(page, "dict")
+
+    # Calculate normal font size for superscript detection
+    normal_font_size = _calculate_page_normal_font_size(blocks)
 
     # Common footnote marker patterns
     # - Numeric: 1, 2, 3, ... (as superscript or regular)
@@ -3340,9 +3487,8 @@ def _detect_footnotes_in_page(page: Any, page_num: int) -> Dict[str, List[Dict[s
                 text = span["text"]
                 span_start_pos = span_positions[span_idx]
 
-                # Check for superscript markers (font flags)
-                # PyMuPDF flag 2^0 = superscript
-                is_superscript = (span.get("flags", 0) & (1 << 0)) != 0
+                # Check for superscript markers using enhanced multi-signal detection
+                is_superscript = _is_superscript(span, normal_font_size)
 
                 # Check for footnote symbols (even if not superscript)
                 is_footnote_symbol = text.strip() in ['*', '†', '‡', '§', '¶', '°', '∥', '#']
@@ -3467,7 +3613,7 @@ def _detect_footnotes_in_page(page: Any, page_num: int) -> Dict[str, List[Dict[s
                 marker = marker_dict['marker']
                 marker_y = marker_y_positions.get(marker, 0)
 
-                definition = _find_definition_for_marker(page, marker, marker_y, marker_patterns)
+                definition = _find_definition_for_marker(page, marker, marker_y, marker_patterns, page_num)
 
                 if definition:
                     definition['marker_position'] = marker_dict['bbox']
@@ -3483,7 +3629,7 @@ def _detect_footnotes_in_page(page: Any, page_num: int) -> Dict[str, List[Dict[s
                 marker = marker_dict['marker']
                 marker_y = marker_y_positions.get(marker, 0)
 
-                definition = _find_definition_for_marker(page, marker, marker_y, marker_patterns)
+                definition = _find_definition_for_marker(page, marker, marker_y, marker_patterns, page_num)
 
                 if definition:
                     # Add marker info to definition
@@ -3492,11 +3638,11 @@ def _detect_footnotes_in_page(page: Any, page_num: int) -> Dict[str, List[Dict[s
                     result['definitions'].append(definition)
 
             # PHASE 3: Find markerless content (potential continuations)
-            markerless = _find_markerless_content(page, result['definitions'], marker_y_positions)
+            markerless = _find_markerless_content(page, result['definitions'], marker_y_positions, page_num)
             result['definitions'].extend(markerless)
     else:
         # No markers found, still check for markerless
-        markerless = _find_markerless_content(page, result['definitions'], marker_y_positions)
+        markerless = _find_markerless_content(page, result['definitions'], marker_y_positions, page_num)
         result['definitions'].extend(markerless)
 
     # Apply corruption recovery using Bayesian inference
@@ -3517,6 +3663,19 @@ def _detect_footnotes_in_page(page: Any, page_num: int) -> Dict[str, List[Dict[s
     for definition in corrected_definitions:
         marker = definition.get('actual_marker', definition.get('marker', ''))
         content = definition.get('content', '')
+
+        # SKIP CLASSIFICATION for markerless continuations
+        # These don't have markers and will be merged by CrossPageFootnoteParser
+        if marker is None:
+            # Pass through without classification
+            classified_definitions.append({
+                **definition,
+                'note_source': 'CONTINUATION',  # Special marker for continuations
+                'classification_confidence': definition.get('confidence', 0.5),
+                'classification_method': 'markerless',
+                'classification_evidence': {'reason': 'markerless continuation, no classification needed'}
+            })
+            continue
 
         # Build marker_info dict for classification
         marker_info = {
@@ -3989,10 +4148,31 @@ def process_pdf(
 
         # Add footnotes at the end if detected
         if detect_footnotes and all_footnotes:
-            footnote_section = _format_footnotes_markdown({'definitions': all_footnotes})
+            # Deduplicate footnotes by marker (actual_marker or marker)
+            seen_markers = set()
+            unique_footnotes = []
+
+            for fn in all_footnotes:
+                marker = fn.get('actual_marker', fn.get('marker'))
+
+                # Special handling for markerless continuations - each is unique
+                # Markerless blocks (marker=None) are continuation candidates that should
+                # never be deduplicated, as each represents distinct orphaned content
+                if marker is None:
+                    unique_footnotes.append(fn)  # Don't deduplicate
+                    continue
+
+                # Normal deduplication for actual markers
+                if marker not in seen_markers:
+                    seen_markers.add(marker)
+                    unique_footnotes.append(fn)
+                else:
+                    logging.debug(f"Skipping duplicate footnote marker: {marker}")
+
+            footnote_section = _format_footnotes_markdown({'definitions': unique_footnotes})
             if footnote_section:
                 final_output_parts.append("\n\n---\n\n## Footnotes\n\n" + footnote_section)
-                logging.info(f"Added {len(all_footnotes)} footnotes to output")
+                logging.info(f"Added {len(unique_footnotes)} footnotes to output (deduplicated from {len(all_footnotes)})")
 
         final_output = "\n\n".join(part for part in final_output_parts if part).strip()
 

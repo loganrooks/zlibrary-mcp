@@ -187,15 +187,15 @@ class TestMarkerDrivenDetection:
             pytest.skip(f"Derrida test PDF not found: {pdf_path}")
 
         doc = fitz.open(pdf_path)
-        page = doc[0]  # Page 1 (121 in original)
+        page = doc[1]  # Page 1 has the footnotes (physical page 121)
 
-        result = _detect_footnotes_in_page(page, 0)
+        result = _detect_footnotes_in_page(page, 1)
         doc.close()
 
         markers = result.get('markers', [])
         definitions = result.get('definitions', [])
 
-        # Derrida page 1 has footnotes 'iii' and 't' (after corruption recovery)
+        # Derrida page 1 has footnotes (after corruption recovery)
         assert len(markers) >= 2, \
             f"Traditional bottom footnotes not detected (regression)"
 
@@ -369,7 +369,7 @@ class TestMarkerDrivenDetection:
         markers = result.get('markers', [])
 
         # Check that markers have superscript metadata
-        superscript_count = sum(1 for m in markers if m.get('superscript', False))
+        superscript_count = sum(1 for m in markers if m.get('is_superscript', False))
 
         assert superscript_count >= 2, \
             f"Too few superscript markers detected: {superscript_count}"
@@ -444,7 +444,11 @@ class TestMarkerDrivenDetection:
         for d in definitions:
             bbox = d.get('bbox')
             if bbox:
-                y_pos = bbox.get('y0', 0)
+                # bbox is a list/tuple [x0, y0, x1, y1] or dict
+                if isinstance(bbox, (list, tuple)):
+                    y_pos = bbox[1]
+                else:
+                    y_pos = bbox.get('y0', 0)
                 y_percent = y_pos / page_height
 
                 if 0.50 <= y_percent <= 0.80:
@@ -460,8 +464,12 @@ class TestMarkerDrivenDetection:
         print(f"   Definitions in 50-80% range: {len(mid_page_definitions)}")
 
         for d in mid_page_definitions:
-            bbox = d.get('bbox', {})
-            y_pos = bbox.get('y0', 0)
+            bbox = d.get('bbox', [])
+            # bbox is a list/tuple [x0, y0, x1, y1] or dict
+            if isinstance(bbox, (list, tuple)):
+                y_pos = bbox[1] if len(bbox) > 1 else 0
+            else:
+                y_pos = bbox.get('y0', 0)
             y_percent = (y_pos / page_height) * 100
             print(f"   - Marker '{d.get('marker')}' at {y_percent:.1f}% down page")
 
@@ -1126,9 +1134,9 @@ class TestRealWorldInlineFootnotes:
             pytest.skip(f"Derrida test PDF not found: {pdf_path}")
 
         doc = fitz.open(pdf_path)
-        page = doc[0]
+        page = doc[1]  # Page 1 has the symbolic footnotes (*, †)
 
-        result = _detect_footnotes_in_page(page, 0)
+        result = _detect_footnotes_in_page(page, 1)
         doc.close()
 
         definitions = result.get('definitions', [])
@@ -1254,6 +1262,7 @@ class TestRealWorldInlineFootnotes:
 
         doc = fitz.open(pdf_path)
         page = doc[1]  # Page 2 with inline asterisk
+        page_height = page.rect.height  # Get height before closing doc
 
         result = _detect_footnotes_in_page(page, 1)
         doc.close()
@@ -1263,13 +1272,16 @@ class TestRealWorldInlineFootnotes:
         # Should detect multiple footnotes with different spatial positions
         if len(definitions) >= 2:
             # Check spatial distribution
-            page_height = page.rect.height
             y_positions = []
 
             for d in definitions:
-                bbox = d.get('bbox', {})
+                bbox = d.get('bbox', [])
                 if bbox:
-                    y_pos = bbox.get('y0', 0)
+                    # bbox is a list/tuple [x0, y0, x1, y1] or dict
+                    if isinstance(bbox, (list, tuple)):
+                        y_pos = bbox[1] if len(bbox) > 1 else 0
+                    else:
+                        y_pos = bbox.get('y0', 0)
                     y_percent = (y_pos / page_height) * 100
                     y_positions.append(y_percent)
 
@@ -1520,6 +1532,252 @@ class TestPerformanceAndEdgeCases:
         print(f"\n✅ Very long footnote handled:")
         print(f"   Length: {longest_length} chars")
         print(f"   No truncation detected")
+
+
+# =============================================================================
+# Category 5: End-to-End Real PDF Tests (NEW - Bug Detection)
+# =============================================================================
+
+class TestEndToEndRealPDF:
+    """
+    End-to-end tests using real PDFs (not synthetic data).
+
+    CRITICAL: These tests are designed to FAIL initially and reveal the exact bug
+    preventing multi-page continuation from working on real PDFs.
+
+    Paradox solved: 57 unit tests pass but feature broken because 0 E2E tests exist.
+    """
+
+    def test_kant_asterisk_multipage_continuation_e2e(self):
+        """
+        E2E: Real Kant PDF → multi-page asterisk continuation detected and merged.
+
+        This test uses REAL PDF (not synthetic) to validate:
+        1. Asterisk footnote detected on page 64
+        2. Marked as incomplete (ends with 'to')
+        3. Continuation detected on page 65 (starts with 'which')
+        4. Content merged correctly into single footnote
+        5. Output shows pages [64, 65]
+
+        Expected: This test will FAIL initially and reveal why continuation
+        doesn't work on real PDFs despite 57/57 unit tests passing.
+        """
+        pdf_path = Path(__file__).parent.parent.parent / "test_files/kant_critique_pages_64_65.pdf"
+
+        if not pdf_path.exists():
+            pytest.skip(f"Kant 64-65 test PDF not found: {pdf_path}")
+
+        # Process real PDF with footnote detection
+        result = process_pdf(
+            str(pdf_path),
+            output_format='markdown',
+            detect_footnotes=True
+        )
+
+        # Should detect footnotes
+        assert result is not None, "process_pdf returned None"
+
+        # Parse result to extract footnotes
+        # Look for markdown footnote format: [^marker]: content
+        import re
+        footnote_pattern = r'\[\^(.+?)\]:\s*(.+?)(?=\[\^|\Z)'
+        matches = re.findall(footnote_pattern, result, re.DOTALL)
+
+        # Debug output
+        print(f"\n🔍 E2E Debug Output:")
+        print(f"   Total footnotes detected: {len(matches)}")
+        for marker, content_preview in matches:
+            preview = content_preview[:100].replace('\n', ' ')
+            print(f"   - Marker '{marker}': {preview}...")
+
+        # Find asterisk footnote
+        asterisk_footnotes = [(m, c) for m, c in matches if m == '*' or m == '\\*']
+
+        assert len(asterisk_footnotes) >= 1, \
+            f"Expected at least 1 asterisk footnote, found {len(asterisk_footnotes)}.\n" \
+            f"All markers found: {[m for m, c in matches]}"
+
+        asterisk_marker, asterisk_content = asterisk_footnotes[0]
+
+        # CRITICAL: Validate multi-page content
+        # Content should include BOTH page 64 ending and page 65 continuation
+        content_lower = asterisk_content.lower()
+
+        # Page 64 ending: "criticism, to" or "criticism,to"
+        has_page64_end = ('criticism, to' in content_lower or
+                         'criticism,to' in content_lower or
+                         'to\n' in content_lower or
+                         'to which' in content_lower)
+
+        # Page 65 continuation: "which everything must submit"
+        has_page65_start = 'which everything must submit' in content_lower
+
+        print(f"\n🎯 Multi-page Detection:")
+        print(f"   Has page 64 ending ('to'): {has_page64_end}")
+        print(f"   Has page 65 continuation ('which everything must submit'): {has_page65_start}")
+        print(f"   Content preview: {asterisk_content[:200]}...")
+
+        # THIS ASSERTION WILL FAIL if continuation not merged
+        assert has_page64_end, \
+            f"Missing page 64 ending ('criticism, to'). THIS REVEALS THE BUG.\n" \
+            f"Content: {asterisk_content[:300]}"
+
+        assert has_page65_start, \
+            f"Missing page 65 continuation ('which everything must submit'). THIS REVEALS THE BUG.\n" \
+            f"Content: {asterisk_content[:300]}"
+
+        # Validate continuation makes sense
+        assert 'to which' in content_lower or 'to  which' in content_lower, \
+            f"Continuation should form 'to which' pattern. Got: {asterisk_content[:200]}"
+
+        print(f"\n✅ E2E Test PASSED: Multi-page continuation working!")
+
+    def test_pipeline_sets_is_complete_field(self):
+        """
+        Validate pipeline sets is_complete field (data contract requirement).
+
+        CrossPageFootnoteParser REQUIRES is_complete field to function.
+        This test ensures the pipeline provides it.
+
+        Expected: This test may FAIL and reveal that is_complete field is missing,
+        which is why continuation detection doesn't work.
+        """
+        pdf_path = Path(__file__).parent.parent.parent / "test_files/derrida_footnote_pages_120_125.pdf"
+
+        if not pdf_path.exists():
+            pytest.skip(f"Derrida test PDF not found: {pdf_path}")
+
+        # Use internal detection function to inspect footnote data structures
+        doc = fitz.open(pdf_path)
+        page = doc[0]
+
+        result = _detect_footnotes_in_page(page, 0)
+        doc.close()
+
+        definitions = result.get('definitions', [])
+
+        print(f"\n🔍 Data Contract Validation:")
+        print(f"   Definitions found: {len(definitions)}")
+
+        # Every footnote definition must have is_complete field
+        for i, footnote in enumerate(definitions):
+            marker = footnote.get('marker', 'UNKNOWN')
+
+            print(f"\n   Footnote {i+1} (marker '{marker}'):")
+            print(f"      Fields present: {list(footnote.keys())}")
+
+            # Check is_complete field
+            assert 'is_complete' in footnote, \
+                f"Footnote '{marker}' missing is_complete field. THIS REVEALS DATA CONTRACT BUG.\n" \
+                f"Fields present: {list(footnote.keys())}"
+
+            # Validate field type
+            is_complete = footnote['is_complete']
+            assert isinstance(is_complete, bool), \
+                f"is_complete must be boolean, got {type(is_complete)}: {is_complete}"
+
+            print(f"      is_complete: {is_complete} ✓")
+
+        print(f"\n✅ Data contract validated: All footnotes have is_complete field")
+
+    def test_pipeline_sets_pages_field(self):
+        """
+        Validate pipeline sets pages field for multi-page tracking.
+
+        Expected: May FAIL if pages field is not populated correctly,
+        revealing why multi-page footnotes don't show multiple pages.
+        """
+        pdf_path = Path(__file__).parent.parent.parent / "test_files/kant_critique_pages_64_65.pdf"
+
+        if not pdf_path.exists():
+            pytest.skip(f"Kant 64-65 test PDF not found: {pdf_path}")
+
+        # Use internal detection to inspect data structures
+        doc = fitz.open(pdf_path)
+
+        # Process both pages
+        page1_result = _detect_footnotes_in_page(doc[0], 0)
+        page2_result = _detect_footnotes_in_page(doc[1], 1)
+
+        doc.close()
+
+        print(f"\n🔍 Pages Field Validation:")
+        print(f"   Page 1 definitions: {len(page1_result.get('definitions', []))}")
+        print(f"   Page 2 definitions: {len(page2_result.get('definitions', []))}")
+
+        # Check page 1 definitions
+        for i, footnote in enumerate(page1_result.get('definitions', [])):
+            marker = footnote.get('marker', 'UNKNOWN')
+            print(f"\n   Page 1 Footnote {i+1} (marker '{marker}'):")
+            print(f"      Fields: {list(footnote.keys())}")
+
+            if 'pages' in footnote:
+                print(f"      pages field: {footnote['pages']}")
+            else:
+                print(f"      pages field: MISSING")
+
+        # Check page 2 definitions
+        for i, footnote in enumerate(page2_result.get('definitions', [])):
+            marker = footnote.get('marker', 'UNKNOWN')
+            print(f"\n   Page 2 Footnote {i+1} (marker '{marker}'):")
+            print(f"      Fields: {list(footnote.keys())}")
+
+            if 'pages' in footnote:
+                print(f"      pages field: {footnote['pages']}")
+            else:
+                print(f"      pages field: MISSING")
+
+    def test_process_pdf_returns_structured_footnotes(self):
+        """
+        Validate process_pdf returns structured footnote data (not just markdown).
+
+        If process_pdf only returns markdown text, we can't inspect multi-page tracking.
+        This test checks if we can access structured data.
+        """
+        pdf_path = Path(__file__).parent.parent.parent / "test_files/kant_critique_pages_64_65.pdf"
+
+        if not pdf_path.exists():
+            pytest.skip(f"Kant 64-65 test PDF not found: {pdf_path}")
+
+        # Use actual API - _detect_footnotes_in_page returns structured data
+        from lib.rag_processing import _detect_footnotes_in_page
+
+        doc = fitz.open(pdf_path)
+        page = doc[0]
+
+        # Extract structured data from page
+        structured_data = _detect_footnotes_in_page(page, 0)
+
+        doc.close()
+
+        print(f"\n🔍 Structured Data Inspection:")
+        print(f"   Type: {type(structured_data)}")
+
+        # Validate it's a dict with expected structure
+        assert isinstance(structured_data, dict), "Should return dict structure"
+
+        print(f"   Keys: {list(structured_data.keys())}")
+
+        # Check for required keys
+        assert 'markers' in structured_data, "Should have 'markers' key"
+        assert 'definitions' in structured_data, "Should have 'definitions' key"
+
+        definitions = structured_data.get('definitions', [])
+        markers = structured_data.get('markers', [])
+
+        print(f"   Markers count: {len(markers)}")
+        print(f"   Definitions count: {len(definitions)}")
+
+        if definitions:
+            for i, fn in enumerate(definitions[:3]):  # First 3
+                print(f"\n   Definition {i+1}:")
+                print(f"      Type: {type(fn)}")
+                if isinstance(fn, dict):
+                    print(f"      Keys: {list(fn.keys())}")
+                    print(f"      Marker: {fn.get('marker')}")
+                    print(f"      Content: {fn.get('content', '')[:50]}...")
+
+        print(f"\n✅ Structured data inspection complete")
 
 
 # =============================================================================

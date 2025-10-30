@@ -465,8 +465,21 @@ def apply_corruption_recovery(
             continue
 
         marker_text = definition.get('marker', definition.get('text', ''))
+
+        # SPECIAL CASE: Markerless continuations (marker=None)
+        # These are potential multi-page continuations detected by _find_markerless_content()
+        # Pass them through WITHOUT corruption recovery - they're not corrupted
         if marker_text is None:
+            # Preserve markerless definitions for CrossPageFootnoteParser
+            corrected_definitions.append({
+                **definition,
+                'actual_marker': None,  # Explicitly preserve None marker
+                'observed_marker': None,
+                'confidence': definition.get('continuation_confidence', 0.5),
+                'inference_method': 'markerless_passthrough'
+            })
             continue
+
         observed = marker_text[:10].strip()
 
         # Use expected symbol from sequence if available

@@ -2,7 +2,7 @@ import asyncio
 import re
 import logging
 from pathlib import Path
-from typing import Optional, Any, Dict, List
+from typing import Optional, Any, Dict, List, Tuple
 import aiofiles
 import unicodedata # Added for slugify
 import os # Ensure os is imported if needed for path manipulation later
@@ -3403,6 +3403,77 @@ def _is_superscript(span: Dict[str, Any], normal_font_size: float) -> bool:
     return False
 
 
+def _is_ocr_corrupted(text: str) -> Tuple[bool, float, str]:
+    """
+    Detect OCR corruption artifacts that indicate unreliable text.
+
+    OCR corruption indicators:
+    - Tilde (~) character - OCR uncertainty marker
+    - Multiple special characters (>2 in short text)
+    - Mixed punctuation patterns (letter-punct-letter)
+    - Non-standard single characters
+
+    This prevents false positive marker detection from corrupted text like:
+    - "the~" (tilde corruption)
+    - "of~·" (tilde + special chars)
+    - "r:~sentially" (embedded corruption)
+    - "cnt.i,ic~" (severe corruption)
+    - "a.b,c:" (excessive punctuation)
+
+    Args:
+        text: Text to check for OCR corruption
+
+    Returns:
+        Tuple of (is_corrupted, confidence, reason):
+        - is_corrupted: True if text appears corrupted
+        - confidence: 0.0-1.0 confidence score
+        - reason: Description of corruption type or 'clean_text'
+
+    Examples:
+        >>> _is_ocr_corrupted("the~")
+        (True, 0.95, 'tilde_corruption')
+
+        >>> _is_ocr_corrupted("cnt.i,ic~")
+        (True, 0.95, 'tilde_corruption')
+
+        >>> _is_ocr_corrupted("*")
+        (False, 0.90, 'clean_text')
+
+        >>> _is_ocr_corrupted("1")
+        (False, 0.90, 'clean_text')
+    """
+    import re
+
+    # Signal 1: Tilde character (strong corruption indicator)
+    # This is the most reliable OCR corruption marker
+    if '~' in text:
+        return True, 0.95, 'tilde_corruption'
+
+    # Signal 2: Multiple special characters in short text
+    # Count non-alphanumeric characters (excluding valid marker symbols)
+    special_chars = sum(1 for c in text if c in '.,;:!?@#$%^&*()[]{}|\\/<>')
+
+    # Threshold: >2 special chars in text length <10
+    if len(text) < 10 and special_chars > 2:
+        return True, 0.90, 'excessive_special_chars'
+
+    # Signal 3: Mixed corruption patterns (letter-punctuation-letter)
+    # This catches patterns like "a.b" or "h:i" which are unlikely to be valid
+    if re.search(r'[a-z][.,;:][a-z]', text):
+        return True, 0.85, 'mixed_corruption'
+
+    # Signal 4: Invalid single character
+    # Single characters that are not valid markers should be rejected
+    # Valid single char markers: digits, letters, common symbols
+    if len(text) == 1:
+        valid_single_chars = set('0123456789abcdefghijklmnopqrstuvwxyz*†‡§¶#')
+        if text.lower() not in valid_single_chars:
+            return True, 0.80, 'invalid_single_char'
+
+    # Text appears clean
+    return False, 0.90, 'clean_text'
+
+
 def _detect_footnotes_in_page(page: Any, page_num: int) -> Dict[str, List[Dict[str, Any]]]:
     """
     Detect footnotes/endnotes in a PDF page using marker-driven architecture.
@@ -3515,9 +3586,12 @@ def _detect_footnotes_in_page(page: Any, page_num: int) -> Dict[str, List[Dict[s
                 # This gave false positives: "text *" had span_start_pos==0 (span is first)
                 # but marker "*" was NOT at start of span text!
 
-                # Check: Does this span's TEXT start with a marker pattern?
-                span_text_clean = text.strip()
-                marker_pattern_at_start = bool(re.match(r'^[*†‡§¶#\d]+', span_text_clean))
+                # Check: Does this LINE's TEXT start with a marker pattern?
+                # We check the LINE text, not the span text, because a marker at the end
+                # of a line ("text *") would have a span starting with *, but the LINE doesn't.
+                # This correctly identifies footnote definitions like "* The title..."
+                line_text_clean = line_text.strip()
+                marker_pattern_at_start = bool(re.match(r'^[*†‡§¶#\d]+', line_text_clean))
                 is_at_definition_start = (line_idx == 0 and marker_pattern_at_start)
 
                 if is_at_definition_start and block_starts_with_marker and not is_superscript:
@@ -3528,24 +3602,63 @@ def _detect_footnotes_in_page(page: Any, page_num: int) -> Dict[str, List[Dict[s
                 # IMPORTANT: Only accept as marker if:
                 # - Superscript (any character) OR
                 # - Known footnote symbol (*, †, ‡, etc.) AND NOT at definition start OR
-                # - In bracket context
+                # - In bracket context OR
+                # - CORRUPTION-AWARE: Known corruption pattern (NEW FIX for BUG-1)
                 # Reject: random letters that aren't superscript
 
                 marker_text = text.strip()
+
+                # BUG-1 FIX: Check for known corruption patterns
+                # If we already detected markers, check if this text matches corruption table
+                # Example: After detecting '*', a standalone 't' is likely corrupted '†'
+                # This allows corruption recovery to run even on non-superscript corrupted markers
+                is_known_corruption = False
+                if result['markers'] and len(marker_text) <= 3 and not is_at_definition_start:
+                    # Known corruption patterns from footnote_corruption_model.py CORRUPTION_TABLE
+                    # These are OBSERVED corruptions that should map to ACTUAL symbols
+                    corruption_chars = {
+                        't',    # † → 't' (85% probability)
+                        'iii',  # * → 'iii' OR ‡ → 'iii'
+                        'tt',   # ‡ → 'tt'
+                        's',    # § → 's'
+                        'p',    # ¶ → 'p'
+                        'o',    # ° → 'o'
+                        '0',    # ° → '0'
+                        'sec',  # § → 'sec'
+                        'para'  # ¶ → 'para'
+                    }
+                    if marker_text in corruption_chars:
+                        # Additional context check: only accept if font size is reasonable for body text
+                        # This prevents catching random body text words
+                        font_size = span.get('size', 10.0)
+                        if 8.0 <= font_size <= 12.0:  # Typical body text range
+                            is_known_corruption = True
+                            logging.debug(f"Detected potential corrupted marker: '{marker_text}' (after {len(result['markers'])} markers, size: {font_size:.1f})")
+
                 is_likely_marker = (
                     is_superscript or  # Superscript = always marker
                     (is_footnote_symbol and not is_at_definition_start) or  # Symbol in body (not definition start)
-                    is_in_bracket  # Bracketed symbols
+                    is_in_bracket or  # Bracketed symbols
+                    is_known_corruption  # BUG-1 FIX: Known corruption patterns
                 )
 
-                # Extra filter for single letters: requires special handling
+                # Extra filter for single letters ONLY if not already identified as marker
+                # This prevents false positives from OCR corruption like "h", "t"
                 # Single letters can be:
-                # 1. Superscript markers (a, b, c) - ALWAYS accept
-                # 2. Corrupted symbols (t → †) - Accept if special formatting OR isolated
+                # 1. Superscript markers (a, b, c) - ALREADY accepted above
+                # 2. Valid footnote markers (a-j) with formatting AND isolation - Check here
                 # 3. Random body text ("The", "And") - REJECT
-                if marker_text.isalpha() and len(marker_text) == 1 and not is_superscript:
-                    # Check if letter has special formatting (bold, italic, etc.)
-                    has_special_formatting = (span.get("flags", 0) & ~(1 << 5)) != 0  # Any flag except serifed
+                # 4. OCR corruption fragments ("h", "t") - REJECT
+                if not is_likely_marker and marker_text.isalpha() and len(marker_text) == 1:
+                    # Whitelist of valid single-letter markers in academic texts
+                    # Common alphabetic markers: a-j (covers most footnote sequences)
+                    VALID_SINGLE_LETTERS = set('abcdefghij')
+
+                    # Check if letter has special formatting (bold, italic, superscript)
+                    # PyMuPDF flags: 1=superscript, 2=italic, 4=serifed, 8=monospaced, 16=bold
+                    # Special formatting = bold OR italic OR superscript (not just serifed)
+                    span_flags = span.get("flags", 0)
+                    has_special_formatting = bool(span_flags & (1 | 2 | 16))  # superscript | italic | bold
 
                     # Check if letter is isolated (surrounded by spaces/punctuation)
                     # Extract context around this span
@@ -3555,20 +3668,35 @@ def _detect_footnotes_in_page(page: Any, page_num: int) -> Dict[str, List[Dict[s
                     after_char = line_text[after_pos] if after_pos < len(line_text) else ' '
                     is_isolated = before_char in ' \t([{' and after_char in ' \t)]}.,;:'
 
-                    # Accept letter if:
-                    # - Has special formatting (bold/italic - potential corruption)
-                    # - Is isolated (not part of a word)
-                    # - Is lowercase (footnote markers typically lowercase)
-                    if marker_text.islower() and (has_special_formatting or is_isolated):
-                        # Likely a corrupted symbol or valid footnote marker
+                    # STRICTER LOGIC: Require ALL of:
+                    # 1. Lowercase letter
+                    # 2. In whitelist of valid markers
+                    # 3. Has special formatting (bold/italic)
+                    # 4. Is isolated (not part of word)
+                    # This prevents false positives from OCR fragments like "h", "t"
+                    if (marker_text.islower() and
+                        marker_text in VALID_SINGLE_LETTERS and
+                        has_special_formatting and
+                        is_isolated):
+                        # Likely a valid footnote marker
                         is_likely_marker = True
                     else:
-                        # Likely body text
+                        # Likely body text or OCR corruption
                         is_likely_marker = False
 
                 if is_likely_marker:
                     # Potential footnote marker
                     marker_text = text.strip()
+
+                    # OCR QUALITY FILTER: Reject corrupted text before pattern matching
+                    # This prevents false positives from OCR artifacts like "the~", "cnt.i,ic~"
+                    is_corrupted, corruption_conf, corruption_reason = _is_ocr_corrupted(marker_text)
+                    if is_corrupted:
+                        logging.debug(
+                            f"Rejecting OCR corrupted marker candidate: '{marker_text}' "
+                            f"({corruption_reason}, confidence: {corruption_conf:.2f})"
+                        )
+                        continue  # Skip this span, don't add to markers
 
                     # For symbols, match against patterns
                     for pattern_type, pattern in marker_patterns.items():

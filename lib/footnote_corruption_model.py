@@ -415,6 +415,124 @@ def apply_corruption_recovery(
 
         return corrected_markers, corrected_definitions
 
+    # BUG-2 FIX: STEP 2.5: If alphabetic schema, preserve markers unchanged
+    # Alphabetic markers (a, b, c, d, e) from translators should NOT be converted to symbols
+    if schema_type == 'alphabetic':
+        # Pure alphabetic schema - pass through without conversion
+        logging.info(f"Alphabetic schema detected - preserving translator markers as-is")
+
+        corrected_markers = [
+            {
+                **marker,
+                'actual_symbol': marker.get('text', marker.get('marker', '')),
+                'observed_text': marker.get('text', marker.get('marker', '')),
+                'confidence': 0.95,
+                'inference_method': 'direct_alphabetic'
+            }
+            for marker in detected_markers
+        ]
+
+        corrected_definitions = [
+            {
+                **definition,
+                'actual_marker': definition.get('marker', ''),
+                'observed_marker': definition.get('marker', ''),
+                'confidence': 0.95,
+                'inference_method': 'direct_alphabetic'
+            }
+            for definition in detected_definitions
+        ]
+
+        return corrected_markers, corrected_definitions
+
+    # BUG-2 FIX: STEP 2.6: If mixed schema, apply selective corruption recovery
+    # Mixed can mean: symbolic + alphabetic (Kant) OR symbolic + corrupted symbolic (Derrida)
+    # Strategy: Preserve alphabetic (a-z), recover corrupted symbols (t→†), keep actual symbols (*)
+    if schema_type == 'mixed':
+        logging.info(f"Mixed schema detected - applying selective corruption recovery")
+
+        corrected_markers = []
+        for i, marker in enumerate(detected_markers):
+            observed = marker.get('text', marker.get('marker', ''))
+            prev_symbol = corrected_markers[i-1]['actual_symbol'] if i > 0 else None
+
+            # Check if this is alphabetic marker (translator note)
+            if observed.isalpha() and len(observed) == 1 and observed in 'abcdefghij':
+                # Preserve alphabetic markers unchanged
+                corrected_markers.append({
+                    **marker,
+                    'actual_symbol': observed,
+                    'observed_text': observed,
+                    'confidence': 0.95,
+                    'inference_method': 'direct_alphabetic'
+                })
+            # Check if this is actual symbolic marker (not corrupted)
+            elif observed in ['*', '†', '‡', '§', '¶', '#', '°', '∥']:
+                # Preserve actual symbols unchanged
+                corrected_markers.append({
+                    **marker,
+                    'actual_symbol': observed,
+                    'observed_text': observed,
+                    'confidence': 0.98,
+                    'inference_method': 'direct_symbolic'
+                })
+            else:
+                # Might be corrupted symbol - apply Bayesian recovery
+                inference = model.infer_symbol(observed, prev_symbol=prev_symbol)
+                corrected_markers.append({
+                    **marker,
+                    'actual_symbol': inference.actual_symbol,
+                    'observed_text': observed,
+                    'confidence': inference.confidence,
+                    'inference_method': inference.inference_method
+                })
+
+        # Similar logic for definitions
+        corrected_definitions = []
+        for i, definition in enumerate(detected_definitions):
+            if definition is None:
+                continue
+
+            marker_text = definition.get('marker', definition.get('text', ''))
+
+            # Markerless continuations
+            if marker_text is None:
+                corrected_definitions.append({
+                    **definition,
+                    'actual_marker': None,
+                    'observed_marker': None,
+                    'confidence': 0.90,
+                    'inference_method': 'markerless'
+                })
+                continue
+
+            # Alphabetic or actual symbol - preserve
+            if (marker_text.isalpha() and len(marker_text) == 1 and marker_text in 'abcdefghij') or \
+               (marker_text in ['*', '†', '‡', '§', '¶', '#', '°', '∥']):
+                corrected_definitions.append({
+                    **definition,
+                    'actual_marker': marker_text,
+                    'observed_marker': marker_text,
+                    'confidence': 0.95,
+                    'inference_method': 'direct_mixed'
+                })
+            else:
+                # Potentially corrupted - recover
+                if i < len(corrected_markers):
+                    actual_marker = corrected_markers[i]['actual_symbol']
+                else:
+                    actual_marker = marker_text
+
+                corrected_definitions.append({
+                    **definition,
+                    'actual_marker': actual_marker,
+                    'observed_marker': marker_text,
+                    'confidence': 0.85,
+                    'inference_method': 'sequence_based'
+                })
+
+        return corrected_markers, corrected_definitions
+
     # STEP 3: For symbolic schema, apply Bayesian corruption recovery
     corrected_markers = []
     corrected_definitions = []

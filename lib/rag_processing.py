@@ -3635,8 +3635,47 @@ def _detect_footnotes_in_page(page: Any, page_num: int) -> Dict[str, List[Dict[s
                             is_known_corruption = True
                             logging.debug(f"Detected potential corrupted marker: '{marker_text}' (after {len(result['markers'])} markers, size: {font_size:.1f})")
 
+                # BUG-2 FIX: Stricter validation for superscript markers
+                # Not ALL superscripts are footnote markers (e.g., page refs, math notation, cross-refs)
+                # Require superscript + (symbol OR sequential digit/letter)
+                is_valid_superscript = False
+                if is_superscript:
+                    # Check if it's a known footnote symbol
+                    if marker_text in ['*', '†', '‡', '§', '¶', '#', '°', '∥']:
+                        is_valid_superscript = True
+                    # OR single digit AND appears sequential OR is first marker
+                    elif marker_text.isdigit() and len(marker_text) == 1:
+                        # Check if sequential: if we have markers, this digit should continue sequence
+                        # OR if this is first marker, accept 1-3 as likely starts
+                        digit_val = int(marker_text)
+                        if not result['markers']:
+                            # First marker: accept 1, 2, or 3 as likely footnote starts
+                            if digit_val in [1, 2, 3]:
+                                is_valid_superscript = True
+                        else:
+                            # Have prior markers: check if this continues numeric sequence
+                            # Get previous numeric markers
+                            prev_numeric = [int(m['marker']) for m in result['markers']
+                                          if m.get('marker', '').isdigit()]
+                            if prev_numeric:
+                                expected_next = max(prev_numeric) + 1
+                                # Accept if this is next in sequence OR within 2 of last (handle gaps)
+                                if abs(digit_val - expected_next) <= 2:
+                                    is_valid_superscript = True
+                    # OR single letter a-j AND isolated (not part of word)
+                    elif marker_text.isalpha() and len(marker_text) == 1:
+                        # Check isolation - must have space/punctuation before & after
+                        span_pos = span_positions[span_idx]
+                        before_char = line_text[span_pos - 1] if span_pos > 0 else ' '
+                        after_pos = span_pos + len(marker_text)
+                        after_char = line_text[after_pos] if after_pos < len(line_text) else ' '
+                        is_isolated = before_char in ' \t([{' and after_char in ' \t)]}.,;:'
+
+                        if marker_text in 'abcdefghij' and is_isolated:
+                            is_valid_superscript = True
+
                 is_likely_marker = (
-                    is_superscript or  # Superscript = always marker
+                    is_valid_superscript or  # BUG-2 FIX: Stricter superscript validation
                     (is_footnote_symbol and not is_at_definition_start) or  # Symbol in body (not definition start)
                     is_in_bracket or  # Bracketed symbols
                     is_known_corruption  # BUG-1 FIX: Known corruption patterns
@@ -3773,11 +3812,34 @@ def _detect_footnotes_in_page(page: Any, page_num: int) -> Dict[str, List[Dict[s
         markerless = _find_markerless_content(page, result['definitions'], marker_y_positions, page_num)
         result['definitions'].extend(markerless)
 
+    # BUG-2 FIX: Deduplication for TRUE duplicates only (same marker + same bbox)
+    # Don't deduplicate different markers in same bbox (multi-footnote blocks like Derrida)
+    # Example: Derrida has both * and † in single block "iii ...text... t ...text..."
+    seen_marker_bbox_pairs = set()
+    unique_definitions = []
+    for definition in result.get('definitions', []):
+        marker = definition.get('marker', '?')
+        bbox = definition.get('bbox', {})
+        bbox_key = tuple(bbox) if isinstance(bbox, (list, tuple)) else str(bbox)
+
+        # Deduplication key: (marker, bbox) not just bbox
+        dedup_key = (marker, bbox_key)
+
+        if dedup_key not in seen_marker_bbox_pairs:
+            seen_marker_bbox_pairs.add(dedup_key)
+            unique_definitions.append(definition)
+        else:
+            logging.debug(f"Skipping TRUE duplicate: marker '{marker}' at same bbox")
+
+    result['definitions'] = unique_definitions
+    if len(result.get('definitions', [])) != len(unique_definitions):
+        logging.debug(f"Deduplication: {len(result.get('definitions', []))} → {len(unique_definitions)} definitions")
+
     # Apply corruption recovery using Bayesian inference
     # Use schema from body markers to correct footer corruptions
     corrected_markers, corrected_definitions = apply_corruption_recovery(
         result.get('markers', []),
-        result.get('definitions', [])
+        unique_definitions  # BUG-2 FIX: Use deduplicated definitions
     )
 
     # Detect schema type for classification

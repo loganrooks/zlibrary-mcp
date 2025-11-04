@@ -4100,10 +4100,14 @@ def process_pdf(
             markdown_toc = _generate_markdown_toc_from_pdf(toc_map, skip_front_matter=True)
 
         # 2. Determine first content page (skip front matter like "Title Page", "Copyright", "Contents")
+        # BUG-4 FIX: Default to page 1 (process all pages) unless we have confident ToC
+        # Small PDFs (< 10 pages) likely don't have front matter worth skipping
         first_content_page = 1
-        if toc_map:
+        if toc_map and len(doc) >= 10:  # Only skip front matter for larger documents (>= 10 pages)
             first_content_page = _find_first_content_page(toc_map)
             logging.info(f"Starting content at page {first_content_page} (first real content after front matter)")
+        else:
+            logging.info(f"Processing all pages from page 1 (small document or no confident ToC)")
 
         # 2. Extract structured content using block-level analysis
         logging.debug("Performing structured PDF extraction with block analysis...")
@@ -4276,12 +4280,20 @@ def process_pdf(
 
         # Add footnotes at the end if detected
         if detect_footnotes and all_footnotes:
-            # Deduplicate footnotes by marker (actual_marker or marker)
-            seen_markers = set()
+            # BUG-4 FIX: Deduplicate footnotes by (page, marker) instead of just marker
+            # This allows same marker (e.g., "1") to appear on different pages
+            # Example: Heidegger has marker "1" on both page 22 and page 23
+            seen_markers_per_page = {}  # {page_num: set(markers)}
             unique_footnotes = []
 
             for fn in all_footnotes:
                 marker = fn.get('actual_marker', fn.get('marker'))
+                # BUG-4 FIX: Extract page number from 'pages' list (primary) or fallback fields
+                pages = fn.get('pages', [])
+                page_num = pages[0] if pages else fn.get('page_number', fn.get('page', -1))
+
+                # DEBUG: Log page extraction for BUG-4 investigation
+                logging.debug(f"Footnote marker '{marker}': pages={pages}, page_num={page_num}, keys={list(fn.keys())}")
 
                 # Special handling for markerless continuations - each is unique
                 # Markerless blocks (marker=None) are continuation candidates that should
@@ -4290,12 +4302,19 @@ def process_pdf(
                     unique_footnotes.append(fn)  # Don't deduplicate
                     continue
 
-                # Normal deduplication for actual markers
-                if marker not in seen_markers:
-                    seen_markers.add(marker)
+                # BUG-4 FIX: Per-page deduplication instead of global
+                # Initialize page marker set if not exists
+                if page_num not in seen_markers_per_page:
+                    seen_markers_per_page[page_num] = set()
+
+                # Check if marker already seen on THIS page
+                if marker not in seen_markers_per_page[page_num]:
+                    seen_markers_per_page[page_num].add(marker)
                     unique_footnotes.append(fn)
+                    logging.debug(f"Adding footnote: page {page_num}, marker '{marker}'")
                 else:
-                    logging.debug(f"Skipping duplicate footnote marker: {marker}")
+                    # True duplicate: same marker on same page (likely bbox-based duplicate)
+                    logging.debug(f"Skipping duplicate footnote on page {page_num}: marker '{marker}'")
 
             footnote_section = _format_footnotes_markdown({'definitions': unique_footnotes})
             if footnote_section:

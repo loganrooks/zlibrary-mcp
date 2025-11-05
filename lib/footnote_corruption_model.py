@@ -456,8 +456,19 @@ def apply_corruption_recovery(
             observed = marker.get('text', marker.get('marker', ''))
             prev_symbol = corrected_markers[i-1]['actual_symbol'] if i > 0 else None
 
-            # Check if this is alphabetic marker (translator note)
-            if observed.isalpha() and len(observed) == 1 and observed in 'abcdefghij':
+            # BUG-3 FIX: Preserve numeric, alphabetic, and actual symbols in mixed schema
+            # Check if this is numeric marker (1-9, author notes)
+            if observed.isdigit() and len(observed) == 1:
+                # Preserve numeric markers unchanged
+                corrected_markers.append({
+                    **marker,
+                    'actual_symbol': observed,
+                    'observed_text': observed,
+                    'confidence': 0.95,
+                    'inference_method': 'direct_numeric'
+                })
+            # Check if this is alphabetic marker (a-j, translator notes)
+            elif observed.isalpha() and len(observed) == 1 and observed in 'abcdefghij':
                 # Preserve alphabetic markers unchanged
                 corrected_markers.append({
                     **marker,
@@ -506,8 +517,9 @@ def apply_corruption_recovery(
                 })
                 continue
 
-            # Alphabetic or actual symbol - preserve
-            if (marker_text.isalpha() and len(marker_text) == 1 and marker_text in 'abcdefghij') or \
+            # BUG-3 FIX: Preserve numeric, alphabetic, or actual symbols
+            if (marker_text.isdigit() and len(marker_text) == 1) or \
+               (marker_text.isalpha() and len(marker_text) == 1 and marker_text in 'abcdefghij') or \
                (marker_text in ['*', '†', '‡', '§', '¶', '#', '°', '∥']):
                 corrected_definitions.append({
                     **definition,

@@ -2866,6 +2866,10 @@ def _starts_with_marker(text: str, marker_patterns: dict, marker_priority: list)
 
     text = text.strip()
     for pattern_type in marker_priority:
+        # BUG-3 FIX: Skip if pattern not in dict
+        if pattern_type not in marker_patterns:
+            continue
+
         pattern = marker_patterns[pattern_type]
         if re.match(rf'^({pattern})[\.\s\t]', text):
             return True
@@ -2976,6 +2980,10 @@ def _find_definition_for_marker(page: Any, marker: str, marker_y_position: float
             # CRITICAL FIX (ISSUE-FN-001): Match ANY marker pattern, not just exact marker
             # This allows corruption recovery to fix mismatches later (e.g., "iii" → "*")
             for pattern_type in marker_priority:
+                # BUG-3 FIX: Skip pattern if not in marker_patterns dict
+                if pattern_type not in marker_patterns:
+                    continue
+
                 pattern = marker_patterns[pattern_type]
                 match = re.match(rf'^({pattern})[\.\s\t]', line_text)
 
@@ -3643,25 +3651,27 @@ def _detect_footnotes_in_page(page: Any, page_num: int) -> Dict[str, List[Dict[s
                     # Check if it's a known footnote symbol
                     if marker_text in ['*', '†', '‡', '§', '¶', '#', '°', '∥']:
                         is_valid_superscript = True
-                    # OR single digit AND appears sequential OR is first marker
-                    elif marker_text.isdigit() and len(marker_text) == 1:
-                        # Check if sequential: if we have markers, this digit should continue sequence
-                        # OR if this is first marker, accept 1-3 as likely starts
+                    # BUG-3 FIX: OR numeric marker (single or multi-digit) with validation
+                    elif marker_text.isdigit():
+                        # Numeric markers can be 1-2 digits (e.g., 1-20 are common in academic texts)
+                        # Reject if >20 (likely page/section reference)
                         digit_val = int(marker_text)
-                        if not result['markers']:
-                            # First marker: accept 1, 2, or 3 as likely footnote starts
-                            if digit_val in [1, 2, 3]:
+
+                        if digit_val > 20:
+                            # Too large, likely page number or section reference
+                            pass  # is_valid_superscript remains False
+                        elif len(marker_text) == 1:
+                            # Single digit (1-9): Be permissive for superscripts
+                            # BUG-3 FIX: Accept any single-digit superscript 1-9
+                            # Being superscript is strong enough signal
+                            # Don't require strict sequencing (pages can have independent sequences)
+                            if digit_val <= 9:
                                 is_valid_superscript = True
+                            # Could still validate sequence as confidence signal, but don't reject
                         else:
-                            # Have prior markers: check if this continues numeric sequence
-                            # Get previous numeric markers
-                            prev_numeric = [int(m['marker']) for m in result['markers']
-                                          if m.get('marker', '').isdigit()]
-                            if prev_numeric:
-                                expected_next = max(prev_numeric) + 1
-                                # Accept if this is next in sequence OR within 2 of last (handle gaps)
-                                if abs(digit_val - expected_next) <= 2:
-                                    is_valid_superscript = True
+                            # Multi-digit (10-20): Accept if superscript (rules out body text)
+                            # Being superscript is strong signal it's a footnote marker, not page number
+                            is_valid_superscript = True
                     # OR single letter a-j AND isolated (not part of word)
                     elif marker_text.isalpha() and len(marker_text) == 1:
                         # Check isolation - must have space/punctuation before & after

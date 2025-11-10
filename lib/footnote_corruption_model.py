@@ -457,9 +457,9 @@ def apply_corruption_recovery(
             prev_symbol = corrected_markers[i-1]['actual_symbol'] if i > 0 else None
 
             # BUG-3 FIX: Preserve numeric, alphabetic, and actual symbols in mixed schema
-            # Check if this is numeric marker (1-9, author notes)
-            if observed.isdigit() and len(observed) == 1:
-                # Preserve numeric markers unchanged
+            # Check if this is numeric marker (1-20, author notes)
+            if observed.isdigit() and int(observed) <= 20:
+                # Preserve numeric markers unchanged (single or multi-digit)
                 corrected_markers.append({
                     **marker,
                     'actual_symbol': observed,
@@ -517,8 +517,8 @@ def apply_corruption_recovery(
                 })
                 continue
 
-            # BUG-3 FIX: Preserve numeric, alphabetic, or actual symbols
-            if (marker_text.isdigit() and len(marker_text) == 1) or \
+            # BUG-3 FIX: Preserve numeric (1-20), alphabetic, or actual symbols
+            if (marker_text.isdigit() and int(marker_text) <= 20) or \
                (marker_text.isalpha() and len(marker_text) == 1 and marker_text in 'abcdefghij') or \
                (marker_text in ['*', '†', '‡', '§', '¶', '#', '°', '∥']):
                 corrected_definitions.append({

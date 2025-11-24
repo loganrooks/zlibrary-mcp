@@ -1,0 +1,91 @@
+{
+  "date": "2025-11-02",
+  "baseline": "After BUG-1,2,3,4 fixes, before BUG-5 optimization",
+  "target_ms_per_page": 60,
+  "corpora": [
+    {
+      "name": "Derrida",
+      "pdf_path": "test_files/derrida_footnote_pages_120_125.pdf",
+      "pages": 6,
+      "total_time_ms": 67984.31,
+      "time_per_page_ms": 11330.72,
+      "budget_ms_per_page": 60,
+      "over_budget_multiplier": 188.85,
+      "hotspots": [
+        "ncalls  tottime  percall  cumtime  percall filename:lineno(function)",
+        "1    0.002    0.002   67.984   67.984 /home/rookslog/mcp-servers/zlibrary-mcp/lib/rag_processing.py:3991(process_pdf)",
+        "6    0.003    0.000   67.648   11.275 /home/rookslog/mcp-servers/zlibrary-mcp/lib/rag_processing.py:1191(_format_pdf_markdown)",
+        "26    0.001    0.000   67.555    2.598 /home/rookslog/mcp-servers/zlibrary-mcp/lib/rag_processing.py:2750(_apply_quality_pipeline)",
+        "26    0.004    0.000   64.256    2.471 /home/rookslog/mcp-servers/zlibrary-mcp/lib/rag_processing.py:2251(_stage_3_ocr_recovery)",
+        "26    0.000    0.000   58.947    2.267 /home/rookslog/mcp-servers/zlibrary-mcp/venv/lib/python3.13/site-packages/pytesseract/pytesseract.py:473(image_to_string)",
+        "26    0.000    0.000   58.947    2.267 /home/rookslog/mcp-servers/zlibrary-mcp/venv/lib/python3.13/site-packages/pytesseract/pytesseract.py:489(<lambda>)",
+        "26    0.001    0.000   58.947    2.267 /home/rookslog/mcp-servers/zlibrary-mcp/venv/lib/python3.13/site-packages/pytesseract/pytesseract.py:332(run_and_get_output)",
+        "288/229    0.001    0.000   58.897    0.257 {built-in method builtins.next}",
+        "78    0.000    0.000   58.745    0.753 /home/rookslog/miniconda3/lib/python3.13/contextlib.py:136(__enter__)"
+      ]
+    },
+    {
+      "name": "Kant 64-65",
+      "pdf_path": "test_files/kant_critique_pages_64_65.pdf",
+      "pages": 2,
+      "total_time_ms": 56597.64,
+      "time_per_page_ms": 28298.82,
+      "budget_ms_per_page": 60,
+      "over_budget_multiplier": 471.65,
+      "hotspots": [
+        "ncalls  tottime  percall  cumtime  percall filename:lineno(function)",
+        "1    0.000    0.000   56.598   56.598 /home/rookslog/mcp-servers/zlibrary-mcp/lib/rag_processing.py:3991(process_pdf)",
+        "2    0.002    0.001   56.442   28.221 /home/rookslog/mcp-servers/zlibrary-mcp/lib/rag_processing.py:1191(_format_pdf_markdown)",
+        "25    0.001    0.000   56.417    2.257 /home/rookslog/mcp-servers/zlibrary-mcp/lib/rag_processing.py:2750(_apply_quality_pipeline)",
+        "25    0.002    0.000   55.639    2.226 /home/rookslog/mcp-servers/zlibrary-mcp/lib/rag_processing.py:2251(_stage_3_ocr_recovery)",
+        "25    0.000    0.000   52.555    2.102 /home/rookslog/mcp-servers/zlibrary-mcp/venv/lib/python3.13/site-packages/pytesseract/pytesseract.py:473(image_to_string)",
+        "25    0.000    0.000   52.555    2.102 /home/rookslog/mcp-servers/zlibrary-mcp/venv/lib/python3.13/site-packages/pytesseract/pytesseract.py:489(<lambda>)",
+        "25    0.001    0.000   52.554    2.102 /home/rookslog/mcp-servers/zlibrary-mcp/venv/lib/python3.13/site-packages/pytesseract/pytesseract.py:332(run_and_get_output)",
+        "232/162    0.001    0.000   52.505    0.324 {built-in method builtins.next}",
+        "75    0.000    0.000   52.371    0.698 /home/rookslog/miniconda3/lib/python3.13/contextlib.py:136(__enter__)"
+      ]
+    },
+    {
+      "name": "Kant 80-85",
+      "pdf_path": "test_files/kant_critique_pages_80_85.pdf",
+      "pages": 6,
+      "total_time_ms": 155257.81,
+      "time_per_page_ms": 25876.3,
+      "budget_ms_per_page": 60,
+      "over_budget_multiplier": 431.27,
+      "hotspots": [
+        "ncalls  tottime  percall  cumtime  percall filename:lineno(function)",
+        "1    0.001    0.001  155.258  155.258 /home/rookslog/mcp-servers/zlibrary-mcp/lib/rag_processing.py:3991(process_pdf)",
+        "6    0.004    0.001  154.910   25.818 /home/rookslog/mcp-servers/zlibrary-mcp/lib/rag_processing.py:1191(_format_pdf_markdown)",
+        "70    0.003    0.000  154.835    2.212 /home/rookslog/mcp-servers/zlibrary-mcp/lib/rag_processing.py:2750(_apply_quality_pipeline)",
+        "70    0.006    0.000  152.602    2.180 /home/rookslog/mcp-servers/zlibrary-mcp/lib/rag_processing.py:2251(_stage_3_ocr_recovery)",
+        "70    0.000    0.000  144.213    2.060 /home/rookslog/mcp-servers/zlibrary-mcp/venv/lib/python3.13/site-packages/pytesseract/pytesseract.py:473(image_to_string)",
+        "70    0.000    0.000  144.212    2.060 /home/rookslog/mcp-servers/zlibrary-mcp/venv/lib/python3.13/site-packages/pytesseract/pytesseract.py:489(<lambda>)",
+        "70    0.002    0.000  144.212    2.060 /home/rookslog/mcp-servers/zlibrary-mcp/venv/lib/python3.13/site-packages/pytesseract/pytesseract.py:332(run_and_get_output)",
+        "639/427    0.002    0.000  144.070    0.337 {built-in method builtins.next}",
+        "210    0.001    0.000  143.683    0.684 /home/rookslog/miniconda3/lib/python3.13/contextlib.py:136(__enter__)"
+      ]
+    },
+    {
+      "name": "Heidegger",
+      "pdf_path": "test_files/heidegger_pages_22-23_primary_footnote_test.pdf",
+      "pages": 2,
+      "total_time_ms": 34962.9,
+      "time_per_page_ms": 17481.45,
+      "budget_ms_per_page": 60,
+      "over_budget_multiplier": 291.36,
+      "hotspots": [
+        "ncalls  tottime  percall  cumtime  percall filename:lineno(function)",
+        "1    0.002    0.002   34.963   34.963 /home/rookslog/mcp-servers/zlibrary-mcp/lib/rag_processing.py:3991(process_pdf)",
+        "2    0.002    0.001   34.826   17.413 /home/rookslog/mcp-servers/zlibrary-mcp/lib/rag_processing.py:1191(_format_pdf_markdown)",
+        "13    0.001    0.000   34.790    2.676 /home/rookslog/mcp-servers/zlibrary-mcp/lib/rag_processing.py:2750(_apply_quality_pipeline)",
+        "13    0.004    0.000   33.608    2.585 /home/rookslog/mcp-servers/zlibrary-mcp/lib/rag_processing.py:2251(_stage_3_ocr_recovery)",
+        "13    0.000    0.000   29.774    2.290 /home/rookslog/mcp-servers/zlibrary-mcp/venv/lib/python3.13/site-packages/pytesseract/pytesseract.py:473(image_to_string)",
+        "13    0.000    0.000   29.774    2.290 /home/rookslog/mcp-servers/zlibrary-mcp/venv/lib/python3.13/site-packages/pytesseract/pytesseract.py:489(<lambda>)",
+        "13    0.000    0.000   29.774    2.290 /home/rookslog/mcp-servers/zlibrary-mcp/venv/lib/python3.13/site-packages/pytesseract/pytesseract.py:332(run_and_get_output)",
+        "219/163    0.000    0.000   29.749    0.183 {built-in method builtins.next}",
+        "39    0.000    0.000   29.662    0.761 /home/rookslog/miniconda3/lib/python3.13/contextlib.py:136(__enter__)"
+      ]
+    }
+  ]
+}

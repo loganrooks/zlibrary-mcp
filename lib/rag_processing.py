@@ -3672,16 +3672,22 @@ def _detect_footnotes_in_page(page: Any, page_num: int) -> Dict[str, List[Dict[s
                             # Multi-digit (10-20): Accept if superscript (rules out body text)
                             # Being superscript is strong signal it's a footnote marker, not page number
                             is_valid_superscript = True
-                    # OR single letter a-j AND isolated (not part of word)
+                    # BUG-3 FIX: OR single letter a-j with relaxed isolation (handles hyphenated words)
                     elif marker_text.isalpha() and len(marker_text) == 1:
-                        # Check isolation - must have space/punctuation before & after
+                        # Check isolation - must have space/punctuation before OR after
+                        # RELAXED: Allow letter-before (handles "prin-ciplee" where e is marker)
                         span_pos = span_positions[span_idx]
                         before_char = line_text[span_pos - 1] if span_pos > 0 else ' '
                         after_pos = span_pos + len(marker_text)
                         after_char = line_text[after_pos] if after_pos < len(line_text) else ' '
-                        is_isolated = before_char in ' \t([{' and after_char in ' \t)]}.,;:'
 
-                        if marker_text in 'abcdefghij' and is_isolated:
+                        # BUG-3 FIX: Relaxed isolation for superscript letters
+                        # Original: Required space/punct BOTH before AND after
+                        # New: Require space/punct AFTER (before can be letter for hyphenation)
+                        # Example: "ciplee" where 'e' is superscript marker after word
+                        has_isolation_after = after_char in ' \t)]}.,;:\n'
+
+                        if marker_text in 'abcdefghij' and has_isolation_after:
                             is_valid_superscript = True
 
                 is_likely_marker = (

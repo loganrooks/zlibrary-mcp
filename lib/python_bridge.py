@@ -34,6 +34,44 @@ from lib import client_manager
 zlib_client = None
 logger = logging.getLogger('zlibrary') # Get the 'zlibrary' logger instance
 
+# Debug mode configuration (ISSUE-009)
+# Enable with: ZLIBRARY_DEBUG=1 or DEBUG=1
+DEBUG_MODE = os.environ.get('ZLIBRARY_DEBUG', os.environ.get('DEBUG', '')).lower() in ('1', 'true', 'yes')
+
+def _configure_debug_logging():
+    """Configure logging based on debug mode setting."""
+    if DEBUG_MODE:
+        # Set up detailed debug logging
+        logging.basicConfig(
+            level=logging.DEBUG,
+            format='%(asctime)s [%(levelname)s] %(name)s:%(funcName)s:%(lineno)d - %(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S'
+        )
+        logger.setLevel(logging.DEBUG)
+        logger.debug("Debug mode enabled via environment variable")
+    else:
+        # Default: INFO level with simpler format
+        if not logging.getLogger().handlers:
+            logging.basicConfig(
+                level=logging.INFO,
+                format='%(asctime)s [%(levelname)s] %(name)s - %(message)s',
+                datefmt='%Y-%m-%d %H:%M:%S'
+            )
+        logger.setLevel(logging.INFO)
+
+# Configure logging on module load
+_configure_debug_logging()
+
+
+def is_debug_mode() -> bool:
+    """Check if debug mode is enabled.
+
+    Returns:
+        True if ZLIBRARY_DEBUG=1 or DEBUG=1 environment variable is set
+    """
+    return DEBUG_MODE
+
+
 # Custom Internal Exceptions
 class InternalBookNotFoundError(Exception):
     """Custom exception for when a book ID lookup results in a 404."""

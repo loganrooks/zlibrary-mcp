@@ -398,7 +398,10 @@ Cannot read properties of undefined (reading 'trim')
 **Severity**: Low
 **Problems**:
 - No hot reload for Python changes
-- Missing debug mode with verbose logging
+- ~~Missing debug mode with verbose logging~~ ✅ Resolved (2025-11-24)
+  - Set `ZLIBRARY_DEBUG=1` or `DEBUG=1` to enable verbose logging
+  - Debug mode adds function names, line numbers to log output
+  - `is_debug_mode()` helper function available
 - No performance profiling tools
 - Lack of development fixtures/mocks
 

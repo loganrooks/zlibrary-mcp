@@ -2918,6 +2918,59 @@ def _merge_bboxes(blocks: List[dict]) -> dict:
     return [x0, y0, x1, y1]
 
 
+def _markers_are_equivalent(marker: str, detected_marker: str) -> bool:
+    """
+    Check if detected_marker is equivalent to marker (exact match or known corruption).
+
+    ISSUE-FN-004 FIX: This function validates marker equivalence to prevent pairing
+    incorrect markers with definitions. For example, marker "4" should NOT match
+    a definition starting with "*".
+
+    Args:
+        marker: The marker we're searching for (from body text)
+        detected_marker: The marker found at definition start (from footer)
+
+    Returns:
+        True if markers are equivalent (exact match or known corruption pattern)
+
+    Examples:
+        _markers_are_equivalent("*", "*")    -> True (exact match)
+        _markers_are_equivalent("*", "iii")  -> True (known corruption: * → iii)
+        _markers_are_equivalent("†", "t")    -> True (known corruption: † → t)
+        _markers_are_equivalent("4", "*")    -> False (not equivalent)
+        _markers_are_equivalent("a", "b")    -> False (different markers)
+    """
+    # 1. Exact match (most common case)
+    if marker == detected_marker:
+        return True
+
+    # 2. Known corruption patterns (from SymbolCorruptionModel.CORRUPTION_TABLE)
+    # These are observed corruptions where detected_marker could be corrupted from marker
+    CORRUPTION_EQUIVALENCES = {
+        # marker: set of possible corrupted forms
+        '*': {'*', 'iii', 'asterisk'},
+        '†': {'†', 't', 'dagger', 'cross'},
+        '‡': {'‡', 'iii', 'tt', 'double-dagger'},
+        '§': {'§', 's', 'sec', 'section'},
+        '¶': {'¶', 'p', 'para', 'paragraph'},
+        '°': {'°', 'o', '0', 'degree'},
+    }
+
+    # Check if detected_marker is a known corruption of marker
+    if marker in CORRUPTION_EQUIVALENCES:
+        if detected_marker in CORRUPTION_EQUIVALENCES[marker]:
+            return True
+
+    # 3. Reverse check: if detected_marker is the "actual" symbol and marker is corrupted
+    # This handles cases where body text has corruption but footer has actual symbol
+    for actual_symbol, corruptions in CORRUPTION_EQUIVALENCES.items():
+        if detected_marker == actual_symbol and marker in corruptions:
+            return True
+
+    # 4. Not equivalent
+    return False
+
+
 def _find_definition_for_marker(page: Any, marker: str, marker_y_position: float, marker_patterns: dict, page_num: int) -> Optional[Dict[str, Any]]:
     """
     Search ENTIRE page below marker position for definition.
@@ -2991,6 +3044,15 @@ def _find_definition_for_marker(page: Any, marker: str, marker_y_position: float
                     # Found a marker-like pattern at definition start
                     detected_marker = match.group(1)
                     content_start = line_text[match.end():].strip()
+
+                    # ISSUE-FN-004 FIX: Validate that detected marker matches requested marker
+                    # Only accept this definition if:
+                    # 1. Exact match (detected_marker == marker), OR
+                    # 2. Corruption equivalence (detected could be corrupted version of marker)
+                    #
+                    # This prevents pairing marker "4" with a "*" footnote definition
+                    if not _markers_are_equivalent(marker, detected_marker):
+                        continue  # Skip this block, keep searching for actual match
 
                     # Enhanced validation for letter patterns to prevent false positives
                     # Single letters like "a" or "b" should only match if they're likely footnote markers

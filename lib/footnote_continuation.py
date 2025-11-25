@@ -172,9 +172,22 @@ def is_footnote_incomplete(text: str) -> Tuple[bool, float, str]:
 
     # Pattern-based checks (high confidence signals)
 
-    # 1. Hyphenation at end (very strong signal)
+    # 1. Hyphenation at end (very strong signal) - CHECK FIRST before short gloss
+    # This ensures "concept-" returns (True, 0.95, 'hyphenation') not short_gloss_complete
     if HYPHENATION_PATTERN.search(text):
         return (True, 0.95, 'hyphenation')
+
+    # ISSUE-FN-004 FIX: Short glosses/single-word footnotes are complete
+    # German word glosses like "Rechtmässigkeit", "Kenntnisse", "Principien"
+    # should NOT be marked as incomplete just because they lack punctuation.
+    # Heuristic: Single word or very short text (< 30 chars) without continuation
+    # words at the end is likely a complete gloss, not an incomplete sentence.
+    # NOTE: This check must come AFTER hyphenation check to avoid false negatives.
+    word_count = len(text.split())
+    if word_count <= 2 and len(text) < 30:
+        # Check if it ends with a continuation word (would indicate incomplete)
+        if not CONTINUATION_WORDS.search(text):
+            return (False, 0.85, 'short_gloss_complete')
 
     # 2. Incomplete phrases (strong signal)
     if INCOMPLETE_PHRASES.search(text):

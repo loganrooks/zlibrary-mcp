@@ -126,6 +126,177 @@ const SearchAdvancedParamsSchema = z.object({
   count: z.number().int().optional().default(10).describe('Number of results to return'),
 });
 
+// ============================================================================
+// Output Schemas (MCP Best Practice - helps LLMs understand response structure)
+// ============================================================================
+
+// Reusable book schema for search results
+const BookResultSchema = z.object({
+  id: z.string().describe('Z-Library book ID'),
+  title: z.string().describe('Book title'),
+  author: z.string().optional().describe('Book author(s)'),
+  year: z.string().optional().describe('Publication year'),
+  publisher: z.string().optional().describe('Publisher name'),
+  language: z.string().optional().describe('Book language'),
+  extension: z.string().optional().describe('File format (pdf, epub, etc.)'),
+  filesize: z.string().optional().describe('File size'),
+  pages: z.string().optional().describe('Number of pages'),
+  cover: z.string().optional().describe('Cover image URL'),
+  href: z.string().optional().describe('Book detail page URL'),
+  hash: z.string().optional().describe('Book hash for downloads'),
+});
+
+const SearchBooksOutputSchema = z.object({
+  books: z.array(BookResultSchema).describe('Array of matching books'),
+  exact_matches: z.array(BookResultSchema).optional().describe('Books matching exact query'),
+  fuzzy_matches: z.array(BookResultSchema).optional().describe('Books matching fuzzy query'),
+});
+
+const FullTextSearchOutputSchema = z.object({
+  books: z.array(BookResultSchema).describe('Books containing the search text'),
+});
+
+const GetDownloadHistoryOutputSchema = z.object({
+  books: z.array(BookResultSchema).describe('Previously downloaded books'),
+});
+
+const GetDownloadLimitsOutputSchema = z.object({
+  daily_limit: z.number().optional().describe('Daily download limit'),
+  downloads_today: z.number().optional().describe('Downloads used today'),
+  remaining: z.number().optional().describe('Downloads remaining today'),
+});
+
+const DownloadBookToFileOutputSchema = z.object({
+  file_path: z.string().describe('Path to downloaded file'),
+  processed_file_path: z.string().nullable().optional().describe('Path to RAG-processed text file (if requested)'),
+  processing_error: z.string().optional().describe('Error message if RAG processing failed'),
+});
+
+const ProcessDocumentForRagOutputSchema = z.object({
+  processed_file_path: z.string().nullable().describe('Path to extracted text file, or null if extraction failed'),
+  content: z.array(z.string()).optional().describe('Preview of extracted content'),
+});
+
+const GetBookMetadataOutputSchema = z.object({
+  id: z.string().describe('Book ID'),
+  title: z.string().describe('Book title'),
+  author: z.string().optional().describe('Author name'),
+  description: z.string().optional().describe('Book description'),
+  terms: z.array(z.string()).optional().describe('Conceptual terms/tags (60+ per book)'),
+  booklists: z.array(z.object({
+    id: z.string(),
+    hash: z.string(),
+    topic: z.string(),
+  })).optional().describe('Expert-curated booklists containing this book'),
+  ipfs_cid: z.string().optional().describe('IPFS content identifier'),
+  rating: z.number().optional().describe('Book rating'),
+});
+
+const SearchByTermOutputSchema = z.object({
+  books: z.array(BookResultSchema).describe('Books matching the conceptual term'),
+  term: z.string().describe('The searched term'),
+});
+
+const SearchByAuthorOutputSchema = z.object({
+  books: z.array(BookResultSchema).describe('Books by the specified author'),
+  author: z.string().describe('The searched author name'),
+});
+
+const FetchBooklistOutputSchema = z.object({
+  books: z.array(BookResultSchema).describe('Books in the booklist'),
+  topic: z.string().describe('Booklist topic'),
+  total: z.number().optional().describe('Total books in booklist'),
+  page: z.number().optional().describe('Current page'),
+});
+
+const SearchAdvancedOutputSchema = z.object({
+  exact_matches: z.array(BookResultSchema).describe('Books matching exact query'),
+  fuzzy_matches: z.array(BookResultSchema).describe('Books matching fuzzy/approximate query'),
+});
+
+// ============================================================================
+// Tool Annotations (MCP Best Practice - helps AI assistants make better decisions)
+// ============================================================================
+
+interface ToolAnnotations {
+  readOnlyHint?: boolean;      // true = no side effects
+  destructiveHint?: boolean;   // true = may delete/modify data
+  idempotentHint?: boolean;    // true = same args produce same result
+  openWorldHint?: boolean;     // true = interacts with external services
+  title?: string;              // Human-readable display name
+}
+
+const toolAnnotations: Record<string, ToolAnnotations> = {
+  search_books: {
+    readOnlyHint: true,
+    idempotentHint: true,
+    openWorldHint: true,
+    title: 'Search Books',
+  },
+  full_text_search: {
+    readOnlyHint: true,
+    idempotentHint: true,
+    openWorldHint: true,
+    title: 'Full Text Search',
+  },
+  get_download_history: {
+    readOnlyHint: true,
+    idempotentHint: false,  // Results change as user downloads
+    openWorldHint: true,
+    title: 'Download History',
+  },
+  get_download_limits: {
+    readOnlyHint: true,
+    idempotentHint: false,  // Results change throughout the day
+    openWorldHint: true,
+    title: 'Download Limits',
+  },
+  download_book_to_file: {
+    readOnlyHint: false,    // Creates files on disk
+    destructiveHint: false, // Additive only (creates new files)
+    idempotentHint: false,  // Downloads count against limits
+    openWorldHint: true,
+    title: 'Download Book',
+  },
+  process_document_for_rag: {
+    readOnlyHint: false,    // Creates processed text files
+    destructiveHint: false, // Additive only
+    idempotentHint: true,   // Same file produces same output
+    openWorldHint: false,   // Local file processing only
+    title: 'Process for RAG',
+  },
+  get_book_metadata: {
+    readOnlyHint: true,
+    idempotentHint: true,
+    openWorldHint: true,
+    title: 'Book Metadata',
+  },
+  search_by_term: {
+    readOnlyHint: true,
+    idempotentHint: true,
+    openWorldHint: true,
+    title: 'Search by Term',
+  },
+  search_by_author: {
+    readOnlyHint: true,
+    idempotentHint: true,
+    openWorldHint: true,
+    title: 'Search by Author',
+  },
+  fetch_booklist: {
+    readOnlyHint: true,
+    idempotentHint: true,
+    openWorldHint: true,
+    title: 'Fetch Booklist',
+  },
+  search_advanced: {
+    readOnlyHint: true,
+    idempotentHint: true,
+    openWorldHint: true,
+    title: 'Advanced Search',
+  },
+};
+
 // Define a type for the handler map
 type HandlerMap = {
     [key: string]: (args: any) => Promise<any>;
@@ -311,71 +482,86 @@ const handlers: HandlerMap = {
 interface ToolDefinition {
     name: string;
     description?: string;
-    inputSchema: any; // Use camelCase to match returned object and likely spec
+    inputSchema: any;
+    outputSchema?: any;  // MCP spec 2025-06-18: optional output schema
+    annotations?: ToolAnnotations;  // MCP spec 2025-06-18: optional annotations
+    title?: string;  // MCP spec 2025-06-18: human-readable display name
 }
 
 interface ToolRegistryEntry {
     description: string;
-    schema: ZodObject<ZodRawShape>; // Use ZodObject<any> or a more specific shape if possible
-    handler?: (args: any) => Promise<any>; // Make handler optional in type definition
+    schema: ZodObject<ZodRawShape>;
+    outputSchema?: ZodObject<ZodRawShape>;  // Output schema for responses
+    handler?: (args: any) => Promise<any>;
 }
 
-// Tool Registry
+// Tool Registry with output schemas (MCP Best Practice)
 const toolRegistry: Record<string, ToolRegistryEntry> = {
   search_books: {
-    description: 'Search for books in Z-Library',
+    description: 'Search for books in Z-Library by title, author, or keywords. Returns matching books with metadata including title, author, year, format, and file size. Use exact=true for precise title matching. Filter results by year range, language, or file format.',
     schema: SearchBooksParamsSchema,
+    outputSchema: SearchBooksOutputSchema,
     handler: handlers.searchBooks,
   },
   full_text_search: {
-    description: 'Search for books containing specific text in their content',
+    description: 'Search for books containing specific text within their content. Useful for finding books that discuss particular topics, quotes, or concepts. Returns books where the search text appears in the actual book content.',
     schema: FullTextSearchParamsSchema,
+    outputSchema: FullTextSearchOutputSchema,
     handler: handlers.fullTextSearch,
   },
   get_download_history: {
-    description: "Get user's book download history",
+    description: "Get the user's Z-Library download history. Returns a list of previously downloaded books with their metadata. Useful for finding books the user has already accessed.",
     schema: GetDownloadHistoryParamsSchema,
+    outputSchema: GetDownloadHistoryOutputSchema,
     handler: handlers.getDownloadHistory,
   },
   get_download_limits: {
-    description: "Get user's current download limits",
+    description: "Get the user's current Z-Library download limits. Shows daily download quota, downloads used today, and remaining downloads. Check this before downloading to avoid hitting limits.",
     schema: GetDownloadLimitsParamsSchema,
+    outputSchema: GetDownloadLimitsOutputSchema,
     handler: handlers.getDownloadLimits,
   },
   download_book_to_file: {
-    description: 'Download a book directly to a local file and optionally process it for RAG',
+    description: 'Download a book to a local file. Pass the full bookDetails object from search_books results. Optionally process the document for RAG (text extraction) after download. Returns file paths for both the original book and processed text.',
     schema: DownloadBookToFileParamsSchema,
+    outputSchema: DownloadBookToFileOutputSchema,
     handler: handlers.downloadBookToFile,
   },
   process_document_for_rag: {
-    description: 'Process a downloaded document (EPUB, TXT, PDF) to extract text content for RAG',
+    description: 'Process a downloaded document (EPUB, TXT, PDF) to extract clean text content for RAG (Retrieval-Augmented Generation). Extracts text, preserves structure, detects footnotes, and outputs a text file. Use this on already-downloaded books.',
     schema: ProcessDocumentForRagParamsSchema,
+    outputSchema: ProcessDocumentForRagOutputSchema,
     handler: handlers.processDocumentForRag,
   },
   // Phase 3 Research Tools
   get_book_metadata: {
-    description: 'Get complete metadata for a book including 60+ terms, 11+ booklists, descriptions, IPFS CIDs, ratings, and more',
+    description: 'Get complete metadata for a book including 60+ conceptual terms, 11+ expert-curated booklists, detailed descriptions, IPFS CIDs, ratings, and more. Requires bookId and bookHash from search results. Use terms to discover related books.',
     schema: GetBookMetadataParamsSchema,
+    outputSchema: GetBookMetadataOutputSchema,
     handler: handlers.getBookMetadata,
   },
   search_by_term: {
-    description: 'Search for books by conceptual term (enables navigation through 60+ terms per book)',
+    description: 'Search for books by conceptual term (e.g., "phenomenology", "dialectic", "epistemology"). Books in Z-Library are tagged with 60+ conceptual terms, enabling semantic navigation through academic concepts and topics.',
     schema: SearchByTermParamsSchema,
+    outputSchema: SearchByTermOutputSchema,
     handler: handlers.searchByTerm,
   },
   search_by_author: {
-    description: 'Advanced author search with support for various name formats and exact matching',
+    description: 'Advanced author search with support for various name formats ("Lastname, Firstname" or "Firstname Lastname"). Use exact=true for precise matching. Filter by publication year, language, or file format.',
     schema: SearchByAuthorParamsSchema,
+    outputSchema: SearchByAuthorOutputSchema,
     handler: handlers.searchByAuthor,
   },
   fetch_booklist: {
-    description: 'Fetch books from an expert-curated booklist (11+ booklists per book, up to 954 books per list)',
+    description: 'Fetch books from an expert-curated booklist. Z-Library books belong to 11+ booklists with up to 954 books per list. Get booklist IDs from get_book_metadata. Great for discovering related books on a topic.',
     schema: FetchBooklistParamsSchema,
+    outputSchema: FetchBooklistOutputSchema,
     handler: handlers.fetchBooklist,
   },
   search_advanced: {
-    description: 'Advanced search with exact and fuzzy match detection and separation',
+    description: 'Advanced search with automatic separation of exact matches from fuzzy/approximate matches. Returns two arrays: exact_matches (precise title/author matches) and fuzzy_matches (related results). Better for understanding result quality.',
     schema: SearchAdvancedParamsSchema,
+    outputSchema: SearchAdvancedOutputSchema,
     handler: handlers.searchAdvanced,
   },
 };
@@ -398,17 +584,35 @@ interface StartOptions {
     testing?: boolean;
 }
 
-// Function to generate the tools capability object
+// Function to generate the tools capability object with MCP spec compliance
 function generateToolsCapability(): Record<string, ToolDefinition> {
     const toolsCapability: Record<string, ToolDefinition> = {};
     for (const [name, tool] of Object.entries(toolRegistry)) {
         try {
-            const jsonSchema = zodToJsonSchema(tool.schema);
-            toolsCapability[name] = {
+            const inputJsonSchema = zodToJsonSchema(tool.schema);
+            const annotations = toolAnnotations[name];
+
+            const toolDef: ToolDefinition = {
                 name: name,
                 description: tool.description,
-                inputSchema: jsonSchema, // Use camelCase
+                inputSchema: inputJsonSchema,
             };
+
+            // Add output schema if defined (MCP spec 2025-06-18)
+            if (tool.outputSchema) {
+                toolDef.outputSchema = zodToJsonSchema(tool.outputSchema);
+            }
+
+            // Add annotations if defined (MCP spec 2025-06-18)
+            if (annotations) {
+                toolDef.annotations = annotations;
+                // Title from annotations takes precedence
+                if (annotations.title) {
+                    toolDef.title = annotations.title;
+                }
+            }
+
+            toolsCapability[name] = toolDef;
         } catch (error: any) {
              console.error(`Failed to generate JSON schema for tool "${name}": ${error.message}`);
              // Optionally skip adding the tool if schema generation fails
@@ -502,27 +706,28 @@ async function start(opts: StartOptions = {}): Promise<{ server: Server; transpo
 
       try {
         // Call the actual tool handler with validated arguments
-        console.log(`Calling handler for tool "${toolName}"`); // Use toolName in log
+        console.log(`Calling handler for tool "${toolName}"`);
         const result = await tool.handler(validationResult.data);
 
         // Check if the handler returned an error object itself
         if (result && typeof result === 'object' && 'error' in result && result.error) {
-           console.error(`Handler for tool "${toolName}" returned error:`, result.error.message || result.error); // Use toolName in error
-           // Return error in the format { content: [...], isError: true }
-           return { content: [{ type: 'text', text: `Error from tool "${toolName}": ${result.error.message || result.error}` }], isError: true }; // Use toolName in error
+           console.error(`Handler for tool "${toolName}" returned error:`, result.error.message || result.error);
+           return { content: [{ type: 'text', text: `Error from tool "${toolName}": ${result.error.message || result.error}` }], isError: true };
         }
-        console.log(`Handler for tool "${toolName}" completed successfully.`); // Use toolName in log
-        // Return the actual result object directly, assuming SDK handles wrapping
-        // Wrap the successful result to ensure 'content' is always an array
-        // matching the structure expected by the client (based on ZodError)
-        // Note: Stringifying the result prevents ZodError but might require client-side parsing.
+        console.log(`Handler for tool "${toolName}" completed successfully.`);
+
+        // MCP Best Practice: Return both text content AND structuredContent
+        // - content[].text: Stringified JSON for backward compatibility
+        // - structuredContent: Parsed object for clients that support it (MCP 2025-06-18)
         const stringifiedResult = JSON.stringify(result);
-        return { content: [{ type: 'text', text: stringifiedResult }] };
+        return {
+          content: [{ type: 'text', text: stringifiedResult }],
+          structuredContent: result  // MCP spec 2025-06-18: structured data for modern clients
+        };
       } catch (error: any) {
         // Catch errors thrown by the handler
-        console.error(`Error calling tool "${toolName}":`, error); // Use toolName in error
-        // Return error in the format { content: [...], isError: true }
-        return { content: [{ type: 'text', text: `Error calling tool "${toolName}": ${error.message || 'Unknown error'}` }], isError: true }; // Use toolName in error
+        console.error(`Error calling tool "${toolName}":`, error);
+        return { content: [{ type: 'text', text: `Error calling tool "${toolName}": ${error.message || 'Unknown error'}` }], isError: true };
       }
     });
 

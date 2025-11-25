@@ -334,21 +334,16 @@ Cannot read properties of undefined (reading 'trim')
 
 ## 🟡 Medium Priority Issues
 
-### ISSUE-004: Incomplete RAG Processing TODOs
-**Severity**: Low (downgraded - these are minor enhancements)
-**Location**: `lib/rag_processing.py`
-**Line Numbers**: 400, 1484, 4792
-**TODOs Found**:
-```python
-# Line 400: TODO: Use block['bbox'][0] (x-coordinate) to infer indentation/nesting
-# Line 1484: TODO: Implement proper Markdown table conversion later if needed
-# Line 4792: TODO: Calculate OCR quality score if OCR was used
-```
+### ~~ISSUE-004: Incomplete RAG Processing TODOs~~ ✅ RESOLVED
+**Severity**: Low → **RESOLVED** (2025-11-24)
+**Resolution**: Converted active TODOs to FUTURE comments (deferred enhancements)
 
-**Impact**:
-- Minor: Indentation inference for structured documents (optional enhancement)
-- Minor: Markdown table conversion (edge case)
-- Minor: OCR quality score tracking (diagnostic enhancement)
+Items deferred as low-priority future enhancements:
+- Line 400: `FUTURE: Use bbox x-coordinate for indentation inference`
+- Line 1485: `FUTURE: Markdown table conversion (edge case)`
+- Line 4793: `FUTURE: OCR quality score calculation`
+
+These are optional enhancements, not bugs or required functionality.
 
 ### ~~ISSUE-005: Missing Error Recovery Mechanisms~~ ✅ RESOLVED
 **Severity**: Medium → **RESOLVED** (2025-09-30)

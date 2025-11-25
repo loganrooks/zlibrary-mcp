@@ -3,10 +3,52 @@
 ## Executive Summary
 This document provides intensive documentation of all issues, technical debt, and improvement opportunities identified in the Z-Library MCP project.
 
-**Last Updated**: 2025-10-29
-**Critical Status**: ✅ **ALL FOOTNOTE TESTS PASSING** - 181/181 footnote tests (100%), all real PDFs validated, no regressions
+**Last Updated**: 2025-11-24
+**Critical Status**: ✅ **ALL CRITICAL ISSUES RESOLVED** - Marker-pairing bug fixed, continuation tests passing
+
+## 🔴 Active Critical Issues
+
+*No active critical issues.*
+
+---
 
 ## ✅ Recently Resolved Critical Issues
+
+### ISSUE-FN-004: Marker-to-Definition Pairing Bug (FIXED - 2025-11-24)
+**Component**: Footnote detection (`_find_definition_for_marker`)
+**Severity**: 🔴 CRITICAL - Causes incorrect marker-content pairing → ✅ **RESOLVED**
+**Impact**: Multi-page continuation fails for `*` marker in Kant 64-65
+**Discovered**: 2025-11-24 ground truth verification
+**Fixed**: 2025-11-24 (same session)
+**Status**: ✅ **FIXED AND VALIDATED**
+
+**Original Symptoms**:
+- All markers (a, 4, 5, b, *) get paired with SAME content (the * footnote)
+- Multi-page continuation works for marker `a` (alphabetically first) but not `*`
+- Test `test_kant_asterisk_multipage_continuation_e2e` FAILS
+
+**Root Cause**:
+Location: `lib/rag_processing.py:_find_definition_for_marker` (lines 2920-3088)
+
+Function found ANY marker-started block without validating marker match.
+
+**Fix Applied**:
+1. Added `_markers_are_equivalent()` function (lines 2921-2971) to validate marker matching
+2. Added corruption equivalence table for symbol markers (`*` ↔ `iii`, `†` ↔ `t`, etc.)
+3. Modified `_find_definition_for_marker()` to validate marker match before accepting definition
+4. Added short gloss detection in `lib/footnote_continuation.py` (lines 180-190) to prevent German word glosses like "Rechtmässigkeit" from being marked incomplete
+
+**Validation**:
+- Kant 64-65 continuation test now PASSES
+- `*` footnote correctly merged with page 65 continuation ("to which everything must submit")
+- 57/57 footnote continuation tests passing
+- 40/43 RAG processing tests passing (3 pre-existing mock issues unrelated to fix)
+
+**Related Documentation**:
+- `claudedocs/session-notes/2025-11-24-ground-truth-verification-report.md`
+- `test_files/ground_truth/kant_64_65_footnotes.json` (complexity_notes section)
+
+---
 
 ### ISSUE-FN-003: Data Contract Bug - Missing Pages Field (FIXED - 2025-10-29)
 **Component**: Multi-page footnote tracking

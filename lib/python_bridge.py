@@ -58,6 +58,51 @@ DEFAULT_HEADERS = {
 DEFAULT_SEARCH_TIMEOUT = 20
 DEFAULT_DETAIL_TIMEOUT = 15
 
+# HTTP connection pooling (ISSUE-008)
+# Module-level client for connection reuse across requests
+_http_client: httpx.AsyncClient = None
+
+
+async def get_http_client() -> httpx.AsyncClient:
+    """
+    Get or create a shared HTTP client with connection pooling.
+
+    Connection pooling benefits:
+    - Reuses TCP connections across requests
+    - Reduces TLS handshake overhead
+    - Improves latency for sequential requests
+
+    Returns:
+        Shared httpx.AsyncClient instance
+    """
+    global _http_client
+    if _http_client is None:
+        _http_client = httpx.AsyncClient(
+            headers=DEFAULT_HEADERS,
+            timeout=DEFAULT_DETAIL_TIMEOUT,
+            limits=httpx.Limits(
+                max_keepalive_connections=5,
+                max_connections=10,
+                keepalive_expiry=30.0  # Keep connections alive for 30 seconds
+            )
+        )
+        logger.debug("Created shared HTTP client with connection pooling")
+    return _http_client
+
+
+async def close_http_client():
+    """
+    Close the shared HTTP client and release connections.
+
+    Call this during cleanup or shutdown to properly close connections.
+    Safe to call multiple times.
+    """
+    global _http_client
+    if _http_client is not None:
+        await _http_client.aclose()
+        _http_client = None
+        logger.debug("Closed shared HTTP client")
+
 
 def extract_book_hash_from_href(href: str) -> str:
     """
@@ -662,11 +707,11 @@ async def get_book_metadata_complete(book_id: str, book_hash: str = None) -> dic
 
         logger.info(f"Fetching book metadata from: {book_url}")
 
-        # Fetch the book detail page HTML
-        async with httpx.AsyncClient(headers=DEFAULT_HEADERS, timeout=DEFAULT_DETAIL_TIMEOUT) as client:
-            response = await client.get(book_url)
-            response.raise_for_status()
-            html = response.text
+        # Fetch the book detail page HTML using shared client (connection pooling)
+        client = await get_http_client()
+        response = await client.get(book_url)
+        response.raise_for_status()
+        html = response.text
 
         logger.info(f"Fetched {len(html)} bytes of HTML for book {book_id}")
 

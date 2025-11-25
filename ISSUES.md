@@ -386,9 +386,12 @@ Cannot read properties of undefined (reading 'trim')
 ### ISSUE-008: Performance Optimizations Needed
 **Severity**: Low
 **Areas**:
-- No HTTP connection pooling (creates new `httpx.AsyncClient` per request in `python_bridge.py:666`)
+- ~~No HTTP connection pooling~~ ✅ Resolved (2025-11-24) - Added shared `httpx.AsyncClient` with connection pooling
+  - `get_http_client()` returns shared client with keepalive connections
+  - `close_http_client()` for cleanup
+  - Connection limits: 5 keepalive, 10 max, 30s expiry
 - ~~Sequential processing~~ ✅ Resolved - `ProcessPoolExecutor` used for CPU-bound work
-- No result caching layer
+- No result caching layer (remaining item)
 - ~~Inefficient DOM parsing~~ (no evidence of issues)
 
 ### ISSUE-009: Development Experience Issues

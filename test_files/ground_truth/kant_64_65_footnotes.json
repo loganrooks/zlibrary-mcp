@@ -6,7 +6,22 @@
     "physical_page_start": 64,
     "created_date": "2025-10-28",
     "verified_by": "visual_inspection_claude",
+    "last_verified": "2025-11-24",
     "description": "Kant - Critique of Pure Reason pages 64-65 (PDF pages 81-82) with multi-page asterisk footnote. Tests continuation detection where footnote starts on page 64 ending with 'to' and continues on page 65 starting with 'which everything must submit'. This is the canonical test case for multi-page footnote continuation."
+  },
+
+  "complexity_notes": {
+    "mixed_note_types": "This PDF has BOTH footnotes AND endnote references on same pages",
+    "page_64_footnotes": ["*", "a", "b", "c"],
+    "page_64_endnote_refs": ["4", "5"],
+    "explanation": "Superscript 4 and 5 are references to endnotes elsewhere in the book, NOT footnotes on page 64. The system currently cannot distinguish between footnote markers and endnote references.",
+    "additional_translator_notes": [
+      {"marker": "a", "content": "Rechtmässigkeit", "note": "German word gloss"},
+      {"marker": "b", "content": "Kenntnisse", "note": "German word gloss"},
+      {"marker": "c", "content": "Principien", "note": "German word gloss"}
+    ],
+    "known_detection_issue": "The _find_definition_for_marker function pairs ALL markers with the first definition block below them, causing markers 4,5,a,b,* to all get the same content (the * footnote). This is a MARKER-TO-DEFINITION PAIRING BUG that needs fixing.",
+    "test_focus": "This ground truth focuses ONLY on the * footnote continuation test. The additional footnotes (a,b,c) and endnote refs (4,5) are documented but not tested here."
   },
 
   "features": {

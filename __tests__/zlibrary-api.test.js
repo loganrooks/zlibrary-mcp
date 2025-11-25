@@ -231,9 +231,65 @@ describe('Z-Library API', () => {
       expect(mockPythonShellRun).toHaveBeenCalled();
     });
 
+    test('should include stderr in error message when PythonShell provides it', async () => {
+      // Arrange: Mock PythonShell.run to throw error with stderr
+      const shellError = new Error('Python script failed');
+      shellError.stderr = 'ImportError: No module named foo\nTraceback...';
+      mockGetManagedPythonPath.mockResolvedValue('/fake/python');
+      mockPythonShellRun.mockRejectedValue(shellError);
+
+      // Act & Assert
+      await expect(zlibApi.searchBooks({ query: 'test' }))
+        .rejects
+        .toThrow(/Python bridge execution failed for search:.*Stderr: ImportError: No module named foo/);
+
+      // Verify mocks
+      expect(mockGetManagedPythonPath).toHaveBeenCalled();
+      expect(mockPythonShellRun).toHaveBeenCalled();
+    });
+
+    test('should handle PythonShell non-zero exit code error', async () => {
+      // Arrange: Mock PythonShell.run to throw error simulating non-zero exit
+      const exitError = new Error('Process exited with code 1');
+      exitError.exitCode = 1;
+      exitError.stderr = 'SyntaxError: invalid syntax';
+      mockGetManagedPythonPath.mockResolvedValue('/fake/python');
+      mockPythonShellRun.mockRejectedValue(exitError);
+
+      // Act & Assert
+      await expect(zlibApi.searchBooks({ query: 'test' }))
+        .rejects
+        .toThrow(/Python bridge execution failed for search: Process exited with code 1.*Stderr: SyntaxError/);
+
+      // Verify mocks
+      expect(mockGetManagedPythonPath).toHaveBeenCalled();
+      expect(mockPythonShellRun).toHaveBeenCalled();
+    });
+
+    test('should handle PythonShell timeout error', async () => {
+      // Arrange: Mock PythonShell.run to throw timeout error
+      const timeoutError = new Error('Timeout: Python script exceeded execution time');
+      mockGetManagedPythonPath.mockResolvedValue('/fake/python');
+      mockPythonShellRun.mockRejectedValue(timeoutError);
+
+      // Act & Assert
+      await expect(zlibApi.searchBooks({ query: 'test' }))
+        .rejects
+        .toThrow(/Python bridge execution failed for search: Timeout/);
+
+      // Verify mocks
+      expect(mockGetManagedPythonPath).toHaveBeenCalled();
+      expect(mockPythonShellRun).toHaveBeenCalled();
+    });
+
     }); // <-- This closes describe('callPythonFunction (Internal Logic)')
 
-    // TODO: Add tests for PythonShell.run errors (non-zero exit, stderr, no result, bad JSON)
+    // ISSUE-006 RESOLVED: Tests for PythonShell.run errors now cover:
+    // - non-zero exit code (test above)
+    // - stderr handling (test above)
+    // - timeout (test above)
+    // - no result (line 201)
+    // - bad JSON (line 183)
   }); // <-- This closes describe('searchBooks')
 
 

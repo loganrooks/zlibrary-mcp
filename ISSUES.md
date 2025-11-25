@@ -335,20 +335,20 @@ Cannot read properties of undefined (reading 'trim')
 ## 🟡 Medium Priority Issues
 
 ### ISSUE-004: Incomplete RAG Processing TODOs
-**Severity**: Medium
+**Severity**: Low (downgraded - these are minor enhancements)
 **Location**: `lib/rag_processing.py`
-**Line Numbers**: 132, 154, 563
+**Line Numbers**: 400, 1484, 4792
 **TODOs Found**:
 ```python
-# Line 132: TODO: Consider adding more levels or refining based on document analysis
-# Line 154: TODO: Use block['bbox'][0] (x-coordinate) to infer indentation/nesting
-# Line 563: TODO: Add more heuristics (e.g., gibberish patterns, layout analysis)
+# Line 400: TODO: Use block['bbox'][0] (x-coordinate) to infer indentation/nesting
+# Line 1484: TODO: Implement proper Markdown table conversion later if needed
+# Line 4792: TODO: Calculate OCR quality score if OCR was used
 ```
 
 **Impact**:
-- PDF quality detection incomplete
-- Missing indentation inference for structured documents
-- Limited gibberish/corrupted text detection
+- Minor: Indentation inference for structured documents (optional enhancement)
+- Minor: Markdown table conversion (edge case)
+- Minor: OCR quality score tracking (diagnostic enhancement)
 
 ### ~~ISSUE-005: Missing Error Recovery Mechanisms~~ ✅ RESOLVED
 **Severity**: Medium → **RESOLVED** (2025-09-30)
@@ -363,34 +363,33 @@ Cannot read properties of undefined (reading 'trim')
 - ✅ Configurable via environment variables
 - 📚 Documentation: `docs/RETRY_CONFIGURATION.md`
 
-### ISSUE-006: Test Suite Warnings
-**Severity**: Medium
-**Location**: `__tests__/zlibrary-api.test.js:230`
-**TODO**: Add tests for PythonShell.run errors
-- Missing tests for non-zero exit codes
-- No stderr handling tests
-- No malformed JSON response tests
-- Missing timeout scenario tests
+### ~~ISSUE-006: Test Suite Warnings~~ ✅ RESOLVED
+**Severity**: Medium → **RESOLVED** (2025-11-24)
+**Location**: `__tests__/zlibrary-api.test.js`
+**Resolution**:
+- ✅ Added test for stderr handling (`should include stderr in error message`)
+- ✅ Added test for non-zero exit codes (`should handle PythonShell non-zero exit code error`)
+- ✅ Added test for timeout scenarios (`should handle PythonShell timeout error`)
+- ✅ Existing tests cover: no output (line 201), malformed JSON (line 183)
+- ✅ All 28 tests passing
 
 ## 🟢 Low Priority Issues
 
-### ISSUE-007: Documentation Gaps
-**Severity**: Low
-**Locations**: Various
-**Missing Documentation**:
-- API error codes and meanings
-- Rate limiting behavior
-- Session lifecycle management
-- Domain rotation strategies
-- Caching strategies
+### ~~ISSUE-007: Documentation Gaps~~ ✅ RESOLVED
+**Severity**: Low → **RESOLVED** (2025-11-24)
+**Resolution**:
+- ✅ 8 ADRs documented in `docs/adr/` (ADR-001 through ADR-008)
+- ✅ Error codes documented in `docs/RETRY_CONFIGURATION.md`
+- ✅ API specs in `docs/get-book-metadata-spec.md`, `docs/rag-pipeline-implementation-spec.md`
+- ✅ Comprehensive `.claude/` documentation (PROJECT_CONTEXT, ARCHITECTURE, PATTERNS, etc.)
 
 ### ISSUE-008: Performance Optimizations Needed
 **Severity**: Low
 **Areas**:
-- No connection pooling
-- Sequential processing where parallel possible
+- No HTTP connection pooling (creates new `httpx.AsyncClient` per request in `python_bridge.py:666`)
+- ~~Sequential processing~~ ✅ Resolved - `ProcessPoolExecutor` used for CPU-bound work
 - No result caching layer
-- Inefficient DOM parsing in some areas
+- ~~Inefficient DOM parsing~~ (no evidence of issues)
 
 ### ISSUE-009: Development Experience Issues
 **Severity**: Low

@@ -397,7 +397,8 @@ def _analyze_pdf_block(
                 list_type = 'ol'
                 list_marker = ol_match.group(1) # Capture number/letter/roman numeral
 
-            # TODO: Use block['bbox'][0] (x-coordinate) to infer indentation/nesting.
+            # FUTURE: Use block['bbox'][0] (x-coordinate) to infer indentation/nesting.
+            # Deferred - low priority enhancement for complex nested lists.
 
     # Phase 2: Conditional return based on feature flag
     if return_structured:
@@ -1481,7 +1482,7 @@ def _epub_node_to_markdown(node: BeautifulSoup, footnote_defs: dict, list_level:
         return f"[Image: {src}/{alt}]" # Placeholder format as per spec/test
     elif node_name == 'table':
         # Basic table handling - extract text content
-        # TODO: Implement proper Markdown table conversion later if needed
+        # FUTURE: Implement proper Markdown table conversion if needed (edge case)
         return node.get_text(separator=' ', strip=True)
     elif node_name == 'a' and node.get('epub:type') == 'noteref':
         # Footnote reference
@@ -4789,7 +4790,7 @@ async def process_document(file_path_str: str, output_format: str = "txt", book_
             processed_content=processed_text,
             output_format=output_format, # This should be the format of the processed_text (e.g. 'md' or 'txt')
             book_details=book_details,
-            ocr_quality_score=None,  # TODO: Calculate if OCR was used
+            ocr_quality_score=None,  # FUTURE: Calculate OCR quality score if OCR was used
             corrections_applied=corrections
         )
 

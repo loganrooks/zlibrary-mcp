@@ -43,7 +43,8 @@ const requiredCompiledFiles = [
 const requiredConfigFiles = [
   { path: 'package.json', critical: true, description: 'Package configuration' },
   { path: 'tsconfig.json', critical: true, description: 'TypeScript configuration' },
-  { path: 'requirements.txt', critical: true, description: 'Python dependencies' }
+  { path: 'pyproject.toml', critical: true, description: 'Python dependencies (UV)' },
+  { path: 'uv.lock', critical: false, description: 'UV lockfile for reproducible builds' }
 ];
 
 console.log('🔍 Z-Library MCP Build Validation\n');

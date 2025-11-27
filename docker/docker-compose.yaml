@@ -1,0 +1,14 @@
+services:
+  zlib-mcp:
+    image: <IMAGE_NAME>:<TAG>
+    restart: always
+    ports:
+      - 8000:8000
+    env_file:
+      - ./env
+    volumes:
+      - "./ebooks:/app/downloads"
+    command: >
+      --outputTransport streamableHttp
+      --healthEndpoint /healthz
+      --stdio 'node /app/dist/index.js'

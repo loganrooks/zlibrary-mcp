@@ -1,0 +1,52 @@
+# Git
+.git
+.gitignore
+
+# Dependencies (rebuilt in container)
+node_modules
+.venv
+
+# Build outputs (rebuilt in container)
+dist
+coverage
+
+# Downloaded content
+downloads
+processed_rag_output
+
+# Logs
+logs
+*.log
+
+# IDE and editor files
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Test files (not needed in production)
+__tests__
+test_files
+*.test.js
+*.test.ts
+jest.config.js
+
+# Documentation (not needed in runtime)
+docs
+claudedocs
+*.md
+!docker/README.md
+
+# Environment files (use docker/env.example)
+.env
+.env.*
+!docker/env.example
+
+# Docker files (prevent recursive context)
+docker/.env
+docker/downloads

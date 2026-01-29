@@ -1,0 +1,10 @@
+services:
+  e2e-test:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    environment:
+      - ZLIBRARY_EMAIL=${ZLIBRARY_EMAIL:-}
+      - ZLIBRARY_PASSWORD=${ZLIBRARY_PASSWORD:-}
+      - ZLIBRARY_MIRROR=${ZLIBRARY_MIRROR:-}
+      - NODE_OPTIONS=--experimental-vm-modules

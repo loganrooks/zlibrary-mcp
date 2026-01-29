@@ -7,8 +7,8 @@
 
 ### Integration Testing
 
-- [ ] **TEST-01**: Integration smoke test that invokes real PythonShell bridge from Node.js
-- [ ] **TEST-02**: Docker-based E2E test that starts MCP server and calls a tool
+- [x] **TEST-01**: Integration smoke test that invokes real PythonShell bridge from Node.js
+- [x] **TEST-02**: Docker-based E2E test that starts MCP server and calls a tool
 
 ### Dependency Updates
 
@@ -50,7 +50,7 @@
 
 - [ ] **INFRA-01**: Add npm audit + pip-audit to CI pipeline
 - [ ] **INFRA-02**: Add Python version check to setup script
-- [ ] **INFRA-03**: Verify BRK-001 (download+RAG combined workflow) status
+- [x] **INFRA-03**: Verify BRK-001 (download+RAG combined workflow) status
 
 ## v2 Requirements
 
@@ -89,8 +89,8 @@ Deferred to future milestone. Tracked but not in current roadmap.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| TEST-01 | Phase 1 | Pending |
-| TEST-02 | Phase 1 | Pending |
+| TEST-01 | Phase 1 | Complete |
+| TEST-02 | Phase 1 | Complete |
 | DEP-01 | Phase 2 | Pending |
 | DEP-02 | Phase 2 | Pending |
 | DEP-03 | Phase 3 | Pending |
@@ -117,7 +117,7 @@ Deferred to future milestone. Tracked but not in current roadmap.
 | DOC-07 | Phase 6 | Pending |
 | INFRA-01 | Phase 6 | Pending |
 | INFRA-02 | Phase 6 | Pending |
-| INFRA-03 | Phase 1 | Pending |
+| INFRA-03 | Phase 1 | Complete |
 
 **Coverage:**
 - v1 requirements: 28 total

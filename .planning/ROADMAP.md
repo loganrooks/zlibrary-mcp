@@ -12,7 +12,7 @@ This roadmap transforms the Z-Library MCP server from a C+ graded codebase into 
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Integration Test Harness** - Safety net for detecting bridge breakage across all subsequent phases
+- [x] **Phase 1: Integration Test Harness** - Safety net for detecting bridge breakage across all subsequent phases
 - [ ] **Phase 2: Low-Risk Dependency Upgrades** - Stabilize foundation with env-paths, Zod 4, security fixes
 - [ ] **Phase 3: MCP SDK Upgrade** - Modernize core server framework from 1.8.0 to latest
 - [ ] **Phase 4: Python Monolith Decomposition** - Break 4,968-line rag_processing.py into domain modules
@@ -32,8 +32,8 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Plans**: 2 plans
 
 Plans:
-- [ ] 01-01-PLAN.md — Integration tests for all 11 tools (recorded + live modes) and BRK-001 investigation
-- [ ] 01-02-PLAN.md — Docker E2E test with MCP SDK Client
+- [x] 01-01-PLAN.md — Integration tests for all 11 tools (recorded + live modes) and BRK-001 investigation
+- [x] 01-02-PLAN.md — Docker E2E test with MCP SDK Client
 
 ### Phase 2: Low-Risk Dependency Upgrades
 **Goal**: All non-SDK dependencies are current, security vulnerabilities are resolved, and the codebase is ready for the MCP SDK upgrade
@@ -121,7 +121,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Integration Test Harness | 0/2 | Not started | - |
+| 1. Integration Test Harness | 2/2 | Complete | 2026-01-29 |
 | 2. Low-Risk Dependency Upgrades | 0/2 | Not started | - |
 | 3. MCP SDK Upgrade | 0/1 | Not started | - |
 | 4. Python Monolith Decomposition | 0/3 | Not started | - |

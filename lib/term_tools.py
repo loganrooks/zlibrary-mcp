@@ -67,7 +67,7 @@ def parse_term_search_results(html: str) -> List[Dict]:
     if not html:
         return []
 
-    soup = BeautifulSoup(html, 'html.parser')
+    soup = BeautifulSoup(html, 'lxml')
 
     # Find all book cards (similar to advanced_search pattern)
     all_cards = soup.find_all('z-bookcard')

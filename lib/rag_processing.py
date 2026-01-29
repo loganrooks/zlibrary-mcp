@@ -1536,7 +1536,7 @@ def _html_to_text(html_content):
         logging.warning("BeautifulSoup not available, cannot extract text from HTML.")
         return ""
     try:
-        soup = BeautifulSoup(html_content, 'html.parser')
+        soup = BeautifulSoup(html_content, 'lxml')
         return soup.get_text(separator='\n', strip=True)
     except Exception as e:
         logging.error(f"Error parsing HTML with BeautifulSoup: {e}")
@@ -4573,7 +4573,7 @@ def process_epub(file_path: Path, output_format: str = "txt") -> str:
                 try: # Add try block around conversion
                     if output_format == "markdown":
                         logging.debug(f"Item {item.get_name()}: Converting HTML to Markdown...")
-                        soup = BeautifulSoup(html_content, 'html.parser')
+                        soup = BeautifulSoup(html_content, 'lxml')
                         body = soup.find('body')
                         if body:
                             # Process body content, collecting footnote definitions

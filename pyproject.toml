@@ -8,7 +8,7 @@ name = "zlibrary-mcp"
 version = "2.0.0"
 description = "Z-Library MCP server for AI assistants"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 authors = [
     { name = "loganrooks" }
 ]
@@ -78,6 +78,13 @@ dev-dependencies = [
     "pytest-asyncio>=1.2.0",
     "pytest-mock>=3.15.0",
     "pytest-benchmark>=5.1.0",
+]
+
+# Constraints to fix security vulnerabilities in transitive deps
+constraint-dependencies = [
+    "aiohttp>=3.13.3",       # CVE-2025-69223 through CVE-2025-69230
+    "brotli>=1.2.0",         # CVE-2025-6176
+    "pdfminer.six>=20251230", # CVE-2025-64512, GHSA-f83h-ghpp-7wcc
 ]
 
 # UV configuration options

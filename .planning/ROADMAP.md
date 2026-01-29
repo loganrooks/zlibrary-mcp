@@ -29,11 +29,11 @@ Decimal phases appear between their surrounding integers in numeric order.
   1. Running `npm run test:integration` executes a real PythonShell invocation that returns valid JSON from the Python bridge
   2. A Docker-based E2E test starts the MCP server, calls at least one tool, and receives a structured response
   3. BRK-001 (download+RAG combined workflow) status is documented with reproduction steps or confirmed resolved
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 01-01: TBD
-- [ ] 01-02: TBD
+- [ ] 01-01-PLAN.md — Integration tests for all 11 tools (recorded + live modes) and BRK-001 investigation
+- [ ] 01-02-PLAN.md — Docker E2E test with MCP SDK Client
 
 ### Phase 2: Low-Risk Dependency Upgrades
 **Goal**: All non-SDK dependencies are current, security vulnerabilities are resolved, and the codebase is ready for the MCP SDK upgrade

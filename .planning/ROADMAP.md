@@ -60,10 +60,11 @@ Plans:
   2. The MCP server starts, connects to Claude Desktop (or equivalent MCP client), and successfully handles a tool invocation
   3. All existing tests pass with the new SDK (zero regressions)
   4. TypeScript compilation completes without OOM errors in standard CI memory limits
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 03-01: TBD
+- [ ] 03-01-PLAN.md — Upgrade SDK to 1.25.x+ and rewrite src/index.ts to McpServer
+- [ ] 03-02-PLAN.md — Update test mocks for McpServer + manual client verification
 
 ### Phase 4: Python Monolith Decomposition
 **Goal**: rag_processing.py is decomposed into domain modules while all existing imports and tests continue working unchanged
@@ -123,7 +124,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 |-------|----------------|--------|-----------|
 | 1. Integration Test Harness | 2/2 | Complete | 2026-01-29 |
 | 2. Low-Risk Dependency Upgrades | 2/2 | Complete | 2026-01-29 |
-| 3. MCP SDK Upgrade | 0/1 | Not started | - |
+| 3. MCP SDK Upgrade | 0/2 | Not started | - |
 | 4. Python Monolith Decomposition | 0/3 | Not started | - |
 | 5. Feature Porting & Branch Cleanup | 0/2 | Not started | - |
 | 6. Documentation & Quality Gates | 0/2 | Not started | - |

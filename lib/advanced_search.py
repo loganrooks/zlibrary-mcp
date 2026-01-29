@@ -39,7 +39,7 @@ def detect_fuzzy_matches_line(html: str) -> bool:
     if not html:
         return False
 
-    soup = BeautifulSoup(html, 'html.parser')
+    soup = BeautifulSoup(html, 'lxml')
     fuzzy_line = soup.find('div', class_='fuzzyMatchesLine')
     return fuzzy_line is not None
 
@@ -112,7 +112,7 @@ def separate_exact_and_fuzzy_results(html: str) -> Tuple[List[Dict], List[Dict]]
     if not html:
         return [], []
 
-    soup = BeautifulSoup(html, 'html.parser')
+    soup = BeautifulSoup(html, 'lxml')
 
     # Find the fuzzy line divider
     fuzzy_line = soup.find('div', class_='fuzzyMatchesLine')

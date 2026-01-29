@@ -76,7 +76,7 @@ def extract_terms(html: str) -> List[str]:
         return []
 
     try:
-        soup = BeautifulSoup(html, 'html.parser')
+        soup = BeautifulSoup(html, 'lxml')
 
         # Find all links to /terms/
         term_links = soup.find_all('a', href=re.compile(r'^/terms/'))
@@ -432,7 +432,7 @@ def extract_complete_metadata(html: str, mirror_url: str = None) -> Dict[str, An
 
     try:
         # Parse HTML once
-        soup = BeautifulSoup(html, 'html.parser')
+        soup = BeautifulSoup(html, 'lxml')
 
         # Extract all metadata fields
         metadata = {

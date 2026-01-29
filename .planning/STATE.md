@@ -10,28 +10,28 @@ See: .planning/PROJECT.md (updated 2026-01-28)
 ## Current Position
 
 Phase: 1 of 6 (Integration Test Harness)
-Plan: 1 of 2 in current phase
-Status: In progress
-Last activity: 2026-01-29 — Completed 01-01-PLAN.md
+Plan: 2 of 2 in current phase
+Status: Phase complete
+Last activity: 2026-01-29 — Completed 01-02-PLAN.md
 
-Progress: [█░░░░░░░░░] 8%
+Progress: [██░░░░░░░░] 17%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 1
-- Average duration: 3 min
-- Total execution time: 0.05 hours
+- Total plans completed: 2
+- Average duration: 3.5 min
+- Total execution time: 0.12 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 1 | 1/2 | 3 min | 3 min |
+| 1 | 2/2 | 7 min | 3.5 min |
 
 **Recent Trend:**
-- Last 5 plans: 3min
-- Trend: -
+- Last 5 plans: 3min, 4min
+- Trend: stable
 
 *Updated after each plan completion*
 
@@ -46,6 +46,7 @@ Recent decisions affecting current work:
 - [Roadmap]: Re-implement get_metadata features (not rebase) due to 75-commit drift
 - [01-01]: Use jest.unstable_mockModule for ESM mocking (required for ESM projects)
 - [01-01]: BRK-001 marked "investigated, likely resolved" — code path exists, needs live test
+- [01-02]: lib/ must be copied after uv sync in Docker to avoid setuptools package discovery conflicts
 
 ### Pending Todos
 
@@ -59,5 +60,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-01-29
-Stopped at: Completed 01-01-PLAN.md
+Stopped at: Completed 01-02-PLAN.md (Phase 1 complete)
 Resume file: None

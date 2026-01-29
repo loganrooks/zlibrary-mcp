@@ -423,10 +423,18 @@ These are optional enhancements, not bugs or required functionality.
 ## 🔧 Broken Functionality
 
 ### BRK-001: Download Book Combined Workflow
-**Status**: Partially broken
+**Status**: Investigated (2026-01-29) - Code path exists, likely resolved
 **Location**: `download_book_to_file` with `process_for_rag=true`
 **Issue**: AttributeError when calling missing method in forked zlibrary
 **Memory Bank Reference**: INT-RAG-003
+**Investigation (2026-01-29)**:
+- Code analysis: `download_book()` method exists in `zlibrary/src/zlibrary/libasync.py:368`
+- `process_document()` also exists in `lib/python_bridge.py`
+- Node.js wrapper correctly passes `process_for_rag=true` through to Python bridge
+- Combined workflow code path is complete (lines 615-690 in python_bridge.py)
+- Error handling works: Python AttributeError surfaces correctly through bridge
+- **Cannot fully confirm without live credentials** - needs TEST_LIVE=true with real book
+- Reproduction test: `__tests__/integration/brk-001-reproduction.test.js`
 
 ### BRK-002: Book ID Lookup
 **Status**: Deprecated

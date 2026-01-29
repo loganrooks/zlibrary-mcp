@@ -7,6 +7,7 @@ themes ranging from broad topics (Philosophy: 954 books) to specific subjects.
 """
 
 import asyncio
+import logging
 from typing import Dict, List, Optional
 from urllib.parse import quote
 from bs4 import BeautifulSoup
@@ -14,6 +15,8 @@ from bs4.element import Tag
 import httpx
 import sys
 import os
+
+logger = logging.getLogger(__name__)
 
 # Add zlibrary directory to path
 zlibrary_path = os.path.join(os.path.dirname(__file__), '..', 'zlibrary')
@@ -88,7 +91,7 @@ def parse_booklist_page(html: str) -> List[Dict]:
     if not html:
         return []
 
-    soup = BeautifulSoup(html, 'html.parser')
+    soup = BeautifulSoup(html, 'lxml')
 
     # Find all book cards in the booklist
     all_cards = soup.find_all('z-bookcard')
@@ -159,7 +162,7 @@ def get_booklist_metadata(html: str) -> Dict:
     if not html:
         return {}
 
-    soup = BeautifulSoup(html, 'html.parser')
+    soup = BeautifulSoup(html, 'lxml')
 
     metadata = {}
 
@@ -264,8 +267,8 @@ async def fetch_booklist(
     # This establishes the session
     try:
         await zlib.search("init", count=1)
-    except:
-        pass  # Authentication might succeed even if search fails
+    except Exception as e:
+        logger.warning("Initial search during authentication failed: %s", e)
 
     # Now fetch the booklist page with authenticated session
     # We need to use the same session/cookies from zlib client

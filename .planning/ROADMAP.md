@@ -40,16 +40,16 @@ Plans:
 **Depends on**: Phase 1
 **Requirements**: DEP-01, DEP-02, DEP-04, DEP-05, QUAL-01, QUAL-06
 **Success Criteria** (what must be TRUE):
-  1. `npm outdated` shows env-paths at 4.0 and Zod at 4.x with zero peer dependency warnings
+  1. `npm list zod` shows 3.25.x (bridge version; env-paths stays at v3 per Node 18 constraint; full Zod 4 deferred to Phase 3)
   2. All existing tests pass with new dependency versions (zero regressions)
   3. `npm audit` and `pip-audit` report zero high/critical vulnerabilities
   4. `.tsbuildinfo` is in `.gitignore` and not tracked
   5. `booklist_tools.py:267` uses a specific exception type instead of bare `except`, and all BeautifulSoup calls specify a parser
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 02-01: TBD
-- [ ] 02-02: TBD
+- [ ] 02-01-PLAN.md — Upgrade Zod to 3.25.x bridge + npm/pip security audit fixes
+- [ ] 02-02-PLAN.md — Fix bare except handler + specify lxml parser in all BS4 calls
 
 ### Phase 3: MCP SDK Upgrade
 **Goal**: The MCP server runs on the latest SDK with protocol compatibility verified against a real MCP client

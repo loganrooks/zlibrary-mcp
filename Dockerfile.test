@@ -1,0 +1,36 @@
+FROM node:20-slim AS base
+
+# Install Python 3 and venv
+RUN apt-get update && \
+    apt-get install -y python3 python3-venv python3-dev gcc && \
+    rm -rf /var/lib/apt/lists/*
+
+# Copy UV binary
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
+WORKDIR /app
+
+# Python dependencies first (cached layer)
+COPY pyproject.toml uv.lock ./
+COPY zlibrary/ ./zlibrary/
+RUN uv sync --no-dev
+
+# Copy Python bridge scripts (needed at runtime, not during uv sync)
+COPY lib/ ./lib/
+
+# Node dependencies (cached layer)
+COPY package.json package-lock.json ./
+RUN npm ci
+
+# Build TypeScript
+COPY src/ ./src/
+COPY tsconfig.json ./
+COPY scripts/ ./scripts/
+RUN npm run build
+
+# Copy test files
+COPY __tests__/e2e/ ./__tests__/e2e/
+COPY jest.config.js jest.teardown.js ./
+
+# Run E2E tests
+CMD ["node", "--experimental-vm-modules", "node_modules/jest/bin/jest.js", "--testPathPattern", "e2e", "--forceExit"]

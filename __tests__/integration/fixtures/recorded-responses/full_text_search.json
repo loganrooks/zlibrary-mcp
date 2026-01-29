@@ -1,0 +1,8 @@
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\"books\": [{\"id\": \"67890\", \"title\": \"Full Text Result\", \"author\": \"Author B\", \"year\": \"2019\", \"extension\": \"pdf\", \"url\": \"/book/67890/fedcba\"}], \"count\": 1}"
+    }
+  ]
+}

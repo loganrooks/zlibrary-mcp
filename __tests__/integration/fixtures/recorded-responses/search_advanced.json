@@ -1,0 +1,8 @@
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\"books\": [{\"id\": \"44444\", \"title\": \"Advanced Result\", \"author\": \"Author E\", \"year\": \"2021\"}], \"count\": 1}"
+    }
+  ]
+}

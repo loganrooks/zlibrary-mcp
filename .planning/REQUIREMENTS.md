@@ -12,11 +12,11 @@
 
 ### Dependency Updates
 
-- [ ] **DEP-01**: Update env-paths 3.0 to 4.0
+- [ ] **DEP-01**: Update env-paths 3.0 to 4.0 *(DEFERRED: env-paths v4 requires Node 20+; project on Node 18)*
 - [ ] **DEP-02**: Migrate Zod 3.x to 4.x (replace `z.object({}).passthrough()` with `z.looseObject({})`, verify `ZodObject`/`ZodRawShape` exports, update `zod-to-json-schema`)
 - [ ] **DEP-03**: Update MCP SDK 1.8.0 to latest (verify import paths, test with real MCP client, decide Server vs McpServer class)
 - [ ] **DEP-04**: Run npm audit and pip-audit; fix high/critical vulnerabilities
-- [ ] **DEP-05**: Add .tsbuildinfo to .gitignore
+- [x] **DEP-05**: Add .tsbuildinfo to .gitignore *(pre-completed: already at .gitignore line 6)*
 
 ### Code Quality
 
@@ -91,17 +91,17 @@ Deferred to future milestone. Tracked but not in current roadmap.
 |-------------|-------|--------|
 | TEST-01 | Phase 1 | Complete |
 | TEST-02 | Phase 1 | Complete |
-| DEP-01 | Phase 2 | Pending |
-| DEP-02 | Phase 2 | Pending |
+| DEP-01 | Phase 2 | Complete (deferred: env-paths v4 needs Node 20+) |
+| DEP-02 | Phase 2 | Complete (Zod 3.25.x bridge) |
 | DEP-03 | Phase 3 | Pending |
-| DEP-04 | Phase 2 | Pending |
-| DEP-05 | Phase 2 | Pending |
-| QUAL-01 | Phase 2 | Pending |
+| DEP-04 | Phase 2 | Complete |
+| DEP-05 | Phase 2 | Complete (pre-existing) |
+| QUAL-01 | Phase 2 | Complete |
 | QUAL-02 | Phase 4 | Pending |
 | QUAL-03 | Phase 4 | Pending |
 | QUAL-04 | Phase 4 | Pending |
 | QUAL-05 | Phase 4 | Pending |
-| QUAL-06 | Phase 2 | Pending |
+| QUAL-06 | Phase 2 | Complete |
 | GIT-01 | Phase 5 | Pending |
 | GIT-02 | Phase 5 | Pending |
 | GIT-03 | Phase 5 | Pending |

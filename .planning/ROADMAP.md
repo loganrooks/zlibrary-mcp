@@ -13,7 +13,7 @@ This roadmap transforms the Z-Library MCP server from a C+ graded codebase into 
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Integration Test Harness** - Safety net for detecting bridge breakage across all subsequent phases
-- [ ] **Phase 2: Low-Risk Dependency Upgrades** - Stabilize foundation with env-paths, Zod 4, security fixes
+- [x] **Phase 2: Low-Risk Dependency Upgrades** - Stabilize foundation with env-paths, Zod 4, security fixes
 - [ ] **Phase 3: MCP SDK Upgrade** - Modernize core server framework from 1.8.0 to latest
 - [ ] **Phase 4: Python Monolith Decomposition** - Break 4,968-line rag_processing.py into domain modules
 - [ ] **Phase 5: Feature Porting & Branch Cleanup** - Recover unmerged get_metadata features, delete stale branches
@@ -40,16 +40,16 @@ Plans:
 **Depends on**: Phase 1
 **Requirements**: DEP-01, DEP-02, DEP-04, DEP-05, QUAL-01, QUAL-06
 **Success Criteria** (what must be TRUE):
-  1. `npm list zod` shows 3.25.x (bridge version; env-paths stays at v3 per Node 18 constraint; full Zod 4 deferred to Phase 3)
+  1. `npm list zod` shows 3.25.x (bridge version; env-paths v4 deferred — requires Node 20+, project on Node 18; full Zod 4 deferred to Phase 3)
   2. All existing tests pass with new dependency versions (zero regressions)
   3. `npm audit` and `pip-audit` report zero high/critical vulnerabilities
-  4. `.tsbuildinfo` is in `.gitignore` and not tracked
+  4. ~~`.tsbuildinfo` is in `.gitignore` and not tracked~~ (pre-completed: already at .gitignore line 6)
   5. `booklist_tools.py:267` uses a specific exception type instead of bare `except`, and all BeautifulSoup calls specify a parser
 **Plans**: 2 plans
 
 Plans:
-- [ ] 02-01-PLAN.md — Upgrade Zod to 3.25.x bridge + npm/pip security audit fixes
-- [ ] 02-02-PLAN.md — Fix bare except handler + specify lxml parser in all BS4 calls
+- [x] 02-01-PLAN.md — Upgrade Zod to 3.25.x bridge + npm/pip security audit fixes
+- [x] 02-02-PLAN.md — Fix bare except handler + specify lxml parser in all BS4 calls
 
 ### Phase 3: MCP SDK Upgrade
 **Goal**: The MCP server runs on the latest SDK with protocol compatibility verified against a real MCP client
@@ -122,7 +122,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Integration Test Harness | 2/2 | Complete | 2026-01-29 |
-| 2. Low-Risk Dependency Upgrades | 0/2 | Not started | - |
+| 2. Low-Risk Dependency Upgrades | 2/2 | Complete | 2026-01-29 |
 | 3. MCP SDK Upgrade | 0/1 | Not started | - |
 | 4. Python Monolith Decomposition | 0/3 | Not started | - |
 | 5. Feature Porting & Branch Cleanup | 0/2 | Not started | - |

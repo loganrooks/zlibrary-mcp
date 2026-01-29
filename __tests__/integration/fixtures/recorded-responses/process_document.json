@@ -1,0 +1,8 @@
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\"processed_file_path\": \"/tmp/processed/test-book.txt\", \"content\": [\"Chapter 1 text...\"]}"
+    }
+  ]
+}

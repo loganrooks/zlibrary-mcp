@@ -17,6 +17,8 @@
     "validate": "node scripts/validate-python-bridge.js",
     "start": "node dist/index.js",
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --coverage",
+    "test:integration": "node --experimental-vm-modules node_modules/jest/bin/jest.js --testPathPattern 'integration/bridge' --forceExit",
+    "test:integration:live": "TEST_LIVE=true npm run test:integration",
     "prepublishOnly": "npm run build"
   },
   "keywords": [

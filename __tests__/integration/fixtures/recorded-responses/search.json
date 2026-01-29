@@ -1,0 +1,8 @@
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\"books\": [{\"id\": \"12345\", \"title\": \"Test Book\", \"author\": \"Test Author\", \"year\": \"2020\", \"extension\": \"epub\", \"filesize\": \"1.2 MB\", \"url\": \"/book/12345/abcdef\"}], \"count\": 1}"
+    }
+  ]
+}

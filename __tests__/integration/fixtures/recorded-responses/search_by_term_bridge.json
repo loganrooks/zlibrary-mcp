@@ -1,0 +1,8 @@
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\"books\": [{\"id\": \"11111\", \"title\": \"Term Result\", \"author\": \"Author C\"}], \"count\": 1}"
+    }
+  ]
+}

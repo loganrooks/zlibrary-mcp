@@ -29,12 +29,11 @@ logs
 .DS_Store
 Thumbs.db
 
-# Test files (not needed in production)
-__tests__
+# Test fixtures (large files not needed in any image)
 test_files
-*.test.js
-*.test.ts
-jest.config.js
+
+# Planning and documentation (not needed in runtime)
+.planning
 
 # Documentation (not needed in runtime)
 docs

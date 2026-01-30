@@ -14,7 +14,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Integration Test Harness** - Safety net for detecting bridge breakage across all subsequent phases
 - [x] **Phase 2: Low-Risk Dependency Upgrades** - Stabilize foundation with env-paths, Zod 4, security fixes
-- [ ] **Phase 3: MCP SDK Upgrade** - Modernize core server framework from 1.8.0 to latest
+- [x] **Phase 3: MCP SDK Upgrade** - Modernize core server framework from 1.8.0 to latest
 - [ ] **Phase 4: Python Monolith Decomposition** - Break 4,968-line rag_processing.py into domain modules
 - [ ] **Phase 5: Feature Porting & Branch Cleanup** - Recover unmerged get_metadata features, delete stale branches
 - [ ] **Phase 6: Documentation & Quality Gates** - Update stale docs, activate CI/CD, install pre-commit hooks
@@ -63,8 +63,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 03-01-PLAN.md — Upgrade SDK to 1.25.x+ and rewrite src/index.ts to McpServer
-- [ ] 03-02-PLAN.md — Update test mocks for McpServer + manual client verification
+- [x] 03-01-PLAN.md — Upgrade SDK to 1.25.x+ and rewrite src/index.ts to McpServer
+- [x] 03-02-PLAN.md — Update test mocks for McpServer + manual client verification
 
 ### Phase 4: Python Monolith Decomposition
 **Goal**: rag_processing.py is decomposed into domain modules while all existing imports and tests continue working unchanged
@@ -124,7 +124,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 |-------|----------------|--------|-----------|
 | 1. Integration Test Harness | 2/2 | Complete | 2026-01-29 |
 | 2. Low-Risk Dependency Upgrades | 2/2 | Complete | 2026-01-29 |
-| 3. MCP SDK Upgrade | 0/2 | Not started | - |
+| 3. MCP SDK Upgrade | 2/2 | Complete | 2026-01-29 |
 | 4. Python Monolith Decomposition | 0/3 | Not started | - |
 | 5. Feature Porting & Branch Cleanup | 0/2 | Not started | - |
 | 6. Documentation & Quality Gates | 0/2 | Not started | - |

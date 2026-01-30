@@ -5,7 +5,7 @@
 See: .planning/PROJECT.md (updated 2026-01-28)
 
 **Core value:** Bring the codebase to a clean, current, maintainable state so future feature development starts from a solid foundation
-**Current focus:** Phase 3 in progress — MCP SDK upgrade
+**Current focus:** Phase 3 complete — ready for Phase 4
 
 ## Current Position
 

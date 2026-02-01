@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-01-28)
 
 **Core value:** Bring the codebase to a clean, current, maintainable state so future feature development starts from a solid foundation
-**Current focus:** Phase 7 (EAPI Migration) is URGENT — Cloudflare blocking all HTML requests, MCP server non-functional
+**Current focus:** All phases complete. EAPI migration done — MCP server functional via JSON API endpoints.
 
 ## Current Position
 
-Phase: 7 of 7 (EAPI Migration — URGENT)
-Plan: 3 of 4 in current phase
-Status: In progress
-Last activity: 2026-02-01 — Completed 07-03-PLAN.md (Lib Tools EAPI Migration)
+Phase: 7 of 7 (EAPI Migration — COMPLETE)
+Plan: 4 of 4 in current phase
+Status: Phase complete
+Last activity: 2026-02-01 — Completed 07-04-PLAN.md (Python Bridge EAPI Wiring)
 
-Progress: [██████████████░] ~90% (18/~20 plans)
+Progress: [████████████████] 100% (19/19 plans)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 18
-- Average duration: 5.4 min
-- Total execution time: 1.67 hours
+- Total plans completed: 19
+- Average duration: 5.5 min
+- Total execution time: 1.8 hours
 
 **By Phase:**
 
@@ -32,11 +32,11 @@ Progress: [██████████████░] ~90% (18/~20 plans)
 | 3 | 2/2 | 10 min | 5 min |
 | 4 | 5/5 | 56 min | 11.2 min |
 | 5 | 3/3 | ~15 min | ~5 min |
-| 7 | 3/4 | ~14 min | ~4.7 min |
+| 7 | 4/4 | ~22 min | ~5.5 min |
 
 **Recent Trend:**
-- Last 5 plans: ~4min, ~4.5min, ~2min, ~4min, ~6min
-- Trend: Phase 7 nearing completion, lib tools migrated
+- Last 5 plans: ~4.5min, ~2min, ~4min, ~6min, ~8min
+- Trend: Phase 7 COMPLETE. All 19 plans executed. EAPI migration done.
 
 *Updated after each plan completion*
 
@@ -76,6 +76,8 @@ Recent decisions affecting current work:
 - [07-03]: Booklist tools gracefully degrade with search fallback (EAPI has no booklist endpoint)
 - [07-03]: Terms, booklists, IPFS CIDs return empty defaults (not available via EAPI)
 - [07-03]: All lib/ tool functions accept optional eapi_client parameter for DI
+- [07-04]: Keep AsyncZlib for downloads (EAPI download returns URL, file download needs legacy client)
+- [07-04]: Initialize EAPI client in main() not at module level (avoids import side effects)
 
 ### Pending Todos
 
@@ -93,5 +95,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-01
-Stopped at: Completed 07-03-PLAN.md (Lib Tools EAPI Migration)
+Stopped at: Completed 07-04-PLAN.md (Python Bridge EAPI Wiring) — ALL PHASES COMPLETE
 Resume file: None

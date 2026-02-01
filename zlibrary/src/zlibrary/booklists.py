@@ -1,7 +1,13 @@
-from .abs import BooklistPaginator
+"""Booklists module.
+
+NOTE: EAPI does not have a dedicated booklist endpoint.
+Booklist functionality is gracefully degraded - methods return empty results.
+The Booklists class is retained for backward compatibility.
+"""
+
 from .const import OrderOptions
 from typing import Callable, Optional
-from .exception import ParseError
+from .logger import logger
 
 
 class Booklists:
@@ -17,29 +23,32 @@ class Booklists:
     async def search_public(
         self, q: str = "", count: int = 10, order: OrderOptions | str = ""
     ):
-        if not self.__r or not self.mirror:
-            raise ParseError(
-                "Instance of Booklist does not contain a valid request method."
-            )
-        if type(order) is OrderOptions:
-            val = order.value
-        else:
-            val = order
-        url = self.mirror + f"/booklists?searchQuery={q}&order={val}"
-        paginator = BooklistPaginator(url, count, self.__r, self.mirror)
-        return await paginator.init()
+        """Search public booklists.
+
+        DEGRADED: EAPI has no booklist endpoint. Returns empty result set.
+        """
+        logger.warning("Booklists.search_public: EAPI has no booklist endpoint. Returning empty results.")
+        return _EmptyBooklistResult()
 
     async def search_private(
         self, q: str = "", count: int = 10, order: OrderOptions | str = ""
     ):
-        if not self.__r or not self.mirror:
-            raise ParseError(
-                "Instance of Booklist does not contain a valid request method."
-            )
-        if type(order) is OrderOptions:
-            val = order.value
-        else:
-            val = order
-        url = self.mirror + f"/booklists/my?searchQuery={q}&order={val}"
-        paginator = BooklistPaginator(url, count, self.__r, self.mirror)
-        return await paginator.init()
+        """Search private booklists.
+
+        DEGRADED: EAPI has no booklist endpoint. Returns empty result set.
+        """
+        logger.warning("Booklists.search_private: EAPI has no booklist endpoint. Returning empty results.")
+        return _EmptyBooklistResult()
+
+
+class _EmptyBooklistResult:
+    """Empty result placeholder for degraded booklist functionality."""
+
+    def __init__(self):
+        self.result = []
+        self.storage = {1: []}
+        self.page = 1
+        self.total = 0
+
+    def __repr__(self):
+        return "<EmptyBooklistResult>"

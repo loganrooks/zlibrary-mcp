@@ -10,9 +10,9 @@ See: .planning/PROJECT.md (updated 2026-01-28)
 ## Current Position
 
 Phase: 4 of 6 (Python Monolith Decomposition)
-Plan: 3 of 3 in current phase
+Plan: 5 of 5 in current phase (gap closure plans 04-04, 04-05 complete)
 Status: Phase complete
-Last activity: 2026-02-01 — Completed 04-03-PLAN.md
+Last activity: 2026-02-01 — Completed 04-05-PLAN.md
 
 Progress: [█████████░] 90%
 
@@ -62,8 +62,8 @@ Recent decisions affecting current work:
 - [04-01]: footnotes.py is 1176 lines (exceeds 700 target) — further splitting in 04-03
 - [04-01]: fitz import added to headings.py (was implicit in monolith scope)
 - [04-02]: Facade-aware dependency access pattern for zero test modifications (submodules use _get_facade())
-- [04-02]: orchestrator.py at 817 lines — process_pdf is 470-line orchestration that can't be meaningfully split
 - [04-02]: quality/pipeline.py at 604 lines — 3 tightly coupled pipeline stages
+- [04-05]: orchestrator.py reduced from 814 to 333 lines by extracting process_pdf to orchestrator_pdf.py
 
 ### Pending Todos
 
@@ -77,5 +77,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-01
-Stopped at: Completed 04-03-PLAN.md (Phase 4 complete)
+Stopped at: Completed 04-05-PLAN.md (Phase 4 gap closure complete)
 Resume file: None

@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+      - uses: astral-sh/setup-uv@v4
+      - run: npm ci
+      - run: uv sync
+      - run: npm run build
+      - run: node --experimental-vm-modules node_modules/jest/bin/jest.js
+      - run: uv run pytest
+
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+      - uses: astral-sh/setup-uv@v4
+      - run: npm ci
+      - run: uv sync
+      - run: npm audit --omit=dev --audit-level=high
+      - run: uv run pip-audit || true

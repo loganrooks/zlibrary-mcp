@@ -78,6 +78,7 @@ dev-dependencies = [
     "pytest-asyncio>=1.2.0",
     "pytest-mock>=3.15.0",
     "pytest-benchmark>=5.1.0",
+    "ruff>=0.14.14",
 ]
 
 # Constraints to fix security vulnerabilities in transitive deps

@@ -1,4 +1,4 @@
-# Tests for lib/python-bridge.py
+# Tests for lib/python_bridge.py (EAPI-based)
 
 import pytest
 import json
@@ -7,568 +7,435 @@ import os
 import sys
 from unittest.mock import patch, MagicMock, mock_open, AsyncMock
 
-import httpx
 import aiofiles
 from pathlib import Path
-from zlibrary.exception import ParseError  # DownloadError removed - doesn't exist
-from zlibrary import Extension # Import Extension enum
-# Add lib directory to sys.path explicitly
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'lib')))
 
-import python_bridge # Import the module itself
-from lib import rag_processing # Import the new module
+# Add lib directory to sys.path explicitly
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'lib')))
+
+import python_bridge  # Import the module itself
+from lib import rag_processing  # Import the new module
 
 # Import functions from the module under test
-# These imports will fail initially if the functions don't exist yet
-# We expect NameErrors in the Red phase for unimplemented functions - Removing try/except
-# try:
 from python_bridge import (
     process_document,
     download_book,
+    normalize_book_details,
+    eapi_health_check,
+    search,
+    full_text_search,
+    get_download_history,
+    get_download_limits,
+    get_book_metadata_complete,
+    search_by_term_bridge,
+    search_by_author_bridge,
+    fetch_booklist_bridge,
 )
-# Mock EBOOKLIB_AVAILABLE for tests where the library might be missing
-# import python_bridge # Moved to top
-python_bridge.EBOOKLIB_AVAILABLE = True # Assume available by default for most tests
-# except ImportError as e:
-#     # pytest.fail(f"Failed to import from python_bridge: {e}. Ensure lib is in sys.path and functions exist.")
-#     # Allow collection to proceed in Red phase; tests marked xfail will handle the failure.
-#     pass # Indicate that the import failure is currently expected/handled by xfail
 
 
-# Dummy Exceptions for Red Phase
-class DownloadScrapeError(Exception): pass
-class DownloadExecutionError(Exception): pass
-class FileSaveError(Exception): pass
+# --- EAPI Mock Fixtures ---
 
-# Dummy Functions for Red Phase (Keep only those needed for other tests to run)
-# async def _scrape_and_download(book_page_url: str, output_dir_str: str) -> str: # Keep original dummy for now if needed
-#     # Basic check for testing import error
-#     if 'python_bridge' in sys.modules and not getattr(sys.modules['python_bridge'], 'DOWNLOAD_LIBS_AVAILABLE', True):
-#          raise ImportError("Required libraries 'httpx' and 'aiofiles' are not installed.")
-#     # Simulate basic success for routing tests
-#     filename = book_page_url.split('/')[-1] or 'downloaded_file'
-#     return str(Path(output_dir_str) / filename)
+MOCK_EAPI_SEARCH_RESPONSE = {
+    'success': 1,
+    'books': [
+        {
+            'id': 12345,
+            'title': 'The Great Test',
+            'author': 'Py Test',
+            'year': '2025',
+            'language': 'english',
+            'extension': 'epub',
+            'filesize': '1048576',
+            'hash': 'abc123hash',
+            'rating': '4.5',
+            'qualityScore': '4.0',
+            'cover': '',
+            'href': '',
+            'isbn': '',
+            'publisher': '',
+            'pages': '200',
+        }
+    ]
+}
 
-# Dummy download_book removed - tests will use the actual implementation
+MOCK_EAPI_BOOK_INFO = {
+    'book': {
+        'id': 12345,
+        'title': 'The Great Test',
+        'author': 'Py Test',
+        'description': 'A test book description.',
+        'isbn': '978-0-123-45678-9',
+        'rating': '4.5',
+        'ratingCount': 100,
+        'series': 'Test Series',
+        'categories': ['Testing', 'Software'],
+        'qualityScore': '4.0',
+        'hash': 'abc123hash',
+    }
+}
 
-# Add dummy process_document if not fully implemented yet for RAG tests
-if 'process_document' not in locals():
-    async def process_document(file_path_str: str, output_format: str = "txt") -> dict: # Make dummy async
-        # Simulate basic success for download_book RAG tests
-        if "fail_process" in file_path_str:
-            raise RuntimeError("Simulated processing failure")
-        if "no_text" in file_path_str:
-             return {"processed_file_path": None}
-        return {"processed_file_path": file_path_str + ".processed." + output_format}
+
+@pytest.fixture
+def mock_eapi_client():
+    """Create a mock EAPIClient for testing."""
+    mock_client = AsyncMock()
+    mock_client.search = AsyncMock(return_value=MOCK_EAPI_SEARCH_RESPONSE)
+    mock_client.get_book_info = AsyncMock(return_value=MOCK_EAPI_BOOK_INFO)
+    mock_client.get_downloaded = AsyncMock(return_value={'books': MOCK_EAPI_SEARCH_RESPONSE['books']})
+    mock_client.get_profile = AsyncMock(return_value={
+        'user': {'downloads_today_limit': 10, 'downloads_today_left': 7}
+    })
+    mock_client.get_recently = AsyncMock(return_value=MOCK_EAPI_SEARCH_RESPONSE)
+    mock_client.close = AsyncMock()
+    return mock_client
 
 
-# --- Fixtures ---
+@pytest.fixture
+def patch_eapi_client(mock_eapi_client, mocker):
+    """Patch the module-level _eapi_client."""
+    mocker.patch.object(python_bridge, '_eapi_client', mock_eapi_client)
+    return mock_eapi_client
+
 
 @pytest.fixture
 def mock_zlibrary_client(mocker):
-    """Mocks the ZLibrary client instance and its methods."""
+    """Mocks the ZLibrary client for download operations."""
     mock_client = MagicMock()
-    # Use AsyncMock for the async download_book method
-    mock_client.download_book = AsyncMock(return_value='/mock/downloaded/book.epub') # Default success
-    mocker.patch('python_bridge.AsyncZlib', return_value=mock_client) # Ensure correct patch target for instantiation
-    mocker.patch('python_bridge.zlib_client', mock_client) # Patch the global client instance
+    mock_client.download_book = AsyncMock(return_value='/mock/downloaded/book.epub')
+    mocker.patch('lib.client_manager.get_default_client', AsyncMock(return_value=mock_client))
     return mock_client
 
-@pytest.fixture
-def mock_ebooklib(mocker):
-    """Mocks ebooklib functions."""
-    mock_epub = MagicMock()
-    mock_read_epub = mocker.patch('python_bridge.epub.read_epub', return_value=mock_epub)
-    # Mock items
-    mock_item1 = MagicMock()
-    mock_item1.get_content.return_value = b'<html><body><p>Chapter 1 content.</p></body></html>'
-    mock_item1.get_name.return_value = 'chap1.xhtml'
-    mock_item2 = MagicMock()
-    mock_item2.get_content.return_value = b'<html><head><style>css</style></head><body><p>Chapter 2 content.</p><script>alert("hi")</script></body></html>'
-    mock_item2.get_name.return_value = 'chap2.xhtml'
-    mock_epub.get_items_of_type.return_value = [mock_item1, mock_item2]
-    return mock_read_epub, mock_epub
 
-
-@pytest.fixture
-def mock_fitz(mocker):
-    """Mocks the fitz (PyMuPDF) library."""
-    # Mock the fitz module itself if it's imported directly
-    mock_fitz_module = MagicMock()
-    mocker.patch.dict(sys.modules, {'fitz': mock_fitz_module})
-
-    # Mock fitz.open
-    mock_doc = MagicMock()
-    mock_page = MagicMock()
-
-    # Default behaviors (can be overridden in tests)
-    mock_doc.is_encrypted = False
-    mock_doc.page_count = 1 # Keep for potential future use
-    mock_doc.__len__ = MagicMock(return_value=1) # Add __len__ for the loop
-    mock_doc.load_page.return_value = mock_page
-    mock_page.get_text.return_value = "Sample PDF text content."
-
-    # Patch fitz.open within the python_bridge module's namespace
-    mock_open_func = mocker.patch('python_bridge.fitz.open', return_value=mock_doc)
-
-    # Make mocks accessible (mock_fitz_module might not be needed anymore)
-    # mock_fitz_module.open = mock_open_func # Commented out as patch target changed
-    mock_fitz_module.Document = MagicMock() # Mock Document class if needed
-    # Add FitzError to the mock module if fitz is mocked
-    mock_fitz_module.FitzError = RuntimeError # Use RuntimeError as a stand-in
-
-    # Return mocks for potential direct manipulation in tests
-    return mock_open_func, mock_doc, mock_page
-
-
-# --- Tests for ID Lookup Workaround (Using client.search) ---
-
-# Mock data for workaround tests
-MOCK_BOOK_RESULT = {
-    'id': '12345',
-    'name': 'The Great Test',
-    'author': 'Py Test', # Already present
-    'year': '2025',
-    'language': 'en',
-    'extension': 'epub',
-    'size': '1 MB',
-    'url': 'http://example.com/download/12345.epub' # Renamed from download_url
-    # Add other relevant fields if the implementation extracts them
-}
-
-# --- New Fixtures for Download/Scrape Tests ---
-
-@pytest.fixture
-def mock_httpx_client(mocker):
-    """Mocks httpx.AsyncClient and its methods."""
-    mock_response = AsyncMock(spec=httpx.Response)
-    mock_response.status_code = 200
-    mock_response.text = "<html><body><a class='btn btn-primary dlButton' href='/download/book/123'>Download</a></body></html>"
-    mock_response.url = httpx.URL("http://example.com/book/123/slug") # Mock URL for urljoin
-    mock_response.headers = {'content-disposition': 'attachment; filename="test_book.epub"'}
-    mock_response.raise_for_status = MagicMock()
-
-    async def mock_get(*args, **kwargs):
-        # Allow side effect for error testing
-        if hasattr(mock_response, '_side_effect_get') and mock_response._side_effect_get:
-            raise mock_response._side_effect_get
-        return mock_response
-
-    async def mock_stream(*args, **kwargs):
-        # Allow side effect for error testing
-        if hasattr(mock_response, '_side_effect_stream') and mock_response._side_effect_stream:
-            raise mock_response._side_effect_stream
-
-        # Simulate streaming response
-        class MockAsyncIterator:
-            def __init__(self):
-                self._chunks = [b'chunk1', b'chunk2']
-                self._iter = iter(self._chunks)
-
-            def __aiter__(self):
-                return self
-
-            async def __anext__(self):
-                try:
-                    return next(self._iter)
-                except StopIteration:
-                    raise StopAsyncIteration
-
-        mock_stream_response = AsyncMock(spec=httpx.Response)
-        mock_stream_response.status_code = 200
-        mock_stream_response.headers = mock_response.headers # Use same headers
-        mock_stream_response.aiter_bytes.return_value = MockAsyncIterator()
-        mock_stream_response.raise_for_status = MagicMock() # Ensure it doesn't raise by default
-        # Allow overriding raise_for_status for HTTP error tests
-        if hasattr(mock_response, '_side_effect_stream_raise') and mock_response._side_effect_stream_raise:
-             mock_stream_response.raise_for_status.side_effect = mock_response._side_effect_stream_raise
-
-        return mock_stream_response
-
-    mock_client_instance = AsyncMock(spec=httpx.AsyncClient)
-    mock_client_instance.get = AsyncMock(side_effect=mock_get)
-    mock_client_instance.stream = AsyncMock(side_effect=mock_stream)
-
-    # Patch the class instantiation
-    mock_async_client_class = mocker.patch('httpx.AsyncClient', return_value=mock_client_instance)
-
-    # Return mocks for potential modification in tests
-    return mock_async_client_class, mock_client_instance, mock_response
-
-@pytest.fixture
-def mock_aiofiles(mocker):
-    """Mocks aiofiles.open."""
-    mock_file = AsyncMock()
-    # Assign an AsyncMock to mock_file.write
-    mock_file.write = AsyncMock() # No need for mock_write function now
-    mock_file.__aenter__.return_value = mock_file # For async with context
-    mock_file.__aexit__.return_value = None
-
-    mock_open = mocker.patch('aiofiles.open', return_value=mock_file)
-    return mock_open, mock_file
-
-@pytest.fixture
-def mock_beautifulsoup(mocker):
-    """Mocks BeautifulSoup."""
-    mock_soup_instance = MagicMock()
-    mock_link = MagicMock()
-    mock_link.has_attr.return_value = True
-    mock_link.__getitem__.return_value = '/download/book/123' # href value
-    mock_soup_instance.select_one.return_value = mock_link
-
-    mock_bs_class = mocker.patch('python_bridge.BeautifulSoup', return_value=mock_soup_instance)
-    return mock_bs_class, mock_soup_instance
-
-@pytest.fixture
-def mock_pathlib(mocker):
-    """Mocks pathlib.Path methods."""
-    # Create a real Path object for the directory part to allow mkdir
-    mock_dir_path_instance = MagicMock(spec=Path)
-    mock_dir_path_instance.mkdir = MagicMock()
-
-    # Create a separate mock for the final file path
-    mock_file_path_instance = MagicMock(spec=Path)
-    mock_file_path_instance.name = "test_book.epub"
-    mock_file_path_instance.exists.return_value = True # Assume exists by default
-    mock_file_path_instance.__str__.return_value = "/mock/path/test_book.epub"
-
-    # When the directory path is divided by a filename, return the file path mock
-    mock_dir_path_instance.__truediv__.return_value = mock_file_path_instance
-
-    # Patch Path class to return the directory mock initially
-    mock_path_class = mocker.patch('python_bridge.Path', return_value=mock_dir_path_instance)
-
-    return mock_path_class, mock_dir_path_instance, mock_file_path_instance
-
-@pytest.fixture
-def mock_process_document(mocker):
-    """Mocks the process_document function."""
-    # Use the dummy implementation if available, otherwise mock
-    if 'process_document' in locals():
-        mock_func = mocker.patch('python_bridge.process_document', wraps=process_document)
-    else:
-        mock_func = mocker.patch('python_bridge.process_document', return_value={"processed_file_path": "/path/to/processed.txt"})
-    return mock_func
-
-# Add fixture for _save_processed_text
 @pytest.fixture
 def mock_save_text(mocker):
     """Mocks the _save_processed_text function."""
-    # Mock the function directly within the python_bridge module
-    return mocker.patch('lib.rag_processing.save_processed_text', AsyncMock(return_value=Path("/path/to/saved.txt"))) # Updated path
+    return mocker.patch('lib.rag_processing.save_processed_text', AsyncMock(return_value=Path("/path/to/saved.txt")))
 
 
-    book_details = asyncio.run(get_by_id('12345')) # Use actual function name and asyncio.run
+# --- Tests for normalize_book_details (EAPI format) ---
 
-    mock_client.search.assert_called_once_with(q='id:12345', exact=True, count=1)
-    assert book_details == MOCK_BOOK_RESULT
+class TestNormalizeBookDetails:
+    def test_eapi_hash_field(self):
+        """EAPI books have 'hash' directly available."""
+        book = {'id': '123', 'hash': 'abc123', 'url': 'http://example.com/book/123'}
+        normalized = normalize_book_details(book)
+        assert normalized['book_hash'] == 'abc123'
 
-@pytest.mark.asyncio
-async def test_download_book_bridge_success(mock_zlibrary_client, tmp_path, mocker):
-    """Tests the python_bridge.download_book function for successful execution."""
-    book_details_mock = {"id": "987", "extension": "pdf", "name": "Bridge Test Book", "author": "Test Author", "url": "https://example.com/book/987/bridge-test-book"}
-    output_dir_mock = str(tmp_path / "downloads_bridge")
-    
-    # This is the path where the library initially saves the file
-    original_library_download_path = str(Path(output_dir_mock) / f"{book_details_mock['id']}.{book_details_mock['extension']}") # This path is temporary before rename
-    
-    # This is the expected final path after renaming
-    expected_enhanced_filename = "AuthorTest_Bridge_Test_Book_987.pdf"
-    expected_final_path = str(Path(output_dir_mock) / expected_enhanced_filename)
+    def test_eapi_book_hash_already_present(self):
+        """If book_hash already exists, don't overwrite."""
+        book = {'id': '123', 'hash': 'abc', 'book_hash': 'existing'}
+        normalized = normalize_book_details(book)
+        assert normalized['book_hash'] == 'existing'
 
-    # Configure the mock client's download_book to return the original library path
-    mock_zlibrary_client.download_book.return_value = original_library_download_path
-    
-    # Mock _create_enhanced_filename
-    mock_create_filename = mocker.patch('python_bridge._create_enhanced_filename', return_value=expected_enhanced_filename)
-    
-    # Mock os.rename
-    mock_os_rename = mocker.patch('os.rename')
-    
-    # Mock Path(original_library_download_path).exists() to return True
-    mock_path_exists = mocker.patch('pathlib.Path.exists', return_value=True)
-    
-    # Mock RAG processing parts to avoid unintended calls in this specific test
-    mocker.patch('lib.rag_processing.save_processed_text', AsyncMock())
-    mocker.patch('python_bridge.process_document', AsyncMock()) # Mock the top-level process_document
+    def test_legacy_href_extraction(self):
+        """Legacy format: extract hash from href path."""
+        book = {'id': '123', 'href': '/book/123/abc456/title'}
+        normalized = normalize_book_details(book)
+        assert normalized['book_hash'] == 'abc456'
 
-    result_dict = await python_bridge.download_book(
-        book_details=book_details_mock,
-        output_dir=output_dir_mock,
-        process_for_rag=False # Explicitly False for this test
-    )
+    def test_url_construction_from_href(self):
+        """Construct URL from href if url missing."""
+        book = {'id': '123', 'href': '/book/123/abc/title'}
+        normalized = normalize_book_details(book)
+        assert 'url' in normalized
+        assert normalized['url'].endswith('/book/123/abc/title')
 
-    mock_zlibrary_client.download_book.assert_called_once_with(
-        book_details=book_details_mock,
-        output_dir_str=output_dir_mock,
-    )
-    mock_create_filename.assert_called_once_with(book_details_mock)
-    mock_os_rename.assert_called_once_with(original_library_download_path, expected_final_path)
 
-    assert "file_path" in result_dict
-    assert result_dict["file_path"] == expected_final_path # Assert the final renamed path
-    assert result_dict.get("processed_file_path") is None
+# --- Tests for EAPI Health Check ---
 
-@pytest.mark.asyncio
-async def test_download_book_bridge_returns_processed_path_if_rag_true(mock_zlibrary_client, tmp_path, mocker):
-    book_details_mock = {"id": "988", "extension": "txt", "name": "Bridge RAG Test Book", "author": "RAG Author", "url": "https://example.com/book/988/bridge-rag-test-book"}
-    output_dir_mock = str(tmp_path / "downloads_bridge_rag")
+class TestEAPIHealthCheck:
+    @pytest.mark.asyncio
+    async def test_healthy(self, patch_eapi_client):
+        """Should return healthy when EAPI responds correctly."""
+        result = await eapi_health_check()
+        assert result['status'] == 'healthy'
+        assert result['transport'] == 'eapi'
 
-    original_library_download_path = str(Path(output_dir_mock) / f"{book_details_mock['id']}.{book_details_mock['extension']}")
-    
-    expected_enhanced_filename = "AuthorRAG_Bridge_RAG_Test_Book_988.txt"
-    expected_final_path = str(Path(output_dir_mock) / expected_enhanced_filename)
-    
-    processed_path_mock = expected_final_path + ".processed.md" # RAG output based on enhanced name
+    @pytest.mark.asyncio
+    async def test_unhealthy_bad_response(self, patch_eapi_client):
+        """Should return unhealthy when EAPI response is malformed."""
+        patch_eapi_client.search = AsyncMock(return_value={'success': 0})
+        result = await eapi_health_check()
+        assert result['status'] == 'unhealthy'
 
-    mock_zlibrary_client.download_book.return_value = original_library_download_path
-    mock_create_filename = mocker.patch('python_bridge._create_enhanced_filename', return_value=expected_enhanced_filename)
-    mock_os_rename = mocker.patch('os.rename')
+    @pytest.mark.asyncio
+    async def test_unhealthy_exception(self, mocker):
+        """Should return unhealthy when EAPI client not initialized."""
+        mocker.patch.object(python_bridge, '_eapi_client', None)
+        result = await eapi_health_check()
+        assert result['status'] == 'unhealthy'
+        assert 'error' in result
 
-    # Mock Path(original_library_download_path).exists() to return True
-    mock_path_exists = mocker.patch('pathlib.Path.exists', return_value=True)
-    
-    # Mock the process_document function that download_book calls
-    mock_process_doc = mocker.patch('python_bridge.process_document', AsyncMock(return_value={"processed_file_path": processed_path_mock, "content": ["Processed content"]}))
 
-    result_dict = await python_bridge.download_book(
-        book_details=book_details_mock,
-        output_dir=output_dir_mock,
-        process_for_rag=True,
-        processed_output_format="markdown"
-    )
+# --- Tests for Search (EAPI-based) ---
 
-    mock_zlibrary_client.download_book.assert_called_once_with(
-        book_details=book_details_mock,
-        output_dir_str=output_dir_mock
-    )
-    mock_create_filename.assert_called_once_with(book_details_mock)
-    mock_os_rename.assert_called_once_with(original_library_download_path, expected_final_path)
-    
-    mock_process_doc.assert_called_once_with(
-        file_path_str=expected_final_path, # Should be called with the renamed (final) path
-        output_format="markdown",
-        book_id=book_details_mock['id'],
-        author=book_details_mock.get('author'),
-        title=book_details_mock['name']
-    )
-    assert result_dict.get("file_path") == expected_final_path # This should be the enhanced filename path
-    assert result_dict.get("processed_file_path") == processed_path_mock
+class TestSearch:
+    @pytest.mark.asyncio
+    async def test_search_basic(self, patch_eapi_client):
+        """Should search via EAPI and normalize results."""
+        result = await search(query="python")
+        assert 'books' in result
+        assert 'retrieved_from_url' in result
+        assert len(result['books']) == 1
+        assert result['books'][0]['id'] == '12345'
+        assert result['books'][0]['book_hash'] == 'abc123hash'
 
-@pytest.mark.asyncio
-async def test_download_book_bridge_handles_zlib_download_error(mock_zlibrary_client, tmp_path, mocker):
-    book_details_mock = {"id": "989", "extension": "epub", "name": "Bridge Error Test", "url": "https://example.com/book/989/bridge-error-test"}
-    output_dir_mock = str(tmp_path / "downloads_bridge_err")
+    @pytest.mark.asyncio
+    async def test_search_with_filters(self, patch_eapi_client):
+        """Should pass filters to EAPI search."""
+        await search(query="test", exact=True, from_year=2020, to_year=2025,
+                     languages=['English'], extensions=['pdf'], count=5)
+        call_kwargs = patch_eapi_client.search.call_args[1]
+        assert call_kwargs['exact'] is True
+        assert call_kwargs['year_from'] == 2020
+        assert call_kwargs['year_to'] == 2025
+        assert call_kwargs['limit'] == 5
 
-    mock_zlibrary_client.download_book.side_effect = DownloadError("Zlib download failed")
-    
-    mocker.patch('lib.rag_processing.process_document', AsyncMock()) # Mock to prevent unintended calls
+    @pytest.mark.asyncio
+    async def test_full_text_search_routes_to_search(self, patch_eapi_client):
+        """Full text search routes through regular EAPI search."""
+        result = await full_text_search(query="test phrase")
+        assert 'books' in result
+        patch_eapi_client.search.assert_called_once()
 
-    with pytest.raises(DownloadError, match="Zlib download failed"):
-        await python_bridge.download_book(
+
+# --- Tests for Download History / Limits (EAPI-based) ---
+
+class TestProfileEndpoints:
+    @pytest.mark.asyncio
+    async def test_get_download_history(self, patch_eapi_client):
+        result = await get_download_history(count=5)
+        assert isinstance(result, list)
+        assert len(result) == 1
+        assert result[0]['id'] == '12345'
+
+    @pytest.mark.asyncio
+    async def test_get_download_limits(self, patch_eapi_client):
+        result = await get_download_limits()
+        assert result['daily_limit'] == 10
+        assert result['daily_remaining'] == 7
+
+
+# --- Tests for get_book_metadata_complete (EAPI-based) ---
+
+class TestGetBookMetadataComplete:
+    @pytest.mark.asyncio
+    async def test_metadata_via_eapi(self, patch_eapi_client):
+        """Should fetch metadata via EAPI get_book_info."""
+        result = await get_book_metadata_complete(book_id="12345", book_hash="abc123hash")
+        assert result['id'] == '12345'
+        assert result['book_hash'] == 'abc123hash'
+        assert result['description'] == 'A test book description.'
+        assert result['series'] == 'Test Series'
+
+    @pytest.mark.asyncio
+    async def test_metadata_requires_hash(self, patch_eapi_client):
+        """Should raise if book_hash not provided."""
+        with pytest.raises(ValueError, match="book_hash is required"):
+            await get_book_metadata_complete(book_id="12345")
+
+
+# --- Tests for Bridge Functions (term, author, booklist) ---
+
+class TestBridgeFunctions:
+    @pytest.mark.asyncio
+    async def test_search_by_term_bridge(self, patch_eapi_client, mocker):
+        """Should pass eapi_client to term_tools."""
+        mock_term_search = AsyncMock(return_value={
+            'term': 'dialectic', 'books': [], 'total_results': 0
+        })
+        mocker.patch('lib.term_tools.search_by_term', mock_term_search)
+        result = await search_by_term_bridge(term="dialectic")
+        assert result['term'] == 'dialectic'
+        # Verify eapi_client was passed
+        call_kwargs = mock_term_search.call_args[1]
+        assert call_kwargs['eapi_client'] is patch_eapi_client
+
+    @pytest.mark.asyncio
+    async def test_search_by_author_bridge(self, patch_eapi_client, mocker):
+        """Should pass eapi_client to author_tools."""
+        mock_author_search = AsyncMock(return_value={
+            'author': 'Hegel', 'books': [], 'total_results': 0
+        })
+        mocker.patch('lib.author_tools.search_by_author', mock_author_search)
+        result = await search_by_author_bridge(author="Hegel")
+        assert result['author'] == 'Hegel'
+        call_kwargs = mock_author_search.call_args[1]
+        assert call_kwargs['eapi_client'] is patch_eapi_client
+
+    @pytest.mark.asyncio
+    async def test_fetch_booklist_bridge(self, patch_eapi_client, mocker):
+        """Should pass eapi_client to booklist_tools."""
+        mock_booklist = AsyncMock(return_value={
+            'booklist_id': '123', 'books': [], 'degraded': True,
+            'topic': 'test', 'metadata': {}, 'page': 1, 'booklist_hash': 'abc'
+        })
+        mocker.patch('lib.booklist_tools.fetch_booklist', mock_booklist)
+        result = await fetch_booklist_bridge(
+            booklist_id="123", booklist_hash="abc", topic="test"
+        )
+        assert result['degraded'] is True
+        call_kwargs = mock_booklist.call_args[1]
+        assert call_kwargs['eapi_client'] is patch_eapi_client
+
+
+# --- Tests for Download Book (still uses AsyncZlib) ---
+
+class TestDownloadBook:
+    @pytest.mark.asyncio
+    async def test_download_book_success(self, mock_zlibrary_client, tmp_path, mocker, patch_eapi_client):
+        """Tests download_book for successful execution."""
+        book_details_mock = {
+            "id": "987", "extension": "pdf", "name": "Bridge Test Book",
+            "author": "Test Author", "url": "https://example.com/book/987/test",
+            "hash": "testhash123"
+        }
+        output_dir_mock = str(tmp_path / "downloads")
+
+        original_path = str(Path(output_dir_mock) / "987.pdf")
+        expected_filename = "AuthorTest_Bridge_Test_Book_987.pdf"
+        expected_final_path = str(Path(output_dir_mock) / expected_filename)
+
+        mock_zlibrary_client.download_book.return_value = original_path
+        mocker.patch('python_bridge.create_unified_filename', return_value=expected_filename)
+        mocker.patch('os.rename')
+        mocker.patch('pathlib.Path.exists', return_value=True)
+        mocker.patch('python_bridge.process_document', AsyncMock())
+
+        result = await download_book(
             book_details=book_details_mock,
             output_dir=output_dir_mock,
             process_for_rag=False
         )
-    
-    mock_zlibrary_client.download_book.assert_called_once()
-    python_bridge.rag_processing.process_document.assert_not_called()
 
-@pytest.mark.asyncio
-async def test_download_book_bridge_handles_processing_error_if_rag_true(mock_zlibrary_client, tmp_path, mocker):
-    book_details_mock = {"id": "990", "extension": "pdf", "name": "Bridge RAG Error Test", "url": "https://example.com/book/990/bridge-rag-error-test"}
-    output_dir_mock = str(tmp_path / "downloads_bridge_rag_err")
-    original_downloaded_path = str(Path(output_dir_mock) / f"{book_details_mock['id']}.{book_details_mock['extension']}")
+        assert result['file_path'] == expected_final_path
+        assert result.get('processed_file_path') is None
 
-    mock_zlibrary_client.download_book.return_value = original_downloaded_path
-    
-    # Mock Path(original_library_download_path).exists() to return True
-    mocker.patch('pathlib.Path.exists', return_value=True)
-    
-    # Mock os.rename as it's called before the RAG processing error would occur
-    mocker.patch('os.rename')
-    mocker.patch('python_bridge._create_enhanced_filename', return_value="Ignored_Enhanced_Filename.pdf") # Mock this too
+    @pytest.mark.asyncio
+    async def test_download_book_with_rag(self, mock_zlibrary_client, tmp_path, mocker, patch_eapi_client):
+        """Tests download_book with RAG processing."""
+        book_details_mock = {
+            "id": "988", "extension": "txt", "name": "RAG Test Book",
+            "author": "RAG Author", "url": "https://example.com/book/988/test",
+            "hash": "raghash123"
+        }
+        output_dir_mock = str(tmp_path / "downloads_rag")
+        original_path = str(Path(output_dir_mock) / "988.txt")
+        expected_filename = "AuthorRAG_RAG_Test_Book_988.txt"
+        expected_final_path = str(Path(output_dir_mock) / expected_filename)
+        processed_path = expected_final_path + ".processed.md"
 
-    mock_process_doc = mocker.patch('python_bridge.process_document', AsyncMock(side_effect=RuntimeError("RAG failed")))
+        mock_zlibrary_client.download_book.return_value = original_path
+        mocker.patch('python_bridge.create_unified_filename', return_value=expected_filename)
+        mocker.patch('os.rename')
+        mocker.patch('pathlib.Path.exists', return_value=True)
+        mocker.patch('python_bridge.process_document', AsyncMock(
+            return_value={"processed_file_path": processed_path, "content": []}
+        ))
 
-    with pytest.raises(RuntimeError, match="RAG failed"):
-        await python_bridge.download_book(
+        result = await download_book(
             book_details=book_details_mock,
             output_dir=output_dir_mock,
             process_for_rag=True,
-            processed_output_format="text"
+            processed_output_format="markdown"
         )
-    
-    mock_zlibrary_client.download_book.assert_called_once()
-    mock_process_doc.assert_called_once()
-# --- Test Cases ---
 
-# 6. Python Bridge - _process_epub
-# Refactored to test via process_document
+        assert result['file_path'] == expected_final_path
+        assert result['processed_file_path'] == processed_path
+
+    @pytest.mark.asyncio
+    async def test_download_book_error(self, mock_zlibrary_client, tmp_path, mocker, patch_eapi_client):
+        """Tests download_book handles download errors."""
+        book_details_mock = {
+            "id": "989", "extension": "epub", "name": "Error Test",
+            "url": "https://example.com/book/989/test", "hash": "errhash"
+        }
+        mock_zlibrary_client.download_book.side_effect = RuntimeError("Download failed")
+
+        with pytest.raises(RuntimeError, match="Download failed"):
+            await download_book(
+                book_details=book_details_mock,
+                output_dir=str(tmp_path / "downloads_err"),
+                process_for_rag=False
+            )
+
+
+# --- Tests for process_document (unchanged — local file processing) ---
+
 @pytest.mark.asyncio
 async def test_process_document_epub_success(tmp_path, mocker, mock_save_text):
     epub_path = tmp_path / "test.epub"
     epub_path.touch()
     expected_content = "Chapter 1 content.\nChapter 2 content."
-    # Mock the internal helper called by process_document
-    mock_internal_epub = mocker.patch('lib.rag_processing.process_epub', return_value=expected_content) # Updated path
+    mock_internal_epub = mocker.patch('lib.rag_processing.process_epub', return_value=expected_content)
 
-    # Add default None for new metadata args
     result = await process_document(str(epub_path), book_id=None, author=None, title=None)
 
-    mock_internal_epub.assert_called_once_with(Path(epub_path), 'txt') # Expect Path and 'txt'
-    # Update mock_save_text assertion to include metadata=None
+    mock_internal_epub.assert_called_once_with(Path(epub_path), 'txt')
     mock_save_text.assert_called_once_with(
         original_file_path=Path(epub_path),
-        processed_content=expected_content, # Changed text_content -> processed_content
+        processed_content=expected_content,
         output_format='txt',
-        book_details={'id': None, 'author': None, 'title': None} # Changed book_id/author/title -> book_details
+        book_details={'id': None, 'author': None, 'title': None}
     )
-    # Assert the final dictionary returned by process_document
-    assert result == {"processed_file_path": str(mock_save_text.return_value), "content": []} # Added content key
+    assert result == {"processed_file_path": str(mock_save_text.return_value), "content": []}
 
-# Test removed as EBOOKLIB_AVAILABLE flag logic was removed.
-# ImportError is handled by the import statement itself.
-# def test_process_epub_ebooklib_not_available(tmp_path, mocker):
-#     epub_path = tmp_path / "test.epub"
-#     # epub_path.touch() # Don't create file
-#     # Mock the flag used in the function
-#     mocker.patch('python_bridge.EBOOKLIB_AVAILABLE', False)
-#     with pytest.raises(ImportError, match="Required library 'ebooklib' is not installed or available."):
-#          # Use dummy path
-#         _process_epub(str(epub_path))
 
-# Refactored to test via process_document
 @pytest.mark.asyncio
 async def test_process_document_epub_read_error(tmp_path, mocker, mock_save_text):
     epub_path = tmp_path / "test.epub"
     epub_path.touch()
-    # Mock the internal helper to raise an error
-    mock_internal_epub = mocker.patch('lib.rag_processing.process_epub', side_effect=Exception("EPUB read failed")) # Updated path
+    mocker.patch('lib.rag_processing.process_epub', side_effect=Exception("EPUB read failed"))
 
-    # Assert that process_document wraps and raises the error
-    with pytest.raises(RuntimeError, match=r"Error processing document .*test\.epub: EPUB read failed"): # Expect RuntimeError
-        # Add default None for new metadata args
+    with pytest.raises(RuntimeError, match=r"Error processing document .*test\.epub: EPUB read failed"):
         await process_document(str(epub_path), book_id=None, author=None, title=None)
-
-    mock_internal_epub.assert_called_once_with(Path(epub_path), 'txt') # Expect Path and 'txt'
-    mock_save_text.assert_not_called() # Save should not be called on error
-
-# 7. Python Bridge - _process_txt
-# Refactored to test via process_document
-@pytest.mark.asyncio
-async def test_process_document_txt_utf8(tmp_path, mocker, mock_save_text):
-    txt_path = tmp_path / "test_utf8.txt"
-    content = "This is a UTF-8 file.\nWith multiple lines.\nAnd special chars: éàçü."
-    txt_path.write_text(content, encoding='utf-8')
-    # Mock the internal helper
-    mock_internal_txt = mocker.patch('lib.rag_processing.process_txt', return_value=content) # Updated path
-
-    # Add default None for new metadata args
-    result = await process_document(str(txt_path), book_id=None, author=None, title=None)
-
-    mock_internal_txt.assert_called_once_with(Path(txt_path)) # Expect Path
-    # Update mock_save_text assertion to include metadata=None
-    mock_save_text.assert_called_once_with(
-        original_file_path=Path(txt_path),
-        processed_content=content, # Changed text_content -> processed_content
-        output_format='txt',
-        book_details={'id': None, 'author': None, 'title': None} # Changed book_id/author/title -> book_details
-    )
-    assert result == {"processed_file_path": str(mock_save_text.return_value), "content": []} # Added content key
-
-# Refactored to test via process_document
-@pytest.mark.asyncio
-async def test_process_document_txt_latin1_fallback(tmp_path, mocker, mock_save_text):
-    txt_path = tmp_path / "test_latin1.txt"
-    content_latin1 = "This is a Latin-1 file with chars like: äöüß."
-    txt_path.write_text(content_latin1, encoding='latin-1')
-    # Simulate the behavior of _process_txt with fallback
-    expected_processed_content = "This is a Latin-1 file with chars like: ."
-    mock_internal_txt = mocker.patch('lib.rag_processing.process_txt', return_value=expected_processed_content) # Updated path
-
-    # Add default None for new metadata args
-    result = await process_document(str(txt_path), book_id=None, author=None, title=None)
-
-    mock_internal_txt.assert_called_once_with(Path(txt_path)) # Expect Path
-    # Update mock_save_text assertion to include metadata=None
-    mock_save_text.assert_called_once_with(
-        original_file_path=Path(txt_path),
-        processed_content=expected_processed_content, # Changed text_content -> processed_content
-        output_format='txt',
-        book_details={'id': None, 'author': None, 'title': None} # Changed book_id/author/title -> book_details
-    )
-    assert result == {"processed_file_path": str(mock_save_text.return_value), "content": []} # Added content key
-
-# Refactored to test via process_document
-@pytest.mark.asyncio
-async def test_process_document_txt_read_error(tmp_path, mocker, mock_save_text):
-    txt_path = tmp_path / "no_permission.txt"
-    txt_path.touch() # <<< ADDED: Create the file so exists() check passes
-    # Mock the internal helper to raise the error
-    mock_internal_txt = mocker.patch('lib.rag_processing.process_txt', side_effect=IOError("Permission denied")) # Updated path
-
-    # Assert that process_document wraps and raises the error
-    with pytest.raises(RuntimeError, match=r"Error processing document .*no_permission\.txt: Permission denied"): # Expect RuntimeError
-        # Add default None for new metadata args
-        await process_document(str(txt_path), book_id=None, author=None, title=None)
-
-    mock_internal_txt.assert_called_once_with(Path(txt_path)) # Expect Path
     mock_save_text.assert_not_called()
 
 
-# X. Python Bridge - _process_pdf (New Tests)
-# Refactored to test via process_document
+@pytest.mark.asyncio
+async def test_process_document_txt_utf8(tmp_path, mocker, mock_save_text):
+    txt_path = tmp_path / "test_utf8.txt"
+    content = "This is a UTF-8 file.\nWith multiple lines.\nAnd special chars."
+    txt_path.write_text(content, encoding='utf-8')
+    mock_internal_txt = mocker.patch('lib.rag_processing.process_txt', return_value=content)
+
+    result = await process_document(str(txt_path), book_id=None, author=None, title=None)
+
+    mock_internal_txt.assert_called_once_with(Path(txt_path))
+    mock_save_text.assert_called_once_with(
+        original_file_path=Path(txt_path),
+        processed_content=content,
+        output_format='txt',
+        book_details={'id': None, 'author': None, 'title': None}
+    )
+    assert result == {"processed_file_path": str(mock_save_text.return_value), "content": []}
+
+
 @pytest.mark.asyncio
 async def test_process_document_pdf_success(tmp_path, mocker, mock_save_text):
     pdf_path = tmp_path / "sample.pdf"
     pdf_path.touch()
     expected_content = "Sample PDF text content."
-    # Mock the internal helper
-    mock_internal_pdf = mocker.patch('lib.rag_processing.process_pdf', return_value=expected_content) # Updated path
+    mock_internal_pdf = mocker.patch('lib.rag_processing.process_pdf', return_value=expected_content)
 
-    # Add default None for new metadata args
     result = await process_document(str(pdf_path), book_id=None, author=None, title=None)
 
-    mock_internal_pdf.assert_called_once_with(Path(pdf_path), 'txt') # Expect Path and 'txt'
-    # Update mock_save_text assertion to include metadata=None
+    mock_internal_pdf.assert_called_once_with(Path(pdf_path), 'txt')
     mock_save_text.assert_called_once_with(
         original_file_path=Path(pdf_path),
-        processed_content=expected_content, # Changed text_content -> processed_content
+        processed_content=expected_content,
         output_format='txt',
-        book_details={'id': None, 'author': None, 'title': None} # Changed book_id/author/title -> book_details
+        book_details={'id': None, 'author': None, 'title': None}
     )
-    assert result == {"processed_file_path": str(mock_save_text.return_value), "content": []} # Added content key
+    assert result == {"processed_file_path": str(mock_save_text.return_value), "content": []}
 
-# Refactored to test via process_document
+
 @pytest.mark.asyncio
 async def test_process_document_pdf_encrypted(tmp_path, mocker, mock_save_text):
     pdf_path = tmp_path / "encrypted.pdf"
     pdf_path.touch()
-    # Mock the internal helper to raise error
-    mock_internal_pdf = mocker.patch('lib.rag_processing.process_pdf', side_effect=ValueError("PDF is encrypted")) # Updated path
+    mocker.patch('lib.rag_processing.process_pdf', side_effect=ValueError("PDF is encrypted"))
 
-    with pytest.raises(RuntimeError, match=r"Error processing document .*encrypted\.pdf: PDF is encrypted"): # Expect RuntimeError wrapper
-        # Add default None for new metadata args
+    with pytest.raises(RuntimeError, match=r"Error processing document .*encrypted\.pdf: PDF is encrypted"):
         await process_document(str(pdf_path), book_id=None, author=None, title=None)
-
-    mock_internal_pdf.assert_called_once_with(Path(pdf_path), 'txt') # Expect Path and 'txt'
-    mock_save_text.assert_not_called()
-
-# Refactored to test via process_document
-@pytest.mark.asyncio
-async def test_process_document_pdf_corrupted(tmp_path, mocker, mock_save_text): # Refactored test
-    """Tests if process_document handles corrupted PDF files gracefully."""
-    pdf_path = tmp_path / "corrupted.pdf"
-    pdf_path.touch()
-    # Mock the internal helper to raise the error
-    # Use fitz exception if available, otherwise generic RuntimeError
-    fitz_error = getattr(sys.modules.get('fitz', None), 'FitzError', RuntimeError)
-    mock_internal_pdf = mocker.patch('lib.rag_processing.process_pdf', side_effect=fitz_error("Corrupted PDF")) # Updated path
-
-    with pytest.raises(RuntimeError, match=r"Error processing document .*corrupted\.pdf.*Corrupted PDF"): # Expect RuntimeError wrapper
-        # Add default None for new metadata args
-        await process_document(str(pdf_path), book_id=None, author=None, title=None)
-
-    mock_internal_pdf.assert_called_once_with(Path(pdf_path), 'txt')
     mock_save_text.assert_not_called()

@@ -18,6 +18,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 4: Python Monolith Decomposition** - Break 4,968-line rag_processing.py into domain modules
 - [x] **Phase 5: Feature Porting & Branch Cleanup** - Recover unmerged get_metadata features, delete stale branches
 - [ ] **Phase 6: Documentation & Quality Gates** - Update stale docs, activate CI/CD, install pre-commit hooks
+- [ ] **Phase 7: EAPI Migration** - Migrate from HTML scraping to EAPI JSON endpoints (URGENT: Cloudflare blocking all HTML requests)
 
 ## Phase Details
 
@@ -118,6 +119,32 @@ Plans:
 - [ ] 06-01: TBD
 - [ ] 06-02: TBD
 
+### Phase 7: EAPI Migration
+**Goal**: All Z-Library operations use EAPI JSON endpoints instead of HTML scraping, restoring full MCP server functionality
+**Depends on**: Phase 5 (can run before or in parallel with Phase 6)
+**Requirements**: ISSUE-API-001
+**Priority**: 🔴 URGENT — entire MCP server is non-functional
+**Success Criteria** (what must be TRUE):
+  1. `search_books` returns results via EAPI (no HTML parsing)
+  2. All 12 MCP tools that depend on Z-Library API calls work end-to-end
+  3. No BeautifulSoup HTML parsing remains in the search/browse/metadata hot path
+  4. Automated health check detects Cloudflare challenges or page structure changes
+  5. All existing tests pass with the new transport layer
+**Plans**: 4 plans
+
+**Context**:
+- Z-Library added Cloudflare "Checking your browser..." JS challenge on all HTML page GET requests (discovered 2026-02-01)
+- Login via `POST /rpc.php` still works
+- EAPI endpoints (`POST /eapi/book/search` with JSON body `{message, limit}`) bypass Cloudflare and return JSON with `success:1`
+- EAPI returns rich book objects (id, title, author, year, publisher, language, pages, cover, filesize, etc.)
+- Vendored fork (`zlibrary/src/zlibrary/`) currently uses BeautifulSoup to parse HTML search results — this entire approach must be replaced
+
+Plans:
+- [ ] 07-01-PLAN.md — Create EAPIClient class + response normalization (foundation)
+- [ ] 07-02-PLAN.md — Rewrite vendored fork (libasync, abs, profile, booklists) to use EAPI
+- [ ] 07-03-PLAN.md — Migrate lib/ tools (term, author, booklist, metadata) to use EAPI
+- [ ] 07-04-PLAN.md — Wire python_bridge, update test mocks, add health check, verify E2E
+
 ## Progress
 
 **Execution Order:**
@@ -131,3 +158,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 4. Python Monolith Decomposition | 5/5 | Complete | 2026-02-01 |
 | 5. Feature Porting & Branch Cleanup | 3/3 | Complete | 2026-02-01 |
 | 6. Documentation & Quality Gates | 0/2 | Not started | - |
+| 7. EAPI Migration | 0/4 | Not started (URGENT) | - |

@@ -113,11 +113,11 @@ Plans:
   3. All technical docs include a "Last Verified: YYYY-MM-DD" line
   4. `git commit` triggers pre-commit hooks (lint + test on changed files via husky/lint-staged)
   5. CI pipeline includes `npm audit` and `pip-audit` steps, and setup script checks Python version
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 06-01: TBD
-- [ ] 06-02: TBD
+- [ ] 06-01-PLAN.md — Update all stale docs, triage ISSUES.md, backfill 3 ADRs, add Last Verified timestamps
+- [ ] 06-02-PLAN.md — Install Husky + lint-staged hooks, create GitHub Actions CI, Python version check
 
 ### Phase 7: EAPI Migration
 **Goal**: All Z-Library operations use EAPI JSON endpoints instead of HTML scraping, restoring full MCP server functionality

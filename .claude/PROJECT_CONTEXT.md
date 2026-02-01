@@ -1,5 +1,7 @@
 # Z-Library MCP Project Context
 
+<!-- Last Verified: 2026-02-01 -->
+
 ## Mission Statement
 Build a robust, resilient MCP server for Z-Library integration that provides comprehensive book search, download, and RAG processing capabilities for AI assistants, with emphasis on reliability despite Z-Library's infrastructure changes.
 
@@ -7,48 +9,54 @@ Build a robust, resilient MCP server for Z-Library integration that provides com
 
 ### 1. Resilience First
 - **Domain Agility**: Handle Z-Library's "Hydra mode" with dynamic domain discovery
-- **Graceful Degradation**: Continue operating despite partial failures
+- **Graceful Degradation**: Continue operating despite partial failures (e.g., booklist tools degrade when EAPI lacks endpoints)
 - **Error Recovery**: Automatic retry with exponential backoff
 - **Circuit Breakers**: Prevent cascading failures
+- **EAPI Transport**: JSON API endpoints bypass Cloudflare browser challenges
 
 ### 2. Abstraction Layers
 ```
-┌─────────────────────┐
-│   MCP Interface     │ ← Tools exposed to AI assistants
-├─────────────────────┤
-│   Service Layer     │ ← Business logic, orchestration
-├─────────────────────┤
-│   Adapter Layer     │ ← Z-Library EAPI abstraction
-├─────────────────────┤
-│   Python Bridge     │ ← Language boundary
-├─────────────────────┤
-│   Z-Library Client  │ ← Direct API interaction
-└─────────────────────┘
++---------------------+
+|   MCP Interface     | <- 12 tools exposed to AI assistants (MCP SDK 1.25+)
++---------------------+
+|   Service Layer     | <- Business logic, orchestration (TypeScript)
++---------------------+
+|   EAPI Client       | <- Z-Library EAPI JSON transport (httpx)
++---------------------+
+|   Python Bridge     | <- Language boundary (PythonShell)
++---------------------+
+| Z-Library Client    | <- Legacy AsyncZlib for downloads only
++---------------------+
+| RAG Pipeline        | <- lib/rag/ domain modules (decomposed)
++---------------------+
 ```
 
 ### 3. Development Philosophy
 - **Test-Driven**: Write tests first, especially for error paths
 - **Observable**: Comprehensive logging and monitoring
-- **Maintainable**: Clear separation of concerns
+- **Maintainable**: Clear separation of concerns, modules under 500 lines
 - **Documented**: Self-documenting code with extensive comments
 
-## Current State (2025-09-30)
+## Current State (2026-02-01)
 
-### Working Features ✅
-- Basic search functionality
-- Book downloads with bookDetails
-- RAG processing (EPUB, TXT, PDF)
-- Python virtual environment management
+### Working Features
+- 12 MCP tools via McpServer `server.tool()` API (MCP SDK 1.25+)
+- EAPI JSON transport for search, metadata, and browse operations
+- Downloads via legacy AsyncZlib client (EAPI returns URL, download needs cookies)
+- RAG processing (EPUB, TXT, PDF) with quality detection pipeline
+- UV-based Python dependency management (.venv/ project-local)
+- Python monolith decomposed into lib/rag/ domain modules with facade pattern
+- Health check with Cloudflare detection for upstream monitoring
 
-### Known Issues ⚠️
-- Venv manager test warnings (ISSUE-002)
-- No retry logic for failures (ISSUE-005)
-- Missing fuzzy search (SRCH-001)
-- No download queue management (DL-001)
+### Known Limitations
+- Booklist tools gracefully degrade (no EAPI booklist endpoint)
+- Full-text search routes through regular EAPI search (no dedicated mode)
+- Terms, IPFS CIDs return empty defaults (not available via EAPI)
+- Docker numpy/Alpine compilation issue (pre-existing)
 
-### In Progress 🔄
-- Branch: `feature/rag-robustness-enhancement`
-- Focus: PDF quality analysis and extraction improvements
+### Future Direction
+- **Anna's Archive**: Planned as additional/alternative book source to reduce Z-Library single-source risk
+- **Source Diversification**: Architecture supports adding new backends behind the service layer
 
 ## Domain Model
 
@@ -99,25 +107,36 @@ interface RAGDocument {
 - Z-Library community libraries are Python-based
 - Better document processing libraries (PyMuPDF, ebooklib)
 - Async support with asyncio
-- Easier web scraping with BeautifulSoup
+- EAPI client uses httpx for efficient HTTP
 
 ### Why Node.js Frontend?
-- MCP SDK is Node.js-based
+- MCP SDK is Node.js-based (upgraded to 1.25+ with McpServer API)
 - Better TypeScript support
-- Easier integration with AI assistants
 - Standard for MCP servers
 
 ### Why Vendored Z-Library Fork?
 - Need custom modifications for download logic
 - Avoid breaking changes from upstream
 - Control over authentication flow
-- Custom domain handling for Hydra mode
+- Custom EAPI client implementation (zlibrary/eapi.py)
+
+### Why EAPI Transport?
+- Cloudflare browser challenges block all HTML page requests (since Jan 2026)
+- EAPI JSON endpoints bypass Cloudflare (API endpoints not challenged)
+- Structured JSON responses eliminate HTML parsing fragility
+- See ADR-005 for full rationale
+
+### Why Python Decomposition?
+- rag_processing.py was 4,968 lines (unmaintainable)
+- Decomposed into lib/rag/ with domain modules all under 500 lines
+- Facade pattern preserves backward compatibility (zero test modifications)
+- See ADR-009 for full rationale
 
 ## Integration Points
 
 ### Upstream Dependencies
-- `sertraline/zlibrary` - Base Python library (vendored fork)
-- `@modelcontextprotocol/sdk` - MCP protocol implementation
+- `sertraline/zlibrary` - Base Python library (vendored fork with EAPI client)
+- `@modelcontextprotocol/sdk` ^1.25.3 - MCP protocol (McpServer API)
 - `python-shell` - Node.js to Python bridge
 
 ### Downstream Consumers
@@ -131,13 +150,12 @@ interface RAGDocument {
 ### Standard Flow
 1. **Planning**: Review ISSUES.md, check current TODOs
 2. **Implementation**: Follow patterns in PATTERNS.md
-3. **Testing**: Unit → Integration → E2E
+3. **Testing**: Unit (Jest/Pytest) -> Integration -> E2E
 4. **Documentation**: Update relevant docs
 5. **Review**: Check against DEBUGGING.md scenarios
 
 ### Branch Strategy
 - `master` - Stable, production-ready (primary branch)
-- `development` - Integration branch for features
 - `feature/*` - New features
 - `fix/*` - Bug fixes
 - `hotfix/*` - Emergency production fixes
@@ -168,76 +186,6 @@ Types: feat, fix, docs, style, refactor, test, chore
 - Success rate: > 95% for valid requests
 - Retry success: > 80% after transient failures
 
-### Scale
-- Concurrent requests: 10
-- Daily downloads: 1000 (respecting limits)
-- Cache hit rate: > 50%
-
-## Security Considerations
-
-### Credential Management
-- Store in environment variables
-- Never log credentials
-- Rotate on compromise
-- Use token-based auth where possible
-
-### Data Privacy
-- No user data persistence without consent
-- Sanitize logs of personal information
-- Encrypted storage for sensitive data
-- Clear session data on logout
-
-## Future Vision
-
-### Phase 1: Stabilization (Current)
-- Fix critical issues
-- Add retry logic
-- Improve error handling
-
-### Phase 2: Enhancement (Next)
-- Fuzzy search
-- Download queue
-- Advanced RAG features
-
-### Phase 3: Scale (Future)
-- Distributed architecture
-- Multiple Z-Library account support
-- Advanced caching strategies
-- ML-based recommendations
-
-## Key Metrics to Track
-
-### Operational
-- Request success/failure rates
-- Average response times
-- Domain availability
-- Error frequencies by type
-
-### Business
-- Daily active users
-- Books downloaded
-- Search queries processed
-- RAG documents generated
-
-### Technical
-- Memory usage
-- CPU utilization
-- Network bandwidth
-- Cache effectiveness
-
-## Support Channels
-
-### Documentation
-- CLAUDE.md - Quick start for Claude Code
-- ISSUES.md - Known problems and solutions
-- PATTERNS.md - Code patterns and examples
-- DEBUGGING.md - Troubleshooting guide
-
-### Monitoring
-- Logs: `./logs/` directory
-- Metrics: Prometheus-compatible
-- Alerts: Error rate thresholds
-
 ## Environment Variables
 
 ```bash
@@ -248,30 +196,35 @@ ZLIBRARY_PASSWORD=
 # Optional
 ZLIBRARY_MIRROR=
 LOG_LEVEL=debug|info|warn|error
-CACHE_DIR=./cache
 DOWNLOAD_DIR=./downloads
 PROCESSED_DIR=./processed_rag_output
-MAX_RETRIES=3
-RETRY_DELAY_MS=1000
+ZLIBRARY_DEBUG=1  # Enable verbose logging
+
+# Retry configuration
+RETRY_MAX_RETRIES=3
+RETRY_INITIAL_DELAY=1000
+RETRY_MAX_DELAY=30000
+CIRCUIT_BREAKER_THRESHOLD=5
+CIRCUIT_BREAKER_TIMEOUT=60000
 ```
 
 ## Quick Commands
 
 ```bash
-# Development
-npm run dev          # Start with hot reload
-npm test            # Run all tests
-npm run test:watch  # Test with watch mode
+# Setup
+bash setup-uv.sh        # UV-based Python setup
+npm install              # Node.js deps
+npm run build            # Build TypeScript
 
-# Python
-source venv/bin/activate
-pytest              # Run Python tests
-python -m lib.python_bridge test  # Test bridge
+# Testing
+npm test                 # All tests (Jest + Pytest)
+uv run pytest            # Python tests only
+
+# Running
+node dist/index.js       # Start MCP server
 
 # Debugging
-npm run debug       # Start with debugger
-npm run logs        # Tail logs
-npm run clean       # Clean temp files
+ZLIBRARY_DEBUG=1 node dist/index.js  # Verbose mode
 ```
 
 ---

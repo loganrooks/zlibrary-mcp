@@ -10,18 +10,18 @@ See: .planning/PROJECT.md (updated 2026-01-28)
 ## Current Position
 
 Phase: 7 of 7 (EAPI Migration — URGENT)
-Plan: 2 of 4 in current phase
+Plan: 3 of 4 in current phase
 Status: In progress
-Last activity: 2026-02-01 — Completed 07-02-PLAN.md (Core Library EAPI Migration)
+Last activity: 2026-02-01 — Completed 07-03-PLAN.md (Lib Tools EAPI Migration)
 
-Progress: [█████████████░░] ~85% (17/~20 plans)
+Progress: [██████████████░] ~90% (18/~20 plans)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 17
-- Average duration: 5.5 min
-- Total execution time: 1.57 hours
+- Total plans completed: 18
+- Average duration: 5.4 min
+- Total execution time: 1.67 hours
 
 **By Phase:**
 
@@ -32,11 +32,11 @@ Progress: [█████████████░░] ~85% (17/~20 plans)
 | 3 | 2/2 | 10 min | 5 min |
 | 4 | 5/5 | 56 min | 11.2 min |
 | 5 | 3/3 | ~15 min | ~5 min |
-| 7 | 2/4 | ~8 min | ~4 min |
+| 7 | 3/4 | ~14 min | ~4.7 min |
 
 **Recent Trend:**
-- Last 5 plans: ~4min, ~4min, ~4.5min, ~2min, ~4min
-- Trend: Phase 7 started, EAPI client foundation complete
+- Last 5 plans: ~4min, ~4.5min, ~2min, ~4min, ~6min
+- Trend: Phase 7 nearing completion, lib tools migrated
 
 *Updated after each plan completion*
 
@@ -73,6 +73,9 @@ Recent decisions affecting current work:
 - [07-01]: Lazy httpx client init with recreation on re-auth (fresh cookies after login)
 - [07-02]: Gracefully degrade booklists (EAPI has no booklist endpoint)
 - [07-02]: Route full_text_search through regular EAPI search (no full-text mode in EAPI)
+- [07-03]: Booklist tools gracefully degrade with search fallback (EAPI has no booklist endpoint)
+- [07-03]: Terms, booklists, IPFS CIDs return empty defaults (not available via EAPI)
+- [07-03]: All lib/ tool functions accept optional eapi_client parameter for DI
 
 ### Pending Todos
 
@@ -90,5 +93,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-01
-Stopped at: Completed 07-02-PLAN.md (Core Library EAPI Migration)
+Stopped at: Completed 07-03-PLAN.md (Lib Tools EAPI Migration)
 Resume file: None

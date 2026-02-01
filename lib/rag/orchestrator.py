@@ -122,7 +122,7 @@ def process_pdf(
                            If False, join lines intelligently for readability (default).
         detect_footnotes: If True, detect and format footnotes/endnotes (default: False)
         enable_quality_pipeline: If True, run OCR quality pipeline for sous-rature detection (default: True).
-                               BUG-5 FIX: Set to False for footnote-only processing to achieve 95% speedup.
+                               Set to False for footnote-only processing to achieve 95% speedup.
                                Footnote detection doesn't require OCR text recovery.
 
     Returns:
@@ -149,7 +149,6 @@ def process_pdf(
     doc = None
 
     # Phase 2: Load quality pipeline configuration
-    # BUG-5 FIX: Conditionally disable quality pipeline for footnote-only processing
     if not enable_quality_pipeline:
         # Disable OCR pipeline for 95% speedup (footnote detection doesn't need OCR text recovery)
         quality_config = QualityPipelineConfig(
@@ -325,7 +324,7 @@ def process_pdf(
             markdown_toc = _generate_markdown_toc_from_pdf(toc_map, skip_front_matter=True)
 
         # 2. Determine first content page (skip front matter like "Title Page", "Copyright", "Contents")
-        # BUG-4 FIX: Default to page 1 (process all pages) unless we have confident ToC
+        # Default to page 1 (process all pages) unless we have confident ToC
         # Small PDFs (< 10 pages) likely don't have front matter worth skipping
         first_content_page = 1
         if toc_map and len(doc) >= 10:  # Only skip front matter for larger documents (>= 10 pages)
@@ -505,7 +504,7 @@ def process_pdf(
 
         # Add footnotes at the end if detected
         if detect_footnotes and all_footnotes:
-            # BUG-4 FIX: Deduplicate footnotes by (page, marker) instead of just marker
+            # Deduplicate footnotes by (page, marker) instead of just marker
             # This allows same marker (e.g., "1") to appear on different pages
             # Example: Heidegger has marker "1" on both page 22 and page 23
             seen_markers_per_page = {}  # {page_num: set(markers)}
@@ -513,12 +512,11 @@ def process_pdf(
 
             for fn in all_footnotes:
                 marker = fn.get('actual_marker', fn.get('marker'))
-                # BUG-4 FIX: Extract page number from 'pages' list (primary) or fallback fields
+                # Extract page number from 'pages' list (primary) or fallback fields
                 pages = fn.get('pages', [])
                 page_num = pages[0] if pages else fn.get('page_number', fn.get('page', -1))
 
-                # DEBUG: Log page extraction for BUG-4 investigation
-                logging.debug(f"Footnote marker '{marker}': pages={pages}, page_num={page_num}, keys={list(fn.keys())}")
+                logging.debug("Footnote dedup: marker=%s pages=%s page_num=%s", marker, pages, page_num)
 
                 # Special handling for markerless continuations - each is unique
                 # Markerless blocks (marker=None) are continuation candidates that should
@@ -527,8 +525,7 @@ def process_pdf(
                     unique_footnotes.append(fn)  # Don't deduplicate
                     continue
 
-                # BUG-4 FIX: Per-page deduplication instead of global
-                # Initialize page marker set if not exists
+                # Per-page deduplication instead of global
                 if page_num not in seen_markers_per_page:
                     seen_markers_per_page[page_num] = set()
 

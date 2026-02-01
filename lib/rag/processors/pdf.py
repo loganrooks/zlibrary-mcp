@@ -125,10 +125,9 @@ def _format_pdf_markdown(
             is_list_item_region = analysis.is_list_item()
 
             # Create dict for existing code
-            # DEBUG: Check if formatting is being preserved
             formatted_count = sum(1 for s in spans if s.formatting)
             if formatted_count > 0:
-                logging.debug(f"Block has {formatted_count}/{len(spans)} spans with formatting")
+                logging.debug("Block has %d/%d spans with formatting", formatted_count, len(spans))
 
             analysis = {
                 'text': text,

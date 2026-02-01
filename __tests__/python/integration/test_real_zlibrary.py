@@ -29,7 +29,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', 'li
 from term_tools import search_by_term
 from author_tools import search_by_author
 from booklist_tools import fetch_booklist
-from enhanced_metadata import extract_complete_metadata
+from enhanced_metadata import get_enhanced_metadata
 import python_bridge
 
 
@@ -339,6 +339,7 @@ class TestRealMetadataExtraction:
     """Test metadata extraction with real book pages."""
 
     @pytest.mark.asyncio
+    @pytest.mark.skip(reason="terms and booklists not available via EAPI — were HTML-scraped")
     async def test_extract_from_known_book(self, credentials, zlib_client):
         """Test metadata extraction from a known good book."""
         # Hegel's Encyclopaedia - we know this book exists
@@ -394,6 +395,7 @@ class TestRealMetadataExtraction:
         print(f"Keys in metadata: {list(metadata.keys())}")
 
     @pytest.mark.asyncio
+    @pytest.mark.skip(reason="IPFS CIDs not available via EAPI — were HTML-scraped")
     async def test_extract_ipfs_cids(self, credentials, zlib_client):
         """Test that IPFS CIDs are extracted."""
         await asyncio.sleep(1)
@@ -461,12 +463,13 @@ class TestRealMetadataExtraction:
         # Should complete reasonably fast (allowing for network latency)
         assert duration < 10.0, f"Metadata extraction took {duration}s, expected <10s"
 
-        # Verify we got complete data despite speed
-        assert len(metadata['terms']) > 50
-        assert len(metadata['booklists']) > 5
+        # Verify we got data despite speed
+        assert metadata is not None
+        assert isinstance(metadata, dict)
 
 
 @pytest.mark.integration
+@pytest.mark.skip(reason="search_advanced removed during EAPI migration")
 class TestRealAdvancedSearch:
     """Test advanced search with fuzzy match detection."""
 
@@ -577,77 +580,6 @@ class TestRealBooklistFetching:
 
         # Some books should be different (allowing for some overlap)
         assert len(page1_ids & page2_ids) < len(page1_ids), "Pages should have mostly different books"
-
-
-@pytest.mark.integration
-class TestHTMLStructureValidation:
-    """Validate our HTML parsing assumptions with real Z-Library pages."""
-
-    @pytest.mark.asyncio
-    async def test_z_bookcard_elements_exist(self, credentials, zlib_client):
-        """Should find z-bookcard elements in search results."""
-        await asyncio.sleep(1)
-
-        # Use the injected client directly
-        search_result = await zlib_client.search("philosophy", count=5)
-
-        # Handle tuple return
-        html = search_result[0] if isinstance(search_result, tuple) else str(search_result)
-
-        # Validate z-bookcard elements exist
-        from bs4 import BeautifulSoup
-        soup = BeautifulSoup(html, 'html.parser')
-        cards = soup.find_all('z-bookcard')
-
-        assert len(cards) > 0, "Expected z-bookcard elements in search results"
-
-        # Validate first card has expected attributes
-        first_card = cards[0]
-        # Should have either attributes or slot structure
-        has_attributes = first_card.get('id') or first_card.get('title')
-        has_slots = first_card.find('div', attrs={'slot': 'title'})
-
-        assert has_attributes or has_slots, "z-bookcard should have attributes or slots"
-
-    @pytest.mark.asyncio
-    async def test_fuzzy_matches_line_in_real_results(self, credentials, zlib_client):
-        """Should find fuzzyMatchesLine when it exists."""
-        await asyncio.sleep(1)
-
-        from bs4 import BeautifulSoup
-
-        # Use the injected client
-        search_result = await zlib_client.search("Hegelian", count=10)
-        html = search_result[0] if isinstance(search_result, tuple) else str(search_result)
-
-        soup = BeautifulSoup(html, 'html.parser')
-        fuzzy_line = soup.find('div', class_='fuzzyMatchesLine')
-
-        # May or may not have fuzzy line, but structure should be parseable
-        if fuzzy_line:
-            # If it exists, verify it has expected text
-            assert len(fuzzy_line.get_text()) > 0
-
-    @pytest.mark.asyncio
-    async def test_article_slot_structure(self, credentials, zlib_client):
-        """Should correctly handle article slot-based structure."""
-        await asyncio.sleep(1)
-
-        # Search for articles (scientific papers)
-        result = await python_bridge.search(
-            query="science",
-            count=10,
-            client=zlib_client  # Use injected client
-        )
-
-        # If we got articles, verify they parse correctly
-        for book in result['books']:
-            # Articles might use different structure
-            assert 'title' in book or 'name' in book
-            # Title should not be 'N/A' (the bug we fixed)
-            title = book.get('title', book.get('name', ''))
-            if title:
-                assert title != 'N/A', "Article titles should not be 'N/A'"
 
 
 @pytest.mark.integration
@@ -804,5 +736,4 @@ class TestPerformanceMetrics:
 
         # Log performance
         print(f"\nMetadata extraction performance: {duration:.2f}s")
-        print(f"Terms extracted: {len(metadata.get('terms', []))}")
-        print(f"Booklists extracted: {len(metadata.get('booklists', []))}")
+        print(f"Keys in metadata: {list(metadata.keys())}")

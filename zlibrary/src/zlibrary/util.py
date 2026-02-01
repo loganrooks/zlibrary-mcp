@@ -94,3 +94,29 @@ async def HEAD_request(url, proxy_list=None):
         raise LoopError("Asyncio loop has been closed before request could finish.")
     except asyncio.exceptions.TimeoutError:
         return 0
+
+
+# --- EAPI helpers ---
+
+async def eapi_login(domain: str, email: str, password: str):
+    """Convenience: login via EAPI, return (remix_userid, remix_userkey, client).
+
+    Creates an EAPIClient, calls login, returns the authenticated client
+    along with credentials for persistence.
+    """
+    from .eapi import EAPIClient
+
+    client = EAPIClient(domain)
+    result = await client.login(email, password)
+    if result.get("success") != 1:
+        raise Exception(f"EAPI login failed: {result}")
+    return (client.remix_userid, client.remix_userkey, client)
+
+
+async def discover_eapi_domain(eapi_client):
+    """Call get_domains() and return the primary EAPI domain."""
+    result = await eapi_client.get_domains()
+    domains = result.get("domains", [])
+    if domains:
+        return domains[0] if isinstance(domains[0], str) else domains[0].get("domain", "")
+    return None

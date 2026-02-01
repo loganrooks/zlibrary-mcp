@@ -236,6 +236,23 @@ async def initialize_eapi_client() -> EAPIClient:
     return _eapi_client
 
 
+def _classify_health_error(error: Exception) -> str:
+    """Classify a health check error into a specific error code.
+
+    Checks exception message for Cloudflare indicators first,
+    then falls back to exception type checking for network errors.
+    Uses only built-in Python exception types (no httpx imports).
+    """
+    msg = str(error).lower()
+    cloudflare_patterns = ['checking your browser', 'cloudflare', 'cf-', 'challenge']
+    for pattern in cloudflare_patterns:
+        if pattern in msg:
+            return 'cloudflare_blocked'
+    if isinstance(error, (ConnectionError, TimeoutError, OSError)):
+        return 'network_error'
+    return 'unknown_error'
+
+
 async def eapi_health_check() -> dict:
     """
     Check EAPI connectivity and functionality.
@@ -244,7 +261,14 @@ async def eapi_health_check() -> dict:
     communicate with Z-Library successfully.
 
     Returns:
-        dict with 'status' ('healthy' or 'unhealthy'), 'transport', and optionally 'error'
+        dict with 'status' ('healthy' or 'unhealthy'), 'transport',
+        and optionally 'error' and 'error_code'.
+
+    Error codes:
+        - cloudflare_blocked: Cloudflare challenge detected in response
+        - network_error: Connection or timeout failure
+        - malformed_response: Non-JSON or unexpected response format
+        - unknown_error: Unclassified failure
     """
     try:
         client = await get_eapi_client()
@@ -261,12 +285,14 @@ async def eapi_health_check() -> dict:
                 'status': 'unhealthy',
                 'transport': 'eapi',
                 'error': f"Unexpected response: success={response.get('success')}",
+                'error_code': 'malformed_response',
             }
     except Exception as e:
         return {
             'status': 'unhealthy',
             'transport': 'eapi',
             'error': str(e),
+            'error_code': _classify_health_error(e),
         }
 
 

@@ -15,8 +15,8 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 1: Integration Test Harness** - Safety net for detecting bridge breakage across all subsequent phases
 - [x] **Phase 2: Low-Risk Dependency Upgrades** - Stabilize foundation with env-paths, Zod 4, security fixes
 - [x] **Phase 3: MCP SDK Upgrade** - Modernize core server framework from 1.8.0 to latest
-- [ ] **Phase 4: Python Monolith Decomposition** - Break 4,968-line rag_processing.py into domain modules
-- [ ] **Phase 5: Feature Porting & Branch Cleanup** - Recover unmerged get_metadata features, delete stale branches
+- [x] **Phase 4: Python Monolith Decomposition** - Break 4,968-line rag_processing.py into domain modules
+- [x] **Phase 5: Feature Porting & Branch Cleanup** - Recover unmerged get_metadata features, delete stale branches
 - [ ] **Phase 6: Documentation & Quality Gates** - Update stale docs, activate CI/CD, install pre-commit hooks
 
 ## Phase Details
@@ -98,9 +98,9 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 05-01-PLAN.md — Enhance metadata tool (tiered response + include param) and filename disambiguation
-- [ ] 05-02-PLAN.md — Enrich search results with explicit title/author fields
-- [ ] 05-03-PLAN.md — Delete all 7 stale remote branches
+- [x] 05-01-PLAN.md — Enhance metadata tool (tiered response + include param) and filename disambiguation
+- [x] 05-02-PLAN.md — Enrich search results with explicit title/author fields
+- [x] 05-03-PLAN.md — Delete all 7 stale remote branches
 
 ### Phase 6: Documentation & Quality Gates
 **Goal**: All documentation reflects the current codebase state, and quality gates prevent future drift
@@ -129,5 +129,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 2. Low-Risk Dependency Upgrades | 2/2 | Complete | 2026-01-29 |
 | 3. MCP SDK Upgrade | 2/2 | Complete | 2026-01-29 |
 | 4. Python Monolith Decomposition | 5/5 | Complete | 2026-02-01 |
-| 5. Feature Porting & Branch Cleanup | 0/3 | Not started | - |
+| 5. Feature Porting & Branch Cleanup | 3/3 | Complete | 2026-02-01 |
 | 6. Documentation & Quality Gates | 0/2 | Not started | - |

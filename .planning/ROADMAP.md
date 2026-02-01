@@ -17,7 +17,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 3: MCP SDK Upgrade** - Modernize core server framework from 1.8.0 to latest
 - [x] **Phase 4: Python Monolith Decomposition** - Break 4,968-line rag_processing.py into domain modules
 - [x] **Phase 5: Feature Porting & Branch Cleanup** - Recover unmerged get_metadata features, delete stale branches
-- [ ] **Phase 6: Documentation & Quality Gates** - Update stale docs, activate CI/CD, install pre-commit hooks
+- [x] **Phase 6: Documentation & Quality Gates** - Update stale docs, activate CI/CD, install pre-commit hooks
 - [x] **Phase 7: EAPI Migration** - Migrate from HTML scraping to EAPI JSON endpoints (URGENT: Cloudflare blocking all HTML requests)
 
 ## Phase Details
@@ -116,8 +116,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 06-01-PLAN.md — Update all stale docs, triage ISSUES.md, backfill 3 ADRs, add Last Verified timestamps
-- [ ] 06-02-PLAN.md — Install Husky + lint-staged hooks, create GitHub Actions CI, Python version check
+- [x] 06-01-PLAN.md — Update all stale docs, triage ISSUES.md, backfill 3 ADRs, add Last Verified timestamps
+- [x] 06-02-PLAN.md — Install Husky + lint-staged hooks, create GitHub Actions CI, Python version check
 
 ### Phase 7: EAPI Migration
 **Goal**: All Z-Library operations use EAPI JSON endpoints instead of HTML scraping, restoring full MCP server functionality
@@ -159,5 +159,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 3. MCP SDK Upgrade | 2/2 | Complete | 2026-01-29 |
 | 4. Python Monolith Decomposition | 5/5 | Complete | 2026-02-01 |
 | 5. Feature Porting & Branch Cleanup | 3/3 | Complete | 2026-02-01 |
-| 6. Documentation & Quality Gates | 0/2 | Not started | - |
+| 6. Documentation & Quality Gates | 2/2 | Complete | 2026-02-01 |
 | 7. EAPI Migration | 6/6 | Complete | 2026-02-01 |

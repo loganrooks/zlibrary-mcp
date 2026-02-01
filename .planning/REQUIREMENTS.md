@@ -38,18 +38,18 @@
 
 ### Documentation
 
-- [ ] **DOC-01**: Update ROADMAP.md to reflect Phase 2 completion and current state
-- [ ] **DOC-02**: Update PROJECT_CONTEXT.md with v2.0.0 status (UV migration)
-- [ ] **DOC-03**: Update ARCHITECTURE.md with current test coverage and components
-- [ ] **DOC-04**: Update VERSION_CONTROL.md and CI_CD.md to current dates
-- [ ] **DOC-05**: Triage ISSUES.md (close ISSUE-002, update ISSUE-008/009 partial status, update SRCH-001/RAG-002)
-- [ ] **DOC-06**: Add "Last Verified" timestamps to technical docs
-- [ ] **DOC-07**: Install pre-commit hooks (scripts exist, need linking)
+- [x] **DOC-01**: Update ROADMAP.md to reflect Phase 2 completion and current state
+- [x] **DOC-02**: Update PROJECT_CONTEXT.md with v2.0.0 status (UV migration)
+- [x] **DOC-03**: Update ARCHITECTURE.md with current test coverage and components
+- [x] **DOC-04**: Update VERSION_CONTROL.md and CI_CD.md to current dates
+- [x] **DOC-05**: Triage ISSUES.md (close ISSUE-002, update ISSUE-008/009 partial status, update SRCH-001/RAG-002)
+- [x] **DOC-06**: Add "Last Verified" timestamps to technical docs
+- [x] **DOC-07**: Install pre-commit hooks (scripts exist, need linking)
 
 ### Infrastructure
 
-- [ ] **INFRA-01**: Add npm audit + pip-audit to CI pipeline
-- [ ] **INFRA-02**: Add Python version check to setup script
+- [x] **INFRA-01**: Add npm audit + pip-audit to CI pipeline
+- [x] **INFRA-02**: Add Python version check to setup script
 - [x] **INFRA-03**: Verify BRK-001 (download+RAG combined workflow) status
 
 ## v2 Requirements
@@ -108,15 +108,15 @@ Deferred to future milestone. Tracked but not in current roadmap.
 | GIT-04 | Phase 5 | Complete |
 | GIT-05 | Phase 5 | Complete |
 | GIT-06 | Phase 5 | Complete |
-| DOC-01 | Phase 6 | Pending |
-| DOC-02 | Phase 6 | Pending |
-| DOC-03 | Phase 6 | Pending |
-| DOC-04 | Phase 6 | Pending |
-| DOC-05 | Phase 6 | Pending |
-| DOC-06 | Phase 6 | Pending |
-| DOC-07 | Phase 6 | Pending |
-| INFRA-01 | Phase 6 | Pending |
-| INFRA-02 | Phase 6 | Pending |
+| DOC-01 | Phase 6 | Complete |
+| DOC-02 | Phase 6 | Complete |
+| DOC-03 | Phase 6 | Complete |
+| DOC-04 | Phase 6 | Complete |
+| DOC-05 | Phase 6 | Complete |
+| DOC-06 | Phase 6 | Complete |
+| DOC-07 | Phase 6 | Complete |
+| INFRA-01 | Phase 6 | Complete |
+| INFRA-02 | Phase 6 | Complete |
 | INFRA-03 | Phase 1 | Complete |
 
 **Coverage:**

@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-01-28)
 
 **Core value:** Bring the codebase to a clean, current, maintainable state so future feature development starts from a solid foundation
-**Current focus:** Phase 4 complete — ready for Phase 5
+**Current focus:** Phase 5 in progress — Feature Porting & Branch Cleanup
 
 ## Current Position
 
-Phase: 4 of 6 (Python Monolith Decomposition) — COMPLETE ✓
-Plan: 5 of 5 in current phase
-Status: Phase verified and complete
-Last activity: 2026-02-01 — Phase 4 verified (7/7 must-haves passed)
+Phase: 5 of 6 (Feature Porting & Branch Cleanup)
+Plan: 2 of 3 in current phase
+Status: In progress
+Last activity: 2026-02-01 — Completed 05-02-PLAN.md
 
-Progress: [█████████░] 90%
+Progress: [██████████░] 93%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 11
-- Average duration: 6.5 min
-- Total execution time: 1.2 hours
+- Total plans completed: 13
+- Average duration: 6.1 min
+- Total execution time: 1.3 hours
 
 **By Phase:**
 
@@ -31,10 +31,11 @@ Progress: [█████████░] 90%
 | 2 | 2/2 | 7.5 min | 3.75 min |
 | 3 | 2/2 | 10 min | 5 min |
 | 4 | 5/5 | 56 min | 11.2 min |
+| 5 | 2/3 | ~8 min | ~4 min |
 
 **Recent Trend:**
-- Last 5 plans: 14min, 22min, 8min, 9min, 3min
-- Trend: Gap closure plans were fast (well-scoped extractions)
+- Last 5 plans: 8min, 9min, 3min, ~4min, ~4min
+- Trend: Feature porting plans executing quickly (additive changes)
 
 *Updated after each plan completion*
 
@@ -64,6 +65,7 @@ Recent decisions affecting current work:
 - [04-04]: footnotes.py split from 1175→115 lines via footnote_markers.py + footnote_core.py submodules
 - [04-04]: pipeline.py reduced from 604→318 lines via ocr_stage.py extraction
 - [04-05]: orchestrator.py reduced from 814→333 lines via orchestrator_pdf.py extraction
+- [05-02]: Derive title from name, author from authors[0] — additive enrichment
 
 ### Pending Todos
 
@@ -76,5 +78,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-01
-Stopped at: Phase 4 complete and verified (7/7 must-haves)
+Stopped at: Completed 05-02-PLAN.md
 Resume file: None

@@ -185,6 +185,10 @@ class SearchPaginator:
             if quality:
                 js["quality"] = quality.strip()
 
+            # Explicit title/author fields for clearer API surface
+            js["title"] = js.get("name") or None
+            js["author"] = js["authors"][0] if js.get("authors") else None
+
             if not js.get("id") and not js.get("name") and not js.get("url"):
                 logger.warning(f"Skipping {idx}-th book-card due to missing essential info (id, name, url).")
                 continue
@@ -388,6 +392,10 @@ class BooklistPaginator:
                             d_src = c_img.get("data-src")
                             if d_src:
                                 res["cover"] = d_src.strip() # Changed js to res
+
+                # Explicit title/author fields for clearer API surface
+                res["title"] = res.get("name") or None
+                res["author"] = res["authors"][0] if res.get("authors") else None
 
                 js["books_lazy"].append(res)
 
@@ -838,6 +846,10 @@ class BookItem(dict):
         # This function should ideally fill in missing details or confirm existing ones.
         # For now, it just returns what it can parse directly from the soup.
         
+        # Explicit title/author fields for clearer API surface
+        data["title"] = data.get("name") or None
+        data["author"] = data["authors"][0] if data.get("authors") else None
+
         logger.debug(f"BookItem._parse_book_page_soup: Parsed data: {data}")
         return data
 

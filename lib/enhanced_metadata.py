@@ -1,469 +1,183 @@
 """
-Enhanced metadata extraction for Z-Library book detail pages.
+Enhanced metadata extraction for Z-Library books via EAPI.
 
-Extracts comprehensive metadata including:
-- Description (816+ chars)
-- Terms (60+ conceptual keywords)
-- Booklists (11+ curated collections)
-- Rating (user ratings and counts)
-- IPFS CIDs (2 formats)
-- Series, Categories, ISBNs
-- Quality scores
+Extracts comprehensive metadata from the EAPI /book/{id}/{hash} endpoint
+including: description, categories, ISBNs, series, rating, publisher, pages.
 
-Implementation follows TDD approach with tests in __tests__/python/test_enhanced_metadata.py
+Some fields previously available via HTML scraping (terms, booklists, IPFS CIDs)
+are not available through the EAPI and are returned as empty/None.
+
+Implementation migrated from HTML scraping to EAPI JSON access.
 """
 
-import re
 import logging
 from typing import Dict, List, Optional, Any
-from bs4 import BeautifulSoup
+import sys
+import os
+
+# Add zlibrary source directory to path
+zlibrary_path = os.path.join(os.path.dirname(__file__), '..', 'zlibrary', 'src')
+sys.path.insert(0, zlibrary_path)
+
+from zlibrary.eapi import EAPIClient, normalize_eapi_book
 
 logger = logging.getLogger(__name__)
 
 
-def extract_description(html: str) -> Optional[str]:
+def extract_metadata_from_eapi(book_info: dict, mirror_url: str = None) -> Dict[str, Any]:
     """
-    Extract book description from JavaScript embedded in HTML.
+    Extract enhanced metadata from an EAPI book info response.
 
-    The description is typically found in a schema.org JSON-LD script tag
-    or in a JavaScript variable assignment.
+    Maps EAPI JSON fields to the existing metadata return format.
 
     Args:
-        html: Raw HTML content of book detail page
+        book_info: Raw response from EAPIClient.get_book_info()
+        mirror_url: Base URL for constructing full URLs (unused with EAPI)
 
     Returns:
-        Description text (may be 500-1000 chars) or None if not found
+        Dictionary with comprehensive metadata matching the legacy format
     """
-    if not html:
-        return None
-
-    try:
-        # Method 1: Extract from schema.org JSON-LD
-        schema_match = re.search(r'"description"\s*:\s*"([^"]+(?:\\.[^"]*)*)"', html)
-        if schema_match:
-            description = schema_match.group(1)
-            # Decode escaped characters
-            description = description.replace('\\"', '"')
-            description = description.replace('\\n', '\n')
-            description = description.replace('\\r', '')
-            return description.strip()
-
-        # Method 2: Extract from JavaScript variable (fallback)
-        js_var_match = re.search(r'description\s*[:=]\s*["\']([^"\']+)["\']', html)
-        if js_var_match:
-            return js_var_match.group(1).strip()
-
-        return None
-
-    except Exception as e:
-        logger.error(f"Error extracting description: {e}")
-        return None
-
-
-def extract_terms(html: str) -> List[str]:
-    """
-    Extract conceptual terms from book detail page.
-
-    Terms are linked throughout the page with URLs like /terms/{term}
-
-    Args:
-        html: Raw HTML content of book detail page
-
-    Returns:
-        Sorted list of unique terms (may be 50-60+ terms for rich metadata books)
-    """
-    if not html:
-        return []
-
-    try:
-        soup = BeautifulSoup(html, 'lxml')
-
-        # Find all links to /terms/
-        term_links = soup.find_all('a', href=re.compile(r'^/terms/'))
-
-        # Extract term from URL
-        terms = set()
-        for link in term_links:
-            href = link.get('href', '')
-            if href.startswith('/terms/'):
-                # Extract term name from URL
-                term = href.split('/terms/')[-1]
-                # Clean up any trailing slashes or query params
-                term = term.split('?')[0].strip('/')
-                if term:
-                    terms.add(term)
-
-        # Return sorted list
-        return sorted(list(terms))
-
-    except Exception as e:
-        logger.error(f"Error extracting terms: {e}")
-        return []
-
-
-def extract_booklists(soup: BeautifulSoup, mirror_url: str = None) -> List[Dict[str, Any]]:
-    """
-    Extract booklist memberships from z-booklist elements.
-
-    Each booklist contains:
-    - id: List ID
-    - hash: List hash for URL
-    - topic: Display name
-    - quantity: Number of books in list
-    - url: Full URL to booklist page
-
-    Args:
-        soup: BeautifulSoup parsed HTML
-        mirror_url: Base URL for constructing full URLs (e.g., "https://z-library.sk")
-
-    Returns:
-        List of booklist dictionaries (may be 10-15 for popular books)
-    """
-    if not soup:
-        return []
-
-    try:
-        booklists = []
-
-        # Find all z-booklist custom elements
-        booklist_elements = soup.find_all('z-booklist')
-
-        for element in booklist_elements:
-            try:
-                booklist = {
-                    'id': element.get('id', ''),
-                    'hash': '',  # Will extract from href
-                    'topic': element.get('topic', ''),
-                    'quantity': int(element.get('quantity', 0)),
-                    'url': ''
-                }
-
-                # Extract href
-                href = element.get('href', '')
-                if href:
-                    # Extract hash from href (format: /booklist/{id}/{hash}/{name}.html)
-                    parts = href.split('/')
-                    if len(parts) >= 4:
-                        booklist['hash'] = parts[3]
-
-                    # Construct full URL
-                    if mirror_url:
-                        booklist['url'] = f"{mirror_url.rstrip('/')}{href}"
-                    else:
-                        booklist['url'] = href
-
-                # Only add if we have essential data
-                if booklist['id'] and booklist['topic']:
-                    booklists.append(booklist)
-
-            except Exception as e:
-                logger.warning(f"Error parsing booklist element: {e}")
-                continue
-
-        return booklists
-
-    except Exception as e:
-        logger.error(f"Error extracting booklists: {e}")
-        return []
-
-
-def extract_rating(html: str) -> Optional[Dict[str, Any]]:
-    """
-    Extract user rating and rating count from book metadata.
-
-    Rating is typically found in schema.org JSON-LD aggregateRating.
-
-    Args:
-        html: Raw HTML content of book detail page
-
-    Returns:
-        Dictionary with 'value' (float 0.0-5.0) and 'count' (int) or None
-    """
-    if not html:
-        return None
-
-    try:
-        rating = {}
-
-        # Extract from schema.org JSON-LD
-        rating_value_match = re.search(r'"ratingValue"\s*:\s*"([^"]+)"', html)
-        rating_count_match = re.search(r'"ratingCount"\s*:\s*(\d+)', html)
-
-        if rating_value_match:
-            rating['value'] = float(rating_value_match.group(1))
-
-        if rating_count_match:
-            rating['count'] = int(rating_count_match.group(1))
-
-        # Return None if no rating data found
-        if not rating:
-            return None
-
-        return rating
-
-    except Exception as e:
-        logger.error(f"Error extracting rating: {e}")
-        return None
-
-
-def extract_ipfs_cids(soup: BeautifulSoup) -> List[str]:
-    """
-    Extract IPFS CIDs from book detail page.
-
-    Z-Library provides IPFS access with two CID formats:
-    - CIDv0 (starts with Qm...)
-    - CIDv1 (starts with bafy...)
-
-    Args:
-        soup: BeautifulSoup parsed HTML
-
-    Returns:
-        List of IPFS CID strings (typically 2 CIDs)
-    """
-    if not soup:
-        return []
-
-    try:
-        cids = []
-
-        # Find all elements with data-copy attribute (copy-to-clipboard functionality)
-        copy_elements = soup.find_all(attrs={'data-copy': True})
-
-        for element in copy_elements:
-            cid = element.get('data-copy', '')
-            # Validate it looks like an IPFS CID
-            if cid and (cid.startswith('Qm') or cid.startswith('bafy')):
-                if len(cid) > 30:  # CIDs are long strings
-                    cids.append(cid)
-
-        # Also check for IPFS links
-        ipfs_links = soup.find_all('a', href=re.compile(r'ipfs://|/ipfs/'))
-        for link in ipfs_links:
-            href = link.get('href', '')
-            # Extract CID from URL
-            if 'ipfs://' in href:
-                cid = href.split('ipfs://')[-1].split('/')[0]
-            elif '/ipfs/' in href:
-                cid = href.split('/ipfs/')[-1].split('/')[0]
-            else:
-                continue
-
-            if cid and (cid.startswith('Qm') or cid.startswith('bafy')):
-                cids.append(cid)
-
-        # Remove duplicates and return
-        return list(dict.fromkeys(cids))  # Preserves order
-
-    except Exception as e:
-        logger.error(f"Error extracting IPFS CIDs: {e}")
-        return []
-
-
-def extract_quality_score(html: str) -> Optional[float]:
-    """
-    Extract file quality score from book metadata.
-
-    Quality score is typically found in JavaScript variables or JSON data.
-
-    Args:
-        html: Raw HTML content of book detail page
-
-    Returns:
-        Quality score as float (0.0-5.0) or None
-    """
-    if not html:
-        return None
-
-    try:
-        # Look for quality in JavaScript
-        quality_match = re.search(r'"quality"\s*:\s*"([^"]+)"', html)
-        if quality_match:
-            return float(quality_match.group(1))
-
-        # Alternative: look for quality property
-        quality_prop_match = re.search(r'quality\s*[:=]\s*([0-9.]+)', html)
-        if quality_prop_match:
-            return float(quality_prop_match.group(1))
-
-        return None
-
-    except Exception as e:
-        logger.error(f"Error extracting quality score: {e}")
-        return None
-
-
-def extract_series(soup: BeautifulSoup) -> Optional[str]:
-    """
-    Extract series information from book properties.
-
-    Series is typically in a bookProperty div with label "Series:".
-
-    Args:
-        soup: BeautifulSoup parsed HTML
-
-    Returns:
-        Series name as string or None
-    """
-    if not soup:
-        return None
-
-    try:
-        # Look for series in bookProperty divs
-        property_divs = soup.find_all('div', class_=re.compile(r'bookProperty'))
-
-        for prop_div in property_divs:
-            label_div = prop_div.find('div', class_='property_label')
-            if label_div and 'Series' in label_div.get_text():
-                value_div = prop_div.find(['div', 'span'], class_='property_value')
-                if value_div:
-                    return value_div.get_text().strip()
-
-        return None
-
-    except Exception as e:
-        logger.error(f"Error extracting series: {e}")
-        return None
-
-
-def extract_categories(soup: BeautifulSoup) -> List[Dict[str, str]]:
-    """
-    Extract category classification from book detail page.
-
-    Categories are hierarchical and link to category browse pages.
-
-    Args:
-        soup: BeautifulSoup parsed HTML
-
-    Returns:
-        List of category dictionaries with 'name' and 'url'
-    """
-    if not soup:
-        return []
-
-    try:
-        categories = []
-
-        # Find all links to /category/
-        category_links = soup.find_all('a', href=re.compile(r'^/category/'))
-
-        for link in category_links:
-            category = {
-                'name': link.get_text().strip(),
-                'url': link.get('href', '')
-            }
-            if category['name'] and category['url']:
-                categories.append(category)
-
-        return categories
-
-    except Exception as e:
-        logger.error(f"Error extracting categories: {e}")
-        return []
-
-
-def extract_isbns(soup: BeautifulSoup) -> Dict[str, Optional[str]]:
-    """
-    Extract ISBN-10 and ISBN-13 from book properties.
-
-    Args:
-        soup: BeautifulSoup parsed HTML
-
-    Returns:
-        Dictionary with 'isbn_10' and 'isbn_13' keys
-    """
-    if not soup:
-        return {'isbn_10': None, 'isbn_13': None}
-
-    try:
-        isbns = {'isbn_10': None, 'isbn_13': None}
-
-        # Look for ISBN in bookProperty divs
-        property_divs = soup.find_all('div', class_=re.compile(r'bookProperty'))
-
-        for prop_div in property_divs:
-            label_div = prop_div.find('div', class_='property_label')
-            if not label_div:
-                continue
-
-            label_text = label_div.get_text().strip()
-
-            if 'ISBN 10' in label_text or 'ISBN-10' in label_text:
-                value_div = prop_div.find(['div', 'span'], class_='property_value')
-                if value_div:
-                    isbns['isbn_10'] = value_div.get_text().strip()
-
-            elif 'ISBN 13' in label_text or 'ISBN-13' in label_text:
-                value_div = prop_div.find(['div', 'span'], class_='property_value')
-                if value_div:
-                    isbns['isbn_13'] = value_div.get_text().strip()
-
-        return isbns
-
-    except Exception as e:
-        logger.error(f"Error extracting ISBNs: {e}")
-        return {'isbn_10': None, 'isbn_13': None}
-
-
-def extract_complete_metadata(html: str, mirror_url: str = None) -> Dict[str, Any]:
-    """
-    Extract all enhanced metadata from book detail page.
-
-    This is the main function that orchestrates extraction of all metadata fields.
-
-    Args:
-        html: Raw HTML content of book detail page
-        mirror_url: Base URL for constructing full URLs (e.g., "https://z-library.sk")
-
-    Returns:
-        Dictionary with comprehensive metadata including:
-        - description (str)
-        - terms (list[str])
-        - booklists (list[dict])
-        - rating (dict)
-        - ipfs_cids (list[str])
-        - series (str)
-        - categories (list[dict])
-        - isbn_10, isbn_13 (str)
-        - quality_score (float)
-    """
-    if not html:
-        logger.warning("Empty HTML provided for metadata extraction")
+    if not book_info:
         return _empty_metadata()
 
+    # The EAPI response contains the book data directly or under a "book" key
+    book = book_info.get("book", book_info)
+
     try:
-        # Parse HTML once
-        soup = BeautifulSoup(html, 'lxml')
-
-        # Extract all metadata fields
         metadata = {
-            # Tier 1: Essential (always extract)
-            'description': extract_description(html),
-            'terms': extract_terms(html),
-            'booklists': extract_booklists(soup, mirror_url),
+            # Tier 1: Essential
+            'description': book.get('description') or None,
+            'terms': [],  # Not available via EAPI
+            'booklists': [],  # Not available via EAPI
 
-            # Tier 2: Important (extract when available)
-            'rating': extract_rating(html),
-            'ipfs_cids': extract_ipfs_cids(soup),
-            'series': extract_series(soup),
-            'categories': extract_categories(soup),
+            # Tier 2: Important
+            'rating': _extract_rating_from_eapi(book),
+            'ipfs_cids': [],  # Not available via EAPI
+            'series': book.get('series') or None,
+            'categories': _extract_categories_from_eapi(book),
 
-            # Tier 3: Optional (nice to have)
-            'quality_score': extract_quality_score(html),
+            # Tier 3: Optional
+            'quality_score': _safe_float(book.get('qualityScore')),
         }
 
-        # Extract ISBNs and merge into metadata
-        isbns = extract_isbns(soup)
-        metadata['isbn_10'] = isbns['isbn_10']
-        metadata['isbn_13'] = isbns['isbn_13']
+        # ISBNs
+        isbn = book.get('isbn', '') or ''
+        metadata['isbn_10'] = None
+        metadata['isbn_13'] = None
+        if isbn:
+            cleaned = isbn.replace('-', '').strip()
+            if len(cleaned) == 13:
+                metadata['isbn_13'] = isbn
+            elif len(cleaned) == 10:
+                metadata['isbn_10'] = isbn
+            else:
+                # Store in isbn_13 as default
+                metadata['isbn_13'] = isbn
 
-        logger.info(f"Extracted metadata with {len(metadata['terms'])} terms, "
-                   f"{len(metadata['booklists'])} booklists")
-
+        logger.info("Extracted EAPI metadata for book: %s", book.get('title', 'unknown'))
         return metadata
 
     except Exception as e:
-        logger.error(f"Error extracting complete metadata: {e}")
+        logger.error(f"Error extracting EAPI metadata: {e}")
         return _empty_metadata()
+
+
+async def get_enhanced_metadata(
+    book_id: int,
+    book_hash: str,
+    email: str = "",
+    password: str = "",
+    mirror_url: str = None,
+    eapi_client: Optional[EAPIClient] = None,
+) -> Dict[str, Any]:
+    """
+    Fetch and extract enhanced metadata for a book via EAPI.
+
+    This is the main entry point, replacing the old HTML-based
+    extract_complete_metadata() function.
+
+    Args:
+        book_id: Z-Library book ID
+        book_hash: Z-Library book hash
+        email: Z-Library account email (used if no eapi_client provided)
+        password: Z-Library account password (used if no eapi_client provided)
+        mirror_url: Base URL (unused with EAPI)
+        eapi_client: Optional pre-authenticated EAPIClient instance
+
+    Returns:
+        Dictionary with comprehensive metadata
+    """
+    client = eapi_client
+    should_close = False
+    if client is None:
+        from zlibrary.util import discover_eapi_domain
+        domain = await discover_eapi_domain()
+        client = EAPIClient(domain)
+        await client.login(email, password)
+        should_close = True
+
+    try:
+        book_info = await client.get_book_info(book_id, book_hash)
+        return extract_metadata_from_eapi(book_info, mirror_url)
+    finally:
+        if should_close:
+            await client.close()
+
+
+# Legacy compatibility alias
+def extract_complete_metadata(html: str = None, mirror_url: str = None, **kwargs) -> Dict[str, Any]:
+    """
+    Legacy compatibility wrapper.
+
+    Previously parsed HTML; now returns empty metadata since HTML parsing
+    is removed. Use get_enhanced_metadata() with EAPI client instead.
+    """
+    logger.warning(
+        "extract_complete_metadata() is deprecated. Use get_enhanced_metadata() with EAPI client."
+    )
+    return _empty_metadata()
+
+
+# Keep extract_description as a no-op for backward compat with python_bridge imports
+def extract_description(html: str = None) -> Optional[str]:
+    """Deprecated: Use get_enhanced_metadata() via EAPI instead."""
+    return None
+
+
+def _extract_rating_from_eapi(book: dict) -> Optional[Dict[str, Any]]:
+    """Extract rating info from EAPI book data."""
+    rating_val = book.get('rating')
+    if rating_val is None:
+        return None
+    try:
+        return {
+            'value': float(rating_val),
+            'count': int(book.get('ratingCount', 0)),
+        }
+    except (ValueError, TypeError):
+        return None
+
+
+def _extract_categories_from_eapi(book: dict) -> List[Dict[str, str]]:
+    """Extract categories from EAPI book data."""
+    categories = book.get('categories', [])
+    if not categories:
+        return []
+    if isinstance(categories, list):
+        return [{'name': str(c), 'url': ''} for c in categories]
+    if isinstance(categories, str):
+        return [{'name': categories, 'url': ''}]
+    return []
+
+
+def _safe_float(value) -> Optional[float]:
+    """Safely convert a value to float."""
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (ValueError, TypeError):
+        return None
 
 
 def _empty_metadata() -> Dict[str, Any]:

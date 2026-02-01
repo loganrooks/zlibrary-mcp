@@ -90,7 +90,6 @@ def _starts_with_marker(text: str, marker_patterns: dict, marker_priority: list)
 
     text = text.strip()
     for pattern_type in marker_priority:
-        # BUG-3 FIX: Skip if pattern not in dict
         if pattern_type not in marker_patterns:
             continue
 
@@ -261,7 +260,6 @@ def _find_definition_for_marker(page: Any, marker: str, marker_y_position: float
             # CRITICAL FIX (ISSUE-FN-001): Match ANY marker pattern, not just exact marker
             # This allows corruption recovery to fix mismatches later (e.g., "iii" → "*")
             for pattern_type in marker_priority:
-                # BUG-3 FIX: Skip pattern if not in marker_patterns dict
                 if pattern_type not in marker_patterns:
                     continue
 
@@ -805,7 +803,7 @@ def _detect_footnotes_in_page(page: Any, page_num: int) -> Dict[str, List[Dict[s
 
                 marker_text = text.strip()
 
-                # BUG-1 FIX: Check for known corruption patterns
+                # Check for known corruption patterns
                 # If we already detected markers, check if this text matches corruption table
                 # Example: After detecting '*', a standalone 't' is likely corrupted '†'
                 # This allows corruption recovery to run even on non-superscript corrupted markers
@@ -832,7 +830,7 @@ def _detect_footnotes_in_page(page: Any, page_num: int) -> Dict[str, List[Dict[s
                             is_known_corruption = True
                             logging.debug(f"Detected potential corrupted marker: '{marker_text}' (after {len(result['markers'])} markers, size: {font_size:.1f})")
 
-                # BUG-2 FIX: Stricter validation for superscript markers
+                # Stricter validation for superscript markers
                 # Not ALL superscripts are footnote markers (e.g., page refs, math notation, cross-refs)
                 # Require superscript + (symbol OR sequential digit/letter)
                 is_valid_superscript = False
@@ -840,7 +838,7 @@ def _detect_footnotes_in_page(page: Any, page_num: int) -> Dict[str, List[Dict[s
                     # Check if it's a known footnote symbol
                     if marker_text in ['*', '†', '‡', '§', '¶', '#', '°', '∥']:
                         is_valid_superscript = True
-                    # BUG-3 FIX: OR numeric marker (single or multi-digit) with validation
+                    # OR numeric marker (single or multi-digit) with validation
                     elif marker_text.isdigit():
                         # Numeric markers can be 1-2 digits (e.g., 1-20 are common in academic texts)
                         # Reject if >20 (likely page/section reference)
@@ -851,7 +849,7 @@ def _detect_footnotes_in_page(page: Any, page_num: int) -> Dict[str, List[Dict[s
                             pass  # is_valid_superscript remains False
                         elif len(marker_text) == 1:
                             # Single digit (1-9): Be permissive for superscripts
-                            # BUG-3 FIX: Accept any single-digit superscript 1-9
+                            # Accept any single-digit superscript 1-9
                             # Being superscript is strong enough signal
                             # Don't require strict sequencing (pages can have independent sequences)
                             if digit_val <= 9:
@@ -861,7 +859,7 @@ def _detect_footnotes_in_page(page: Any, page_num: int) -> Dict[str, List[Dict[s
                             # Multi-digit (10-20): Accept if superscript (rules out body text)
                             # Being superscript is strong signal it's a footnote marker, not page number
                             is_valid_superscript = True
-                    # BUG-3 FIX: OR single letter a-j with relaxed isolation (handles hyphenated words)
+                    # OR single letter a-j with relaxed isolation (handles hyphenated words)
                     elif marker_text.isalpha() and len(marker_text) == 1:
                         # Check isolation - must have space/punctuation before OR after
                         # RELAXED: Allow letter-before (handles "prin-ciplee" where e is marker)
@@ -870,7 +868,7 @@ def _detect_footnotes_in_page(page: Any, page_num: int) -> Dict[str, List[Dict[s
                         after_pos = span_pos + len(marker_text)
                         after_char = line_text[after_pos] if after_pos < len(line_text) else ' '
 
-                        # BUG-3 FIX: Relaxed isolation for superscript letters
+                        # Relaxed isolation for superscript letters
                         # Original: Required space/punct BOTH before AND after
                         # New: Require space/punct AFTER (before can be letter for hyphenation)
                         # Example: "ciplee" where 'e' is superscript marker after word
@@ -880,10 +878,10 @@ def _detect_footnotes_in_page(page: Any, page_num: int) -> Dict[str, List[Dict[s
                             is_valid_superscript = True
 
                 is_likely_marker = (
-                    is_valid_superscript or  # BUG-2 FIX: Stricter superscript validation
+                    is_valid_superscript or  # Stricter superscript validation
                     (is_footnote_symbol and not is_at_definition_start) or  # Symbol in body (not definition start)
                     is_in_bracket or  # Bracketed symbols
-                    is_known_corruption  # BUG-1 FIX: Known corruption patterns
+                    is_known_corruption  # Known corruption patterns
                 )
 
                 # Extra filter for single letters ONLY if not already identified as marker
@@ -1017,7 +1015,7 @@ def _detect_footnotes_in_page(page: Any, page_num: int) -> Dict[str, List[Dict[s
         markerless = _find_markerless_content(page, result['definitions'], marker_y_positions, page_num)
         result['definitions'].extend(markerless)
 
-    # BUG-2 FIX: Deduplication for TRUE duplicates only (same marker + same bbox)
+    # Deduplication for TRUE duplicates only (same marker + same bbox)
     # Don't deduplicate different markers in same bbox (multi-footnote blocks like Derrida)
     # Example: Derrida has both * and † in single block "iii ...text... t ...text..."
     seen_marker_bbox_pairs = set()
@@ -1044,7 +1042,7 @@ def _detect_footnotes_in_page(page: Any, page_num: int) -> Dict[str, List[Dict[s
     # Use schema from body markers to correct footer corruptions
     corrected_markers, corrected_definitions = apply_corruption_recovery(
         result.get('markers', []),
-        unique_definitions  # BUG-2 FIX: Use deduplicated definitions
+        unique_definitions  # Use deduplicated definitions
     )
 
     # Detect schema type for classification

@@ -143,24 +143,31 @@ def create_unified_filename(
     book_details: dict,
     extension: str = None,
     suffix: str = None,
-    max_total_length: int = 200
+    max_total_length: int = 200,
+    year: str = "",
+    language: str = "",
+    publisher: str = ""
 ) -> str:
     """
     Create unified filename for download or RAG processing.
 
-    Format: {AuthorCamelCase}_{TitleCamelCase}_{BookID}[.suffix].{ext}
+    Format: {AuthorCamelCase}_{TitleCamelCase}[_{Year}][_{Lang}]_{BookID}[.suffix].{ext}
+
+    Disambiguation fields (year, language) are included only when non-empty.
 
     Examples:
-        Download: "HanByungChul_TheBurnoutSociety_3505318.pdf"
+        With disambiguation: "OrwellGeorge_1984_1949_en_12345.epub"
+        Without: "OrwellGeorge_1984_12345.epub"
         RAG: "HanByungChul_TheBurnoutSociety_3505318.pdf.processed.markdown"
-        Metadata: "HanByungChul_TheBurnoutSociety_3505318.pdf.metadata.json"
-        Multiple authors: "DerridaJacques_NancyJeanLuc_TheInoperativeCommunity_12345.pdf"
 
     Args:
         book_details: Dictionary with 'author', 'title', 'id', optionally 'extension'
         extension: File extension (overrides book_details['extension'])
         suffix: Additional suffix before extension (e.g., '.processed.markdown')
         max_total_length: Maximum filename length before extension
+        year: Publication year for disambiguation (optional)
+        language: Language code for disambiguation (optional)
+        publisher: Publisher name for disambiguation (optional, reserved for future use)
 
     Returns:
         Filesystem-safe CamelCase filename with underscores
@@ -192,8 +199,16 @@ def create_unified_filename(
     # Extract book ID
     book_id = str(book_details.get('id', 'NoID'))
 
+    # Build disambiguation segments (only non-empty values)
+    disambiguation_parts = []
+    if year and str(year).strip():
+        disambiguation_parts.append(str(year).strip())
+    if language and str(language).strip():
+        disambiguation_parts.append(str(language).strip().lower()[:5])
+
     # Construct base filename with underscores
-    base_name = f"{author_camel}_{title_camel}_{book_id}"
+    parts = [author_camel, title_camel] + disambiguation_parts + [book_id]
+    base_name = '_'.join(parts)
 
     # Truncate if necessary (preserve book ID)
     if len(base_name) > max_total_length:

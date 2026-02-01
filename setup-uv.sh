@@ -6,6 +6,15 @@
 
 set -e
 
+# Check Python version
+PYTHON_VERSION=$(python3 --version 2>&1 | grep -oP '\d+\.\d+')
+REQUIRED="3.10"
+if [ "$(printf '%s\n' "$REQUIRED" "$PYTHON_VERSION" | sort -V | head -n1)" != "$REQUIRED" ]; then
+    echo "Error: Python $REQUIRED+ required, found $PYTHON_VERSION"
+    exit 1
+fi
+echo "Python $PYTHON_VERSION detected (>= $REQUIRED required)"
+
 echo "🚀 Z-Library MCP - UV Setup (v2.0.0)"
 echo "====================================="
 echo ""

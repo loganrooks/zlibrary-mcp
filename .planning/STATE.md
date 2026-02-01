@@ -10,18 +10,18 @@ See: .planning/PROJECT.md (updated 2026-01-28)
 ## Current Position
 
 Phase: 4 of 6 (Python Monolith Decomposition)
-Plan: 1 of 2 in current phase
-Status: In progress
-Last activity: 2026-02-01 — Completed 04-01-PLAN.md
+Plan: 2 of 2 in current phase
+Status: Phase complete
+Last activity: 2026-02-01 — Completed 04-02-PLAN.md
 
-Progress: [███████░░░] 70%
+Progress: [████████░░] 80%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 7
-- Average duration: 5.2 min
-- Total execution time: 0.6 hours
+- Total plans completed: 8
+- Average duration: 6.6 min
+- Total execution time: 0.9 hours
 
 **By Phase:**
 
@@ -30,11 +30,11 @@ Progress: [███████░░░] 70%
 | 1 | 2/2 | 7 min | 3.5 min |
 | 2 | 2/2 | 7.5 min | 3.75 min |
 | 3 | 2/2 | 10 min | 5 min |
-| 4 | 1/2 | 14 min | 14 min |
+| 4 | 2/2 | 36 min | 18 min |
 
 **Recent Trend:**
-- Last 5 plans: 5.5min, 8min, 2min, 14min
-- Trend: Phase 4 plan 1 took longer (4968-line file decomposition)
+- Last 5 plans: 8min, 2min, 14min, 22min
+- Trend: Phase 4 decomposition plans take longer due to mock compatibility work
 
 *Updated after each plan completion*
 
@@ -61,6 +61,9 @@ Recent decisions affecting current work:
 - [04-01]: _extract_publisher_from_front_matter placed in header.py, re-exported from detection/front_matter.py
 - [04-01]: footnotes.py is 1176 lines (exceeds 700 target) — further splitting in 04-03
 - [04-01]: fitz import added to headings.py (was implicit in monolith scope)
+- [04-02]: Facade-aware dependency access pattern for zero test modifications (submodules use _get_facade())
+- [04-02]: orchestrator.py at 817 lines — process_pdf is 470-line orchestration that can't be meaningfully split
+- [04-02]: quality/pipeline.py at 604 lines — 3 tightly coupled pipeline stages
 
 ### Pending Todos
 
@@ -73,5 +76,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-01
-Stopped at: Completed 04-01-PLAN.md (leaf-node module extraction)
+Stopped at: Completed 04-02-PLAN.md (remaining extraction + facade)
 Resume file: None

@@ -3,12 +3,9 @@ import httpx
 import aiofiles
 import os
 from pathlib import Path
-from bs4 import BeautifulSoup
-import re # Added for token extraction
 
 from typing import List, Union, Optional, Dict
 from urllib.parse import quote
-from aiohttp.abc import AbstractCookieJar
 
 from .logger import logger
 from .exception import (
@@ -24,9 +21,9 @@ from .exception import (
 )
 from .util import GET_request, POST_request, GET_request_cookies
 from .abs import SearchPaginator, BookItem
+from .eapi import EAPIClient, normalize_eapi_book, normalize_eapi_search_response
 from .profile import ZlibProfile
 from .const import Extension, Language, OrderOptions
-# Optional removed as it's covered by line 10 (now line 9)
 import json
 
 
@@ -46,7 +43,6 @@ class AsyncZlib:
     onion = False
 
     __semaphore = asyncio.Semaphore(64)
-    _jar: Optional[AbstractCookieJar] = None
 
     cookies = None
     proxy_list = None
@@ -55,6 +51,8 @@ class AsyncZlib:
     login_domain = None
     domain = None
     profile = None
+    _eapi: Optional[EAPIClient] = None
+    _personal_domain: Optional[str] = None
 
     @property
     def mirror(self):
@@ -105,18 +103,18 @@ class AsyncZlib:
                     url, proxy_list=self.proxy_list, cookies=self.cookies
                 )
                 if hasattr(response, 'text'):
-                    logger.debug(f"Response text for {url}: {response.text[:1000]}") # Log first 1000 chars
+                    logger.debug(f"Response text for {url}: {response.text[:1000]}")
                 else:
-                    logger.debug(f"Response for {url} is not an HTTPX object, it is a string: {str(response)[:1000]}") # Log first 1000 chars
+                    logger.debug(f"Response for {url} is not an HTTPX object, it is a string: {str(response)[:1000]}")
                 return response
         else:
             response = await GET_request(
                 url, proxy_list=self.proxy_list, cookies=self.cookies
             )
             if hasattr(response, 'text'):
-                logger.debug(f"Response text for {url}: {response.text[:1000]}") # Log first 1000 chars
+                logger.debug(f"Response text for {url}: {response.text[:1000]}")
             else:
-                logger.debug(f"Response for {url} is not an HTTPX object, it is a string: {str(response)[:1000]}") # Log first 1000 chars
+                logger.debug(f"Response for {url} is not an HTTPX object, it is a string: {str(response)[:1000]}")
             return response
 
     async def login(self, email: str, password: str):
@@ -168,12 +166,34 @@ class AsyncZlib:
             if not self.mirror:
                 raise NoDomainError
 
-        self.profile = ZlibProfile(self._r, self.cookies, self.mirror, ZLIB_DOMAIN)
+        # Initialize EAPI client with auth cookies
+        eapi_domain = "z-library.sk"  # Default domain for EAPI
+        self._eapi = EAPIClient(
+            domain=eapi_domain,
+            remix_userid=self.cookies.get("remix_userid"),
+            remix_userkey=self.cookies.get("remix_userkey"),
+        )
+
+        # Discover personal domain for downloads
+        try:
+            domains_resp = await self._eapi.get_domains()
+            domains = domains_resp.get("domains", [])
+            if domains:
+                first = domains[0]
+                self._personal_domain = first if isinstance(first, str) else first.get("domain", "")
+                logger.info(f"EAPI personal domain: {self._personal_domain}")
+        except Exception as e:
+            logger.warning(f"Failed to discover EAPI domains: {e}. Using default.")
+
+        self.profile = ZlibProfile(self._r, self.cookies, self.mirror, ZLIB_DOMAIN, eapi_client=self._eapi)
         return self.profile
 
     async def logout(self):
         self._jar = None
         self.cookies = None
+        if self._eapi:
+            await self._eapi.close()
+            self._eapi = None
 
     async def search(
         self,
@@ -183,88 +203,78 @@ class AsyncZlib:
         to_year: Optional[int] = None,
         lang: List[Union[Language, str]] = [],
         extensions: List[Union[Extension, str]] = [],
-        content_types: Optional[List[str]] = None, # Added content_types
-        order: Optional[Union[OrderOptions, str]] = None, # Added order parameter
+        content_types: Optional[List[str]] = None,
+        order: Optional[Union[OrderOptions, str]] = None,
         count: int = 10,
-    ): # -> Tuple[SearchPaginator, str]: # Return type changed
+    ):
         if not self.profile:
             raise NoProfileError
-        # Allow empty query if sorting by newest (to get all recent books)
-        # if not q:
-        #     raise EmptyQueryError
         if not q and not (order and (order == OrderOptions.NEWEST or order == "date_created")):
              raise EmptyQueryError("Search query cannot be empty unless ordering by newest.")
 
+        if not self._eapi:
+            raise NoProfileError("EAPI client not initialized. Call login() first.")
 
-        payload = f"{self.mirror}/s/{quote(q)}?"
-        if exact:
-            payload += "&e=1"
-        if from_year:
-            assert str(from_year).isdigit()
-            payload += f"&yearFrom={from_year}"
-        if to_year:
-            assert str(to_year).isdigit()
-            payload += f"&yearTo={to_year}"
+        # Build EAPI search params
+        languages = None
         if lang:
-            logger.info(f"AsyncZlib.search: 'lang' parameter is present: {lang}")
-            assert type(lang) is list
+            languages = []
             for la in lang:
-                logger.info(f"AsyncZlib.search: Processing lang item: {la}")
-                if type(la) is str:
-                    payload += f"&languages%5B%5D={la}"
-                    logger.info(f"AsyncZlib.search: Appended lang string. Payload now: {payload}")
-                elif type(la) is Language:
-                    payload += f"&languages%5B%5D={la.value}"
-                    logger.info(f"AsyncZlib.search: Appended lang enum. Payload now: {payload}")
-        else:
-            logger.info("AsyncZlib.search: 'lang' parameter is NOT present or is empty.")
+                if isinstance(la, str):
+                    languages.append(la)
+                elif isinstance(la, Language):
+                    languages.append(la.value)
+
+        ext_list = None
         if extensions:
-            logger.info(f"AsyncZlib.search: 'extensions' parameter is present: {extensions}")
-            assert type(extensions) is list
+            ext_list = []
             for ext in extensions:
-                logger.info(f"AsyncZlib.search: Processing ext item: {ext}")
-                if type(ext) is str:
-                    payload += f"&extensions%5B%5D={ext.upper()}"
-                    logger.info(f"AsyncZlib.search: Appended ext string. Payload now: {payload}")
-                elif type(ext) is Extension:
-                    payload += f"&extensions%5B%5D={ext.value.upper()}"
-                    logger.info(f"AsyncZlib.search: Appended ext enum. Payload now: {payload}")
-        else:
-            logger.info("AsyncZlib.search: 'extensions' parameter is NOT present or is empty.")
-        if content_types:
-            logger.info(f"AsyncZlib.search: 'content_types' parameter is present: {content_types}")
-            assert type(content_types) is list
-            for ct_value in content_types:
-                logger.info(f"AsyncZlib.search: Processing content_type item: {ct_value}")
-                payload += f"&selected_content_types%5B%5D={quote(ct_value)}"
-                logger.info(f"AsyncZlib.search: Appended content_type. Payload now: {payload}")
-        else:
-            logger.info("AsyncZlib.search: 'content_types' parameter is NOT present or is empty.")
-        # Add order logic
+                if isinstance(ext, str):
+                    ext_list.append(ext.upper())
+                elif isinstance(ext, Extension):
+                    ext_list.append(ext.value.upper())
+
+        order_str = None
         if order:
             if isinstance(order, OrderOptions):
-                payload += f"&order={order.value}"
+                order_str = order.value
             elif isinstance(order, str):
-                 # Basic validation for string input
-                 allowed_orders = [opt.value for opt in OrderOptions]
-                 if order in allowed_orders:
-                      payload += f"&order={order}"
-                 else:
-                      logger.warning(f"Invalid string value '{order}' provided for order parameter. Ignoring.")
-            else:
-                 logger.warning(f"Invalid type '{type(order)}' provided for order parameter. Ignoring.")
+                allowed_orders = [opt.value for opt in OrderOptions]
+                if order in allowed_orders:
+                    order_str = order
+                else:
+                    logger.warning(f"Invalid order value '{order}'. Ignoring.")
 
+        logger.info(f"EAPI search: q={q}, exact={exact}, count={count}, order={order_str}")
 
-        logger.info(f"Constructed search_books URL (before Paginator init): {payload}")
-        paginator = SearchPaginator(
-            url=payload, count=count, request=self._r, mirror=self.mirror
-        )
-        await paginator.init()
-        logger.info(f"Returning from AsyncZlib.search with payload: {payload}") # Log payload just before return
-        return paginator, payload # Return paginator and the full payload URL
+        try:
+            eapi_resp = await self._eapi.search(
+                message=q,
+                limit=count,
+                page=1,
+                year_from=from_year,
+                year_to=to_year,
+                languages=languages,
+                extensions=ext_list,
+                exact=exact,
+                order=order_str,
+            )
+        except Exception as e:
+            logger.error(f"EAPI search failed: {e}", exc_info=True)
+            raise
 
-    # Removed deprecated get_by_id method.
-    # Download workflow relies on bookDetails from search_books as per ADR-002.
+        books = normalize_eapi_search_response(eapi_resp)
+
+        # Build a lightweight paginator-like wrapper for backward compat
+        paginator = _EAPISearchResult(books, eapi_resp, self._eapi, q,
+                                       count=count, exact=exact,
+                                       from_year=from_year, to_year=to_year,
+                                       languages=languages, extensions=ext_list,
+                                       order=order_str)
+        payload = f"{self.mirror}/eapi/book/search?message={quote(q)}"
+
+        logger.info(f"EAPI search returned {len(books)} results")
+        return paginator, payload
 
     async def full_text_search(
         self,
@@ -276,9 +286,16 @@ class AsyncZlib:
         to_year: Optional[int] = None,
         lang: List[Union[Language, str]] = [],
         extensions: List[Union[Extension, str]] = [],
-        content_types: Optional[List[str]] = None, # Added content_types
+        content_types: Optional[List[str]] = None,
         count: int = 10,
-    ): # -> Tuple[SearchPaginator, str]: # Return type changed
+    ):
+        """Full text search via EAPI.
+
+        NOTE: EAPI does not distinguish full-text vs title search.
+        This routes through the same EAPI search endpoint. The phrase/words
+        parameters are accepted for API compatibility but have no effect
+        on the EAPI backend.
+        """
         if not self.profile:
             raise NoProfileError
         if not q:
@@ -288,199 +305,253 @@ class AsyncZlib:
                 "You should either specify 'words=True' to match words, or 'phrase=True' to match phrase."
             )
 
-        # Fetch token for full-text search
-        token = None
-        try:
-            search_page_url = f"{self.mirror}/s/" # A page likely to contain the token
-            logger.debug(f"full_text_search: Fetching search page for token: {search_page_url}")
-            # Use httpx directly to fetch the search page HTML
-            async with httpx.AsyncClient(proxy=self.proxy_list[0] if self.proxy_list else None, cookies=self.cookies, follow_redirects=True) as client:
-                search_page_response = await client.get(search_page_url)
-                search_page_response.raise_for_status()
-                search_html_content = search_page_response.text
-            
-            soup = BeautifulSoup(search_html_content, 'lxml')
-            scripts = soup.find_all('script')
-            for script in scripts:
-                if script.string:
-                    # Regex to find: newURL.searchParams.append('token', 'TOKEN_VALUE')
-                    match = re.search(r"newURL\.searchParams\.append\('token',\s*'([^']+)'\)", script.string)
-                    if match:
-                        token = match.group(1)
-                        logger.info(f"full_text_search: Extracted token: {token}")
-                        break
-            if not token:
-                logger.warning("full_text_search: Could not extract token from search page. Proceeding without token, which may lead to incorrect results.")
+        if not self._eapi:
+            raise NoProfileError("EAPI client not initialized. Call login() first.")
 
-        except httpx.HTTPStatusError as e:
-            logger.error(f"full_text_search: HTTP error fetching search page for token: {e.response.status_code} - {e.response.text[:200]}", exc_info=True)
-            logger.warning("full_text_search: Proceeding without token due to HTTP error during token fetch.")
-        except Exception as e:
-            logger.error(f"full_text_search: Error fetching or parsing search page for token: {e}", exc_info=True)
-            logger.warning("full_text_search: Proceeding without token due to an unexpected error during token fetch.")
-
-        payload = "%s/fulltext/%s?" % (self.mirror, quote(q))
-        
-        if token:
-            payload += f"&token={quote(token)}"
-        
-        # Add type parameter based on words or phrase flags.
-        # The initial check at line 335 ensures at least one is True.
-        if words:
-            payload += "&type=words"
-        elif phrase: # This implies words is False
-            payload += "&type=phrase"
-
-        if exact:
-            payload += "&e=1"
-        if from_year:
-            assert str(from_year).isdigit()
-            payload += f"&yearFrom={from_year}"
-        if to_year:
-            assert str(to_year).isdigit()
-            payload += f"&yearTo={to_year}"
+        # Build language list
+        languages = None
         if lang:
-            assert type(lang) is list
+            languages = []
             for la in lang:
-                if type(la) is str:
-                    payload += f"&languages%5B%5D={la}"
-                elif type(la) is Language:
-                    payload += f"&languages%5B%5D={la.value}"
-        if extensions:
-            assert type(extensions) is list
-            for ext in extensions:
-                if type(ext) is str:
-                    payload += f"&extensions%5B%5D={ext.upper()}"
-                elif type(ext) is Extension:
-                    payload += f"&extensions%5B%5D={ext.value.upper()}"
-        if content_types:
-            assert type(content_types) is list
-            for ct_value in content_types:
-                payload += f"&selected_content_types%5B%5D={quote(ct_value)}"
+                if isinstance(la, str):
+                    languages.append(la)
+                elif isinstance(la, Language):
+                    languages.append(la.value)
 
-        logger.info(f"Constructed full_text_search URL (before Paginator init): {payload}")
-        paginator = SearchPaginator(
-            url=payload, count=count, request=self._r, mirror=self.mirror
-        )
-        await paginator.init()
-        logger.info(f"Returning from AsyncZlib.full_text_search with payload: {payload}") # Log payload just before return
-        return paginator, payload # Return paginator and the full payload URL
+        ext_list = None
+        if extensions:
+            ext_list = []
+            for ext in extensions:
+                if isinstance(ext, str):
+                    ext_list.append(ext.upper())
+                elif isinstance(ext, Extension):
+                    ext_list.append(ext.value.upper())
+
+        logger.info(f"EAPI full_text_search (routed to search): q={q}, exact={exact}")
+
+        try:
+            eapi_resp = await self._eapi.search(
+                message=q,
+                limit=count,
+                page=1,
+                year_from=from_year,
+                year_to=to_year,
+                languages=languages,
+                extensions=ext_list,
+                exact=exact,
+            )
+        except Exception as e:
+            logger.error(f"EAPI full_text_search failed: {e}", exc_info=True)
+            raise
+
+        books = normalize_eapi_search_response(eapi_resp)
+        paginator = _EAPISearchResult(books, eapi_resp, self._eapi, q,
+                                       count=count, exact=exact,
+                                       from_year=from_year, to_year=to_year,
+                                       languages=languages, extensions=ext_list)
+        payload = f"{self.mirror}/eapi/book/search?message={quote(q)}"
+
+        logger.info(f"EAPI full_text_search returned {len(books)} results")
+        return paginator, payload
+
     async def download_book(self, book_details: Dict, output_dir_str: str) -> str:
-        """Downloads a book to the specified output path by scraping the book page."""
+        """Downloads a book using EAPI to get the download link."""
         if not self.profile:
             raise NoProfileError()
 
+        if not self._eapi:
+            raise NoProfileError("EAPI client not initialized. Call login() first.")
+
         book_id = book_details.get('id', 'Unknown')
-        book_page_url = book_details.get('url')
+        book_hash = book_details.get('hash') or book_details.get('book_hash', '')
 
-        if not book_page_url:
-            logger.error(f"No book page URL ('url') found in book_details for book ID: {book_id}. Details: {book_details}")
-            raise DownloadError(f"Could not find a book page URL for book ID: {book_id}")
+        if not book_hash:
+            logger.warning(f"No hash found in book_details for book ID {book_id}. "
+                          f"Attempting download without hash may fail.")
 
-        # Ensure the book page URL includes the mirror if it's relative
-        if not book_page_url.startswith('http'):
-            if not self.mirror:
-                 raise DownloadError("Cannot construct book page URL: Z-Library mirror/domain is not set.")
-            book_page_url = f"{self.mirror.rstrip('/')}/{book_page_url.lstrip('/')}"
-
-        logger.info(f"Fetching book page to find download link: {book_page_url}")
+        logger.info(f"EAPI download_book: id={book_id}, hash={book_hash}")
 
         try:
-            # Use httpx directly to fetch the book page HTML, ensuring we get the full response object
-            async with httpx.AsyncClient(proxy=self.proxy_list[0] if self.proxy_list else None, cookies=self.cookies, follow_redirects=True) as client:
-                 response = await client.get(book_page_url)
-                 response.raise_for_status() # Raise HTTPError for bad responses (4xx or 5xx)
-                 html_content = response.text
-                 soup = BeautifulSoup(html_content, 'lxml') # Use lxml parser
+            # Get download link from EAPI
+            dl_resp = await self._eapi.get_download_link(int(book_id), book_hash)
+            download_url = dl_resp.get("file", {}).get("downloadLink") or dl_resp.get("downloadLink", "")
 
-            # --- Find the actual download link ---
-            # Attempt to find the download button/link using a common selector pattern.
-            # *** This selector might need adjustment based on actual website structure ***
-            download_link_element = soup.select_one('a.addDownloadedBook[href*="/dl/"]') # Updated selector based on user feedback
+            if not download_url:
+                # Try alternative response structures
+                if isinstance(dl_resp, dict):
+                    # Some EAPI responses put URL at top level
+                    download_url = dl_resp.get("url", "") or dl_resp.get("link", "")
 
-            if not download_link_element or not download_link_element.get('href'):
-                logger.error(f"Could not find download link element or href on book page: {book_page_url}. Selector 'a.addDownloadedBook[href*=\"/dl/\"]' failed.")
-                # Optionally log soup excerpt for debugging
-                # logger.debug(f"HTML excerpt: {soup.prettify()[:1000]}")
-                raise DownloadError(f"Could not extract download link from book page for ID: {book_id}")
+            if not download_url:
+                raise DownloadError(f"EAPI returned no download link for book ID {book_id}. Response: {dl_resp}")
 
-            download_url = download_link_element['href']
-            logger.info(f"Found download link: {download_url}")
+            # Make URL absolute if needed
+            if download_url.startswith("/"):
+                base = f"https://{self._personal_domain}" if self._personal_domain else self.mirror
+                download_url = f"{base.rstrip('/')}{download_url}"
 
-            # Ensure the extracted download URL includes the mirror if it's relative
-            if not download_url.startswith('http'):
-                if not self.mirror:
-                     raise DownloadError("Cannot construct download URL: Z-Library mirror/domain is not set.")
-                download_url = f"{self.mirror.rstrip('/')}/{download_url.lstrip('/')}"
+            logger.info(f"EAPI download URL: {download_url}")
 
         except httpx.HTTPStatusError as e:
-             logger.error(f"HTTP error fetching book page {book_page_url}: {e.response.status_code} - {e.response.text[:200]}", exc_info=True)
-             raise DownloadError(f"Failed to fetch book page for ID {book_id} (HTTP {e.response.status_code})") from e
-        except httpx.RequestError as e:
-             logger.error(f"Network error fetching book page {book_page_url}: {e}", exc_info=True)
-             raise DownloadError(f"Failed to fetch book page for ID {book_id} (Network Error)") from e
+            logger.error(f"EAPI download link request failed: {e}", exc_info=True)
+            raise DownloadError(f"Failed to get download link for book ID {book_id} (HTTP {e.response.status_code})") from e
+        except DownloadError:
+            raise
         except Exception as e:
-            logger.error(f"Error parsing book page or finding download link for {book_page_url}: {e}", exc_info=True)
-            raise DownloadError(f"Failed to process book page for ID {book_id}") from e
+            logger.error(f"Error getting EAPI download link for book ID {book_id}: {e}", exc_info=True)
+            raise DownloadError(f"Failed to get download link for book ID {book_id}") from e
 
-        # Construct Full File Path
-        book_id_for_filename = book_details.get('id', 'unknown_book')
-        extension = book_details.get('extension', 'epub') # Or derive more reliably if possible
-        filename = f"{book_id_for_filename}.{extension}"
-        
-        output_directory = Path(output_dir_str) # Treat the input param as a directory
+        # Construct output path
+        extension = book_details.get('extension', 'epub')
+        filename = f"{book_id}.{extension}"
+        output_directory = Path(output_dir_str)
         actual_output_path = output_directory / filename
 
-        logger.info(f"Attempting download from extracted URL: {download_url} to {actual_output_path}")
+        logger.info(f"Downloading from {download_url} to {actual_output_path}")
 
-        # --- Ensure Output Directory Exists ---
+        # Ensure output directory exists
         try:
             os.makedirs(output_directory, exist_ok=True)
-            logger.debug(f"Ensured output directory exists: {output_directory}")
         except OSError as e:
-            logger.error(f"Failed to create output directory {output_directory}: {e}", exc_info=True)
             raise DownloadError(f"Failed to create output directory {output_directory}: {e}") from e
 
-        # --- Perform Download using httpx stream ---
+        # Stream download
         try:
-            # Use httpx directly for streaming download
-            async with httpx.AsyncClient(proxy=self.proxy_list[0] if self.proxy_list else None, cookies=self.cookies, follow_redirects=True) as client:
-                 async with client.stream("GET", download_url) as response:
-                      response.raise_for_status() # Check for HTTP errors
+            cookies = self._eapi._cookies if self._eapi else (self.cookies or {})
+            async with httpx.AsyncClient(
+                cookies=cookies,
+                follow_redirects=True,
+                timeout=httpx.Timeout(60.0, connect=10.0),
+            ) as client:
+                async with client.stream("GET", download_url) as response:
+                    response.raise_for_status()
+                    total_size = int(response.headers.get('content-length', 0))
+                    logger.info(f"Starting download ({total_size} bytes)...")
 
-                      # Get total size for progress (optional)
-                      total_size = int(response.headers.get('content-length', 0))
-                      downloaded_size = 0
-                      logger.info(f"Starting download ({total_size} bytes)...")
-
-                      async with aiofiles.open(actual_output_path, 'wb') as f:
-                          async for chunk in response.aiter_bytes():
-                              await f.write(chunk)
-                              downloaded_size += len(chunk)
-                              # Optional: Add progress logging here if needed
-                              # logger.debug(f"Downloaded {downloaded_size}/{total_size} bytes")
+                    async with aiofiles.open(actual_output_path, 'wb') as f:
+                        async for chunk in response.aiter_bytes():
+                            await f.write(chunk)
 
             logger.info(f"Successfully downloaded book ID {book_id} to {actual_output_path}")
             return str(actual_output_path)
 
         except httpx.HTTPStatusError as e:
-             logger.error(f"HTTP error during download from {download_url}: {e.response.status_code} - {e.response.text[:200]}", exc_info=True)
-             # Clean up partial file
-             if os.path.exists(actual_output_path): os.remove(actual_output_path)
-             raise DownloadError(f"Download failed for book ID {book_id} (HTTP {e.response.status_code})") from e
+            if os.path.exists(actual_output_path):
+                os.remove(actual_output_path)
+            raise DownloadError(f"Download failed for book ID {book_id} (HTTP {e.response.status_code})") from e
         except httpx.RequestError as e:
-             logger.error(f"Network error during download from {download_url}: {e}", exc_info=True)
-             if os.path.exists(actual_output_path): os.remove(actual_output_path)
-             raise DownloadError(f"Download failed for book ID {book_id} (Network Error)") from e
+            if os.path.exists(actual_output_path):
+                os.remove(actual_output_path)
+            raise DownloadError(f"Download failed for book ID {book_id} (Network Error)") from e
         except Exception as e:
-            logger.error(f"Unexpected error during download for book ID {book_id}: {e}", exc_info=True)
-            # Clean up partial file
             try:
                 if os.path.exists(actual_output_path):
                     os.remove(actual_output_path)
-                    logger.debug(f"Removed incomplete file after unexpected error: {actual_output_path}")
             except OSError:
-                 logger.warning(f"Could not remove incomplete file after unexpected error: {actual_output_path}")
-            # Raise the final error
+                pass
             raise DownloadError(f"An unexpected error occurred during download for book ID {book_id}") from e
 
+
+class _EAPISearchResult:
+    """Lightweight paginator-like wrapper around EAPI search results.
+
+    Provides backward compatibility with SearchPaginator interface
+    (result, total, next/prev page navigation).
+    """
+
+    def __init__(self, books, eapi_response, eapi_client, query,
+                 count=10, exact=False, from_year=None, to_year=None,
+                 languages=None, extensions=None, order=None):
+        self.result = books
+        self.storage = {1: books}
+        self.page = 1
+        self.total = eapi_response.get("totalPages", 1)
+        self.count = count
+        self._eapi = eapi_client
+        self._query = query
+        self._exact = exact
+        self._from_year = from_year
+        self._to_year = to_year
+        self._languages = languages
+        self._extensions = extensions
+        self._order = order
+        self.__pos = 0
+
+    def __repr__(self):
+        return f"<EAPISearchResult query='{self._query}', count={self.count}, results={len(self.result)}, pages={self.total}>"
+
+    async def next(self):
+        if self.__pos >= len(self.storage.get(self.page, [])):
+            await self.next_page()
+            if not self.storage.get(self.page):
+                self.result = []
+                return self.result
+
+        self.result = self.storage.get(self.page, [])[self.__pos:self.__pos + self.count]
+        self.__pos += self.count
+        return self.result
+
+    async def prev(self):
+        self.__pos -= self.count
+        if self.__pos < 0:
+            await self.prev_page()
+            if not self.storage.get(self.page):
+                self.result = []
+                return self.result
+
+        start = max(0, self.__pos)
+        self.result = self.storage.get(self.page, [])[start:start + self.count]
+        return self.result
+
+    async def next_page(self):
+        if self.page < self.total:
+            self.page += 1
+            self.__pos = 0
+        else:
+            return
+
+        if not self.storage.get(self.page):
+            try:
+                eapi_resp = await self._eapi.search(
+                    message=self._query,
+                    limit=self.count,
+                    page=self.page,
+                    year_from=self._from_year,
+                    year_to=self._to_year,
+                    languages=self._languages,
+                    extensions=self._extensions,
+                    exact=self._exact,
+                    order=self._order,
+                )
+                self.storage[self.page] = normalize_eapi_search_response(eapi_resp)
+            except Exception as e:
+                logger.error(f"EAPI next_page failed: {e}")
+                self.storage[self.page] = []
+
+    async def prev_page(self):
+        if self.page > 1:
+            self.page -= 1
+            self.__pos = 0
+        else:
+            self.__pos = 0
+            return
+
+        if not self.storage.get(self.page):
+            try:
+                eapi_resp = await self._eapi.search(
+                    message=self._query,
+                    limit=self.count,
+                    page=self.page,
+                    year_from=self._from_year,
+                    year_to=self._to_year,
+                    languages=self._languages,
+                    extensions=self._extensions,
+                    exact=self._exact,
+                    order=self._order,
+                )
+                self.storage[self.page] = normalize_eapi_search_response(eapi_resp)
+            except Exception as e:
+                logger.error(f"EAPI prev_page failed: {e}")
+                self.storage[self.page] = []
+
+        self.__pos = len(self.storage.get(self.page, []))

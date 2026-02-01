@@ -29,12 +29,12 @@
 
 ### Branch Cleanup
 
-- [ ] **GIT-01**: Delete 5 merged remote branches
-- [ ] **GIT-02**: Delete obsolete self-modifying-system branch
-- [ ] **GIT-03**: Port metadata scraping tool from get_metadata branch
-- [ ] **GIT-04**: Port enhanced filename conventions from get_metadata branch
-- [ ] **GIT-05**: Port author/title in search results from get_metadata branch
-- [ ] **GIT-06**: Delete get_metadata branch after port complete
+- [x] **GIT-01**: Delete 5 merged remote branches
+- [x] **GIT-02**: Delete obsolete self-modifying-system branch
+- [x] **GIT-03**: Port metadata scraping tool from get_metadata branch
+- [x] **GIT-04**: Port enhanced filename conventions from get_metadata branch
+- [x] **GIT-05**: Port author/title in search results from get_metadata branch
+- [x] **GIT-06**: Delete get_metadata branch after port complete
 
 ### Documentation
 
@@ -102,12 +102,12 @@ Deferred to future milestone. Tracked but not in current roadmap.
 | QUAL-04 | Phase 4 | Complete |
 | QUAL-05 | Phase 4 | Complete |
 | QUAL-06 | Phase 2 | Complete |
-| GIT-01 | Phase 5 | Pending |
-| GIT-02 | Phase 5 | Pending |
-| GIT-03 | Phase 5 | Pending |
-| GIT-04 | Phase 5 | Pending |
-| GIT-05 | Phase 5 | Pending |
-| GIT-06 | Phase 5 | Pending |
+| GIT-01 | Phase 5 | Complete |
+| GIT-02 | Phase 5 | Complete |
+| GIT-03 | Phase 5 | Complete |
+| GIT-04 | Phase 5 | Complete |
+| GIT-05 | Phase 5 | Complete |
+| GIT-06 | Phase 5 | Complete |
 | DOC-01 | Phase 6 | Pending |
 | DOC-02 | Phase 6 | Pending |
 | DOC-03 | Phase 6 | Pending |

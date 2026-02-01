@@ -3,22 +3,20 @@ Author search tools for advanced author-based discovery.
 
 This module enables sophisticated author searches with support for
 exact name matching, syntax variations, and filtering by publication
-year, language, and file type.
+year, language, and file type. Uses EAPI for all Z-Library data access.
 """
 
 import asyncio
 from typing import Dict, List, Optional
-from bs4 import BeautifulSoup
-from bs4.element import Tag
 import sys
 import os
 import re
 
-# Add zlibrary directory to path
-zlibrary_path = os.path.join(os.path.dirname(__file__), '..', 'zlibrary')
+# Add zlibrary source directory to path
+zlibrary_path = os.path.join(os.path.dirname(__file__), '..', 'zlibrary', 'src')
 sys.path.insert(0, zlibrary_path)
 
-from zlibrary import AsyncZlib
+from zlibrary.eapi import EAPIClient, normalize_eapi_search_response
 
 
 def validate_author_name(author: str) -> bool:
@@ -41,13 +39,8 @@ def validate_author_name(author: str) -> bool:
     if not author or not author.strip():
         return False
 
-    # Check if it's just whitespace
-    if not author.strip():
-        return False
-
     # Allow letters, spaces, hyphens, apostrophes, commas, and numbers
-    # This covers most international names
-    pattern = r'^[a-zA-ZÀ-ÿ0-9\s\-\',\.]+$'
+    pattern = r'^[a-zA-Z\u00C0-\u00FF0-9\s\-\',\.]+$'
     return bool(re.match(pattern, author))
 
 
@@ -56,9 +49,9 @@ def format_author_query(author: str, exact: bool = False) -> str:
     Format author name for Z-Library search query.
 
     Handles various name formats:
-    - "Hegel" → "Hegel"
-    - "Georg Wilhelm Friedrich Hegel" → "Georg Wilhelm Friedrich Hegel"
-    - "Hegel, Georg Wilhelm Friedrich" → "Hegel Georg Wilhelm Friedrich"
+    - "Hegel" -> "Hegel"
+    - "Georg Wilhelm Friedrich Hegel" -> "Georg Wilhelm Friedrich Hegel"
+    - "Hegel, Georg Wilhelm Friedrich" -> "Hegel Georg Wilhelm Friedrich"
 
     Args:
         author: Author name to format
@@ -73,7 +66,6 @@ def format_author_query(author: str, exact: bool = False) -> str:
     if not author or not author.strip():
         raise ValueError("Author name cannot be empty")
 
-    # Clean the author name
     cleaned = author.strip()
 
     # If it's in "Lastname, Firstname" format, reorder
@@ -81,11 +73,7 @@ def format_author_query(author: str, exact: bool = False) -> str:
         parts = [p.strip() for p in cleaned.split(',', 1)]
         cleaned = ' '.join(parts)
 
-    # For exact matching, we might want to add quotes
-    # but this depends on Z-Library's search behavior
     if exact:
-        # Z-Library may support quoted searches for exact matching
-        # Testing would confirm the exact syntax
         cleaned = f'"{cleaned}"'
 
     return cleaned
@@ -102,13 +90,11 @@ async def search_by_author(
     languages: Optional[str] = None,
     extensions: Optional[str] = None,
     page: int = 1,
-    limit: int = 25
+    limit: int = 25,
+    eapi_client: Optional[EAPIClient] = None,
 ) -> Dict:
     """
-    Search for books by author with advanced options.
-
-    Supports various author name formats and provides filtering by
-    year, language, and file type.
+    Search for books by author using EAPI.
 
     Args:
         author: Author name (supports various formats)
@@ -122,6 +108,7 @@ async def search_by_author(
         extensions: Optional comma-separated file extensions
         page: Page number for pagination (default: 1)
         limit: Results per page (default: 25)
+        eapi_client: Optional pre-authenticated EAPIClient instance
 
     Returns:
         Dictionary with structure:
@@ -133,119 +120,51 @@ async def search_by_author(
 
     Raises:
         ValueError: If author name is invalid
-
-    Example:
-        >>> result = await search_by_author(
-        ...     author="Hegel, Georg Wilhelm Friedrich",
-        ...     exact=True,
-        ...     email="user@example.com",
-        ...     password="password",
-        ...     year_from=1800,
-        ...     year_to=1850
-        ... )
-        >>> print(f"Found {len(result['books'])} books by {result['author']}")
     """
-    # Validate author name
     if not validate_author_name(author):
         raise ValueError(f"Invalid author name: {author}")
 
-    # Format the query
     query = format_author_query(author, exact=exact)
 
-    # Initialize zlibrary client
-    zlib = AsyncZlib()
-    await zlib.login(email, password)
+    # Use provided client or create a new one
+    client = eapi_client
+    should_close = False
+    if client is None:
+        from zlibrary.util import discover_eapi_domain
+        domain = await discover_eapi_domain()
+        client = EAPIClient(domain)
+        await client.login(email, password)
+        should_close = True
 
-    # Build search parameters matching AsyncZlib.search() signature
-    search_kwargs = {
-        'q': query,
-        'count': limit,
-        'exact': exact
-    }
+    try:
+        lang_list = None
+        if languages:
+            lang_list = languages.split(',') if isinstance(languages, str) else languages
+        ext_list = None
+        if extensions:
+            ext_list = extensions.split(',') if isinstance(extensions, str) else extensions
 
-    if year_from is not None:
-        search_kwargs['from_year'] = year_from
-    if year_to is not None:
-        search_kwargs['to_year'] = year_to
-    if languages:
-        search_kwargs['lang'] = languages.split(',') if isinstance(languages, str) else languages
-    if extensions:
-        search_kwargs['extensions'] = extensions.split(',') if isinstance(extensions, str) else extensions
+        response = await client.search(
+            message=query,
+            limit=limit,
+            page=page,
+            year_from=year_from,
+            year_to=year_to,
+            languages=lang_list,
+            extensions=ext_list,
+            exact=exact,
+        )
 
-    # Execute search
-    search_result = await zlib.search(**search_kwargs)
+        books = normalize_eapi_search_response(response)
 
-    # Handle both tuple and non-tuple returns (AsyncZlib.search returns Paginator or tuple)
-    if isinstance(search_result, tuple):
-        paginator, constructed_url = search_result
-    else:
-        paginator = search_result
-        constructed_url = f"Search for author: {author}"
-
-    # Get the first page of results (paginator.next() returns list of book dicts)
-    books = await paginator.next()
-
-    return {
-        'author': author,
-        'books': books,
-        'total_results': len(books)  # For now, return books in this page
-    }
-
-
-def _parse_author_search_results(html: str) -> List[Dict]:
-    """
-    Parse book results from author search HTML.
-
-    Similar to term_tools parsing but specific to author searches.
-
-    Args:
-        html: HTML content from search results page
-
-    Returns:
-        List of book dictionaries with metadata
-    """
-    if not html:
-        return []
-
-    soup = BeautifulSoup(html, 'lxml')
-
-    # Find all book cards
-    all_cards = soup.find_all('z-bookcard')
-
-    if not all_cards:
-        return []
-
-    results = []
-
-    for card in all_cards:
-        book_data = {}
-
-        # Check if this is an article (uses slot-based structure)
-        card_type = card.get('type', '')
-        if card_type == 'article':
-            # Articles use <div slot="title"> structure
-            title_slot = card.find('div', attrs={'slot': 'title'})
-            author_slot = card.find('div', attrs={'slot': 'author'})
-
-            book_data['title'] = title_slot.get_text(strip=True) if title_slot else 'N/A'
-            book_data['authors'] = author_slot.get_text(strip=True) if author_slot else 'N/A'
-            book_data['href'] = card.get('href', '')
-            book_data['type'] = 'article'
-        else:
-            # Regular books use attributes
-            book_data['id'] = card.get('id', '')
-            book_data['title'] = card.get('title', '')
-            book_data['authors'] = card.get('author', '')
-            book_data['year'] = card.get('year', '')
-            book_data['language'] = card.get('language', '')
-            book_data['extension'] = card.get('extension', '')
-            book_data['size'] = card.get('size', '')
-            book_data['href'] = card.get('href', '')
-            book_data['type'] = 'book'
-
-        results.append(book_data)
-
-    return results
+        return {
+            'author': author,
+            'books': books,
+            'total_results': len(books),
+        }
+    finally:
+        if should_close:
+            await client.close()
 
 
 # Synchronous wrapper for use from python_bridge

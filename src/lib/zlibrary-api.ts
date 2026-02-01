@@ -365,11 +365,58 @@ export async function downloadBookToFile({
  * Phase 3 Research Tools - Exported wrappers for advanced search and metadata features
  */
 
-export async function getBookMetadata(bookId: string, bookHash: string): Promise<any> {
-  return callPythonFunction('get_book_metadata_complete', {
+// Core fields always included in metadata response
+const METADATA_CORE_FIELDS = new Set([
+  'id', 'book_hash', 'book_url',
+  'title', 'author', 'authors', 'year', 'publisher', 'language',
+  'pages', 'isbn_10', 'isbn_13', 'rating', 'cover',
+  'url', 'categories', 'extension', 'filesize', 'series',
+]);
+
+// Mapping from include group names to metadata field names
+const METADATA_INCLUDE_MAP: Record<string, string[]> = {
+  'terms': ['terms'],
+  'booklists': ['booklists'],
+  'ipfs': ['ipfs_cids'],
+  'ratings': ['quality_score'],
+  'description': ['description'],
+};
+
+function filterMetadataResponse(fullMetadata: any, include?: string[]): any {
+  if (!fullMetadata || typeof fullMetadata !== 'object') return fullMetadata;
+
+  const result: Record<string, any> = {};
+
+  // Always include core fields
+  for (const key of Object.keys(fullMetadata)) {
+    if (METADATA_CORE_FIELDS.has(key)) {
+      result[key] = fullMetadata[key];
+    }
+  }
+
+  // Add requested optional field groups
+  if (include && include.length > 0) {
+    for (const group of include) {
+      const fields = METADATA_INCLUDE_MAP[group];
+      if (fields) {
+        for (const field of fields) {
+          if (field in fullMetadata) {
+            result[field] = fullMetadata[field];
+          }
+        }
+      }
+    }
+  }
+
+  return result;
+}
+
+export async function getBookMetadata(bookId: string, bookHash: string, include?: string[]): Promise<any> {
+  const fullMetadata = await callPythonFunction('get_book_metadata_complete', {
     book_id: bookId,
     book_hash: bookHash
   });
+  return filterMetadataResponse(fullMetadata, include);
 }
 
 export async function searchByTerm(args: {

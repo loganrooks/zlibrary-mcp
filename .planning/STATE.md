@@ -10,18 +10,18 @@ See: .planning/PROJECT.md (updated 2026-01-28)
 ## Current Position
 
 Phase: 7 of 7 (EAPI Migration — URGENT)
-Plan: 1 of 4 in current phase
+Plan: 2 of 4 in current phase
 Status: In progress
-Last activity: 2026-02-01 — Completed 07-01-PLAN.md (EAPI Client Foundation)
+Last activity: 2026-02-01 — Completed 07-02-PLAN.md (Core Library EAPI Migration)
 
-Progress: [████████████░░░] ~80% (16/~20 plans)
+Progress: [█████████████░░] ~85% (17/~20 plans)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 16
-- Average duration: 5.6 min
-- Total execution time: 1.50 hours
+- Total plans completed: 17
+- Average duration: 5.5 min
+- Total execution time: 1.57 hours
 
 **By Phase:**
 
@@ -32,7 +32,7 @@ Progress: [████████████░░░] ~80% (16/~20 plans)
 | 3 | 2/2 | 10 min | 5 min |
 | 4 | 5/5 | 56 min | 11.2 min |
 | 5 | 3/3 | ~15 min | ~5 min |
-| 7 | 1/4 | ~4 min | ~4 min |
+| 7 | 2/4 | ~8 min | ~4 min |
 
 **Recent Trend:**
 - Last 5 plans: ~4min, ~4min, ~4.5min, ~2min, ~4min
@@ -71,6 +71,8 @@ Recent decisions affecting current work:
 - [05-02]: Derive title from name, author from authors[0] — additive enrichment
 - [05-03]: self-modifying-system branch had only AI config (Roo/Cline), no app code — deleted without porting
 - [07-01]: Lazy httpx client init with recreation on re-auth (fresh cookies after login)
+- [07-02]: Gracefully degrade booklists (EAPI has no booklist endpoint)
+- [07-02]: Route full_text_search through regular EAPI search (no full-text mode in EAPI)
 
 ### Pending Todos
 
@@ -88,5 +90,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-01
-Stopped at: Completed 07-01-PLAN.md (EAPI Client Foundation)
+Stopped at: Completed 07-02-PLAN.md (Core Library EAPI Migration)
 Resume file: None

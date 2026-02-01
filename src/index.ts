@@ -450,13 +450,13 @@ async function start(opts: StartOptions = {}): Promise<{ server: McpServer; tran
 
     // 1. search_books
     server.tool('search_books',
-      'Search for books in Z-Library by title, author, or keywords. Returns matching books with metadata including title, author, year, format, and file size. Use exact=true for precise title matching. Filter results by year range, language, or file format.',
+      'Search for books in Z-Library by title, author, or keywords. Returns matching books with metadata including title (string), author (string), name, authors (array), year, format, and file size. Use exact=true for precise title matching. Filter results by year range, language, or file format.',
       SearchBooksParamsSchema.shape, ann('search_books'),
       async (args) => wrapResult(await handlers.searchBooks(args as any), 'search_books'));
 
     // 2. full_text_search
     server.tool('full_text_search',
-      'Search for books containing specific text within their content. Useful for finding books that discuss particular topics, quotes, or concepts. Returns books where the search text appears in the actual book content.',
+      'Search for books containing specific text within their content. Returns books with title (string), author (string), name, authors (array), and other metadata. Useful for finding books that discuss particular topics, quotes, or concepts.',
       FullTextSearchParamsSchema.shape, ann('full_text_search'),
       async (args) => wrapResult(await handlers.fullTextSearch(args as any), 'full_text_search'));
 
@@ -505,13 +505,13 @@ async function start(opts: StartOptions = {}): Promise<{ server: McpServer; tran
 
     // 9. search_by_term
     server.tool('search_by_term',
-      'Search for books by conceptual term (e.g., "phenomenology", "dialectic", "epistemology"). Books in Z-Library are tagged with 60+ conceptual terms.',
+      'Search for books by conceptual term (e.g., "phenomenology", "dialectic", "epistemology"). Returns books with title (string), author (string), and other metadata. Books in Z-Library are tagged with 60+ conceptual terms.',
       SearchByTermParamsSchema.shape, ann('search_by_term'),
       async (args) => wrapResult(await handlers.searchByTerm(args as any), 'search_by_term'));
 
     // 10. search_by_author
     server.tool('search_by_author',
-      'Advanced author search with support for various name formats. Use exact=true for precise matching. Filter by publication year, language, or file format.',
+      'Advanced author search with support for various name formats. Returns books with title (string), author (string), and other metadata. Use exact=true for precise matching. Filter by publication year, language, or file format.',
       SearchByAuthorParamsSchema.shape, ann('search_by_author'),
       async (args) => wrapResult(await handlers.searchByAuthor(args as any), 'search_by_author'));
 
@@ -523,7 +523,7 @@ async function start(opts: StartOptions = {}): Promise<{ server: McpServer; tran
 
     // 12. search_advanced
     server.tool('search_advanced',
-      'Advanced search with automatic separation of exact matches from fuzzy/approximate matches. Returns two arrays: exact_matches and fuzzy_matches.',
+      'Advanced search with automatic separation of exact matches from fuzzy/approximate matches. Returns two arrays: exact_matches and fuzzy_matches, each containing books with title (string), author (string), and other metadata.',
       SearchAdvancedParamsSchema.shape, ann('search_advanced'),
       async (args) => wrapResult(await handlers.searchAdvanced(args as any), 'search_advanced'));
 

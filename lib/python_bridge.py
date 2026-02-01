@@ -215,113 +215,6 @@ def normalize_book_details(book: dict, mirror: str = None) -> dict:
     return normalized
 
 
-def _sanitize_component(text: str, max_length: int, is_title: bool = False) -> str:
-    """
-    Sanitize a filename component for filesystem safety.
-
-    Removes characters that are problematic on Windows/Linux/macOS:
-    / \\ ? % * : | " < >
-
-    Also removes: . , ; = for cleaner filenames
-
-    Args:
-        text: Text to sanitize
-        max_length: Maximum length after sanitization
-        is_title: If True, replace spaces with underscores
-
-    Returns:
-        Sanitized text suitable for filenames
-    """
-    if not text:
-        return ""
-
-    # Remove problematic filesystem characters
-    # / \ ? % * : | " < > . , ; =
-    sanitized = re.sub(r'[\\/\?%\*:|"<>.,;=]', '', text)
-    
-    if is_title:
-        # Replace spaces with underscores for title
-        sanitized = sanitized.replace(' ', '_')
-    
-    # Replace multiple consecutive underscores/spaces with a single underscore
-    sanitized = re.sub(r'[_ ]+', '_', sanitized)
-    
-    # Strip leading/trailing whitespace and underscores
-    sanitized = sanitized.strip('_ ')
-    
-    # Truncate
-    return sanitized[:max_length]
-
-def _create_enhanced_filename(book_details: dict) -> str:
-    """
-    Creates an enhanced, filesystem-safe filename based on book details.
-    Format: LastnameFirstname_TitleOfTheBook_BookID.ext
-    """
-    author_str = "UnknownAuthor"
-    raw_author = book_details.get('author', '')
-    if raw_author:
-        first_author = raw_author.split(',')[0].strip()
-        if first_author:
-            name_parts = first_author.split()
-            if len(name_parts) == 1:
-                # Single word author name (e.g., "Plato")
-                author_str = name_parts[0].capitalize()
-            elif len(name_parts) > 1:
-                lastname = name_parts[-1].capitalize()
-                firstnames = "".join([name.capitalize() for name in name_parts[:-1]])
-                author_str = f"{lastname}{firstnames}"
-    
-    formatted_author = _sanitize_component(author_str, 50)
-
-    raw_title = book_details.get('title') or book_details.get('name') # 'name' is often used for title
-    title_str = raw_title if raw_title else "UntitledBook"
-    formatted_title = _sanitize_component(title_str, 100, is_title=True)
-
-    book_id_str = str(book_details.get('id', "UnknownID"))
-    # No real sanitization needed for ID other than ensuring it's a string,
-    # but good practice to ensure it doesn't have problematic chars if it's user-influenced.
-    # For now, assume 'id' from zlibrary is safe or simple enough.
-    # formatted_book_id = _sanitize_component(book_id_str, 20) # Max 20 for ID seems reasonable
-    formatted_book_id = book_id_str # Keep as is for now, spec says "Use as is"
-
-    raw_extension = book_details.get('extension', "unknown")
-    formatted_extension = f".{raw_extension.lower().lstrip('.')}" if raw_extension else ".unknown"
-
-    base_filename = f"{formatted_author}_{formatted_title}_{formatted_book_id}"
-    
-    # Truncate entire base filename (before extension) to a max of 200 characters
-    if len(base_filename) > 200:
-        # Try to preserve BookID and some author/title
-        # A simple truncation might cut off critical parts.
-        # This strategy attempts to keep BookID intact and as much of title/author as possible.
-        id_len = len(formatted_book_id)
-        title_len = len(formatted_title)
-        author_len = len(formatted_author)
-        
-        # Max length for author + title, accounting for underscores and ID
-        max_auth_title_len = 200 - id_len - 2 # 2 underscores
-        
-        if author_len + title_len > max_auth_title_len:
-            if title_len > max_auth_title_len / 2 and author_len > max_auth_title_len / 2 :
-                # Both are long, split remaining length
-                allowed_title_len = int(max_auth_title_len / 2)
-                allowed_author_len = max_auth_title_len - allowed_title_len
-                formatted_title = formatted_title[:allowed_title_len]
-                formatted_author = formatted_author[:allowed_author_len]
-            elif title_len > author_len:
-                # Title is longer, give it more space
-                formatted_title = formatted_title[:max_auth_title_len - min(author_len, int(max_auth_title_len*0.3))] # Give author at least 30% or its len
-                formatted_author = formatted_author[:max_auth_title_len - len(formatted_title)]
-            else:
-                # Author is longer or equal
-                formatted_author = formatted_author[:max_auth_title_len - min(title_len, int(max_auth_title_len*0.3))] # Give title at least 30% or its len
-                formatted_title = formatted_title[:max_auth_title_len - len(formatted_author)]
-        
-        base_filename = f"{formatted_author}_{formatted_title}_{formatted_book_id}"
-        base_filename = base_filename[:200] # Final hard truncate if still over
-
-    return f"{base_filename}{formatted_extension}"
-
 async def _get_client(client: AsyncZlib = None) -> AsyncZlib:
     """
     Get Z-Library client instance.
@@ -650,14 +543,18 @@ async def download_book(book_details: dict, output_dir: str, process_for_rag: bo
         if not original_download_path_str or not Path(original_download_path_str).exists():
             raise FileNotFoundError(f"Book download failed or file not found at: {original_download_path_str}")
 
-        # Step 2: Create the enhanced filename.
-        # Ensure 'extension' is in book_details for _create_enhanced_filename
+        # Step 2: Create the unified filename.
+        # Ensure 'extension' is in book_details for create_unified_filename
         if 'extension' not in book_details and original_download_path_str:
              _, ext_from_path = os.path.splitext(original_download_path_str)
              book_details['extension'] = ext_from_path.lstrip('.')
 
-        # Use unified filename generation
-        unified_filename = create_unified_filename(book_details)
+        # Use unified filename generation with disambiguation fields
+        unified_filename = create_unified_filename(
+            book_details,
+            year=book_details.get('year', ''),
+            language=book_details.get('language', '')
+        )
         final_file_path = Path(output_dir) / unified_filename
         final_file_path_str = str(final_file_path)
 

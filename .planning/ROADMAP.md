@@ -76,12 +76,12 @@ Plans:
   3. All Python and Node.js tests pass without any test file modifications
   4. Integration smoke test (Phase 1) passes, confirming the Node.js-to-Python bridge is intact
   5. No resolved BUG-X FIX comments remain in the codebase; DEBUG comments are converted to proper logging calls
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 04-01: TBD
-- [ ] 04-02: TBD
-- [ ] 04-03: TBD
+- [ ] 04-01-PLAN.md — Extract utils, detection, and leaf OCR modules into lib/rag/
+- [ ] 04-02-PLAN.md — Extract quality, processors, orchestrator; finalize facade
+- [ ] 04-03-PLAN.md — Clean BUG-X FIX comments, convert DEBUG to logging, update Dockerfile
 
 ### Phase 5: Feature Porting & Branch Cleanup
 **Goal**: Valuable unmerged features from get_metadata branch are available on master, and all stale branches are cleaned up
@@ -125,6 +125,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 1. Integration Test Harness | 2/2 | Complete | 2026-01-29 |
 | 2. Low-Risk Dependency Upgrades | 2/2 | Complete | 2026-01-29 |
 | 3. MCP SDK Upgrade | 2/2 | Complete | 2026-01-29 |
-| 4. Python Monolith Decomposition | 0/3 | Not started | - |
+| 4. Python Monolith Decomposition | 0/3 | Planned | - |
 | 5. Feature Porting & Branch Cleanup | 0/2 | Not started | - |
 | 6. Documentation & Quality Gates | 0/2 | Not started | - |

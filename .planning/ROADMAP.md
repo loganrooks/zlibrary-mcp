@@ -95,11 +95,12 @@ Plans:
   3. Search results include author and title fields in the response
   4. `git branch -r` shows no merged/obsolete branches (the 5 merged + self-modifying-system + get_metadata are deleted)
   5. All tests pass with the ported features integrated
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 05-01: TBD
-- [ ] 05-02: TBD
+- [ ] 05-01-PLAN.md — Enhance metadata tool (tiered response + include param) and filename disambiguation
+- [ ] 05-02-PLAN.md — Enrich search results with explicit title/author fields
+- [ ] 05-03-PLAN.md — Delete all 7 stale remote branches
 
 ### Phase 6: Documentation & Quality Gates
 **Goal**: All documentation reflects the current codebase state, and quality gates prevent future drift
@@ -128,5 +129,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 2. Low-Risk Dependency Upgrades | 2/2 | Complete | 2026-01-29 |
 | 3. MCP SDK Upgrade | 2/2 | Complete | 2026-01-29 |
 | 4. Python Monolith Decomposition | 5/5 | Complete | 2026-02-01 |
-| 5. Feature Porting & Branch Cleanup | 0/2 | Not started | - |
+| 5. Feature Porting & Branch Cleanup | 0/3 | Not started | - |
 | 6. Documentation & Quality Gates | 0/2 | Not started | - |

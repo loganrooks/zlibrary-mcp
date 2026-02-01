@@ -166,6 +166,30 @@ class TestEAPIHealthCheck:
         assert result['status'] == 'unhealthy'
         assert 'error' in result
 
+    @pytest.mark.asyncio
+    async def test_health_check_detects_cloudflare(self, patch_eapi_client):
+        """Should detect Cloudflare challenge and return cloudflare_blocked error code."""
+        patch_eapi_client.search = AsyncMock(side_effect=Exception("Checking your browser before accessing"))
+        result = await eapi_health_check()
+        assert result['status'] == 'unhealthy'
+        assert result['error_code'] == 'cloudflare_blocked'
+
+    @pytest.mark.asyncio
+    async def test_health_check_detects_network_error(self, patch_eapi_client):
+        """Should detect network errors and return network_error code."""
+        patch_eapi_client.search = AsyncMock(side_effect=ConnectionError("Connection refused"))
+        result = await eapi_health_check()
+        assert result['status'] == 'unhealthy'
+        assert result['error_code'] == 'network_error'
+
+    @pytest.mark.asyncio
+    async def test_health_check_detects_malformed_response(self, patch_eapi_client):
+        """Should return malformed_response for non-standard EAPI responses."""
+        patch_eapi_client.search = AsyncMock(return_value={'success': 0})
+        result = await eapi_health_check()
+        assert result['status'] == 'unhealthy'
+        assert result['error_code'] == 'malformed_response'
+
 
 # --- Tests for Search (EAPI-based) ---
 

@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-01-28)
 
 **Core value:** Bring the codebase to a clean, current, maintainable state so future feature development starts from a solid foundation
-**Current focus:** Phase 5 complete and verified — ready for Phase 6
+**Current focus:** Phase 7 (EAPI Migration) is URGENT — Cloudflare blocking all HTML requests, MCP server non-functional
 
 ## Current Position
 
-Phase: 5 of 6 (Feature Porting & Branch Cleanup)
-Plan: 3 of 3 in current phase (all complete)
-Status: Phase verified and complete
-Last activity: 2026-02-01 — Phase 5 verified (5/5 must-haves passed)
+Phase: 7 of 7 (EAPI Migration — URGENT)
+Plan: 1 of 4 in current phase
+Status: In progress
+Last activity: 2026-02-01 — Completed 07-01-PLAN.md (EAPI Client Foundation)
 
-Progress: [███████████] 100% (Phase 5)
+Progress: [████████████░░░] ~80% (16/~20 plans)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 15
-- Average duration: 5.7 min
-- Total execution time: 1.43 hours
+- Total plans completed: 16
+- Average duration: 5.6 min
+- Total execution time: 1.50 hours
 
 **By Phase:**
 
@@ -32,10 +32,11 @@ Progress: [███████████] 100% (Phase 5)
 | 3 | 2/2 | 10 min | 5 min |
 | 4 | 5/5 | 56 min | 11.2 min |
 | 5 | 3/3 | ~15 min | ~5 min |
+| 7 | 1/4 | ~4 min | ~4 min |
 
 **Recent Trend:**
-- Last 5 plans: 3min, ~4min, ~4min, ~4.5min, ~2min
-- Trend: Phase 5 complete, all plans fast (porting + cleanup)
+- Last 5 plans: ~4min, ~4min, ~4.5min, ~2min, ~4min
+- Trend: Phase 7 started, EAPI client foundation complete
 
 *Updated after each plan completion*
 
@@ -69,17 +70,23 @@ Recent decisions affecting current work:
 - [05-01]: Terms returned as flat strings (matches actual enhanced_metadata.py output)
 - [05-02]: Derive title from name, author from authors[0] — additive enrichment
 - [05-03]: self-modifying-system branch had only AI config (Roo/Cline), no app code — deleted without porting
+- [07-01]: Lazy httpx client init with recreation on re-auth (fresh cookies after login)
 
 ### Pending Todos
 
 None yet.
 
+### Roadmap Evolution
+
+- Phase 7 added: EAPI Migration — Cloudflare blocking all HTML requests, migrate to EAPI JSON endpoints (URGENT)
+
 ### Blockers/Concerns
 
+- **ISSUE-API-001**: Z-Library Cloudflare bot protection blocking ALL HTML page requests — entire MCP server non-functional
 - Phase 4: Production Docker build (docker/Dockerfile) has pre-existing numpy/Alpine compilation issue
 
 ## Session Continuity
 
 Last session: 2026-02-01
-Stopped at: Completed 05-03-PLAN.md (Phase 5 complete)
+Stopped at: Completed 07-01-PLAN.md (EAPI Client Foundation)
 Resume file: None

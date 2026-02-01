@@ -1,5 +1,7 @@
 # Version Control & Git Workflow Guide
 
+<!-- Last Verified: 2026-02-01 -->
+
 ## Overview
 
 This document defines the Git workflow, branching strategy, commit conventions, and version control best practices for the Z-Library MCP project.
@@ -801,6 +803,8 @@ git rebase --abort
 
 *This version control guide should be treated as a living document. Update it as workflows evolve and new patterns emerge.*
 
-**Last Updated**: 2025-09-30
-**Version**: 1.0.0
+**Last Updated**: 2026-02-01
+**Version**: 1.1.0
 **Maintained By**: Z-Library MCP Team
+
+**Note**: A comprehensive 7-phase cleanup (Jan-Feb 2026) was completed on master branch, modernizing the codebase with EAPI transport, MCP SDK 1.25+, and decomposed Python modules. The `development` branch is no longer actively used; work proceeds directly on feature branches from master.

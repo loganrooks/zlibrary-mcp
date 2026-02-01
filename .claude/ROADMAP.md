@@ -1,111 +1,75 @@
 # Project Roadmap
 
-**Last Updated**: 2025-10-21
-**Current Phase**: Phase 2 - RAG Pipeline Quality & Robustness
+<!-- Last Verified: 2026-02-01 -->
+
+**Last Updated**: 2026-02-01
+**Status**: All cleanup phases complete. Codebase modernized and stable.
 
 ---
 
-## Active Sprint (Current Week - Oct 21-27)
+## Completed Cleanup Phases (Jan-Feb 2026)
 
-### Completed This Week ✅
-- [x] Validate sous-rature detection with real PDFs ([5763acf](../commit/5763acf))
-- [x] Implement formatting preservation with span grouping ([137fa07](../commit/137fa07))
-- [x] Reorganize workspace documentation (kebab-case, hierarchical) ([2880d3d](../commit/2880d3d))
-- [x] Clean up root directory - essential entry points only ([3831970](../commit/3831970))
+A comprehensive 7-phase cleanup was executed to modernize the codebase, resolve critical issues, and establish a solid foundation for future development.
 
-### In Progress 🔄
-- [ ] Update ISSUES.md with Phase 2 completion status
-- [ ] Implement session state management system (ROADMAP, ARCHITECTURE, Serena integration)
+| Phase | Name | Plans | Completed | Key Outcomes |
+|-------|------|-------|-----------|--------------|
+| 1 | Integration Tests & Smoke Tests | 2 | 2026-01-29 | ESM mock patterns, Docker lib/ copy fix |
+| 2 | Low-Risk Dependency Upgrades | 2 | 2026-01-29 | pip-audit clean, requires-python >=3.10 |
+| 3 | MCP SDK Upgrade | 2 | 2026-01-30 | SDK 1.8 to 1.25+, McpServer API, removed zod-to-json-schema |
+| 4 | Python Monolith Decomposition | 5 | 2026-01-31 | rag_processing.py split into lib/rag/ domain modules, all <500 lines |
+| 5 | Feature Porting & Branch Cleanup | 3 | 2026-01-31 | Metadata/author/term tools ported, stale branches deleted |
+| 6 | Documentation & Quality Gates | 2 | 2026-02-01 | Docs updated, ADRs backfilled, issues triaged |
+| 7 | EAPI Migration | 6 | 2026-02-01 | All API calls via EAPI JSON, Cloudflare bypassed, health checks added |
 
-### This Week's Focus
-**Primary Goal**: Establish sustainable development workflow with clear visibility
-
-**Current Task**: System-level improvements to prevent workspace disorganization
-**Status**: Implementing three-layer visibility (Strategic/Structural/Tactical)
+**Total**: 22 plans executed across 7 phases.
 
 ---
 
-## Next 1-2 Weeks (Oct 28 - Nov 10)
+## Current State
 
-### Phase 2 Features (RAG Pipeline)
-- [ ] Marginalia integration (Stage 4) - Module exists, needs integration
-- [ ] Citation extraction (Stage 5) - Design complete, ready for implementation
-- [ ] Footnote linking (Stage 6) - Data model ready, matching logic needed
-- [ ] Format application testing - Validate bold/italic/strikethrough with diverse PDFs
+### What Works
+- 12 MCP tools registered via McpServer `server.tool()` API
+- EAPI JSON transport for all search/metadata operations (bypasses Cloudflare)
+- Downloads via legacy AsyncZlib client (EAPI returns URL, file download needs cookies)
+- RAG pipeline: EPUB, TXT, PDF extraction with quality detection
+- UV-based Python dependency management (.venv/ project-local)
+- Python monolith decomposed into lib/rag/ domain modules with facade pattern
 
-### Quality & Performance
-- [ ] Performance budget enforcement automation
-- [ ] Real PDF test corpus expansion (acquire 3-5 more test PDFs)
-- [ ] Regression test suite enhancement
-
-### Development Experience
-- [ ] Pre-commit hooks for quality validation
-- [ ] Session lifecycle automation (/sc:load, /sc:save)
-- [ ] Documentation archival automation (>30 days → archive/)
+### Known Limitations
+- Booklist tools gracefully degrade (no EAPI booklist endpoint)
+- Full-text search routes through regular EAPI search (no full-text mode)
+- Terms, IPFS CIDs return empty defaults (not available via EAPI)
+- Docker numpy/Alpine compilation issue (pre-existing)
 
 ---
 
-## 2-4 Weeks (Nov 11 - Dec 1)
+## Future Direction
 
-### Advanced Features
-- [ ] ML-based text recovery research (sous-rature under X-marks)
-  - Image inpainting model exploration
-  - NLP-based word prediction
-  - Dataset creation for training
+### Near-Term Opportunities
+- [ ] Anna's Archive integration (broader book source coverage)
+- [ ] Result caching layer (search results and metadata)
+- [ ] Download queue management (DL-001)
+- [ ] Performance profiling tools
 
-- [ ] Multi-column layout detection
-- [ ] Adaptive resolution pipeline (72→150→300 DPI escalation)
-- [ ] Selective OCR strategy implementation
+### Medium-Term Features
+- [ ] Semantic chunking for RAG (RAG-001)
+- [ ] Multi-format support (MOBI, AZW3, DJVU)
+- [ ] ML-based text recovery (sous-rature under X-marks)
+- [ ] Adaptive resolution pipeline (72/150/300 DPI)
 
-### Infrastructure
-- [ ] Batch download queue management ([DL-001](../ISSUES.md))
-- [ ] Circuit breaker refinement ([ISSUE-005](../ISSUES.md))
-- [ ] Advanced search filters ([SRCH-001](../ISSUES.md))
-- [ ] Caching layer for search results
-
----
-
-## Completed Recently (Archive)
-
-### Week of Oct 14-20
-- ✅ TDD workflow establishment with ground truth validation
-- ✅ Fast X-mark pre-filter (31× speedup on detection)
-- ✅ Stage 2 independence correction (architectural fix)
-- ✅ Parallel detection with caching (40× combined speedup)
-
-### Week of Oct 7-13
-- ✅ Phase 1 completion (enhanced data model)
-- ✅ PyMuPDF flag mapping corrections
-- ✅ UV migration for Python dependencies (v2.0.0)
-- ✅ Code simplification (77% reduction in venv-manager)
-
----
-
-## Blockers & Dependencies
-
-**Current Blockers**: None
-
-**External Dependencies**:
-- Waiting on: None
-- Monitoring: Z-Library API stability (ongoing)
+### Long-Term Vision
+- [ ] Anna's Archive as primary source (Z-Library as fallback)
+- [ ] Distributed architecture for scale
+- [ ] Advanced caching and recommendation strategies
 
 ---
 
 ## Strategic Priorities
 
-1. **Quality First**: TDD with real PDFs before features
-2. **Performance Budgets**: Hard constraints, must stay within limits
-3. **Documentation**: Keep workspace organized, prevent chaos
-4. **Incremental Value**: Ship working features progressively
-
----
-
-## Notes
-
-- All RAG features require real PDF validation per `.claude/TDD_WORKFLOW.md`
-- Performance budgets defined in `test_files/performance_budgets.json` are hard constraints
-- Workspace organization standards documented in `CLAUDE.md` - follow strictly
-- Session state visibility via this ROADMAP + `.claude/ARCHITECTURE.md` + Serena memory
+1. **Stability First**: Maintain working EAPI transport, monitor upstream changes
+2. **Quality Pipeline**: Continue RAG improvements with real PDF TDD
+3. **Source Diversification**: Anna's Archive reduces single-source risk
+4. **Developer Experience**: Documentation, testing, tooling improvements
 
 ---
 

@@ -67,6 +67,8 @@ const ProcessDocumentForRagParamsSchema = z.object({
 const GetBookMetadataParamsSchema = z.object({
   bookId: z.string().describe('Z-Library book ID'),
   bookHash: z.string().describe('Book hash (can be extracted from book URL)'),
+  include: z.array(z.enum(['terms', 'booklists', 'ipfs', 'ratings', 'description'])).optional()
+    .describe('Optional field groups to include beyond core defaults. Core always includes: title, author, year, publisher, language, pages, isbn, rating, cover, categories, extension, filesize. Use include to add: terms (conceptual keywords), booklists (curated collections), ipfs (IPFS CIDs), ratings (quality_score), description (full text description).'),
 });
 
 const SearchByTermParamsSchema = z.object({
@@ -296,7 +298,7 @@ const handlers: HandlerMap = {
 
   getBookMetadata: async (args: z.infer<typeof GetBookMetadataParamsSchema>) => {
     try {
-      return await zlibraryApi.getBookMetadata(args.bookId, args.bookHash);
+      return await zlibraryApi.getBookMetadata(args.bookId, args.bookHash, args.include);
     } catch (error: any) {
       return { error: { message: error.message || 'Failed to get book metadata' } };
     }
@@ -497,7 +499,7 @@ async function start(opts: StartOptions = {}): Promise<{ server: McpServer; tran
 
     // 8. get_book_metadata
     server.tool('get_book_metadata',
-      'Get complete metadata for a book including 60+ conceptual terms, 11+ expert-curated booklists, detailed descriptions, IPFS CIDs, ratings, and more. Requires bookId and bookHash from search results.',
+      'Get metadata for a book. By default returns core fields (title, author, year, publisher, language, pages, isbn, rating, cover, categories). Use the include parameter to add optional field groups: terms (60+ conceptual keywords), booklists (11+ curated collections), ipfs (IPFS CIDs), ratings (quality score), description (full text). Requires bookId and bookHash from search results.',
       GetBookMetadataParamsSchema.shape, ann('get_book_metadata'),
       async (args) => wrapResult(await handlers.getBookMetadata(args as any), 'get_book_metadata'));
 

@@ -18,7 +18,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 4: Python Monolith Decomposition** - Break 4,968-line rag_processing.py into domain modules
 - [x] **Phase 5: Feature Porting & Branch Cleanup** - Recover unmerged get_metadata features, delete stale branches
 - [ ] **Phase 6: Documentation & Quality Gates** - Update stale docs, activate CI/CD, install pre-commit hooks
-- [ ] **Phase 7: EAPI Migration** - Migrate from HTML scraping to EAPI JSON endpoints (URGENT: Cloudflare blocking all HTML requests)
+- [x] **Phase 7: EAPI Migration** - Migrate from HTML scraping to EAPI JSON endpoints (URGENT: Cloudflare blocking all HTML requests)
 
 ## Phase Details
 
@@ -144,8 +144,8 @@ Plans:
 - [x] 07-02-PLAN.md — Rewrite vendored fork (libasync, abs, profile, booklists) to use EAPI
 - [x] 07-03-PLAN.md — Migrate lib/ tools (term, author, booklist, metadata) to use EAPI
 - [x] 07-04-PLAN.md — Wire python_bridge, update test mocks, add health check, verify E2E
-- [ ] 07-05-PLAN.md — Gap closure: migrate integration tests from HTML to EAPI imports
-- [ ] 07-06-PLAN.md — Gap closure: add Cloudflare detection to health check
+- [x] 07-05-PLAN.md — Gap closure: migrate integration tests from HTML to EAPI imports
+- [x] 07-06-PLAN.md — Gap closure: add Cloudflare detection to health check
 
 ## Progress
 
@@ -160,4 +160,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 4. Python Monolith Decomposition | 5/5 | Complete | 2026-02-01 |
 | 5. Feature Porting & Branch Cleanup | 3/3 | Complete | 2026-02-01 |
 | 6. Documentation & Quality Gates | 0/2 | Not started | - |
-| 7. EAPI Migration | 4/6 | Gaps found | - |
+| 7. EAPI Migration | 6/6 | Complete | 2026-02-01 |

@@ -21,10 +21,10 @@
 ### Code Quality
 
 - [ ] **QUAL-01**: Fix bare exception handler in booklist_tools.py:267
-- [ ] **QUAL-02**: Decompose rag_processing.py into modular package (rag/ with processors, detection, quality, ocr, xmark, utils submodules)
-- [ ] **QUAL-03**: Create facade in rag_processing.py that re-exports public API (zero breakage to existing imports)
-- [ ] **QUAL-04**: Clean up resolved BUG-X FIX comments
-- [ ] **QUAL-05**: Convert DEBUG comments to proper logging
+- [x] **QUAL-02**: Decompose rag_processing.py into modular package (rag/ with processors, detection, quality, ocr, xmark, utils submodules)
+- [x] **QUAL-03**: Create facade in rag_processing.py that re-exports public API (zero breakage to existing imports)
+- [x] **QUAL-04**: Clean up resolved BUG-X FIX comments
+- [x] **QUAL-05**: Convert DEBUG comments to proper logging
 - [ ] **QUAL-06**: Specify parser in BeautifulSoup calls (XXE prevention)
 
 ### Branch Cleanup
@@ -97,10 +97,10 @@ Deferred to future milestone. Tracked but not in current roadmap.
 | DEP-04 | Phase 2 | Complete |
 | DEP-05 | Phase 2 | Complete (pre-existing) |
 | QUAL-01 | Phase 2 | Complete |
-| QUAL-02 | Phase 4 | Pending |
-| QUAL-03 | Phase 4 | Pending |
-| QUAL-04 | Phase 4 | Pending |
-| QUAL-05 | Phase 4 | Pending |
+| QUAL-02 | Phase 4 | Complete |
+| QUAL-03 | Phase 4 | Complete |
+| QUAL-04 | Phase 4 | Complete |
+| QUAL-05 | Phase 4 | Complete |
 | QUAL-06 | Phase 2 | Complete |
 | GIT-01 | Phase 5 | Pending |
 | GIT-02 | Phase 5 | Pending |

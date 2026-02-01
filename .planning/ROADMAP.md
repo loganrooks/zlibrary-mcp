@@ -130,7 +130,7 @@ Plans:
   3. No BeautifulSoup HTML parsing remains in the search/browse/metadata hot path
   4. Automated health check detects Cloudflare challenges or page structure changes
   5. All existing tests pass with the new transport layer
-**Plans**: 4 plans
+**Plans**: 6 plans
 
 **Context**:
 - Z-Library added Cloudflare "Checking your browser..." JS challenge on all HTML page GET requests (discovered 2026-02-01)
@@ -140,10 +140,12 @@ Plans:
 - Vendored fork (`zlibrary/src/zlibrary/`) currently uses BeautifulSoup to parse HTML search results — this entire approach must be replaced
 
 Plans:
-- [ ] 07-01-PLAN.md — Create EAPIClient class + response normalization (foundation)
-- [ ] 07-02-PLAN.md — Rewrite vendored fork (libasync, abs, profile, booklists) to use EAPI
-- [ ] 07-03-PLAN.md — Migrate lib/ tools (term, author, booklist, metadata) to use EAPI
-- [ ] 07-04-PLAN.md — Wire python_bridge, update test mocks, add health check, verify E2E
+- [x] 07-01-PLAN.md — Create EAPIClient class + response normalization (foundation)
+- [x] 07-02-PLAN.md — Rewrite vendored fork (libasync, abs, profile, booklists) to use EAPI
+- [x] 07-03-PLAN.md — Migrate lib/ tools (term, author, booklist, metadata) to use EAPI
+- [x] 07-04-PLAN.md — Wire python_bridge, update test mocks, add health check, verify E2E
+- [ ] 07-05-PLAN.md — Gap closure: migrate integration tests from HTML to EAPI imports
+- [ ] 07-06-PLAN.md — Gap closure: add Cloudflare detection to health check
 
 ## Progress
 
@@ -158,4 +160,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 4. Python Monolith Decomposition | 5/5 | Complete | 2026-02-01 |
 | 5. Feature Porting & Branch Cleanup | 3/3 | Complete | 2026-02-01 |
 | 6. Documentation & Quality Gates | 0/2 | Not started | - |
-| 7. EAPI Migration | 0/4 | Not started (URGENT) | - |
+| 7. EAPI Migration | 4/6 | Gaps found | - |

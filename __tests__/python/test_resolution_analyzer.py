@@ -63,9 +63,8 @@ class TestComputeOptimalDPI:
         from lib.rag.resolution.analyzer import compute_optimal_dpi
 
         result = compute_optimal_dpi(100.0)
-        # 28 * 72 / 100 = 20.16 -> quantized to 0 or 50
-        assert result.dpi >= 50  # floor after quantization
-        assert result.dpi % 50 == 0
+        # 28 * 72 / 100 = 20.16 -> quantized to 0, clamped to DPI_FLOOR=72
+        assert result.dpi == 72  # floor clamp overrides quantization
 
     def test_dpi_always_quantized_to_50(self):
         from lib.rag.resolution.analyzer import compute_optimal_dpi

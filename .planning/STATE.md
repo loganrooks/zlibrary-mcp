@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-02-01)
 ## Current Position
 
 Phase: 8 of 12 (Infrastructure Modernization)
-Plan: 1 of 3 in current phase
-Status: In progress
-Last activity: 2026-02-02 — Completed 08-01-PLAN.md (Node 22 upgrade)
+Plan: 3 of 3 in current phase
+Status: In progress (08-02 may still be running in parallel)
+Last activity: 2026-02-02 — Completed 08-03-PLAN.md (Docker opencv + EAPI improvements)
 
-Progress: [█░░░░░░░░░░░░░░░] 10% (1/10 v1.1 plans)
+Progress: [██░░░░░░░░░░░░░░] 20% (2/10 v1.1 plans)
 
 ## Performance Metrics
 
@@ -27,7 +27,7 @@ Progress: [█░░░░░░░░░░░░░░░] 10% (1/10 v1.1 plan
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 08 | 1/3 | ~2min | ~2min |
+| 08 | 2/3 | ~5min | ~2.5min |
 
 ## Accumulated Context
 
@@ -41,6 +41,8 @@ v1.1 decisions:
 - INFRA-NODE22: Set engines >=22 (Node 22 LTS active until Apr 2027)
 - INFRA-ENVPATHS4: Upgrade env-paths v3 to v4 (pure ESM, no API changes)
 - INFRA-TYPES-NODE22: Upgrade @types/node from ^18 to ^22
+- INFRA-OPENCV-HEADLESS: Use opencv-python-headless (no GUI deps, pre-built wheels)
+- INFRA-DOCKER-SLIM: Remove gcc/python3-dev from Dockerfile.test
 
 ### Pending Todos
 
@@ -48,8 +50,8 @@ None.
 
 ### Blockers/Concerns
 
-- Docker numpy/Alpine compilation issue (targeted Phase 8, plan 08-02)
-- EAPI lacks booklist/full-text search endpoints (targeted Phase 8, plan 08-03)
+- ~~Docker numpy/Alpine compilation issue~~ RESOLVED in 08-03 (opencv-python-headless)
+- ~~EAPI lacks booklist/full-text search endpoints~~ MITIGATED in 08-03 (enriched fallbacks)
 - AsyncZlib removal must have integration test BEFORE swap (pitfall P-01)
 - Margin detection must annotate-don't-remove to avoid breaking footnote pipeline (pitfall P-06)
 - Anna's Archive API contract unknown — research spike required before implementation (Phase 12)
@@ -59,5 +61,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-02
-Stopped at: Completed 08-01-PLAN.md (Node 22 upgrade)
+Stopped at: Completed 08-03-PLAN.md (Docker opencv + EAPI improvements)
 Resume file: None

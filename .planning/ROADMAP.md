@@ -71,10 +71,10 @@ Plans:
 **Plans**: 4 plans
 
 Plans:
-- [ ] 10-01-PLAN.md — DPI computation models + font analysis engine (TDD)
-- [ ] 10-02-PLAN.md — Adaptive page and region renderer (TDD)
-- [ ] 10-03-PLAN.md — Pipeline integration (orchestrator + OCR wiring + metadata)
-- [ ] 10-04-PLAN.md — Gap closure: wire region re-rendering into production pipeline
+- [x] 10-01-PLAN.md — DPI computation models + font analysis engine (TDD)
+- [x] 10-02-PLAN.md — Adaptive page and region renderer (TDD)
+- [x] 10-03-PLAN.md — Pipeline integration (orchestrator + OCR wiring + metadata)
+- [x] 10-04-PLAN.md — Gap closure: wire region re-rendering into production pipeline
 
 #### Phase 11: Body Text Purity Integration
 **Goal**: All detection modules (footnotes, margins, headings, page numbers, TOC, front matter) compose into a unified pipeline that delivers clean body text with non-body content clearly separated
@@ -121,6 +121,6 @@ Phases execute in numeric order: 8 → 9 → 10 → 11 → 12
 | 7. EAPI Migration | v1.0 | 6/6 | Complete | 2026-02-01 |
 | 8. Infrastructure Modernization | v1.1 | 3/3 | Complete | 2026-02-02 |
 | 9. Margin Detection & Scholarly References | v1.1 | 3/3 | Complete | 2026-02-02 |
-| 10. Adaptive Resolution Pipeline | v1.1 | 0/3 | Not started | - |
+| 10. Adaptive Resolution Pipeline | v1.1 | 4/4 | Complete | 2026-02-02 |
 | 11. Body Text Purity Integration | v1.1 | 0/1 | Not started | - |
 | 12. Anna's Archive Integration | v1.1 | 0/2 | Not started | - |

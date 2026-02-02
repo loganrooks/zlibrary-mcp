@@ -3,6 +3,7 @@
 ## Milestones
 
 - ✅ **v1.0 Audit Cleanup & Modernization** — Phases 1-7 (shipped 2026-02-01)
+- 🚧 **v1.1 Quality & Expansion** — Phases 8-12 (in progress)
 
 ## Phases
 
@@ -21,7 +22,90 @@ Full details: `.planning/milestones/v1.0-ROADMAP.md`
 
 </details>
 
+### 🚧 v1.1 Quality & Expansion (In Progress)
+
+**Milestone Goal:** Stabilize infrastructure (Node 22, EAPI gaps, Docker), improve extraction quality for scholarly texts (margin content, adaptive resolution, body text purity), and explore Anna's Archive as alternative source.
+
+#### Phase 8: Infrastructure Modernization
+**Goal**: Runtime and transport layer are current, simplified, and production-ready
+**Depends on**: Phase 7 (EAPI migration complete)
+**Requirements**: INFRA-01, INFRA-02, INFRA-03, INFRA-04, INFRA-05, INFRA-06
+**Success Criteria** (what must be TRUE):
+  1. Project builds and all tests pass on Node 22 LTS with updated CI matrix and Dockerfile
+  2. All downloads route through EAPIClient with no AsyncZlib references remaining in codebase
+  3. Docker production image builds without numpy compilation errors on Alpine
+  4. EAPI booklist browsing returns results beyond current graceful degradation stub
+  5. EAPI full-text search returns content-aware results beyond current regular-search fallback
+**Plans**: TBD
+
+Plans:
+- [ ] 08-01: Node 22 upgrade + env-paths v4 + CI/Docker updates
+- [ ] 08-02: AsyncZlib removal (adapter pattern, integration test, then swap)
+- [ ] 08-03: Docker Alpine fix + EAPI gap improvements
+
+#### Phase 9: Margin Detection & Scholarly References
+**Goal**: Scholarly margin content (Stephanus, Bekker, line numbers, marginal notes) is detected, classified, and preserved as structured annotations without polluting body text
+**Depends on**: Phase 8 (clean runtime foundation)
+**Requirements**: MARG-01, MARG-02, MARG-03, MARG-04, MARG-05, MARG-06, MARG-07
+**Success Criteria** (what must be TRUE):
+  1. PDFs with margin content produce markdown where body text contains no leaked margin artifacts (Stephanus numbers, line numbers, glosses)
+  2. Stephanus references (e.g., "231a", "514b-c") and Bekker references (e.g., "1094a1", "1140b5") appear as structured annotations in output metadata
+  3. Line numbers from poetry, legal texts, and critical editions are detected and separated from body text
+  4. Margin zone widths adapt per document (Loeb outer margins, Oxford inner margins) without manual configuration
+  5. Marginal notes and cross-references are preserved in output (not discarded)
+**Plans**: TBD
+
+Plans:
+- [ ] 09-01: Margin zone detection engine (bbox analysis, page-level margin model)
+- [ ] 09-02: Scholarly reference patterns (Stephanus, Bekker, line numbers)
+- [ ] 09-03: Marginal notes extraction + structured annotation output
+
+#### Phase 10: Adaptive Resolution Pipeline
+**Goal**: OCR quality improves automatically by selecting optimal DPI per page and per region based on content analysis
+**Depends on**: Phase 8 (clean runtime); independent of Phase 9
+**Requirements**: DPI-01, DPI-02, DPI-03
+**Success Criteria** (what must be TRUE):
+  1. Text-heavy pages render at lower DPI (150-200) while pages with fine print, footnotes, or margin text render at higher DPI (300)
+  2. Footnote and margin regions within a page can be re-rendered at higher resolution independently of the page default
+  3. DPI selection is driven by measured text pixel height analysis (targeting Tesseract 30-33px optimal range)
+**Plans**: TBD
+
+Plans:
+- [ ] 10-01: Page-level DPI selection + region-level targeting + pixel height analysis
+
+#### Phase 11: Body Text Purity Integration
+**Goal**: All detection modules (footnotes, margins, headings, page numbers, TOC, front matter) compose into a unified pipeline that delivers clean body text with non-body content clearly separated
+**Depends on**: Phase 9 (margin detection must exist to compose)
+**Requirements**: BODY-01, BODY-02, BODY-03
+**Success Criteria** (what must be TRUE):
+  1. Processing a scholarly PDF produces markdown with clean body text and all non-body content (footnotes, margins, headings, page numbers, TOC) in separate clearly-labeled sections
+  2. Each detection decision carries a confidence score accessible in output metadata
+  3. No body text is lost by the unified pipeline (recall regression tests pass against ground truth corpus)
+**Plans**: TBD
+
+Plans:
+- [ ] 11-01: Unified detection pipeline + structured output + confidence scoring
+
+#### Phase 12: Anna's Archive Integration
+**Goal**: Users can search and download books from Anna's Archive as a fallback source when Z-Library is unavailable, with clear source attribution
+**Depends on**: Phase 8 (AsyncZlib removed, source abstraction possible); independent of Phases 9-11
+**Requirements**: ANNA-01, ANNA-02, ANNA-03, ANNA-04
+**Success Criteria** (what must be TRUE):
+  1. Research spike has determined API feasibility with documented endpoints, auth method, rate limits, and legal considerations (go/no-go decision made)
+  2. Anna's Archive base URL is configurable via environment variable (domain instability mitigation)
+  3. When Z-Library search fails or is rate-limited, Anna's Archive search returns results as fallback
+  4. Search results include a source indicator showing which source (Z-Library or Anna's Archive) returned each result
+**Plans**: TBD
+
+Plans:
+- [ ] 12-01: Research spike (API reverse engineering, legal review, go/no-go)
+- [ ] 12-02: Source abstraction layer + Anna's Archive adapter + fallback search
+
 ## Progress
+
+**Execution Order:**
+Phases execute in numeric order: 8 → 9 → 10 → 11 → 12
+(Phase 10 could run parallel with Phase 9 but sequenced for focus)
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
@@ -32,3 +116,8 @@ Full details: `.planning/milestones/v1.0-ROADMAP.md`
 | 5. Feature Porting & Branch Cleanup | v1.0 | 3/3 | Complete | 2026-02-01 |
 | 6. Documentation & Quality Gates | v1.0 | 2/2 | Complete | 2026-02-01 |
 | 7. EAPI Migration | v1.0 | 6/6 | Complete | 2026-02-01 |
+| 8. Infrastructure Modernization | v1.1 | 0/3 | Not started | - |
+| 9. Margin Detection & Scholarly References | v1.1 | 0/3 | Not started | - |
+| 10. Adaptive Resolution Pipeline | v1.1 | 0/1 | Not started | - |
+| 11. Body Text Purity Integration | v1.1 | 0/1 | Not started | - |
+| 12. Anna's Archive Integration | v1.1 | 0/2 | Not started | - |

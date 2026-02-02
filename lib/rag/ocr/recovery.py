@@ -12,6 +12,8 @@ from pathlib import Path
 
 from lib.rag.utils.exceptions import TesseractNotFoundError, OCRDependencyError
 from lib.rag.ocr.spacing import detect_letter_spacing_issue
+from lib.rag.resolution.renderer import render_page_adaptive, AdaptiveRenderResult
+from lib.rag.resolution.models import PageAnalysis
 
 logger = logging.getLogger(__name__)
 
@@ -234,7 +236,7 @@ def redo_ocr_with_tesseract(input_pdf: Path, output_dir: Path = None) -> Path:
         raise
 
 
-def run_ocr_on_pdf(pdf_path: str, lang: str = 'eng', page_dpi_map: dict = None) -> str: # Cycle 21 Refactor: Add lang parameter
+def run_ocr_on_pdf(pdf_path: str, lang: str = 'eng', page_analysis_map: dict = None, page_dpi_map: dict = None) -> str: # Cycle 21 Refactor: Add lang parameter
     """
     Performs OCR on a PDF file using Tesseract via PyMuPDF rendering.
 
@@ -275,19 +277,35 @@ def run_ocr_on_pdf(pdf_path: str, lang: str = 'eng', page_dpi_map: dict = None) 
             page_num = i + 1
             logging.debug(f"Processing page {page_num}/{page_count} for OCR...")
             try:
-                # Render page to pixmap, then to PNG bytes
-                # Adaptive DPI: use per-page decision if available
-                dpi = 300  # default fallback
-                if page_dpi_map and page_num in page_dpi_map:
-                    dpi = page_dpi_map[page_num].dpi
-                    logging.debug(f"Page {page_num}: using adaptive DPI {dpi} (confidence={page_dpi_map[page_num].confidence:.2f})")
-                pix = page.get_pixmap(dpi=dpi)
-                img_bytes = pix.tobytes("png")
-                img = _Image.open(io.BytesIO(img_bytes))
+                # Render page using adaptive renderer if analysis available
+                if page_analysis_map and page_num in page_analysis_map:
+                    render_result = render_page_adaptive(page, page_analysis_map[page_num])
+                    logging.debug(f"Page {page_num}: adaptive render at DPI {render_result.page_dpi}, "
+                                  f"{len(render_result.region_images)} region re-renders")
 
-                # Perform OCR on the image
-                page_text = _pytesseract.image_to_string(img, lang=lang)
-                extracted_text += page_text + "\n\n" # Add page separator
+                    # OCR the full page image
+                    page_text = _pytesseract.image_to_string(render_result.page_image, lang=lang)
+                    extracted_text += page_text + "\n\n"
+
+                    # OCR each region re-render separately
+                    for region, region_img in render_result.region_images:
+                        region_text = _pytesseract.image_to_string(region_img, lang=lang)
+                        if region_text.strip():
+                            extracted_text += f"[Region: {region.region_type}]\n{region_text.strip()}\n\n"
+                            logging.debug(f"Page {page_num}: region '{region.region_type}' OCR'd ({len(region_text)} chars)")
+                else:
+                    # Fallback: legacy DPI map or default 300
+                    dpi = 300
+                    if page_dpi_map and page_num in page_dpi_map:
+                        dpi = page_dpi_map[page_num].dpi
+                        logging.debug(f"Page {page_num}: using legacy DPI {dpi}")
+                    pix = page.get_pixmap(dpi=dpi)
+                    img_bytes = pix.tobytes("png")
+                    img = _Image.open(io.BytesIO(img_bytes))
+
+                    # Perform OCR on the image
+                    page_text = _pytesseract.image_to_string(img, lang=lang)
+                    extracted_text += page_text + "\n\n"
                 logging.debug(f"OCR successful for page {page_num}.")
             # Specific exception must come BEFORE generic Exception
             except TesseractNotFoundError as tess_err:

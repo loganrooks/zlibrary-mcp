@@ -5,22 +5,22 @@
 See: .planning/PROJECT.md (updated 2026-02-01)
 
 **Core value:** Reliable, maintainable MCP server for Z-Library book access
-**Current focus:** v1.1 Quality & Expansion — Phase 9 complete
+**Current focus:** v1.1 Quality & Expansion — Phase 10 in progress
 
 ## Current Position
 
-Phase: 9 of 12 (Margin Detection)
-Plan: 3 of 3 in current phase
-Status: Phase complete
-Last activity: 2026-02-02 — Completed 09-03-PLAN.md (Integration Tests)
+Phase: 10 of 12 (Adaptive Resolution)
+Plan: 1 of 3 in current phase
+Status: In progress
+Last activity: 2026-02-02 — Completed 10-01-PLAN.md (DPI Computation & Font Analysis)
 
-Progress: [██████░░░░░░░░░░] 60% (6/10 v1.1 plans)
+Progress: [███████░░░░░░░░░] 70% (7/10 v1.1 plans)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 27 (22 v1.0 + 5 v1.1)
-- v1.1 plans completed: 6
+- Total plans completed: 28 (22 v1.0 + 6 v1.1)
+- v1.1 plans completed: 7
 - Total execution time: ~4 days (v1.0)
 
 **By Phase:** (v1.1)
@@ -29,6 +29,7 @@ Progress: [██████░░░░░░░░░░] 60% (6/10 v1.1 plan
 |-------|-------|-------|----------|
 | 08 | 3/3 | ~13min | ~4.3min |
 | 09 | 3/3 | ~12min | ~4min |
+| 10 | 1/3 | ~4min | ~4min |
 
 ## Accumulated Context
 
@@ -51,6 +52,7 @@ v1.1 decisions:
 - MARG-MIDPOINT-ZONE: Use block midpoint for margin-left vs margin-right classification
 - MARG-CACHE-COMPAT: Block bboxes identical between get_text("dict") and get_text("dict", flags=TEXTFLAGS_DICT)
 - MARG-FOOTNOTE-DEDUP-DEFERRED: Footnote bboxes not passed to detect_margin_content yet; deferred to Phase 11
+- RES-DPI-FLOOR-72: DPI floor is 72 (not quantized to 50) — preserves minimum rendering quality
 
 ### Pending Todos
 
@@ -69,5 +71,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-02
-Stopped at: Completed 09-03-PLAN.md (Integration Tests) — Phase 9 complete
+Stopped at: Completed 10-01-PLAN.md (DPI Computation & Font Analysis)
 Resume file: None

@@ -7,7 +7,8 @@ from pathlib import Path
 from unittest.mock import patch, MagicMock
 
 from lib.rag.resolution.analyzer import analyze_document_fonts
-from lib.rag.resolution.models import DPIDecision, PageAnalysis
+from lib.rag.resolution.models import DPIDecision, PageAnalysis, RegionDPI
+from lib.rag.resolution.renderer import AdaptiveRenderResult
 
 
 @pytest.fixture
@@ -97,6 +98,22 @@ class TestOCRRecoveryAdaptiveDPI:
         assert "page_dpi_map" in sig.parameters
         assert sig.parameters["page_dpi_map"].default is None
 
+    def test_run_ocr_accepts_page_analysis_map(self):
+        """run_ocr_on_pdf should accept page_analysis_map parameter."""
+        from lib.rag.ocr.recovery import run_ocr_on_pdf
+        import inspect
+        sig = inspect.signature(run_ocr_on_pdf)
+        assert "page_analysis_map" in sig.parameters
+        assert sig.parameters["page_analysis_map"].default is None
+
+    def test_ocr_stage_accepts_page_analysis_map(self):
+        """_stage_3_ocr_recovery should accept page_analysis_map parameter."""
+        from lib.rag.quality.ocr_stage import _stage_3_ocr_recovery
+        import inspect
+        sig = inspect.signature(_stage_3_ocr_recovery)
+        assert "page_analysis_map" in sig.parameters
+        assert sig.parameters["page_analysis_map"].default is None
+
 
 class TestOrchestratorAdaptiveIntegration:
     """Test that the orchestrator wires adaptive DPI end-to-end."""
@@ -161,3 +178,127 @@ class TestResolutionExports:
         # Just verify they're all importable
         assert DPIDecision is not None
         assert PageAnalysis is not None
+
+
+class TestRegionReRenderingWiring:
+    """Test that region re-rendering is wired into the OCR pipeline."""
+
+    def test_region_rerendering_wired_in_pipeline(self):
+        """When page_analysis_map has regions, render_page_adaptive is called and region text is OCR'd."""
+        from lib.rag.ocr.recovery import run_ocr_on_pdf
+        from PIL import Image
+
+        # Build a PageAnalysis with a footnote region
+        footnote_dpi = DPIDecision(dpi=400, confidence=0.9, reason="small_text", font_size_pt=8.0, estimated_pixel_height=44.0)
+        page_dpi = DPIDecision(dpi=200, confidence=0.8, reason="body_text", font_size_pt=12.0, estimated_pixel_height=33.0)
+        region = RegionDPI(bbox=(50, 700, 500, 780), dpi_decision=footnote_dpi, region_type="footnote")
+        analysis = PageAnalysis(page_num=1, dominant_size=12.0, min_size=8.0, max_size=12.0,
+                                has_small_text=True, page_dpi=page_dpi, regions=[region])
+        page_analysis_map = {1: analysis}
+
+        # Mock render_page_adaptive to return known images
+        page_img = Image.new("RGB", (100, 100), "white")
+        region_img = Image.new("RGB", (50, 20), "white")
+        mock_result = AdaptiveRenderResult(
+            page_image=page_img,
+            region_images=[(region, region_img)],
+            page_dpi=200,
+            metadata={"render_time_ms": 5.0},
+        )
+
+        with patch("lib.rag.ocr.recovery.render_page_adaptive", return_value=mock_result) as mock_render, \
+             patch("lib.rag.ocr.recovery._get_facade") as mock_facade:
+            facade = MagicMock()
+            facade.OCR_AVAILABLE = True
+            facade.PYMUPDF_AVAILABLE = True
+            mock_doc = MagicMock()
+            mock_page = MagicMock()
+            mock_doc.__iter__ = MagicMock(return_value=iter([mock_page]))
+            mock_doc.__len__ = MagicMock(return_value=1)
+            mock_doc.is_closed = False
+            facade.fitz.open.return_value = mock_doc
+            facade.pytesseract.image_to_string.side_effect = ["Page body text", "Footnote region text"]
+            facade.Image = Image
+            mock_facade.return_value = facade
+
+            result = run_ocr_on_pdf("/fake.pdf", page_analysis_map=page_analysis_map)
+
+            # render_page_adaptive was called
+            mock_render.assert_called_once_with(mock_page, analysis)
+            # Both page and region were OCR'd
+            assert facade.pytesseract.image_to_string.call_count == 2
+            # Output contains region text
+            assert "Footnote region text" in result
+            assert "[Region: footnote]" in result
+
+    def test_no_regions_falls_back_to_page_only(self):
+        """PageAnalysis with no regions produces no region_images, page-only OCR."""
+        from lib.rag.ocr.recovery import run_ocr_on_pdf
+        from PIL import Image
+
+        page_dpi = DPIDecision(dpi=200, confidence=0.8, reason="body_text", font_size_pt=12.0, estimated_pixel_height=33.0)
+        analysis = PageAnalysis(page_num=1, dominant_size=12.0, min_size=12.0, max_size=12.0,
+                                has_small_text=False, page_dpi=page_dpi, regions=[])
+        page_analysis_map = {1: analysis}
+
+        page_img = Image.new("RGB", (100, 100), "white")
+        mock_result = AdaptiveRenderResult(
+            page_image=page_img, region_images=[], page_dpi=200, metadata={},
+        )
+
+        with patch("lib.rag.ocr.recovery.render_page_adaptive", return_value=mock_result) as mock_render, \
+             patch("lib.rag.ocr.recovery._get_facade") as mock_facade:
+            facade = MagicMock()
+            facade.OCR_AVAILABLE = True
+            facade.PYMUPDF_AVAILABLE = True
+            mock_doc = MagicMock()
+            mock_page = MagicMock()
+            mock_doc.__iter__ = MagicMock(return_value=iter([mock_page]))
+            mock_doc.__len__ = MagicMock(return_value=1)
+            mock_doc.is_closed = False
+            facade.fitz.open.return_value = mock_doc
+            facade.pytesseract.image_to_string.return_value = "Page only text"
+            facade.Image = Image
+            mock_facade.return_value = facade
+
+            result = run_ocr_on_pdf("/fake.pdf", page_analysis_map=page_analysis_map)
+
+            mock_render.assert_called_once()
+            # Only page OCR, no region OCR
+            assert facade.pytesseract.image_to_string.call_count == 1
+            assert "Page only text" in result
+            assert "[Region:" not in result
+
+    def test_backward_compat_no_analysis_map(self):
+        """With page_analysis_map=None, falls back to page.get_pixmap(dpi=300)."""
+        from lib.rag.ocr.recovery import run_ocr_on_pdf
+        from PIL import Image
+        import io
+
+        with patch("lib.rag.ocr.recovery.render_page_adaptive") as mock_render, \
+             patch("lib.rag.ocr.recovery._get_facade") as mock_facade:
+            facade = MagicMock()
+            facade.OCR_AVAILABLE = True
+            facade.PYMUPDF_AVAILABLE = True
+            mock_doc = MagicMock()
+            mock_page = MagicMock()
+            # Simulate pixmap -> PNG -> PIL path
+            fake_img = Image.new("RGB", (100, 100), "white")
+            buf = io.BytesIO()
+            fake_img.save(buf, format="PNG")
+            mock_page.get_pixmap.return_value.tobytes.return_value = buf.getvalue()
+            mock_doc.__iter__ = MagicMock(return_value=iter([mock_page]))
+            mock_doc.__len__ = MagicMock(return_value=1)
+            mock_doc.is_closed = False
+            facade.fitz.open.return_value = mock_doc
+            facade.pytesseract.image_to_string.return_value = "Fallback text"
+            facade.Image = Image
+            mock_facade.return_value = facade
+
+            result = run_ocr_on_pdf("/fake.pdf", page_analysis_map=None)
+
+            # render_page_adaptive should NOT have been called
+            mock_render.assert_not_called()
+            # get_pixmap should have been called (fallback path)
+            mock_page.get_pixmap.assert_called_once_with(dpi=300)
+            assert "Fallback text" in result

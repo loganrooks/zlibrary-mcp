@@ -7,12 +7,12 @@
 
 ### Infrastructure
 
-- [ ] **INFRA-01**: Upgrade to Node 22 LTS (update engines field, CI matrix, Dockerfile)
-- [ ] **INFRA-02**: Update env-paths to v4.0 (unlocked by Node 22)
-- [ ] **INFRA-03**: Remove AsyncZlib legacy download client (route all downloads through EAPIClient)
-- [ ] **INFRA-04**: Fix Docker numpy/Alpine compilation issue in production Dockerfile
-- [ ] **INFRA-05**: Improve EAPI booklist browsing (beyond current graceful degradation)
-- [ ] **INFRA-06**: Improve EAPI full-text search (beyond current regular-search fallback)
+- [x] **INFRA-01**: Upgrade to Node 22 LTS (update engines field, CI matrix, Dockerfile)
+- [x] **INFRA-02**: Update env-paths to v4.0 (unlocked by Node 22)
+- [x] **INFRA-03**: Remove AsyncZlib legacy download client (route all downloads through EAPIClient)
+- [x] **INFRA-04**: Fix Docker numpy/Alpine compilation issue in production Dockerfile
+- [x] **INFRA-05**: Improve EAPI booklist browsing (beyond current graceful degradation)
+- [x] **INFRA-06**: Improve EAPI full-text search (beyond current regular-search fallback)
 
 ### Margin Detection
 
@@ -68,12 +68,12 @@ Deferred to future milestone.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| INFRA-01 | Phase 8 | Pending |
-| INFRA-02 | Phase 8 | Pending |
-| INFRA-03 | Phase 8 | Pending |
-| INFRA-04 | Phase 8 | Pending |
-| INFRA-05 | Phase 8 | Pending |
-| INFRA-06 | Phase 8 | Pending |
+| INFRA-01 | Phase 8 | Complete |
+| INFRA-02 | Phase 8 | Complete |
+| INFRA-03 | Phase 8 | Complete |
+| INFRA-04 | Phase 8 | Complete |
+| INFRA-05 | Phase 8 | Complete |
+| INFRA-06 | Phase 8 | Complete |
 | MARG-01 | Phase 9 | Pending |
 | MARG-02 | Phase 9 | Pending |
 | MARG-03 | Phase 9 | Pending |

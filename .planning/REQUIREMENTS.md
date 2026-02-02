@@ -26,9 +26,9 @@
 
 ### Adaptive Resolution
 
-- [ ] **DPI-01**: Page-level DPI selection based on content density (150/300 DPI)
-- [ ] **DPI-02**: Region-level DPI targeting (higher resolution for footnotes, margin text, small fonts)
-- [ ] **DPI-03**: Optimal DPI determined by text pixel height analysis (Tesseract 30-33px target)
+- [x] **DPI-01**: Page-level DPI selection based on content density (150/300 DPI)
+- [x] **DPI-02**: Region-level DPI targeting (higher resolution for footnotes, margin text, small fonts)
+- [x] **DPI-03**: Optimal DPI determined by text pixel height analysis (Tesseract 30-33px target)
 
 ### Body Text Purity
 
@@ -81,9 +81,9 @@ Deferred to future milestone.
 | MARG-05 | Phase 9 | Complete |
 | MARG-06 | Phase 9 | Complete |
 | MARG-07 | Phase 9 | Complete |
-| DPI-01 | Phase 10 | Pending |
-| DPI-02 | Phase 10 | Pending |
-| DPI-03 | Phase 10 | Pending |
+| DPI-01 | Phase 10 | Complete |
+| DPI-02 | Phase 10 | Complete |
+| DPI-03 | Phase 10 | Complete |
 | BODY-01 | Phase 11 | Pending |
 | BODY-02 | Phase 11 | Pending |
 | BODY-03 | Phase 11 | Pending |

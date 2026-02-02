@@ -10,17 +10,17 @@ See: .planning/PROJECT.md (updated 2026-02-01)
 ## Current Position
 
 Phase: 11 of 12 (Body Text Purity)
-Plan: 2 of 7 in current phase (recall baseline snapshot)
+Plan: 4 of 7 in current phase (compositor conflict resolution)
 Status: In progress
-Last activity: 2026-02-02 — Completed 11-02-PLAN.md (Recall Baseline Snapshot)
+Last activity: 2026-02-02 — Completed 11-04-PLAN.md (Compositor Conflict Resolution)
 
-Progress: [███████████░░░░░] 94% (12/18 v1.1 plans)
+Progress: [████████████░░░░] 94% (14/18 v1.1 plans)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 33 (22 v1.0 + 11 v1.1)
-- v1.1 plans completed: 12
+- Total plans completed: 35 (22 v1.0 + 13 v1.1)
+- v1.1 plans completed: 14
 - Total execution time: ~4 days (v1.0)
 
 **By Phase:** (v1.1)
@@ -30,7 +30,7 @@ Progress: [███████████░░░░░] 94% (12/18 v1.1 pla
 | 08 | 3/3 | ~13min | ~4.3min |
 | 09 | 3/3 | ~12min | ~4min |
 | 10 | 4/4 | ~14min | ~3.5min |
-| 11 | 2/7 | ~27min | ~13.5min |
+| 11 | 4/7 | ~28min | ~7min |
 
 ## Accumulated Context
 
@@ -61,6 +61,9 @@ v1.1 decisions:
 - PIPELINE-MODELS-STDLIB: Pipeline foundation types use stdlib only (dataclasses, enum, typing, pathlib, json)
 - REGISTRY-SIMPLE-DICT: Simple dict registry with decorator pattern (no config files or dynamic loading)
 - RECALL-STRUCTURAL-FILTER: Filter TOC/navigation lines from recall comparison (non-deterministic between runs)
+- COMPOSITOR-RECALL-BIAS: Unclaimed blocks and low-confidence claims (<0.6) default to BODY
+- COMPOSITOR-TYPE-PRIORITY: Footnote > Endnote > Margin > PageNumber > Header > Footer > TOC > FrontMatter > Citation > Heading > Body
+- COMPOSITOR-OVERLAP-THRESHOLD: 50% bbox overlap threshold to consider two bboxes as same block
 
 ### Pending Todos
 
@@ -79,5 +82,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-02
-Stopped at: Completed 11-02-PLAN.md (Recall Baseline Snapshot)
+Stopped at: Completed 11-04-PLAN.md (Compositor Conflict Resolution)
 Resume file: None

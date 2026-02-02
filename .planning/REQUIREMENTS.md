@@ -16,13 +16,13 @@
 
 ### Margin Detection
 
-- [ ] **MARG-01**: Detect margin zones in PDFs using PyMuPDF bbox coordinates
-- [ ] **MARG-02**: Recognize Stephanus numbering patterns (e.g., 231a, 245b-c)
-- [ ] **MARG-03**: Recognize Bekker numbering patterns (e.g., 1094a1, 1140b5)
-- [ ] **MARG-04**: Detect line numbers in poetry, legal texts, and critical editions
-- [ ] **MARG-05**: Detect and extract marginal notes, glosses, and cross-references
-- [ ] **MARG-06**: Adapt margin zone widths across different publisher layouts
-- [ ] **MARG-07**: Preserve margin content as structured annotations in markdown output
+- [x] **MARG-01**: Detect margin zones in PDFs using PyMuPDF bbox coordinates
+- [x] **MARG-02**: Recognize Stephanus numbering patterns (e.g., 231a, 245b-c)
+- [x] **MARG-03**: Recognize Bekker numbering patterns (e.g., 1094a1, 1140b5)
+- [x] **MARG-04**: Detect line numbers in poetry, legal texts, and critical editions
+- [x] **MARG-05**: Detect and extract marginal notes, glosses, and cross-references
+- [x] **MARG-06**: Adapt margin zone widths across different publisher layouts
+- [x] **MARG-07**: Preserve margin content as structured annotations in markdown output
 
 ### Adaptive Resolution
 
@@ -74,13 +74,13 @@ Deferred to future milestone.
 | INFRA-04 | Phase 8 | Complete |
 | INFRA-05 | Phase 8 | Complete |
 | INFRA-06 | Phase 8 | Complete |
-| MARG-01 | Phase 9 | Pending |
-| MARG-02 | Phase 9 | Pending |
-| MARG-03 | Phase 9 | Pending |
-| MARG-04 | Phase 9 | Pending |
-| MARG-05 | Phase 9 | Pending |
-| MARG-06 | Phase 9 | Pending |
-| MARG-07 | Phase 9 | Pending |
+| MARG-01 | Phase 9 | Complete |
+| MARG-02 | Phase 9 | Complete |
+| MARG-03 | Phase 9 | Complete |
+| MARG-04 | Phase 9 | Complete |
+| MARG-05 | Phase 9 | Complete |
+| MARG-06 | Phase 9 | Complete |
+| MARG-07 | Phase 9 | Complete |
 | DPI-01 | Phase 10 | Pending |
 | DPI-02 | Phase 10 | Pending |
 | DPI-03 | Phase 10 | Pending |

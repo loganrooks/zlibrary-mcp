@@ -5,22 +5,22 @@
 See: .planning/PROJECT.md (updated 2026-02-01)
 
 **Core value:** Reliable, maintainable MCP server for Z-Library book access
-**Current focus:** v1.1 Quality & Expansion — Phase 10 in progress
+**Current focus:** v1.1 Quality & Expansion — Phase 10 complete
 
 ## Current Position
 
 Phase: 10 of 12 (Adaptive Resolution)
-Plan: 2 of 3 in current phase
-Status: In progress
-Last activity: 2026-02-02 — Completed 10-02-PLAN.md (Adaptive Renderer)
+Plan: 3 of 3 in current phase
+Status: Phase complete
+Last activity: 2026-02-02 — Completed 10-03-PLAN.md (Pipeline Integration)
 
-Progress: [████████░░░░░░░░] 80% (8/10 v1.1 plans)
+Progress: [█████████░░░░░░░] 90% (9/10 v1.1 plans)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 29 (22 v1.0 + 7 v1.1)
-- v1.1 plans completed: 8
+- Total plans completed: 30 (22 v1.0 + 8 v1.1)
+- v1.1 plans completed: 9
 - Total execution time: ~4 days (v1.0)
 
 **By Phase:** (v1.1)
@@ -29,7 +29,7 @@ Progress: [████████░░░░░░░░] 80% (8/10 v1.1 plan
 |-------|-------|-------|----------|
 | 08 | 3/3 | ~13min | ~4.3min |
 | 09 | 3/3 | ~12min | ~4min |
-| 10 | 2/3 | ~8min | ~4min |
+| 10 | 3/3 | ~11min | ~3.7min |
 
 ## Accumulated Context
 
@@ -54,6 +54,8 @@ v1.1 decisions:
 - MARG-FOOTNOTE-DEDUP-DEFERRED: Footnote bboxes not passed to detect_margin_content yet; deferred to Phase 11
 - RES-DPI-FLOOR-72: DPI floor is 72 (not quantized to 50) — preserves minimum rendering quality
 - RES-MATRIX-RENDER: Use fitz.Matrix(dpi/72, dpi/72) for rendering instead of deprecated dpi= parameter
+- RES-ADAPTIVE-DEFAULT: Adaptive DPI is default behavior (no opt-in flag); scanned PDFs auto-fallback to 300
+- RES-OPTIONAL-PARAM: page_dpi_map added as optional param with None default for backward compatibility
 
 ### Pending Todos
 
@@ -72,5 +74,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-02
-Stopped at: Completed 10-02-PLAN.md (Adaptive Renderer)
+Stopped at: Completed 10-03-PLAN.md (Pipeline Integration) — Phase 10 complete
 Resume file: None

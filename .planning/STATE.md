@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-02-01)
 
 **Core value:** Reliable, maintainable MCP server for Z-Library book access
-**Current focus:** Planning next milestone
+**Current focus:** v1.1 Quality & Expansion — defining requirements
 
 ## Current Position
 
-Phase: v1.0 complete (7 phases, 22 plans)
-Plan: Not started
-Status: Ready to plan next milestone
-Last activity: 2026-02-01 — v1.0 milestone complete
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-02-01 — Milestone v1.1 started
 
-Progress: [████████████████] 100% (v1.0 shipped)
+Progress: [░░░░░░░░░░░░░░░░] 0%
 
 ## Accumulated Context
 
@@ -28,11 +28,12 @@ None.
 
 ### Blockers/Concerns
 
-- Docker numpy/Alpine compilation issue (pre-existing, non-blocking)
-- EAPI lacks booklist/full-text search endpoints (graceful degradation in place)
+- Docker numpy/Alpine compilation issue (pre-existing, targeted for v1.1)
+- EAPI lacks booklist/full-text search endpoints (targeted for v1.1)
+- AsyncZlib legacy client (targeted for v1.1 removal)
 
 ## Session Continuity
 
 Last session: 2026-02-01
-Stopped at: v1.0 milestone archived and tagged
+Stopped at: v1.1 milestone initialization — questioning complete
 Resume file: None

@@ -37,7 +37,19 @@ Reliable, maintainable MCP server for Z-Library book access — built on a clean
 
 ### Active
 
-(None — define in next milestone via `/gsd:new-milestone`)
+**Infrastructure Stability**
+- [ ] Upgrade to Node 20+ (unlocks env-paths v4, modern features)
+- [ ] Fill EAPI gaps (booklist browsing, full-text search alternatives)
+- [ ] Remove AsyncZlib legacy download client (pure EAPI downloads)
+- [ ] Fix Docker numpy/Alpine compilation issue
+
+**Extraction Quality**
+- [ ] Margin content detection & extraction (scholarly numbering, marginal notes, line numbers)
+- [ ] Adaptive resolution pipeline (higher DPI for small text, footnotes, margin content)
+- [ ] Body text purity (detect and separate all non-body content from markdown output)
+
+**Expansion**
+- [ ] Anna's Archive integration (research-first — fallback/alternative book source)
 
 ### Out of Scope
 
@@ -46,12 +58,17 @@ Reliable, maintainable MCP server for Z-Library book access — built on a clean
 - OS keychain for credentials — security improvement for future milestone
 - Push to 100% test coverage — 78-82% is healthy
 
+## Current Milestone: v1.1 Quality & Expansion
+
+**Goal:** Stabilize infrastructure (Node 20+, EAPI gaps, Docker), improve extraction quality for scholarly texts (margin content, adaptive resolution), and explore Anna's Archive as alternative source.
+
 ## Context
 
 Shipped v1.0 with 45,231 LOC (TypeScript + Python).
 Tech stack: Node.js/TypeScript MCP server, Python bridge, vendored zlibrary fork, EAPI JSON transport.
 7 phases completed in 4 days: test harness → deps → SDK → decomposition → feature porting → docs → EAPI.
 Known limitations: EAPI lacks booklist/full-text search endpoints (graceful degradation in place).
+v1.1 focus: scholarly text extraction quality (Stephanus, Bekker, margin notes, line numbers) and infrastructure modernization.
 
 ## Key Decisions
 
@@ -73,4 +90,4 @@ Known limitations: EAPI lacks booklist/full-text search endpoints (graceful degr
 - **Test-first for refactoring**: Tests pass before and after each change
 
 ---
-*Last updated: 2026-02-01 after v1.0 milestone*
+*Last updated: 2026-02-01 after v1.1 milestone start*

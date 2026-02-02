@@ -234,7 +234,7 @@ def redo_ocr_with_tesseract(input_pdf: Path, output_dir: Path = None) -> Path:
         raise
 
 
-def run_ocr_on_pdf(pdf_path: str, lang: str = 'eng') -> str: # Cycle 21 Refactor: Add lang parameter
+def run_ocr_on_pdf(pdf_path: str, lang: str = 'eng', page_dpi_map: dict = None) -> str: # Cycle 21 Refactor: Add lang parameter
     """
     Performs OCR on a PDF file using Tesseract via PyMuPDF rendering.
 
@@ -276,7 +276,12 @@ def run_ocr_on_pdf(pdf_path: str, lang: str = 'eng') -> str: # Cycle 21 Refactor
             logging.debug(f"Processing page {page_num}/{page_count} for OCR...")
             try:
                 # Render page to pixmap, then to PNG bytes
-                pix = page.get_pixmap(dpi=300) # Higher DPI for better OCR
+                # Adaptive DPI: use per-page decision if available
+                dpi = 300  # default fallback
+                if page_dpi_map and page_num in page_dpi_map:
+                    dpi = page_dpi_map[page_num].dpi
+                    logging.debug(f"Page {page_num}: using adaptive DPI {dpi} (confidence={page_dpi_map[page_num].confidence:.2f})")
+                pix = page.get_pixmap(dpi=dpi)
                 img_bytes = pix.tobytes("png")
                 img = _Image.open(io.BytesIO(img_bytes))
 

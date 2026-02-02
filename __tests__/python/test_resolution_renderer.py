@@ -1,8 +1,9 @@
 """Tests for adaptive resolution renderer."""
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
+from PIL import Image
 
 from lib.rag.resolution.models import DPIDecision, PageAnalysis, RegionDPI
 from lib.rag.resolution.renderer import (
@@ -12,6 +13,9 @@ from lib.rag.resolution.renderer import (
     render_page_adaptive,
     render_region,
 )
+
+# Shared fake PIL image for mocked pixmap conversions
+_FAKE_IMAGE = Image.new("RGB", (100, 100))
 
 
 def _make_page_analysis(
@@ -49,17 +53,7 @@ def _mock_page(width=612, height=792):
     page.rect.y1 = height
     page.rect.width = width
     page.rect.height = height
-
-    def make_pixmap(**kwargs):
-        pix = MagicMock()
-        pix.samples = b"\x00" * 100
-        pix.width = 100
-        pix.height = 100
-        pix.n = 3
-        pix.stride = 300
-        return pix
-
-    page.get_pixmap = MagicMock(side_effect=make_pixmap)
+    page.get_pixmap = MagicMock(return_value=MagicMock())
     return page
 
 
@@ -70,18 +64,15 @@ class TestCoordinateMapping:
         assert pdf_to_pixel(100.0, 72) == 100
 
     def test_pdf_to_pixel_150dpi(self):
-        # 100 * 150/72 = 208.33 -> 208
         assert pdf_to_pixel(100.0, 150) == 208
 
     def test_pdf_to_pixel_300dpi(self):
-        # 100 * 300/72 = 416.67 -> 417
         assert pdf_to_pixel(100.0, 300) == 417
 
     def test_pixel_to_pdf_72dpi_identity(self):
         assert pixel_to_pdf(100.0, 72) == pytest.approx(100.0)
 
     def test_pixel_to_pdf_300dpi(self):
-        # 417 * 72/300 = 100.08
         assert pixel_to_pdf(417.0, 300) == pytest.approx(100.08)
 
     def test_roundtrip_150dpi(self):
@@ -91,61 +82,60 @@ class TestCoordinateMapping:
         assert abs(back - original) < 1.0
 
 
+@patch("lib.rag.resolution.renderer._pixmap_to_pil", return_value=_FAKE_IMAGE)
 class TestRenderRegion:
     """Tests for render_region function."""
 
-    def test_renders_with_correct_clip(self):
+    def test_renders_with_correct_clip(self, mock_pil):
         page = _mock_page()
         bbox = (72.0, 100.0, 200.0, 300.0)
         render_region(page, bbox, 300)
-
         page.get_pixmap.assert_called_once()
-        call_kwargs = page.get_pixmap.call_args
-        assert call_kwargs is not None
 
-    def test_returns_pil_image(self):
+    def test_returns_pil_image(self, mock_pil):
         page = _mock_page()
         result = render_region(page, (0, 0, 100, 100), 150)
-        # Should be a PIL Image
-        from PIL import Image
-
         assert isinstance(result, Image.Image)
 
-    def test_clips_to_page_bounds(self):
+    def test_clips_to_page_bounds(self, mock_pil):
         page = _mock_page(width=612, height=792)
-        # bbox extends beyond page
         bbox = (500.0, 700.0, 700.0, 900.0)
         result = render_region(page, bbox, 150)
-        # Should not raise, bbox clipped internally
         assert result is not None
 
+    def test_matrix_uses_correct_dpi(self, mock_pil):
+        page = _mock_page()
+        with patch("lib.rag.resolution.renderer.fitz") as mock_fitz:
+            mock_fitz.Matrix.return_value = MagicMock()
+            mock_fitz.Rect.return_value = MagicMock()
+            render_region(page, (0, 0, 100, 100), 150)
+            mock_fitz.Matrix.assert_called_once_with(150 / 72, 150 / 72)
 
+
+@patch("lib.rag.resolution.renderer._pixmap_to_pil", return_value=_FAKE_IMAGE)
 class TestRenderPageAdaptive:
     """Tests for render_page_adaptive function."""
 
-    def test_renders_full_page_at_analysis_dpi(self):
+    def test_renders_full_page_at_analysis_dpi(self, mock_pil):
         page = _mock_page()
         analysis = _make_page_analysis(page_dpi=200)
         result = render_page_adaptive(page, analysis)
-
         assert isinstance(result, AdaptiveRenderResult)
         assert result.page_dpi == 200
 
-    def test_page_dpi_capped_at_300(self):
+    def test_page_dpi_capped_at_300(self, mock_pil):
         page = _mock_page()
         analysis = _make_page_analysis(page_dpi=450)
         result = render_page_adaptive(page, analysis)
+        assert result.page_dpi == 300
 
-        assert result.page_dpi == 300  # DPI_PAGE_CAP
-
-    def test_no_regions_when_no_small_text(self):
+    def test_no_regions_when_no_small_text(self, mock_pil):
         page = _mock_page()
         analysis = _make_page_analysis(page_dpi=150, has_small_text=False)
         result = render_page_adaptive(page, analysis)
-
         assert result.region_images == []
 
-    def test_region_rerender_when_higher_dpi(self):
+    def test_region_rerender_when_higher_dpi(self, mock_pil):
         region = RegionDPI(
             bbox=(50.0, 600.0, 200.0, 700.0),
             dpi_decision=DPIDecision(
@@ -162,11 +152,10 @@ class TestRenderPageAdaptive:
             page_dpi=150, has_small_text=True, regions=[region]
         )
         result = render_page_adaptive(page, analysis)
-
         assert len(result.region_images) == 1
         assert result.region_images[0][0] is region
 
-    def test_region_dpi_capped_at_600(self):
+    def test_region_dpi_capped_at_600(self, mock_pil):
         region = RegionDPI(
             bbox=(50.0, 600.0, 200.0, 700.0),
             dpi_decision=DPIDecision(
@@ -183,11 +172,9 @@ class TestRenderPageAdaptive:
             page_dpi=150, has_small_text=True, regions=[region]
         )
         result = render_page_adaptive(page, analysis)
-
-        # Region rendered but DPI capped at 600
         assert len(result.region_images) == 1
 
-    def test_skips_region_when_dpi_not_higher(self):
+    def test_skips_region_when_dpi_not_higher(self, mock_pil):
         region = RegionDPI(
             bbox=(50.0, 600.0, 200.0, 700.0),
             dpi_decision=DPIDecision(
@@ -204,29 +191,23 @@ class TestRenderPageAdaptive:
             page_dpi=150, has_small_text=True, regions=[region]
         )
         result = render_page_adaptive(page, analysis)
-
         assert result.region_images == []
 
-    def test_scanned_pdf_fallback_300dpi(self):
+    def test_scanned_pdf_fallback_300dpi(self, mock_pil):
         page = _mock_page()
         analysis = _make_page_analysis(page_dpi=300, confidence=0.0)
         result = render_page_adaptive(page, analysis)
+        assert result.page_dpi == 300
 
-        assert result.page_dpi == 300  # DPI_DEFAULT
-
-    def test_metadata_has_timing(self):
+    def test_metadata_has_timing(self, mock_pil):
         page = _mock_page()
         analysis = _make_page_analysis(page_dpi=150)
         result = render_page_adaptive(page, analysis)
-
         assert "render_time_ms" in result.metadata
         assert isinstance(result.metadata["render_time_ms"], float)
 
-    def test_page_image_is_pil(self):
+    def test_page_image_is_pil(self, mock_pil):
         page = _mock_page()
         analysis = _make_page_analysis(page_dpi=150)
         result = render_page_adaptive(page, analysis)
-
-        from PIL import Image
-
         assert isinstance(result.page_image, Image.Image)

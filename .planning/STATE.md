@@ -10,17 +10,17 @@ See: .planning/PROJECT.md (updated 2026-02-01)
 ## Current Position
 
 Phase: 9 of 12 (Margin Detection)
-Plan: 1 of 3 in current phase
+Plan: 2 of 3 in current phase
 Status: In progress
-Last activity: 2026-02-02 — Completed 09-01-PLAN.md (Margin Detection Engine)
+Last activity: 2026-02-02 — Completed 09-02-PLAN.md (Pipeline Integration)
 
-Progress: [████░░░░░░░░░░░░] 40% (4/10 v1.1 plans)
+Progress: [█████░░░░░░░░░░░] 50% (5/10 v1.1 plans)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 25 (22 v1.0 + 3 v1.1)
-- v1.1 plans completed: 4
+- Total plans completed: 26 (22 v1.0 + 4 v1.1)
+- v1.1 plans completed: 5
 - Total execution time: ~4 days (v1.0)
 
 **By Phase:** (v1.1)
@@ -28,7 +28,7 @@ Progress: [████░░░░░░░░░░░░] 40% (4/10 v1.1 plan
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 08 | 3/3 | ~13min | ~4.3min |
-| 09 | 1/3 | ~5min | ~5min |
+| 09 | 2/3 | ~8min | ~4min |
 
 ## Accumulated Context
 
@@ -49,6 +49,8 @@ v1.1 decisions:
 - INFRA-RUFF-E402: Added ruff config ignoring E402/E741 globally (pre-existing sys.path issues)
 - MARG-BEKKER-FIRST: Check Bekker regex before Stephanus (more specific pattern prevents ambiguity)
 - MARG-MIDPOINT-ZONE: Use block midpoint for margin-left vs margin-right classification
+- MARG-CACHE-COMPAT: Block bboxes identical between get_text("dict") and get_text("dict", flags=TEXTFLAGS_DICT)
+- MARG-FOOTNOTE-DEDUP-DEFERRED: Footnote bboxes not passed to detect_margin_content yet; deferred to Phase 11
 
 ### Pending Todos
 
@@ -67,5 +69,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-02
-Stopped at: Completed 09-01-PLAN.md (Margin Detection Engine)
+Stopped at: Completed 09-02-PLAN.md (Pipeline Integration)
 Resume file: None

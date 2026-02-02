@@ -11,6 +11,8 @@ from pathlib import Path
 from typing import Optional
 
 from lib.rag.utils.constants import STRATEGY_CONFIGS
+from lib.rag.resolution.renderer import render_page_adaptive, AdaptiveRenderResult
+from lib.rag.resolution.models import PageAnalysis
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +61,7 @@ def _stage_3_ocr_recovery(
     config: 'QualityPipelineConfig',
     ocr_cache: dict = None,
     xmark_result: 'XMarkDetectionResult' = None,
+    page_analysis_map: dict = None,
     page_dpi_map: dict = None,
 ) -> PageRegion:
     """
@@ -113,17 +116,27 @@ def _stage_3_ocr_recovery(
                 recovered_text = ocr_cache[page_num]
                 logging.debug(f"Stage 3: Using cached OCR for page {page_num}")
             else:
-                # OCR entire page at high resolution (adaptive DPI if available)
-                dpi = 300  # default fallback
-                if page_dpi_map and page_num in page_dpi_map:
-                    dpi = page_dpi_map[page_num].dpi
-                    logging.debug(f"Stage 3: Using adaptive DPI {dpi} for page {page_num}")
-                pix = page.get_pixmap(dpi=dpi)
-                img_bytes = pix.tobytes("png")
-                img = Image.open(io.BytesIO(img_bytes))
-
-                # Run Tesseract to recover text
-                recovered_text = pytesseract.image_to_string(img, lang='eng')
+                # OCR entire page at high resolution (adaptive renderer if available)
+                if page_analysis_map and page_num in page_analysis_map:
+                    render_result = render_page_adaptive(page, page_analysis_map[page_num])
+                    logging.debug(f"Stage 3: Adaptive render at DPI {render_result.page_dpi} for page {page_num}, "
+                                  f"{len(render_result.region_images)} region re-renders")
+                    recovered_text = pytesseract.image_to_string(render_result.page_image, lang='eng')
+                    # Append region OCR text
+                    for region, region_img in render_result.region_images:
+                        region_text = pytesseract.image_to_string(region_img, lang='eng')
+                        if region_text.strip():
+                            recovered_text += f"\n{region_text.strip()}"
+                else:
+                    # Fallback: legacy DPI map or default 300
+                    dpi = 300
+                    if page_dpi_map and page_num in page_dpi_map:
+                        dpi = page_dpi_map[page_num].dpi
+                        logging.debug(f"Stage 3: Using legacy DPI {dpi} for page {page_num}")
+                    pix = page.get_pixmap(dpi=dpi)
+                    img_bytes = pix.tobytes("png")
+                    img = Image.open(io.BytesIO(img_bytes))
+                    recovered_text = pytesseract.image_to_string(img, lang='eng')
 
                 if ocr_cache is not None:
                     ocr_cache[page_num] = recovered_text

@@ -4,8 +4,18 @@ Heading detection from PDF font analysis.
 Contains font distribution analysis and font-based heading detection
 for building table of contents from PDFs without embedded ToC metadata.
 """
+
 import logging
 import re
+from typing import Any, Dict, List
+
+from lib.rag.detection.registry import register_detector
+from lib.rag.pipeline.models import (
+    BlockClassification,
+    ContentType,
+    DetectionResult,
+    DetectorScope,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -15,11 +25,43 @@ except ImportError:
     fitz = None
 
 __all__ = [
-    '_analyze_font_distribution',
-    '_detect_headings_from_fonts',
+    "_analyze_font_distribution",
+    "_detect_headings_from_fonts",
 ]
 
-def _analyze_font_distribution(doc: 'fitz.Document', sample_pages: int = 10) -> float:
+
+@register_detector("headings", priority=30, scope=DetectorScope.DOCUMENT)
+def detect_headings_pipeline(doc: Any, context: Dict[str, Any]) -> DetectionResult:
+    """Pipeline adapter for heading detection.
+
+    Headings stay in body (informational only, not for removal).
+    """
+    body_size = _analyze_font_distribution(doc)
+    toc_map = _detect_headings_from_fonts(doc, body_size)
+    classifications: List[BlockClassification] = []
+    for page_num, headings in toc_map.items():
+        for level, text in headings:
+            classifications.append(
+                BlockClassification(
+                    bbox=(0, 0, 0, 0),
+                    content_type=ContentType.HEADING,
+                    text=text,
+                    confidence=0.75,
+                    detector_name="headings",
+                    page_num=page_num,
+                    metadata={"level": level, "bbox_available": False},
+                )
+            )
+    context["headings_map"] = toc_map
+    return DetectionResult(
+        detector_name="headings",
+        classifications=classifications,
+        page_num=0,
+        metadata={"toc_map": toc_map, "body_size": body_size},
+    )
+
+
+def _analyze_font_distribution(doc: "fitz.Document", sample_pages: int = 10) -> float:
     """
     Analyze font size distribution across document to identify body text size.
 
@@ -75,9 +117,11 @@ def _analyze_font_distribution(doc: 'fitz.Document', sample_pages: int = 10) -> 
         size_counts = Counter(font_sizes)
         body_size = size_counts.most_common(1)[0][0]
 
-        logging.info(f"Detected body text size: {body_size}pt "
-                    f"(from {len(font_sizes)} text spans, "
-                    f"top 3 sizes: {size_counts.most_common(3)})")
+        logging.info(
+            f"Detected body text size: {body_size}pt "
+            f"(from {len(font_sizes)} text spans, "
+            f"top 3 sizes: {size_counts.most_common(3)})"
+        )
 
         return body_size
 
@@ -87,11 +131,11 @@ def _analyze_font_distribution(doc: 'fitz.Document', sample_pages: int = 10) -> 
 
 
 def _detect_headings_from_fonts(
-    doc: 'fitz.Document',
+    doc: "fitz.Document",
     body_size: float,
     threshold: float = 1.15,
     min_heading_length: int = 3,
-    max_heading_length: int = 150
+    max_heading_length: int = 150,
 ) -> dict:
     """
     Detect headings across all pages using font-based heuristics.
@@ -121,9 +165,11 @@ def _detect_headings_from_fonts(
     toc_map = {}
     min_heading_size = body_size * threshold
 
-    logging.info(f"Detecting headings: body_size={body_size}pt, "
-                f"min_heading_size={min_heading_size:.1f}pt "
-                f"(threshold={threshold})")
+    logging.info(
+        f"Detecting headings: body_size={body_size}pt, "
+        f"min_heading_size={min_heading_size:.1f}pt "
+        f"(threshold={threshold})"
+    )
 
     try:
         for page_num in range(len(doc)):
@@ -145,15 +191,21 @@ def _detect_headings_from_fonts(
                                 # --- False Positive Filters ---
 
                                 # Filter 1: Length constraints
-                                if len(text) < min_heading_length or len(text) > max_heading_length:
+                                if (
+                                    len(text) < min_heading_length
+                                    or len(text) > max_heading_length
+                                ):
                                     continue
 
                                 # Filter 2: Pure numbers (likely page numbers)
-                                if re.match(r'^\d+$', text):
+                                if re.match(r"^\d+$", text):
                                     continue
 
                                 # Filter 3: Roman numerals alone (likely page numbers)
-                                if re.match(r'^[ivxlcdm]+$', text, re.IGNORECASE) and len(text) <= 5:
+                                if (
+                                    re.match(r"^[ivxlcdm]+$", text, re.IGNORECASE)
+                                    and len(text) <= 5
+                                ):
                                     continue
 
                                 # Filter 4: Single letters or punctuation
@@ -194,8 +246,10 @@ def _detect_headings_from_fonts(
                 toc_map[page_num + 1] = page_headings
 
         total_headings = sum(len(headings) for headings in toc_map.values())
-        logging.info(f"Font-based detection found {total_headings} headings "
-                    f"across {len(toc_map)} pages")
+        logging.info(
+            f"Font-based detection found {total_headings} headings "
+            f"across {len(toc_map)} pages"
+        )
 
         # Log sample headings for validation
         if toc_map:
@@ -208,5 +262,3 @@ def _detect_headings_from_fonts(
     except Exception as e:
         logging.warning(f"Error detecting headings from fonts: {e}")
         return {}
-
-

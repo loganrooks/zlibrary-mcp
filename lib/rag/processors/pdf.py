@@ -3,6 +3,7 @@ PDF page-level formatting and markdown generation.
 
 Contains _format_pdf_markdown and PDF-specific formatting helpers.
 """
+
 import logging
 import re
 from pathlib import Path
@@ -16,18 +17,50 @@ logger = logging.getLogger(__name__)
 
 try:
     import fitz  # PyMuPDF
+
     PYMUPDF_AVAILABLE = True
 except ImportError:
     PYMUPDF_AVAILABLE = False
     fitz = None
 
 __all__ = [
-    '_format_pdf_markdown',
+    "_format_pdf_markdown",
 ]
 
 
+def _associate_margin_to_body(margin_bbox, body_blocks):
+    """Find the body block index closest to a margin block by y-center proximity.
+
+    Uses direct y-overlap for immediate matches, otherwise returns nearest
+    by vertical distance. Returns 0 if no body blocks exist.
+    """
+    if not body_blocks:
+        return 0
+
+    m_y_center = (margin_bbox[1] + margin_bbox[3]) / 2
+    best_idx = 0
+    best_dist = float("inf")
+
+    for idx, block in enumerate(body_blocks):
+        b_y0 = block["bbox"][1]
+        b_y1 = block["bbox"][3]
+
+        # Direct y-overlap: margin center falls within body block y-range
+        if b_y0 <= m_y_center <= b_y1:
+            return idx
+
+        # Track nearest by y-distance
+        b_y_center = (b_y0 + b_y1) / 2
+        dist = abs(m_y_center - b_y_center)
+        if dist < best_dist:
+            best_dist = dist
+            best_idx = idx
+
+    return best_idx
+
+
 def _format_pdf_markdown(
-    page: 'fitz.Page',
+    page: "fitz.Page",
     preserve_linebreaks: bool = False,
     toc_entries: list = None,
     pdf_page_num: int = None,
@@ -37,7 +70,8 @@ def _format_pdf_markdown(
     use_toc_headings: bool = True,
     pdf_path: Path = None,
     quality_config: QualityPipelineConfig = None,
-    xmark_cache: dict = None
+    xmark_cache: dict = None,
+    margin_blocks: list = None,
 ) -> str:
     """
     Generates a Markdown string from a PyMuPDF page object.
@@ -59,13 +93,13 @@ def _format_pdf_markdown(
     Returns:
         A string containing the generated Markdown.
     """
-    fn_id = None # Initialize to prevent UnboundLocalError
-    cleaned_fn_text = "" # Initialize to prevent UnboundLocalError
+    fn_id = None  # Initialize to prevent UnboundLocalError
+    cleaned_fn_text = ""  # Initialize to prevent UnboundLocalError
     blocks = page.get_text("dict", flags=fitz.TEXTFLAGS_DICT).get("blocks", [])
     markdown_lines = []
-    footnote_defs = {} # Store footnote definitions [^id]: content
+    footnote_defs = {}  # Store footnote definitions [^id]: content
     current_list_type = None
-    list_marker = None # Initialize list_marker
+    list_marker = None  # Initialize list_marker
 
     # --- Page Markers (at the very start) ---
     page_markers = []
@@ -88,7 +122,7 @@ def _format_pdf_markdown(
         for level, title in toc_entries:
             # Shift ToC levels down by 1 (document title is H1, so ToC entries start at H2)
             adjusted_level = level + 1
-            heading_marker = '#' * adjusted_level
+            heading_marker = "#" * adjusted_level
             markdown_lines.append(f"{heading_marker} {title}")
         markdown_lines.append("")  # Blank line after ToC headings
 
@@ -97,26 +131,57 @@ def _format_pdf_markdown(
     text_blocks = [b for b in blocks if b.get("type") == 0]
     text_block_idx = 0
 
+    # --- Build margin exclusion set and body-association map ---
+    margin_map = {}  # body_block_idx -> list of "{{type: content}}" annotation strings
+    margin_bbox_set = set()
+    if margin_blocks:
+        margin_bbox_set = {tuple(mb["bbox"]) for mb in margin_blocks}
+        # Body-only blocks for association (exclude margin blocks)
+        body_only_blocks = [
+            b for b in text_blocks if tuple(b["bbox"]) not in margin_bbox_set
+        ]
+        for mb in margin_blocks:
+            mtype = mb.get("type", "margin")
+            mcontent = mb.get("content", mb.get("text", ""))
+            annotation = f"{{{{{mtype}: {mcontent}}}}}"
+            idx = _associate_margin_to_body(mb["bbox"], body_only_blocks)
+            margin_map.setdefault(idx, []).append(annotation)
+
+    body_block_idx = 0  # Tracks position among non-margin body blocks
+
     for block_idx, block in enumerate(blocks):
         # Skip non-text blocks
         if block.get("type") != 0:
             continue
 
+        # Skip margin blocks (they become annotations, not body text)
+        if margin_bbox_set and tuple(block.get("bbox", ())) in margin_bbox_set:
+            text_block_idx += 1
+            continue
+
         # Pass use_toc_headings flag to disable font-size heading detection
         # Phase 2: Get structured PageRegion if quality pipeline enabled
-        use_quality_pipeline = (quality_config is not None and quality_config.enable_pipeline)
+        use_quality_pipeline = (
+            quality_config is not None and quality_config.enable_pipeline
+        )
         analysis = _analyze_pdf_block(
             block,
             preserve_linebreaks=preserve_linebreaks,
             detect_headings=not use_toc_headings,
-            return_structured=use_quality_pipeline
+            return_structured=use_quality_pipeline,
         )
 
         # Phase 2: Apply quality pipeline if enabled and got PageRegion
         if use_quality_pipeline and isinstance(analysis, PageRegion):
             # Apply quality pipeline (garbled detection, X-marks, OCR recovery)
             # Pass xmark_cache for page-level caching
-            analysis = _apply_quality_pipeline(analysis, pdf_path, (pdf_page_num - 1) if pdf_page_num else 0, quality_config, xmark_cache)
+            analysis = _apply_quality_pipeline(
+                analysis,
+                pdf_path,
+                (pdf_page_num - 1) if pdf_page_num else 0,
+                quality_config,
+                xmark_cache,
+            )
 
             # Convert PageRegion to dict for existing code (temporary until full migration)
             text = analysis.get_text()
@@ -127,23 +192,34 @@ def _format_pdf_markdown(
             # Create dict for existing code
             formatted_count = sum(1 for s in spans if s.formatting)
             if formatted_count > 0:
-                logging.debug("Block has %d/%d spans with formatting", formatted_count, len(spans))
+                logging.debug(
+                    "Block has %d/%d spans with formatting", formatted_count, len(spans)
+                )
 
             analysis = {
-                'text': text,
-                'spans': [{'text': span.text, 'flags': 0, 'formatting': span.formatting} for span in spans],
-                'heading_level': heading_level,
-                'is_list_item': is_list_item_region,
-                'list_type': analysis.list_info.list_type if analysis.list_info else None,
-                'list_marker': analysis.list_info.marker if analysis.list_info else None,
-                'list_indent': analysis.list_info.indent_level if analysis.list_info else 0,
-                'quality_flags': analysis.quality_flags,
-                'quality_score': analysis.quality_score
+                "text": text,
+                "spans": [
+                    {"text": span.text, "flags": 0, "formatting": span.formatting}
+                    for span in spans
+                ],
+                "heading_level": heading_level,
+                "is_list_item": is_list_item_region,
+                "list_type": analysis.list_info.list_type
+                if analysis.list_info
+                else None,
+                "list_marker": analysis.list_info.marker
+                if analysis.list_info
+                else None,
+                "list_indent": analysis.list_info.indent_level
+                if analysis.list_info
+                else 0,
+                "quality_flags": analysis.quality_flags,
+                "quality_score": analysis.quality_score,
             }
 
         # Extract from dict (works for both legacy and converted PageRegion)
-        text = analysis['text']
-        spans = analysis['spans']
+        text = analysis["text"]
+        spans = analysis["spans"]
 
         # Cleaning is now done in _analyze_pdf_block
         if not text:
@@ -152,13 +228,12 @@ def _format_pdf_markdown(
 
         # --- Remove written page number duplication ---
         # If this is the first or last text block and contains the written page number, remove it
-        is_first_block = (text_block_idx == 0)
-        is_last_block = (text_block_idx == len(text_blocks) - 1)
+        is_first_block = text_block_idx == 0
+        is_last_block = text_block_idx == len(text_blocks) - 1
 
         if written_page_text and written_page_position:
-            should_filter = (
-                (written_page_position == 'first' and is_first_block) or
-                (written_page_position == 'last' and is_last_block)
+            should_filter = (written_page_position == "first" and is_first_block) or (
+                written_page_position == "last" and is_last_block
             )
 
             if should_filter:
@@ -167,19 +242,25 @@ def _format_pdf_markdown(
 
                 # If the entire block is just the page number, skip it entirely
                 if text_stripped == written_page_text.strip():
-                    logging.debug(f"Skipping block containing only written page number: '{text_stripped}'")
+                    logging.debug(
+                        f"Skipping block containing only written page number: '{text_stripped}'"
+                    )
                     text_block_idx += 1
                     continue
 
                 # If the page number appears at start or end of the block, remove it
                 if text_stripped.startswith(written_page_text.strip()):
                     # Remove from start and clean up any trailing whitespace
-                    text = text_stripped[len(written_page_text.strip()):].strip()
-                    logging.debug(f"Removed written page number from start of block: '{written_page_text}'")
+                    text = text_stripped[len(written_page_text.strip()) :].strip()
+                    logging.debug(
+                        f"Removed written page number from start of block: '{written_page_text}'"
+                    )
                 elif text_stripped.endswith(written_page_text.strip()):
                     # Remove from end and clean up any leading whitespace
-                    text = text_stripped[:-len(written_page_text.strip())].strip()
-                    logging.debug(f"Removed written page number from end of block: '{written_page_text}'")
+                    text = text_stripped[: -len(written_page_text.strip())].strip()
+                    logging.debug(
+                        f"Removed written page number from end of block: '{written_page_text}'"
+                    )
 
         # Re-check if text is empty after page number removal
         if not text:
@@ -190,53 +271,66 @@ def _format_pdf_markdown(
         # Groups consecutive spans with identical formatting to prevent malformed markdown
         merger = FormattingGroupMerger()
         processed_text, potential_def_id = merger.process_spans_to_markdown(
-            spans=spans,
-            is_first_block=(text_block_idx == 0),
-            block_text=text
+            spans=spans, is_first_block=(text_block_idx == 0), block_text=text
         )
 
         # Clean up multiple spaces
-        processed_text = re.sub(r'\s+', ' ', processed_text).strip()
+        processed_text = re.sub(r"\s+", " ", processed_text).strip()
 
         # Store definition if found, otherwise format content
         if potential_def_id:
             # Store potentially uncleaned text (cleaning moved to final formatting)
-            footnote_defs[potential_def_id] = processed_text # Store raw processed text
+            footnote_defs[potential_def_id] = processed_text  # Store raw processed text
             text_block_idx += 1
-            continue # Don't add definition block as regular content
+            continue  # Don't add definition block as regular content
 
         # Format based on analysis (only if not using ToC headings)
-        if analysis['heading_level'] > 0 and not use_toc_headings:
+        if analysis["heading_level"] > 0 and not use_toc_headings:
             markdown_lines.append(f"{'#' * analysis['heading_level']} {processed_text}")
-            current_list_type = None # Reset list context after heading
-        elif analysis['is_list_item']:
+            current_list_type = None  # Reset list context after heading
+        elif analysis["is_list_item"]:
             # Basic list handling (needs refinement for nesting based on indent)
             # Remove original list marker from text if present
-            list_marker = analysis.get('list_marker')
-            clean_text = processed_text # Start with original processed text
+            list_marker = analysis.get("list_marker")
+            clean_text = processed_text  # Start with original processed text
 
-            if analysis['list_type'] == 'ul' and list_marker:
+            if analysis["list_type"] == "ul" and list_marker:
                 # Use regex to remove the specific marker found
-                clean_text = re.sub(r"^" + re.escape(list_marker) + r"\s*", "", processed_text).strip()
+                clean_text = re.sub(
+                    r"^" + re.escape(list_marker) + r"\s*", "", processed_text
+                ).strip()
                 markdown_lines.append(f"* {clean_text}")
-            elif analysis['list_type'] == 'ol' and list_marker:
-                 # Use regex to remove the specific marker found (number/letter/roman + ./))
-                clean_text = re.sub(r"^" + re.escape(list_marker) + r"[\.\)]\s*", "", processed_text, flags=re.IGNORECASE).strip()
+            elif analysis["list_type"] == "ol" and list_marker:
+                # Use regex to remove the specific marker found (number/letter/roman + ./))
+                clean_text = re.sub(
+                    r"^" + re.escape(list_marker) + r"[\.\)]\s*",
+                    "",
+                    processed_text,
+                    flags=re.IGNORECASE,
+                ).strip()
                 # Use the detected marker for the Markdown list item
                 markdown_lines.append(f"{list_marker}. {clean_text}")
-            current_list_type = analysis['list_type']
-        else: # Regular paragraph
+            current_list_type = analysis["list_type"]
+        else:  # Regular paragraph
             # Only add if it's not empty after processing (e.g., after footnote extraction)
             if processed_text:
                 markdown_lines.append(processed_text)
-            current_list_type = None # Reset list context
+            current_list_type = None  # Reset list context  # noqa: F841
 
-        # Increment text block counter at the end of each iteration
+        # Insert margin annotations adjacent to this body block
+        if body_block_idx in margin_map:
+            for annotation in margin_map[body_block_idx]:
+                markdown_lines.append(annotation)
+
+        # Increment counters
+        body_block_idx += 1
         text_block_idx += 1
 
     # Join main content lines with double newlines
-    main_content = "\n\n".join(md_line for md_line in markdown_lines if not md_line.startswith("[^")) # Exclude footnote defs for now
-    main_content_stripped = main_content.strip() # Store stripped version for checks
+    main_content = "\n\n".join(
+        md_line for md_line in markdown_lines if not md_line.startswith("[^")
+    )  # Exclude footnote defs for now
+    main_content_stripped = main_content.strip()  # Store stripped version for checks
 
     # Format footnote section separately, joining with single newlines
     footnote_block = ""
@@ -247,7 +341,9 @@ def _format_pdf_markdown(
             cleaned_fn_text = re.sub(r"^[^\w]+", "", fn_text).strip()
             footnote_lines.append(f"[^{fn_id}]: {cleaned_fn_text}")
         # Construct the footnote block with correct spacing
-        footnote_block = "---\n" + "\n".join(footnote_lines) # Definitions joined by single newline
+        footnote_block = "---\n" + "\n".join(
+            footnote_lines
+        )  # Definitions joined by single newline
 
     # Combine main content and footnote section
     if footnote_block:

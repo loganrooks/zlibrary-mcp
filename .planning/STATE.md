@@ -10,17 +10,17 @@ See: .planning/PROJECT.md (updated 2026-02-01)
 ## Current Position
 
 Phase: 10 of 12 (Adaptive Resolution)
-Plan: 1 of 3 in current phase
+Plan: 2 of 3 in current phase
 Status: In progress
-Last activity: 2026-02-02 — Completed 10-01-PLAN.md (DPI Computation & Font Analysis)
+Last activity: 2026-02-02 — Completed 10-02-PLAN.md (Adaptive Renderer)
 
-Progress: [███████░░░░░░░░░] 70% (7/10 v1.1 plans)
+Progress: [████████░░░░░░░░] 80% (8/10 v1.1 plans)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 28 (22 v1.0 + 6 v1.1)
-- v1.1 plans completed: 7
+- Total plans completed: 29 (22 v1.0 + 7 v1.1)
+- v1.1 plans completed: 8
 - Total execution time: ~4 days (v1.0)
 
 **By Phase:** (v1.1)
@@ -29,7 +29,7 @@ Progress: [███████░░░░░░░░░] 70% (7/10 v1.1 plan
 |-------|-------|-------|----------|
 | 08 | 3/3 | ~13min | ~4.3min |
 | 09 | 3/3 | ~12min | ~4min |
-| 10 | 1/3 | ~4min | ~4min |
+| 10 | 2/3 | ~8min | ~4min |
 
 ## Accumulated Context
 
@@ -53,6 +53,7 @@ v1.1 decisions:
 - MARG-CACHE-COMPAT: Block bboxes identical between get_text("dict") and get_text("dict", flags=TEXTFLAGS_DICT)
 - MARG-FOOTNOTE-DEDUP-DEFERRED: Footnote bboxes not passed to detect_margin_content yet; deferred to Phase 11
 - RES-DPI-FLOOR-72: DPI floor is 72 (not quantized to 50) — preserves minimum rendering quality
+- RES-MATRIX-RENDER: Use fitz.Matrix(dpi/72, dpi/72) for rendering instead of deprecated dpi= parameter
 
 ### Pending Todos
 
@@ -71,5 +72,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-02
-Stopped at: Completed 10-01-PLAN.md (DPI Computation & Font Analysis)
+Stopped at: Completed 10-02-PLAN.md (Adaptive Renderer)
 Resume file: None

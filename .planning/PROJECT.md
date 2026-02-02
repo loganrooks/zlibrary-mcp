@@ -1,12 +1,12 @@
-# Z-Library MCP — Audit Cleanup & Modernization
+# Z-Library MCP — Project
 
 ## What This Is
 
-A cleanup and modernization effort for the Z-Library MCP server, driven by comprehensive audits (health, issues, branches, roadmap) conducted on 2026-01-28. The project addresses technical debt, stale documentation, outdated dependencies, monolithic architecture, and branch hygiene — plus ports valuable unmerged features from the `get_metadata` branch.
+An MCP server enabling AI assistants to search, download, and process books from Z-Library. The codebase was modernized in v1.0 with updated dependencies, decomposed Python architecture, EAPI transport layer, and comprehensive quality gates.
 
 ## Core Value
 
-Bring the codebase to a clean, current, maintainable state so that future feature development starts from a solid foundation — not 3-month-stale docs and a 5000-line monolith.
+Reliable, maintainable MCP server for Z-Library book access — built on a clean foundation ready for feature development.
 
 ## Requirements
 
@@ -23,78 +23,54 @@ Bring the codebase to a clean, current, maintainable state so that future featur
 - ✓ Advanced search with exact/fuzzy separation — existing
 - ✓ Debug mode with verbose logging — existing
 - ✓ HTTP connection pooling — existing
+- ✓ Integration test harness (11 tools, recorded + live modes) — v1.0
+- ✓ Docker E2E test with MCP SDK client — v1.0
+- ✓ MCP SDK upgraded to 1.25.3 with McpServer class — v1.0
+- ✓ Zod 3.25.x bridge + security audit (15 vulns fixed) — v1.0
+- ✓ Python monolith decomposed (31 modules, backward-compatible facade) — v1.0
+- ✓ Metadata tiering tool with include parameter — v1.0
+- ✓ Enhanced filenames (author-title format) — v1.0
+- ✓ Author/title fields in search results — v1.0
+- ✓ EAPI JSON transport (bypasses Cloudflare) — v1.0
+- ✓ Husky pre-commit hooks + GitHub Actions CI — v1.0
+- ✓ All docs updated with Last Verified timestamps — v1.0
 
 ### Active
 
-**Documentation & Docs Hygiene**
-- [ ] Update all stale .claude/*.md docs (ROADMAP, ARCHITECTURE, PROJECT_CONTEXT, VERSION_CONTROL) to reflect current state
-- [ ] Rewrite ROADMAP.md to reflect Phase 2 completion and actual current priorities
-- [ ] Update ISSUES.md: close ISSUE-002 (v2.0.0), update ISSUE-008/009 partial status, update SRCH-001/RAG-002 to partially implemented
-- [ ] Add "Last Verified" timestamps to technical docs
-
-**Branch Cleanup**
-- [ ] Delete 5 merged remote branches (development, phase-3-research, rag-eval-cleanup, rag-pipeline-enhancements-v2, rag-robustness-enhancement)
-- [ ] Delete obsolete self-modifying-system branch
-- [ ] Port get_metadata features to master (metadata scraping tool, enhanced filenames, author/title in search results)
-
-**Code Quality**
-- [ ] Fix bare exception handler in booklist_tools.py:267
-- [ ] Refactor monolithic rag_processing.py (4968 lines) into modular processors (pdf, epub, txt, footnote detection, OCR)
-- [ ] Clean up resolved BUG-X FIX comments (convert to CHANGELOG entries or remove)
-- [ ] Convert DEBUG comments to proper logging
-- [ ] Standardize Python import style (relative vs absolute)
-
-**Dependency Updates**
-- [ ] Update MCP SDK (1.8.0 → latest)
-- [ ] Update env-paths (3.0 → 4.0)
-- [ ] Migrate Zod 3.x → 4.x (breaking changes)
-- [ ] Run npm audit and pip-audit for security vulnerabilities
-- [ ] Add .tsbuildinfo to .gitignore
-
-**Infrastructure & DX**
-- [ ] Install pre-commit hooks (scripts exist but aren't linked)
-- [ ] Verify BRK-001 (download+RAG combined workflow) still reproduces
-- [ ] Add Python version check to setup script
-
-**Security**
-- [ ] Replace bare except with specific exception handling
-- [ ] Run security scanners (npm audit, safety check)
-- [ ] Specify parser in BeautifulSoup calls (XXE prevention)
+(None — define in next milestone via `/gsd:new-milestone`)
 
 ### Out of Scope
 
-- New feature development (search enhancements, download queue, RAG chunking, etc.) — this is cleanup only
-- OS keychain for credentials — security improvement but too large for cleanup scope
-- ML-based text recovery — research task, not cleanup
-- Marginalia/citation pipeline integration — designed but not broken, separate effort
-- Zod 4.x migration may be deferred if breaking changes are too extensive — evaluate during dependency phase
+- Rewrite Python bridge in TypeScript — Python has better doc-processing libs
+- ML-based text recovery — research task, not product scope
+- OS keychain for credentials — security improvement for future milestone
+- Push to 100% test coverage — 78-82% is healthy
 
 ## Context
 
-- Project graded C+ overall by health audit (functional but needs refactoring)
-- Documentation is 3-4 months stale (last updated Oct 2025)
-- rag_processing.py is 4968 lines with 11 high-complexity functions (process_pdf: 59 branches)
-- MCP SDK is 17 versions behind; Zod is 2 major versions behind
-- 5 merged branches and 1 obsolete branch cluttering remote
-- get_metadata branch has valuable features (metadata tool, enhanced filenames, author/title search) that never got merged
-- All critical bugs are resolved; test suite is healthy (78% Node.js, 82% Python coverage)
-- Existing codebase map available at .planning/codebase/
-
-## Constraints
-
-- **No regressions**: All existing tests must continue passing after every change
-- **Incremental commits**: Each logical change committed separately for easy rollback
-- **Test-first for refactoring**: Existing tests must pass before and after each extraction from rag_processing.py
-- **Dependency updates staged**: One dependency at a time with full test suite between stages
+Shipped v1.0 with 45,231 LOC (TypeScript + Python).
+Tech stack: Node.js/TypeScript MCP server, Python bridge, vendored zlibrary fork, EAPI JSON transport.
+7 phases completed in 4 days: test harness → deps → SDK → decomposition → feature porting → docs → EAPI.
+Known limitations: EAPI lacks booklist/full-text search endpoints (graceful degradation in place).
 
 ## Key Decisions
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Include get_metadata port | Valuable features that never got merged; 75 commits behind so manual port needed | — Pending |
-| Manual port over rebase for get_metadata | 75-commit drift makes rebase risky; manual port allows incremental testing | — Pending |
-| Full scope (all audit recommendations) | User wants everything addressed, not just quick wins | — Pending |
-| Defer Zod 4.x if too disruptive | Breaking changes may cascade; evaluate during dependency phase | — Pending |
+| Include get_metadata port | Valuable features never merged; 75 commits behind | ✓ Good — metadata, filenames, search fields shipped |
+| Manual port over rebase | 75-commit drift makes rebase risky | ✓ Good — clean integration |
+| Full scope (all audit recs) | User wanted everything addressed | ✓ Good — 28/28 requirements met |
+| Zod 3.25.x bridge not full Zod 4 | Breaking changes too extensive | ✓ Good — stable, upgradeable later |
+| McpServer class with server.tool() | Modern SDK pattern, cleaner than legacy Server | ✓ Good — simpler registration |
+| Facade pattern for decomposition | Zero breakage to existing imports | ✓ Good — all tests passed unchanged |
+| EAPI over HTML scraping | Cloudflare blocking all HTML requests | ✓ Good — restored full functionality |
+| Keep AsyncZlib for downloads | EAPI download returns URL, needs legacy client | ⚠️ Revisit — technical debt |
+
+## Constraints
+
+- **No regressions**: All existing tests must continue passing
+- **Incremental commits**: Each logical change committed separately
+- **Test-first for refactoring**: Tests pass before and after each change
 
 ---
-*Last updated: 2026-01-28 after initialization*
+*Last updated: 2026-02-01 after v1.0 milestone*

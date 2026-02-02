@@ -10,17 +10,17 @@ See: .planning/PROJECT.md (updated 2026-02-01)
 ## Current Position
 
 Phase: 11 of 12 (Body Text Purity)
-Plan: 4 of 7 in current phase (compositor conflict resolution)
+Plan: 4 of 7 in current phase (detector registry adapters + compositor done)
 Status: In progress
-Last activity: 2026-02-02 — Completed 11-04-PLAN.md (Compositor Conflict Resolution)
+Last activity: 2026-02-02 — Completed 11-03-PLAN.md (Detector Registry Adapters)
 
-Progress: [████████████░░░░] 94% (14/18 v1.1 plans)
+Progress: [████████████░░░░] 97% (15/18 v1.1 plans)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 35 (22 v1.0 + 13 v1.1)
-- v1.1 plans completed: 14
+- Total plans completed: 36 (22 v1.0 + 14 v1.1)
+- v1.1 plans completed: 15
 - Total execution time: ~4 days (v1.0)
 
 **By Phase:** (v1.1)
@@ -30,7 +30,7 @@ Progress: [████████████░░░░] 94% (14/18 v1.1 pla
 | 08 | 3/3 | ~13min | ~4.3min |
 | 09 | 3/3 | ~12min | ~4min |
 | 10 | 4/4 | ~14min | ~3.5min |
-| 11 | 4/7 | ~28min | ~7min |
+| 11 | 5/7 | ~31min | ~6min |
 
 ## Accumulated Context
 
@@ -52,7 +52,7 @@ v1.1 decisions:
 - MARG-BEKKER-FIRST: Check Bekker regex before Stephanus (more specific pattern prevents ambiguity)
 - MARG-MIDPOINT-ZONE: Use block midpoint for margin-left vs margin-right classification
 - MARG-CACHE-COMPAT: Block bboxes identical between get_text("dict") and get_text("dict", flags=TEXTFLAGS_DICT)
-- MARG-FOOTNOTE-DEDUP-DEFERRED: Footnote bboxes not passed to detect_margin_content yet; deferred to Phase 11
+- MARG-FOOTNOTE-DEDUP-RESOLVED: Footnote bboxes now flow to margins via pipeline context (resolved in 11-03)
 - RES-DPI-FLOOR-72: DPI floor is 72 (not quantized to 50) — preserves minimum rendering quality
 - RES-MATRIX-RENDER: Use fitz.Matrix(dpi/72, dpi/72) for rendering instead of deprecated dpi= parameter
 - RES-ADAPTIVE-DEFAULT: Adaptive DPI is default behavior (no opt-in flag); scanned PDFs auto-fallback to 300
@@ -82,5 +82,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-02
-Stopped at: Completed 11-04-PLAN.md (Compositor Conflict Resolution)
+Stopped at: Completed 11-03-PLAN.md (Detector Registry Adapters)
 Resume file: None

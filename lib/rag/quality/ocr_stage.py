@@ -58,7 +58,8 @@ def _stage_3_ocr_recovery(
     page_num: int,
     config: 'QualityPipelineConfig',
     ocr_cache: dict = None,
-    xmark_result: 'XMarkDetectionResult' = None
+    xmark_result: 'XMarkDetectionResult' = None,
+    page_dpi_map: dict = None,
 ) -> PageRegion:
     """
     Stage 3: OCR recovery - BOTH sous-rature AND corruption.
@@ -112,8 +113,12 @@ def _stage_3_ocr_recovery(
                 recovered_text = ocr_cache[page_num]
                 logging.debug(f"Stage 3: Using cached OCR for page {page_num}")
             else:
-                # OCR entire page at high resolution
-                pix = page.get_pixmap(dpi=300)
+                # OCR entire page at high resolution (adaptive DPI if available)
+                dpi = 300  # default fallback
+                if page_dpi_map and page_num in page_dpi_map:
+                    dpi = page_dpi_map[page_num].dpi
+                    logging.debug(f"Stage 3: Using adaptive DPI {dpi} for page {page_num}")
+                pix = page.get_pixmap(dpi=dpi)
                 img_bytes = pix.tobytes("png")
                 img = Image.open(io.BytesIO(img_bytes))
 

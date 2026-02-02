@@ -56,9 +56,9 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 09-01-PLAN.md — Margin zone detection engine (bbox analysis, body column inference, zone classification)
-- [ ] 09-02-PLAN.md — Scholarly reference patterns (Stephanus, Bekker, line number classification)
-- [ ] 09-03-PLAN.md — Pipeline integration + structured annotation output ({{type: content}} markers)
+- [ ] 09-01-PLAN.md — Margin detection engine + typed classification (margins.py, margin_patterns.py, tests)
+- [ ] 09-02-PLAN.md — Pipeline integration (orchestrator + formatter wiring, margin_blocks parameter)
+- [ ] 09-03-PLAN.md — Integration tests + phase success criteria verification
 
 #### Phase 10: Adaptive Resolution Pipeline
 **Goal**: OCR quality improves automatically by selecting optimal DPI per page and per region based on content analysis

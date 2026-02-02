@@ -68,12 +68,13 @@ Plans:
   1. Text-heavy pages render at lower DPI (150-200) while pages with fine print, footnotes, or margin text render at higher DPI (300)
   2. Footnote and margin regions within a page can be re-rendered at higher resolution independently of the page default
   3. DPI selection is driven by measured text pixel height analysis (targeting Tesseract 30-33px optimal range)
-**Plans**: 3 plans
+**Plans**: 4 plans
 
 Plans:
 - [ ] 10-01-PLAN.md — DPI computation models + font analysis engine (TDD)
 - [ ] 10-02-PLAN.md — Adaptive page and region renderer (TDD)
 - [ ] 10-03-PLAN.md — Pipeline integration (orchestrator + OCR wiring + metadata)
+- [ ] 10-04-PLAN.md — Gap closure: wire region re-rendering into production pipeline
 
 #### Phase 11: Body Text Purity Integration
 **Goal**: All detection modules (footnotes, margins, headings, page numbers, TOC, front matter) compose into a unified pipeline that delivers clean body text with non-body content clearly separated

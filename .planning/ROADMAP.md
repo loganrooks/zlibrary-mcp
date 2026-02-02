@@ -53,12 +53,12 @@ Plans:
   3. Line numbers from poetry, legal texts, and critical editions are detected and separated from body text
   4. Margin zone widths adapt per document (Loeb outer margins, Oxford inner margins) without manual configuration
   5. Marginal notes and cross-references are preserved in output (not discarded)
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 09-01: Margin zone detection engine (bbox analysis, page-level margin model)
-- [ ] 09-02: Scholarly reference patterns (Stephanus, Bekker, line numbers)
-- [ ] 09-03: Marginal notes extraction + structured annotation output
+- [ ] 09-01-PLAN.md — Margin zone detection engine (bbox analysis, body column inference, zone classification)
+- [ ] 09-02-PLAN.md — Scholarly reference patterns (Stephanus, Bekker, line number classification)
+- [ ] 09-03-PLAN.md — Pipeline integration + structured annotation output ({{type: content}} markers)
 
 #### Phase 10: Adaptive Resolution Pipeline
 **Goal**: OCR quality improves automatically by selecting optimal DPI per page and per region based on content analysis

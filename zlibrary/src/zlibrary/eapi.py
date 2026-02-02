@@ -6,12 +6,15 @@ with cookie-based authentication.
 """
 
 import httpx
+import aiofiles
+import os
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 
 EAPI_HEADERS = {
     "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-                  "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     "Accept": "application/json, text/plain, */*",
     "Content-Type": "application/x-www-form-urlencoded",
 }
@@ -76,10 +79,13 @@ class EAPIClient:
 
     async def login(self, email: str, password: str) -> dict:
         """POST /eapi/user/login — returns {success, user: {id, remix_userkey}}."""
-        result = await self._post("/eapi/user/login", {
-            "email": email,
-            "password": password,
-        })
+        result = await self._post(
+            "/eapi/user/login",
+            {
+                "email": email,
+                "password": password,
+            },
+        )
         if result.get("success") == 1 and "user" in result:
             user = result["user"]
             self.remix_userid = str(user.get("id", ""))
@@ -162,6 +168,86 @@ class EAPIClient:
     async def get_domains(self) -> dict:
         """GET /eapi/info/domains."""
         return await self._get("/eapi/info/domains")
+
+    async def download_file(
+        self,
+        book_id: int,
+        book_hash: str,
+        output_dir: str,
+        filename: Optional[str] = None,
+    ) -> str:
+        """Download a book file using EAPI download link.
+
+        Args:
+            book_id: Z-Library book ID
+            book_hash: Book hash for URL construction
+            output_dir: Directory to save the file
+            filename: Optional filename; derived from response headers or URL if omitted
+
+        Returns:
+            Absolute path to the downloaded file
+
+        Raises:
+            httpx.HTTPStatusError: On HTTP errors
+            RuntimeError: If no download link or empty response
+        """
+        # Get download link from EAPI
+        dl_resp = await self.get_download_link(book_id, book_hash)
+        download_url = (
+            dl_resp.get("file", {}).get("downloadLink")
+            or dl_resp.get("downloadLink", "")
+            or dl_resp.get("url", "")
+            or dl_resp.get("link", "")
+        )
+
+        if not download_url:
+            raise RuntimeError(
+                f"EAPI returned no download link for book {book_id}. Response: {dl_resp}"
+            )
+
+        # Make URL absolute if needed
+        if download_url.startswith("/"):
+            download_url = f"{self.base_url}{download_url}"
+
+        # Ensure output directory exists
+        os.makedirs(output_dir, exist_ok=True)
+
+        # Stream download
+        async with httpx.AsyncClient(
+            cookies=self._cookies,
+            follow_redirects=True,
+            timeout=httpx.Timeout(60.0, connect=10.0),
+        ) as dl_client:
+            async with dl_client.stream("GET", download_url) as response:
+                response.raise_for_status()
+
+                # Determine filename
+                if not filename:
+                    # Try Content-Disposition header
+                    cd = response.headers.get("content-disposition", "")
+                    if "filename=" in cd:
+                        # Extract filename from header
+                        parts = cd.split("filename=")
+                        if len(parts) > 1:
+                            filename = parts[1].strip().strip('"').strip("'")
+                    if not filename:
+                        # Derive from URL path
+                        url_path = str(response.url).split("?")[0]
+                        filename = url_path.split("/")[-1] or f"{book_id}.bin"
+
+                output_path = Path(output_dir) / filename
+
+                async with aiofiles.open(output_path, "wb") as f:
+                    async for chunk in response.aiter_bytes():
+                        await f.write(chunk)
+
+        # Verify non-empty
+        if not output_path.exists() or output_path.stat().st_size == 0:
+            if output_path.exists():
+                output_path.unlink()
+            raise RuntimeError(f"Download produced empty file for book {book_id}")
+
+        return str(output_path.resolve())
 
 
 def normalize_eapi_book(eapi_book: dict) -> dict:

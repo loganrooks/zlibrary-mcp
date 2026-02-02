@@ -84,10 +84,16 @@ Plans:
   1. Processing a scholarly PDF produces markdown with clean body text and all non-body content (footnotes, margins, headings, page numbers, TOC) in separate clearly-labeled sections
   2. Each detection decision carries a confidence score accessible in output metadata
   3. No body text is lost by the unified pipeline (recall regression tests pass against ground truth corpus)
-**Plans**: TBD
+**Plans**: 7 plans
 
 Plans:
-- [ ] 11-01: Unified detection pipeline + structured output + confidence scoring
+- [ ] 11-01-PLAN.md — Data models (ContentType, BlockClassification, DetectionResult, DocumentOutput) + detector registry
+- [ ] 11-02-PLAN.md — Recall baseline snapshot + recall regression test
+- [ ] 11-03-PLAN.md — Detector adapter wrappers (all 6 detectors registered with typed output)
+- [ ] 11-04-PLAN.md — Compositor with conflict resolution + confidence scoring (TDD)
+- [ ] 11-05-PLAN.md — Pipeline runner + multi-file writer
+- [ ] 11-06-PLAN.md — Orchestrator refactor (process_pdf_structured + backward compat)
+- [ ] 11-07-PLAN.md — End-to-end integration tests + recall regression verification
 
 #### Phase 12: Anna's Archive Integration
 **Goal**: Users can search and download books from Anna's Archive as a fallback source when Z-Library is unavailable, with clear source attribution
@@ -122,5 +128,5 @@ Phases execute in numeric order: 8 → 9 → 10 → 11 → 12
 | 8. Infrastructure Modernization | v1.1 | 3/3 | Complete | 2026-02-02 |
 | 9. Margin Detection & Scholarly References | v1.1 | 3/3 | Complete | 2026-02-02 |
 | 10. Adaptive Resolution Pipeline | v1.1 | 4/4 | Complete | 2026-02-02 |
-| 11. Body Text Purity Integration | v1.1 | 0/1 | Not started | - |
+| 11. Body Text Purity Integration | v1.1 | 0/7 | Not started | - |
 | 12. Anna's Archive Integration | v1.1 | 0/2 | Not started | - |

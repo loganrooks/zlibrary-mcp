@@ -1,268 +1,214 @@
-# Stack Migration Research
+# Technology Stack: v1.1 Quality & Expansion
 
-**Date**: 2026-01-28
-**Scope**: Dependency upgrades and Python decomposition for Z-Library MCP cleanup
-**Current state**: MCP SDK 1.8.0, Zod 3.24.2, env-paths 3.0.0, Python monolith 4968 lines
-
----
-
-## 1. @modelcontextprotocol/sdk: 1.8.0 to 1.25.3
-
-**Risk: HIGH** -- 17 versions behind, multiple breaking changes, Zod coupling
-
-### Breaking Changes Affecting This Project
-
-| Version | Change | Impact on This Project |
-|---------|--------|----------------------|
-| 1.10.0 | Streamable HTTP transport added (replaces SSE) | Low -- project uses StdioServerTransport only |
-| 1.23.0 | Zod v4 support added (imports from `zod/v4` internally) | HIGH -- forces Zod upgrade decision |
-| 1.24.x | Server class refactored to be framework-agnostic; Express moved to separate module | Low -- project uses raw Server class |
-| 1.25.0 | Removed loose/passthrough types not in MCP spec; added Task types; spec compliance tightened | MEDIUM -- `z.object({}).passthrough()` in `DownloadBookToFileParamsSchema` may be affected |
-| 1.25.0 | Protocol version bumped to `2025-11-25` | Low -- automatic |
-
-### Import Path Changes
-
-The project currently imports from:
-```typescript
-import { Server } from '@modelcontextprotocol/sdk/server/index.js';
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { ListToolsRequestSchema, CallToolRequestSchema, ... } from '@modelcontextprotocol/sdk/types.js';
-```
-
-These paths may have changed in v1.25.x. The SDK was restructured with separate middleware packages. Verify that `/server/index.js`, `/server/stdio.js`, and `/types.js` subpath exports still exist.
-
-### Known Issues with Upgrade
-
-- **TypeScript compilation memory**: SDK v1.25.x causes severe memory consumption during TS compilation (OOM in CI). Monitor CI after upgrade.
-- **JSON Schema draft**: SDK generates draft-07 via zod-to-json-schema; modern MCP clients expect draft-2020-12. The project explicitly uses `zod-to-json-schema` -- may need to update that too.
-- **Dual Zod versions**: If project stays on Zod 3 while SDK uses Zod 4 internally, TypeScript TS2589 errors can occur from multiple zod versions in dependency tree.
-
-### Migration Steps
-
-1. Read full release notes: https://github.com/modelcontextprotocol/typescript-sdk/releases
-2. Upgrade Zod FIRST (see section 2) -- SDK 1.23+ expects Zod v3.25+ minimum
-3. `npm install @modelcontextprotocol/sdk@latest`
-4. Fix any import path breakages (check subpath exports)
-5. Replace `z.object({}).passthrough()` if MCP spec compliance enforcement rejects it
-6. Verify `zod-to-json-schema` compatibility with new SDK version
-7. Run full test suite; check for TS compilation memory issues
-8. Test with actual MCP client (Claude Desktop) to verify protocol negotiation
-
-### What NOT To Do
-
-- Do NOT upgrade SDK before upgrading Zod -- will cause dual-version TypeScript errors
-- Do NOT assume import paths are stable -- verify subpath exports after install
-- Do NOT skip testing with a real MCP client -- protocol version negotiation changed
+**Project:** zlibrary-mcp
+**Researched:** 2026-02-01
+**Scope:** Stack additions for margin detection, adaptive resolution, Anna's Archive, Node 22, AsyncZlib removal
+**Overall confidence:** MEDIUM-HIGH
 
 ---
 
-## 2. Zod 3.24.2 to Zod 4.x
+## 1. Margin Content Detection in PDFs
 
-**Risk: MEDIUM** -- Breaking changes exist but project usage is straightforward
+### No New Libraries Needed
 
-### Project's Current Zod Usage (from `src/index.ts`)
+PyMuPDF (already at >=1.26.0) provides everything required:
 
-```typescript
-import { z, ZodObject, ZodRawShape } from 'zod';
+| Capability | PyMuPDF API | Purpose |
+|------------|-------------|---------|
+| Block coordinates | `page.get_text("dict")` | Returns bbox `(x0,y0,x1,y1)` per span with font info |
+| Word positions | `page.get_text("words")` | Tuples of `(x0,y0,x1,y1,word,block_no,line_no,word_no)` |
+| Region clipping | `page.get_text("blocks", clip=rect)` | Extract only from margin regions |
+| Page dimensions | `page.rect` | `Rect(0,0,width,height)` for computing margin zones |
+| Font metadata | dict mode spans | `font`, `size`, `flags` per span for classifying margin vs body text |
 
-// Patterns used:
-z.object({ ... })
-z.string().describe(...)
-z.boolean().optional().default(false).describe(...)
-z.number().int().optional().describe(...)
-z.array(z.string()).optional().default([]).describe(...)
-z.object({}).passthrough().describe(...)  // bookDetails
-```
+**Integration point:** New module `lib/rag/detection/margins.py` alongside existing `footnotes.py`, `page_numbers.py`. Uses same `fitz.Page` object already passed to `_format_pdf_markdown()` in `lib/rag/processors/pdf.py`.
 
-### Breaking Changes That Affect This Project
+**Approach:** Compute body text bounding box (median x0/x1 across blocks), then classify blocks outside that zone as margin content. Use font size differential (margin text is typically smaller) and positional patterns (Stephanus numbers appear at consistent x-offsets near left/right edges).
 
-| Change | Impact | Fix |
-|--------|--------|-----|
-| `z.object({}).passthrough()` deprecated | Direct hit on `DownloadBookToFileParamsSchema` | Replace with `z.looseObject({})` |
-| Error customization API (`message` to `error`) | Low -- project uses `.describe()` not custom errors | No change needed |
-| `z.record()` requires two args | Check if used anywhere | Grep found no usage |
-| `ZodObject` type export | May move or change | Verify `ZodObject` still exported from `'zod'` |
+**Confidence:** HIGH -- PyMuPDF docs confirm all needed APIs exist.
 
-### No Impact (Project Does NOT Use These)
+### What NOT to Add
 
-- `z.string().email()` / `.uuid()` / `.url()` (format methods moved to top-level) -- not used
-- `z.function()` redesign -- not used
-- `.merge()` deprecation -- not used
-- `.strip()`, `.nonstrict()`, `.deepPartial()` removal -- not used
-- `z.nativeEnum()` deprecation -- not used
-- `z.refine()` type narrowing change -- not used
-
-### Migration Steps
-
-1. Upgrade: `npm install zod@latest`
-2. Replace `z.object({}).passthrough()` with `z.looseObject({})` in `src/index.ts:78`
-3. Verify `ZodObject` and `ZodRawShape` are still exported (used in line 3)
-4. Update `zod-to-json-schema` to latest compatible version
-5. Run type check: `npx tsc --noEmit`
-6. Run tests
-
-### Migration Tool Available
-
-A codemod exists: https://www.hypermod.io/explore/zod-v4 -- but given the small surface area in this project, manual migration is safer and takes ~15 minutes.
-
-### What NOT To Do
-
-- Do NOT use `zod/v4` subpath import -- use the main `zod` export after upgrading to v4
-- Do NOT upgrade zod-to-json-schema independently -- version must match Zod version
+| Library | Why Not |
+|---------|---------|
+| pdfplumber | Redundant with PyMuPDF; adds dependency for same coordinate extraction |
+| pdfminer.six | Slower, more complex API; PyMuPDF already handles layout |
+| Tesseract/OCR | Only needed if margins are image-based; defer until proven necessary |
 
 ---
 
-## 3. env-paths 3.0.0 to 4.0.0
+## 2. Adaptive Resolution Pipeline
 
-**Risk: LOW** -- Only breaking change is Node.js version requirement
+### No New Libraries Needed
 
-### Breaking Changes
+PyMuPDF handles variable-DPI rendering natively:
 
-| Change | Impact |
-|--------|--------|
-| Requires Node.js 20+ | Verify project's minimum Node version; if already on 20+, zero impact |
+| Capability | PyMuPDF API | Purpose |
+|------------|-------------|---------|
+| Variable DPI render | `page.get_pixmap(matrix=fitz.Matrix(scale, scale))` | Scale factor maps to DPI (1.0=72dpi, 2.0=144dpi, 4.0=288dpi) |
+| Text size analysis | `get_text("dict")` spans | Font size per span to determine if higher DPI needed |
+| Image extraction | `page.get_images()` | Detect image-heavy pages needing different treatment |
 
-### API Changes
+**Integration point:** Add DPI selection logic to `lib/rag/ocr/` modules. Existing OCR recovery already processes pages; adaptive resolution adds a pre-pass to select appropriate scale factor based on minimum font size detected on each page.
 
-None. The API is identical between v3 and v4.
+**Algorithm sketch:**
+- Default: 150 DPI (scale=2.08) for body text
+- Small text (<8pt): 300 DPI (scale=4.17)
+- Margin annotations (<6pt): 400 DPI (scale=5.56)
+- Image-only pages: 200 DPI (scale=2.78)
 
-### Migration Steps
-
-1. Verify project runs on Node.js 20+
-2. `npm install env-paths@latest`
-3. No code changes needed
-
----
-
-## 4. Python Monolith Decomposition (rag_processing.py: 4968 lines, 55 functions)
-
-**Risk: MEDIUM** -- Refactoring risk, but no external dependency changes
-
-### Recommended Module Structure
-
-Based on Python modular monolith best practices, split by domain responsibility:
-
-```
-lib/
-  rag/
-    __init__.py          # Public API (re-exports from submodules)
-    extraction.py        # Text extraction (EPUB, PDF, TXT)
-    processing.py        # Document processing pipeline
-    chunking.py          # Text chunking and segmentation
-    quality.py           # Quality analysis and scoring
-    formatting.py        # Output formatting and cleanup
-    utils.py             # Shared utilities (encoding detection, etc.)
-    types.py             # Shared types/dataclasses
-  python_bridge.py       # Unchanged -- calls into rag package
-```
-
-### Decomposition Strategy
-
-1. **Identify clusters**: Group the 55 functions by call graph proximity and domain
-2. **Extract types first**: Move dataclasses/TypedDicts to `types.py`
-3. **Extract utilities**: Pure functions with no domain logic to `utils.py`
-4. **Split by format**: PDF extraction, EPUB extraction, TXT extraction are natural boundaries
-5. **Extract pipeline**: The main orchestration functions stay in `processing.py`
-6. **Preserve public API**: `__init__.py` re-exports everything `python_bridge.py` calls
-7. **Update imports in python_bridge.py**: Change `from rag_processing import X` to `from rag import X`
-
-### Key Principles
-
-- **Preserve the public API**: `python_bridge.py` should need minimal changes
-- **No circular imports**: Dependency direction must be: processing -> extraction -> utils -> types
-- **Test in parallel**: Keep `rag_processing.py` intact until new modules pass all tests
-- **One PR per extraction**: Don't do it all at once
-
-### What NOT To Do
-
-- Do NOT split into one-function-per-file -- leads to circular import hell in Python
-- Do NOT change function signatures during decomposition -- separate concern
-- Do NOT delete `rag_processing.py` until the new package passes 100% of existing tests
-- Do NOT decompose and change behavior simultaneously
+**Confidence:** HIGH -- standard PyMuPDF pixmap usage.
 
 ---
 
-## 5. Dependency Security Scanning
+## 3. Anna's Archive Integration
 
-### npm audit
+### API Surface
 
-```bash
-# Add to CI pipeline
-npm audit --audit-level=high    # Fail on high/critical only
-npm audit --json                # Machine-readable for dashboards
+Anna's Archive has **no official public API documentation**. Access is donation-gated.
 
-# Fix automatically (safe fixes only)
-npm audit fix                   # Non-breaking fixes
-npm audit fix --force           # Breaking fixes (use with caution)
+| Aspect | Details | Confidence |
+|--------|---------|------------|
+| Auth | API key via donation at annas-archive.org/donate | MEDIUM |
+| Base URL | `annas-archive.li` (configurable, mirrors change) | MEDIUM |
+| Search | Query params, returns JSON with book metadata including MD5 | MEDIUM |
+| Download | MD5-based download links; "fast download" for donors, fallback to mirrors | MEDIUM |
+| Rate limits | Unknown officially; RapidAPI wrapper offers 3K reqs/month on free tier | LOW |
+| API key env | `ANNAS_SECRET_KEY` (convention from existing MCP servers) | MEDIUM |
+
+### Recommended Stack Addition
+
+| Technology | Version | Purpose | Why |
+|------------|---------|---------|-----|
+| httpx | (already vendored) | HTTP client for AA API | Already used in zlibrary fork; no new dep |
+
+**No new Python libraries needed.** The Anna's Archive API is a simple REST-like interface. Use httpx (already a dependency) to call it.
+
+### Integration Architecture
+
+Create `lib/sources/annas_archive.py` as a new book source alongside the existing Z-Library EAPI client. Both implement a common interface:
+
+```python
+class BookSource(Protocol):
+    async def search(self, query: str, **kwargs) -> list[dict]
+    async def get_download_link(self, book_id: str) -> str
+    async def download(self, book_id: str, output_dir: Path) -> Path
 ```
 
-### pip-audit
+**Node.js side:** Add `ANNAS_ARCHIVE_API_KEY` and `ANNAS_ARCHIVE_BASE_URL` env vars. Route through existing Python bridge -- no new Node dependencies.
 
-```bash
-# Install
-uv pip install pip-audit
+### Key Reference
 
-# Run audit
-pip-audit                       # Audit current environment
-pip-audit --fix                 # Auto-fix vulnerabilities
-pip-audit --json                # Machine-readable output
-pip-audit -r requirements.txt   # Audit from requirements file
+[iosifache/annas-mcp](https://github.com/iosifache/annas-mcp) is an existing Anna's Archive MCP server using `ANNAS_SECRET_KEY` for auth. Study its API patterns before implementation. Also available: [RapidAPI wrapper](https://rapidapi.com/tribestick-tribestick-default/api/annas-archive-api) as fallback reference.
 
-# CI integration
-pip-audit --strict              # Exit non-zero on any finding
-```
+**Confidence:** MEDIUM -- no official API docs exist. Implementation will require studying third-party wrappers or the [Anna's Archive source code](https://github.com/LilyLoops/annas-archive).
 
-### Recommended CI Configuration
+### What NOT to Add
 
-```yaml
-# Add to GitHub Actions workflow
-security-audit:
-  runs-on: ubuntu-latest
-  steps:
-    - uses: actions/checkout@v4
-    - run: npm audit --audit-level=high
-    - run: uv run pip-audit --strict
-```
-
-### Best Practices
-
-- Run both `npm audit` and `pip-audit` in CI on every PR
-- Set `--audit-level=high` for npm to avoid blocking on low-severity advisories
-- Use `pip-audit --ignore-vuln VULN-ID` for acknowledged false positives (document in code)
-- Schedule weekly full audits beyond CI (cron job) for newly discovered CVEs
+| Option | Why Not |
+|--------|---------|
+| RapidAPI wrapper | Adds third-party dependency, rate limits, and cost |
+| `archive_of_anna` npm package | Unmaintained JS wrapper; we need Python-side integration |
+| Scraping approach | Fragile; the donation API key path is more reliable |
 
 ---
 
-## 6. Recommended Upgrade Order
+## 4. Node 22 LTS Upgrade
 
-**Sequence matters.** Dependencies between upgrades dictate order.
+### Current State
 
-| Step | Action | Risk | Time Est. | Depends On |
-|------|--------|------|-----------|------------|
-| 1 | env-paths 3.0 to 4.0 | LOW | 15 min | Nothing |
-| 2 | Zod 3.x to 4.x | MEDIUM | 1 hour | Nothing |
-| 3 | zod-to-json-schema update | LOW | 15 min | Step 2 |
-| 4 | MCP SDK 1.8.0 to 1.25.x | HIGH | 2-4 hours | Steps 2, 3 |
-| 5 | Add npm audit + pip-audit to CI | LOW | 30 min | Nothing (parallel) |
-| 6 | Python decomposition (multi-PR) | MEDIUM | 4-8 hours | Nothing (parallel) |
+- `package.json` engines: `"node": ">=18"`
+- Node 18 is **EOL** -- no security patches
+- Recommendation: Skip Node 20, go directly to Node 22 LTS (supported until April 2027)
 
-### Critical Path
+### Migration Checklist
 
-**env-paths (15 min) -> Zod (1 hr) -> zod-to-json-schema (15 min) -> MCP SDK (2-4 hr)**
+| Area | Action | Risk |
+|------|--------|------|
+| Engine field | Update to `"node": ">=22"` | None |
+| `--experimental-vm-modules` | Still needed for Jest ESM in Node 22 | None |
+| Import assertions | Replace any `assert` keyword with `with` if used | Likely none in codebase |
+| `dirent.path` | Replace with `dirent.parentPath` if used | Grep codebase |
+| Native modules | `npm rebuild` -- PythonShell uses N-API, should be fine | LOW |
+| OpenSSL/TLS | Stricter defaults in Node 22 | May affect Z-Library HTTPS if certs are weak |
+| `fetch` API | Now stable -- can remove polyfills if any | Benefit |
+| CI/CD | Update GitHub Actions `node-version` | Standard |
+| OS requirements | glibc 2.28+ required | Verify deployment targets |
 
-Python decomposition and security scanning are independent and can proceed in parallel with the JS/TS upgrades.
+### Benefits
+
+- 10-15% V8 performance improvement
+- Stable fetch API
+- Active security patches until April 2027
+- Native WebSocket client available
+
+**Confidence:** HIGH -- well-documented migration path.
+
+---
+
+## 5. AsyncZlib Removal (Pure EAPI)
+
+### Current State (Verified via Code Inspection)
+
+`download_book()` in `libasync.py` line 357 **already uses EAPI exclusively**:
+1. Calls `self._eapi.get_download_link(book_id, book_hash)` for URL
+2. Streams download via httpx with EAPI cookies
+
+The `AsyncZlib` class still exists but its download path routes through EAPI. The EAPI client (`eapi.py`) is self-contained with full endpoint coverage:
+
+| EAPI Endpoint | Method | Purpose |
+|---------------|--------|---------|
+| `/eapi/user/login` | POST | Authentication |
+| `/eapi/book/search` | POST | Search with filters |
+| `/eapi/book/{id}/{hash}` | GET | Book info |
+| `/eapi/book/{id}/{hash}/file` | GET | Download link |
+| `/eapi/book/recently` | GET | Recent books |
+| `/eapi/book/most-popular` | GET | Popular books |
+| `/eapi/user/book/downloaded` | GET | Download history |
+| `/eapi/user/profile` | GET | User profile |
+| `/eapi/book/{id}/{hash}/similar` | GET | Similar books |
+| `/eapi/info/domains` | GET | Domain list |
+
+### Removal Scope
+
+| What to Remove | Why | Risk |
+|----------------|-----|------|
+| `AsyncZlib` class body (web scraping paths) | Dead code; EAPI handles everything | LOW |
+| HTML parsing in libasync (`bs4` usage) | Only for web scraping fallback | Verify no other callers |
+| `GET_request`, `POST_request` utils | Only used by web scraping | Check for other callers |
+| Web login flow in libasync | EAPI has `/eapi/user/login` | LOW |
+
+### No New Dependencies -- This is Pure Removal
+
+Replace `AsyncZlib` with a thin wrapper around `EAPIClient`. The `python_bridge.py` call sites need updating to use the simplified class.
+
+**Confidence:** HIGH -- code inspection confirms EAPI is the active path for all operations.
+
+---
+
+## Summary: Stack Delta for v1.1
+
+| Capability | New Python Deps | New Node Deps | New Env Vars | New Modules |
+|------------|----------------|---------------|--------------|-------------|
+| Margin detection | None | None | None | `lib/rag/detection/margins.py` |
+| Adaptive resolution | None | None | None | Logic in `lib/rag/ocr/` |
+| Anna's Archive | None (httpx exists) | None | `ANNAS_ARCHIVE_API_KEY`, `ANNAS_ARCHIVE_BASE_URL` | `lib/sources/annas_archive.py` |
+| Node 22 upgrade | None | None | None | package.json + CI config |
+| AsyncZlib removal | None (removes code) | None | None | Simplified wrapper class |
+
+**Key insight: This milestone requires zero new library dependencies.** All capabilities are achievable with the existing stack (PyMuPDF, httpx) plus new code modules. The main work is architectural -- new detection modules, source abstraction layer, and class simplification.
 
 ---
 
 ## Sources
 
-- [MCP TypeScript SDK Releases](https://github.com/modelcontextprotocol/typescript-sdk/releases)
-- [MCP Specification Changelog](https://modelcontextprotocol.io/specification/2025-11-25/changelog)
-- [Zod v4 Migration Guide](https://zod.dev/v4/changelog)
-- [Zod v4 Release Notes](https://zod.dev/v4)
-- [env-paths GitHub](https://github.com/sindresorhus/env-paths)
-- [env-paths v4.0.0 Release](https://github.com/sindresorhus/env-paths/releases/tag/v4.0.0)
-- [npm audit Documentation](https://docs.npmjs.com/cli/v9/commands/npm-audit/)
-- [pip-audit on PyPI](https://pypi.org/project/pip-audit/)
-- [Kraken Technologies: Python Monolith Organization](https://blog.europython.eu/kraken-technologies-how-we-organize-our-very-large-pythonmonolith/)
-- [Modular Monolith in Python](https://breadcrumbscollector.tech/modular-monolith-in-python/)
+- [PyMuPDF text extraction docs](https://pymupdf.readthedocs.io/en/latest/app1.html) -- block coordinates, dict mode
+- [PyMuPDF page API](https://pymupdf.readthedocs.io/en/latest/page.html) -- clip parameter, get_pixmap
+- [PyMuPDF text recipes](https://pymupdf.readthedocs.io/en/latest/recipes-text.html) -- practical extraction patterns
+- [PyMuPDF get_text coordinates discussion](https://github.com/pymupdf/PyMuPDF/discussions/2128)
+- [iosifache/annas-mcp](https://github.com/iosifache/annas-mcp) -- existing Anna's Archive MCP server
+- [RapidAPI Anna's Archive](https://rapidapi.com/tribestick-tribestick-default/api/annas-archive-api) -- third-party API wrapper
+- [Anna's Archive SearXNG engine docs](https://docs.searxng.org/dev/engines/online/annas_archive.html)
+- [Node.js 22 release announcement](https://nodejs.org/en/blog/announcements/v22-release-announce)
+- [Auth0 Node 18 to 22 migration guide](https://auth0.com/docs/troubleshoot/product-lifecycle/deprecations-and-migrations/migrate-nodejs-22)
+- [HeroDevs Node 18 EOL analysis](https://www.herodevs.com/blog-posts/node-js-18-end-of-life-breaking-changes-aws-deadlines-and-what-to-do-next)

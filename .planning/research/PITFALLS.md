@@ -1,203 +1,239 @@
 # Domain Pitfalls
 
-**Domain:** MCP Server Cleanup/Modernization
-**Researched:** 2026-01-28
-**Overall confidence:** HIGH (based on codebase inspection + verified documentation)
+**Project:** Z-Library MCP v1.1 Quality & Expansion
+**Researched:** 2026-02-01
+**Overall confidence:** HIGH (based on codebase inspection + domain knowledge)
+
+---
 
 ## Critical Pitfalls
 
-### Pitfall 1: MCP SDK Server Class Migration — Low-Level API to High-Level API
+### P-01: AsyncZlib Removal Breaks Download Path Without Obvious Test Failures
+**Severity:** CRITICAL
+**Phase:** AsyncZlib deprecation / EAPIClient migration
 
-**What goes wrong:** The codebase uses the low-level `Server` class with `setRequestHandler(ListToolsRequestSchema, ...)` and `setRequestHandler(CallToolRequestSchema, ...)` (see `src/index.ts:645-740`). The modern SDK provides `McpServer` with `server.registerTool()` (or the deprecated-but-functional `server.tool()`). Upgrading the SDK version without migrating the server class means you're on a supported but increasingly undocumented path. But migrating to `McpServer` requires rewriting the entire tool registration and dispatch system — it's not a drop-in replacement.
+**What goes wrong:** `client_manager.py` imports `AsyncZlib` directly. Six other modules in `lib/` reference it. The download flow (search -> fetch -> download) uses AsyncZlib's paginator and `book.fetch()` API. EAPIClient likely has a different method surface. Swapping the import without mapping every call site produces runtime failures that unit tests with mocked clients will not catch.
 
-**Why it happens:** The `Server` class still works in 1.25.x, so teams bump the version, see tests pass, and move on. Then they discover `setRequestHandler` behavior has subtly changed (e.g., protocol version negotiation, capability advertisement) and things break at runtime, not compile time.
+**Why it happens:** The vendor fork exposes both clients but they are not interface-compatible. Tests mock the client, so they pass even when the real client changes.
 
-**Consequences:** Runtime failures with MCP clients. Silent capability mismatches. Tests pass but real clients reject the server.
+**Warning signs:**
+- Unit tests pass but integration/manual tests fail
+- `AttributeError` on EAPIClient instances at runtime
+- Download works for search but fails on `fetch()` or `download()`
 
 **Prevention:**
-1. Pin to an intermediate version first (e.g., 1.12.x) and validate with a real MCP client (not just unit tests)
-2. Decide upfront: stay on `Server` class or migrate to `McpServer`. Don't half-migrate.
-3. If migrating to `McpServer`, do it as a standalone phase AFTER the version bump is stable.
+1. Map the full AsyncZlib API surface used across all 7 files (`client_manager.py`, `python_bridge.py`, `enhanced_metadata.py`, `booklist_tools.py`, `author_tools.py`, `term_tools.py`, `advanced_search.py`)
+2. Write an adapter/shim that presents the AsyncZlib interface but delegates to EAPIClient
+3. Add at least one integration test that exercises the real download path (can be skipped in CI but must exist)
+4. Deprecate gradually: adapter first, then swap internals, then remove adapter
 
-**Detection:** MCP client connection failures. Tool listings that don't match. Capability negotiation errors in debug logs.
-
-**Phase:** SDK Upgrade phase. Decision point before starting.
+**Detection:** `grep -rn "await.*\.\(search\|fetch\|download\|login\|profile\)" lib/` to find every method call on the client object.
 
 ---
 
-### Pitfall 2: Zod 3 to 4 — Schema Behavior Changes Break Validation Silently
+### P-02: Margin Detection Misidentifies Body Text as Marginal Content
+**Severity:** CRITICAL
+**Phase:** Margin/scholarly numbering detection
 
-**What goes wrong:** The project uses `z.object()` schemas extensively for tool parameter validation (`src/index.ts:42-48`), and uses `zodToJsonSchema()` to convert them for MCP tool definitions. Zod 4 changes default-inside-optional behavior: `z.string().default("x").optional()` now returns the default instead of `undefined`. Also, `zodToJsonSchema` must be compatible with Zod 4's internal representation — the `zod-to-json-schema` package may need its own upgrade.
+**What goes wrong:** Margin notes, line numbers, and scholarly apparatus appear in the same spatial regions as legitimate body text in multi-column layouts, narrow-margin academic papers, and scanned books with skew. A bbox-based heuristic (`x < threshold` = margin) produces false positives on indented paragraphs and false negatives on wide-margin annotations.
 
-**Why it happens:** Zod 4 is semantically different but syntactically identical. Tests that check "does parsing succeed" pass; tests that check "what exact value came out" may not exist.
+**Why it happens:** The existing detection system (`lib/rag/detection/`) uses font size and spatial position for footnotes. Extending this to margins seems straightforward but margin content has no consistent font-size differential like footnotes do.
 
-**Consequences:** Tool parameters silently get wrong default values. JSON Schema output changes, confusing MCP clients about expected inputs. `ZodError.errors` renamed to `ZodError.issues` breaks error handling code.
+**Warning signs:**
+- First few test PDFs work perfectly, then real-world academic PDFs fail
+- Paragraph first-lines get classified as margin notes
+- Two-column layouts lose an entire column
 
 **Prevention:**
-1. Use the [zod-v3-to-v4 codemod](https://github.com/nicoespeon/zod-v3-to-v4) for automated migration
-2. Audit every `.default()` + `.optional()` combination in schemas
-3. Snapshot-test the JSON Schema output of every tool before and after migration — diff must be intentional
-4. Upgrade `zod-to-json-schema` in lockstep with Zod
-5. Consider importing `zod/v4` explicitly during transition (subpath imports are permanent)
-
-**Detection:** Diff JSON Schema output before/after. Test tool invocations with missing optional parameters.
-
-**Phase:** SDK Upgrade phase, immediately after or alongside MCP SDK bump (they're coupled via Zod peer dependency).
+1. Do NOT use a single x-coordinate threshold. Build a page-level margin model: analyze the distribution of text block x-positions across the full page, identify clusters, and define margins relative to the dominant body cluster.
+2. Test with at minimum: single-column, two-column, scanned-with-skew, and legal/line-numbered documents.
+3. Add a confidence score to margin detections and expose it (don't silently strip content).
+4. Keep margin detection as a separate pipeline stage that can be disabled, not baked into core text extraction.
 
 ---
 
-### Pitfall 3: Python Monolith Decomposition — Breaking Import Chains in rag_processing.py
+### P-03: Anna's Archive Integration Creates Inconsistent Book Identity Model
+**Severity:** CRITICAL
+**Phase:** Anna's Archive source integration
 
-**What goes wrong:** `rag_processing.py` is 4,968 lines. Decomposing it into modules will break the Python bridge interface (`python_bridge.py` imports from it, and `src/lib/zlibrary-api.ts` calls Python via PythonShell with specific script paths). Every extracted module changes import paths, and the PythonShell invocation in Node.js hardcodes script paths like `lib/python_bridge.py`.
+**What goes wrong:** Z-Library and Anna's Archive use different ID schemes, metadata schemas, and search result structures. Merging results from both sources without a unified book identity model leads to duplicates in search results, broken "download by ID" flows, and confused users who get different results depending on which source responded first.
 
-**Why it happens:** The Node.js-Python boundary is stringly-typed (PythonShell passes script paths and JSON). There's no type checking across the boundary. You refactor Python, tests pass in Python, but Node.js integration breaks because it's calling the old script path or expecting the old JSON shape.
+**Why it happens:** It's tempting to add Anna's Archive as "another search backend" and merge results at the tool level. But book identity (ISBN, MD5 hash, Z-Lib ID, AA ID) doesn't map 1:1 across sources.
 
-**Consequences:** Integration failures that only surface in end-to-end testing. Python unit tests pass, Node.js unit tests pass (mocked), but the actual bridge is broken.
+**Warning signs:**
+- Same book appears twice in search results with slightly different metadata
+- Download fails because the ID from search came from source A but download assumes source B
+- Metadata fields are null/missing for one source but not the other
 
 **Prevention:**
-1. Define the Python bridge contract FIRST (script paths, function signatures, JSON schemas) — write it down
-2. Keep `python_bridge.py` as the stable entry point; only refactor what it imports internally
-3. Add integration tests that actually invoke PythonShell before decomposing
-4. Extract one module at a time with integration test validation between each extraction
-5. Never change the PythonShell entry point path during decomposition
+1. Design a `BookReference` abstraction that carries source provenance (which source, which ID scheme, original metadata)
+2. Never expose raw source IDs to the MCP tool interface; use a composite identifier that encodes source
+3. Implement deduplication at the search merge layer using ISBN or MD5 hash
+4. Make the source explicit in tool responses so the AI assistant (and user) knows where a book came from
 
-**Detection:** Integration test failures. `PythonShell` errors about missing modules or changed function signatures.
-
-**Phase:** Python Decomposition phase. Must have integration test harness BEFORE starting.
+**Legal/TOS considerations:**
+- Anna's Archive is a shadow library aggregator. Its legal status varies by jurisdiction.
+- Accessing AA programmatically may violate its TOS -- check current TOS before implementing.
+- Make AA an opt-in source (environment variable like `ANNAS_ARCHIVE_ENABLED=true`) rather than default, so users make their own legal determination.
+- Document the legal landscape in an ADR so the decision is traceable.
+- Consider that AA's availability is inconsistent (domain changes, Cloudflare protection) -- the integration must degrade gracefully.
 
 ---
 
-### Pitfall 4: Porting from Stale Branch — Silent Merge Conflicts in Modified Files
+## High Pitfalls
 
-**What goes wrong:** `feature/rag-robustness-enhancement` is 120 commits behind master. Cherry-picking or rebasing features from it will hit merge conflicts in files that were modified on both sides. The dangerous case isn't the conflicts Git catches — it's the ones it auto-merges incorrectly (semantic conflicts where both sides changed nearby but different lines).
+### P-04: Adaptive DPI Causes Silent Quality Regression in Detection Pipeline
+**Severity:** HIGH
+**Phase:** Variable DPI / adaptive resolution
 
-**Why it happens:** Git's 3-way merge is syntactic, not semantic. If master refactored a function signature and the stale branch added a call to the old signature, Git may merge cleanly but the code is broken.
+**What goes wrong:** Implementing adaptive DPI (higher for scanned/image-heavy pages, lower for text-native) seems like a pure optimization. But PyMuPDF's rendering at different DPI values affects coordinate spaces. The existing footnote detection system (`footnote_core.py`) uses `_calculate_page_normal_font_size` and `_is_superscript` with absolute values. When DPI changes, text block bboxes from `page.get_text("dict")` remain in point-space (72 DPI), but any pixmap-based OCR path returns pixel coordinates that scale with DPI.
 
-**Consequences:** Compiles but crashes at runtime. Tests pass individually but fail in combination. Subtle bugs that surface weeks later.
+**Why it happens:** Mixed coordinate spaces. `get_text("dict")` returns point-based coordinates (DPI-independent), but `get_pixmap(dpi=X)` returns pixel coordinates. If any detection logic mixes these, changing DPI breaks it silently.
+
+**Warning signs:**
+- Footnote detection accuracy drops on pages processed at non-default DPI
+- OCR text positions don't align with text extraction positions
+- Performance improves but quality metrics regress
 
 **Prevention:**
-1. Do NOT rebase or merge the stale branch directly
-2. Instead: read the stale branch diff, understand the intent, then re-implement on master
-3. For each feature on the stale branch, create a checklist: what was the goal, what files changed, what's the equivalent change on current master
-4. Run full test suite after porting each feature (not just at the end)
-5. Use `git log --oneline master..origin/feature/rag-robustness-enhancement` to inventory what's there, then triage: port / skip / rewrite
+1. Audit the pipeline for coordinate space assumptions. Determine which APIs are DPI-sensitive (`get_pixmap`, OCR) vs DPI-independent (`get_text`).
+2. Normalize ALL coordinates to point-space before any detection logic.
+3. Add a quality regression test: process the same PDF at 72, 150, and 300 DPI and assert detection results are identical (within tolerance).
+4. If adaptive DPI only affects OCR/image rendering and NOT text extraction, document this explicitly so future developers don't accidentally mix spaces.
 
-**Detection:** `git diff --stat` between branches to see overlap. Files modified on both sides are high-risk.
+---
 
-**Phase:** Feature Porting phase. Must follow SDK upgrade (so you port onto stable foundation).
+### P-05: Node.js 18 to 20+ Upgrade Breaks ESM/Jest Setup
+**Severity:** HIGH
+**Phase:** Node.js upgrade
+
+**What goes wrong:** The project uses `--experimental-vm-modules` for Jest ESM support. Node 20 changed ESM loader internals. `ts-jest` + `jest` + ESM is a notoriously fragile combination across Node versions. Additionally, `@types/node` is pinned to v18 -- type mismatches will surface.
+
+**Why it happens:** Node 20's ESM resolution differs subtly from 18. The experimental VM modules flag behavior also changed. The combination of TypeScript compilation, Jest module mocking, and ESM creates a three-way version dependency.
+
+**Warning signs:**
+- `ERR_MODULE_NOT_FOUND` in test runs
+- `jest.mock()` stops working for ESM imports
+- `mock-fs` or `nock` behavior changes
+- TypeScript `@types/node` errors after upgrade
+
+**Prevention:**
+1. Update `@types/node` to match target Node version FIRST, fix type errors
+2. Test Jest + ESM setup in isolation before any code changes
+3. Check each test dependency for Node 20 compatibility: `mock-fs@5`, `nock@13`, `sinon@17`
+4. If Jest ESM breaks, consider moving to Vitest (native ESM, no experimental flags) as part of the upgrade
+5. Pin exact Node version in `engines` field and any Docker/CI config
+
+---
+
+### P-06: Margin Detection Interferes with Existing Footnote Pipeline
+**Severity:** HIGH
+**Phase:** Margin/scholarly numbering detection
+
+**What goes wrong:** `footnote_core.py` uses `_get_cached_text_blocks` and spatial analysis. Margin detection operating on the same text blocks creates ordering dependencies: if margin content is stripped before footnote detection, footnotes in margin areas are lost. If footnote detection runs first, it may misclassify margin annotations as footnote definitions.
+
+**Why it happens:** Both systems consume the same text block data and make spatial assumptions. The pipeline in `orchestrator_pdf.py` may not enforce ordering.
+
+**Prevention:**
+1. Define explicit pipeline stages with documented input/output contracts in `orchestrator_pdf.py`
+2. Margin detection should ANNOTATE blocks (tag as "margin") but NOT remove them from the block list. Downstream stages decide how to handle tagged blocks.
+3. Add integration tests that run margin + footnote detection together on PDFs that have margin footnotes (common in legal and classical texts)
+
+---
 
 ## Moderate Pitfalls
 
-### Pitfall 5: Documentation Batch Update — Docs Drift Back Immediately
+### P-07: Anna's Archive Rate Limiting and Error Handling Mismatch
+**Severity:** MODERATE
+**Phase:** Anna's Archive integration
 
-**What goes wrong:** Batch-updating 3-month-stale docs feels productive but creates a false sense of completion. The docs describe the codebase at one point in time. If the cleanup changes architecture (SDK upgrade, Python decomposition), the freshly-updated docs are stale again within days.
+**What goes wrong:** AA has different rate limits, availability patterns, and error responses than Z-Library. The existing retry/circuit-breaker logic (configured via `RETRY_*` and `CIRCUIT_BREAKER_*` env vars) is tuned for Z-Library. Reusing it for AA leads to either too-aggressive retrying (getting IP banned) or too-conservative backing off.
 
 **Prevention:**
-1. Update docs LAST, after all code changes are complete
-2. Only update docs that describe stable interfaces (API, configuration, setup)
-3. For architecture docs, update them as part of the code change PR (not separately)
-4. Delete docs that describe deprecated features rather than updating them
-
-**Phase:** Documentation phase must be the FINAL phase, not parallel with code changes.
+1. Make retry configuration per-source, not global
+2. AA uses Cloudflare protection -- handle HTTP 403/503 as "temporarily unavailable" not "permanent error"
+3. Test with AA unavailable and verify graceful degradation (return Z-Library-only results, not an error)
+4. Implement source-level circuit breakers (AA down shouldn't trip Z-Library's circuit breaker)
 
 ---
 
-### Pitfall 6: Deleting Remote Branches — Losing Unmerged Work
+### P-08: Scholarly Line Numbers Confused with Page Numbers
+**Severity:** MODERATE
+**Phase:** Margin/scholarly numbering detection
 
-**What goes wrong:** Deleting 6 stale remote branches seems like cleanup, but some may contain unmerged work worth porting. Once deleted, the commits are still in the reflog briefly but effectively lost for collaborators.
+**What goes wrong:** The existing `page_numbers.py` detection identifies page numbers by position and numeric pattern. Scholarly line numbers (poetry, legal texts, code listings) appear in similar positions. Adding line number detection without coordinating with `page_numbers.py` creates conflicts where the same number is claimed by both systems.
 
 **Prevention:**
-1. Before deleting ANY branch, run `git log master..origin/<branch> --oneline` to see unmerged commits
-2. Create a manifest: for each branch, record its purpose, unmerged commit count, and decision (delete / port / archive)
-3. For branches with unmerged work to port: tag them first (`git tag archive/<branch-name> origin/<branch-name>`)
-4. Delete branches only after feature porting phase is complete
-5. Never delete a branch that another contributor might be using — check with `git log --all --author` if needed
-
-**Detection:** Non-zero unmerged commit count on `git log master..origin/<branch>`.
-
-**Phase:** Branch Cleanup phase. Must happen AFTER Feature Porting phase (so you've already extracted what you need).
+1. Line numbers are sequential within a page and reset per page. Page numbers increment across pages. Use cross-page patterns to disambiguate.
+2. Run page number detection first (it already exists and works), then exclude identified page numbers from line number candidates.
+3. Expose detection as "scholarly apparatus" to handle verse numbers, section numbers, and line numbers under one umbrella.
 
 ---
 
-### Pitfall 7: MCP SDK TypeScript Compilation Memory Explosion
+### P-09: Adaptive DPI Doubles Processing Time Without Escape Hatch
+**Severity:** MODERATE
+**Phase:** Variable DPI / adaptive resolution
 
-**What goes wrong:** The MCP SDK package is [known to cause severe memory consumption during TypeScript compilation](https://github.com/modelcontextprotocol/typescript-sdk/issues/985), leading to OOM errors in CI/CD. Upgrading to 1.25.x may push your build past memory limits that worked with 1.8.0.
+**What goes wrong:** Adaptive DPI requires a pre-analysis pass on each page to determine optimal resolution. For a 500-page PDF, this adds significant overhead. If most pages are text-native (common case), the analysis is wasted.
 
 **Prevention:**
-1. Test the build locally with `NODE_OPTIONS=--max-old-space-size=4096` before pushing to CI
-2. Monitor `tsc` memory usage before and after SDK upgrade
-3. If OOM occurs, consider using `skipLibCheck: true` in tsconfig as a workaround
-4. Pin TypeScript version — newer TS versions may interact differently with SDK types
-
-**Detection:** CI build failures with "JavaScript heap out of memory". Local builds that are noticeably slower.
-
-**Phase:** SDK Upgrade phase. First thing to validate after bumping the version.
+1. Make adaptive DPI opt-in via parameter on `process_document_for_rag`, defaulting to current fixed DPI
+2. Use a fast heuristic for the pre-pass: check if page has images > X% of page area (PyMuPDF `page.get_images()` is cheap)
+3. Cache DPI decisions so reprocessing the same document skips analysis
+4. Set a page budget -- if first N pages are all text-native, skip analysis for remaining pages
 
 ---
 
-### Pitfall 8: Test Suite Green Doesn't Mean Integration Works
+### P-10: EAPIClient Has Different Auth Lifecycle Than AsyncZlib
+**Severity:** MODERATE
+**Phase:** AsyncZlib removal
 
-**What goes wrong:** The project's Jest tests mock the Python bridge (`src/lib/zlibrary-api.ts` mocked). Python tests run independently via pytest. Neither tests the actual Node.js-to-Python integration. During cleanup, both test suites stay green while the actual bridge breaks.
+**What goes wrong:** `ZLibraryClient` in `client_manager.py` wraps AsyncZlib's login flow (email/password -> session). EAPIClient in `eapi.py` may authenticate differently. The `__aenter__`/`__aexit__` lifecycle and env vars (`ZLIBRARY_EMAIL`, `ZLIBRARY_PASSWORD`) may not map to EAPIClient's model.
 
 **Prevention:**
-1. Add at least one smoke test that runs the real PythonShell invocation
-2. After each major change phase, run a manual integration test (start server, call a tool)
-3. Consider a Docker-based integration test that exercises the full stack
-
-**Detection:** Manual testing reveals failures that unit tests missed. Server starts but tools return errors.
-
-**Phase:** Every phase — this is a cross-cutting concern. Add integration smoke test in the first phase.
-
-## Minor Pitfalls
-
-### Pitfall 9: `zod-to-json-schema` Version Incompatibility
-
-**What goes wrong:** The project uses `zod-to-json-schema@^3.24.5`. This package may not support Zod 4 output formats. Upgrading Zod without checking this dependency creates runtime errors when tool schemas are generated.
-
-**Prevention:** Check `zod-to-json-schema` compatibility matrix before upgrading Zod. The MCP SDK 1.25.x may handle schema conversion internally, making this dependency unnecessary.
-
-**Phase:** SDK Upgrade phase, dependency audit step.
+1. Study `zlibrary/src/zlibrary/eapi.py` auth flow thoroughly BEFORE starting migration
+2. The client_manager abstraction is the right place to handle auth differences -- don't leak EAPIClient internals into the 7 consuming modules
+3. Keep both auth flows working during transition (feature flag, not hard cutover)
 
 ---
 
-### Pitfall 10: Python Virtual Environment Path Assumptions
+### P-11: Anna's Archive Search API Instability
+**Severity:** MODERATE
+**Phase:** Anna's Archive integration
 
-**What goes wrong:** During Python decomposition, new modules may need additional dependencies. The UV-managed `.venv/` must be updated, and `pyproject.toml` must reflect new internal package structure if creating subpackages.
+**What goes wrong:** AA doesn't have a stable public API. Integrations typically scrape search results or use undocumented endpoints. These break without notice when AA updates their frontend or anti-scraping measures.
 
-**Prevention:** Run `uv sync` after any changes to Python package structure. Test that `setup-uv.sh` still works from scratch.
+**Prevention:**
+1. Isolate AA integration behind a clean interface so the scraping/API logic is contained in one module
+2. Add health-check/smoke-test that verifies AA integration works (run periodically, not just at release)
+3. Design for AA being unavailable -- it's a supplementary source, not a primary one
+4. Version-stamp the AA integration so when it breaks, you know which AA change caused it
 
-**Phase:** Python Decomposition phase.
+---
 
 ## Phase-Specific Warnings
 
-| Phase | Likely Pitfall | Mitigation |
-|-------|---------------|------------|
-| SDK Upgrade | Server class API mismatch (P1), TS OOM (P7) | Validate with real MCP client, monitor memory |
-| Zod Migration | Silent schema behavior change (P2), json-schema compat (P9) | Snapshot-test JSON Schema output, upgrade in lockstep |
-| Python Decomposition | Bridge contract breakage (P3), venv issues (P10) | Keep entry point stable, integration test first |
-| Feature Porting | Semantic merge conflicts (P4) | Re-implement don't rebase, test after each port |
-| Branch Cleanup | Losing unmerged work (P6) | Tag before delete, manifest of decisions |
-| Documentation | Immediate staleness (P5) | Do LAST, tie to code PRs |
-| All Phases | Mock-only tests hide breakage (P8) | Add integration smoke test first |
+| Phase Topic | Likely Pitfall | Severity | Mitigation |
+|-------------|---------------|----------|------------|
+| Margin detection | False positives on indented text (P-02) | CRITICAL | Page-level margin model, not fixed threshold |
+| Margin detection | Interference with footnote pipeline (P-06) | HIGH | Annotate-don't-remove pattern |
+| Margin detection | Confusion with page numbers (P-08) | MODERATE | Cross-page pattern analysis, run after page_numbers.py |
+| Adaptive DPI | Breaks detection thresholds via mixed coordinate spaces (P-04) | HIGH | Audit and normalize to point-space |
+| Adaptive DPI | Performance regression without opt-out (P-09) | MODERATE | Opt-in parameter, fast heuristic pre-pass |
+| Anna's Archive | Inconsistent book identity (P-03) | CRITICAL | BookReference abstraction with source provenance |
+| Anna's Archive | Legal/TOS exposure (P-03) | CRITICAL | Opt-in source, document in ADR |
+| Anna's Archive | Different error patterns (P-07) | MODERATE | Per-source retry config and circuit breakers |
+| Anna's Archive | Unstable scraping target (P-11) | MODERATE | Isolated module, health checks, graceful degradation |
+| Node.js upgrade | ESM/Jest breakage (P-05) | HIGH | Test Jest setup first, consider Vitest |
+| AsyncZlib removal | Silent download breakage (P-01) | CRITICAL | Adapter pattern, integration test |
+| AsyncZlib removal | Auth lifecycle mismatch (P-10) | MODERATE | Study EAPIClient auth before starting |
 
-## Recommended Phase Ordering (Based on Pitfall Analysis)
-
-1. **Integration Test Harness** — prevents P3, P4, P8 from going undetected
-2. **SDK + Zod Upgrade** — foundational; everything else builds on this
-3. **Python Decomposition** — requires stable bridge contract
-4. **Feature Porting** — requires stable codebase to port onto
-5. **Branch Cleanup** — after porting extracts what's needed
-6. **Documentation** — last, describes final state
+---
 
 ## Sources
 
-- [MCP TypeScript SDK Releases](https://github.com/modelcontextprotocol/typescript-sdk/releases) (HIGH confidence)
-- [MCP Specification Changelog 2025-03-26](https://modelcontextprotocol.io/specification/2025-03-26/changelog) (HIGH confidence)
-- [Zod v4 Migration Guide](https://zod.dev/v4/changelog) (HIGH confidence)
-- [Zod v4 Versioning](https://zod.dev/v4/versioning) (HIGH confidence)
-- [zod-v3-to-v4 Codemod](https://github.com/nicoespeon/zod-v3-to-v4) (HIGH confidence)
-- [Zod 3.25 includes Zod 4 causing breakage](https://github.com/colinhacks/zod/issues/4923) (HIGH confidence)
-- [MCP SDK TypeScript Compilation Memory Issues](https://github.com/modelcontextprotocol/typescript-sdk/issues/985) (HIGH confidence)
-- [SDK V2 Discussion](https://github.com/modelcontextprotocol/typescript-sdk/issues/809) (MEDIUM confidence)
-- [Strangler Fig Pattern for Monolith Decomposition](https://medium.com/@stephen.biston/practical-monolith-decomposition-the-strangler-fig-pattern-1aa49988072f) (MEDIUM confidence)
-- [Modular Monolith in Python](https://breadcrumbscollector.tech/modular-monolith-in-python/) (MEDIUM confidence)
+- Direct codebase analysis: `lib/client_manager.py`, `lib/rag/detection/footnote_core.py`, `lib/rag/detection/page_numbers.py`, `lib/rag/orchestrator_pdf.py`, `zlibrary/src/zlibrary/eapi.py`, `zlibrary/src/zlibrary/libasync.py`
+- `package.json` dependency and engine analysis
+- PyMuPDF coordinate space behavior: training knowledge (MEDIUM confidence -- verify `get_text("dict")` vs `get_pixmap` coordinate independence against current PyMuPDF docs)
+- Anna's Archive legal/availability status: training knowledge (MEDIUM confidence -- verify current TOS before implementation)
+- Node.js 18->20 ESM changes: training knowledge (HIGH confidence -- well-documented breaking changes)

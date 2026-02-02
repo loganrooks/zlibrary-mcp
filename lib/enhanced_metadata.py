@@ -48,7 +48,7 @@ def extract_metadata_from_eapi(book_info: dict, mirror_url: str = None) -> Dict[
             # Tier 1: Essential
             'description': book.get('description') or None,
             'terms': [],  # Not available via EAPI
-            'booklists': [],  # Not available via EAPI
+            'booklists': [],  # Not available via EAPI; see booklist_tools.py for enriched topic search fallback
 
             # Tier 2: Important
             'rating': _extract_rating_from_eapi(book),

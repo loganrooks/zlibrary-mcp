@@ -10,7 +10,7 @@ project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 import asyncio
-from zlibrary import AsyncZlib, Extension, Language
+from zlibrary import Extension, Language
 import aiofiles
 from zlibrary.const import OrderOptions # Need this import
 
@@ -22,8 +22,6 @@ import logging
 from lib import rag_processing
 # Import enhanced metadata extraction
 from lib import enhanced_metadata
-# Import client manager for dependency injection
-from lib import client_manager
 
 # Add zlibrary source directory to path for EAPI imports
 zlibrary_src_path = os.path.join(os.path.dirname(__file__), '..', 'zlibrary', 'src')
@@ -31,9 +29,6 @@ if zlibrary_src_path not in sys.path:
     sys.path.insert(0, zlibrary_src_path)
 from zlibrary.eapi import EAPIClient, normalize_eapi_book, normalize_eapi_search_response
 
-# DEPRECATED: Global zlibrary client (for backward compatibility)
-# New code should use dependency injection with ZLibraryClient
-zlib_client = None
 logger = logging.getLogger('zlibrary') # Get the 'zlibrary' logger instance
 
 # Module-level EAPI client (created after login)
@@ -349,19 +344,86 @@ async def full_text_search(query, exact=False, phrase=True, words=False, languag
     Search for text within book contents via EAPI.
 
     Note: EAPI does not have a separate full-text search endpoint.
-    Routes through regular EAPI search.
+    Uses multi-strategy fallback: exact phrase first, then quoted query,
+    then standard search. Results are tagged with search_type to indicate
+    this is a content-aware fallback, not true full-text search.
     """
-    # Route through regular EAPI search (full-text specific params not supported)
-    return await search(
-        query=query,
-        exact=exact,
-        from_year=None,
-        to_year=None,
-        languages=languages,
-        extensions=extensions,
-        content_types=content_types,
-        count=count,
-    )
+    eapi = await get_eapi_client()
+    search_type = None
+    books = []
+
+    # Convert language/extension lists for EAPI
+    lang_list = [str(lang) if not isinstance(lang, str) else lang for lang in languages] if languages else None
+    ext_list = [str(ext) if not isinstance(ext, str) else ext for ext in extensions] if extensions else None
+
+    # Strategy 1: Try exact phrase search
+    if phrase and not exact:
+        logger.info("full_text_search: trying exact phrase match for '%s'", query)
+        try:
+            response = await eapi.search(
+                message=query,
+                limit=count,
+                exact=True,
+                languages=lang_list,
+                extensions=ext_list,
+            )
+            result_books = normalize_eapi_search_response(response)
+            if result_books:
+                books = result_books
+                search_type = "exact_phrase"
+                logger.info("full_text_search: exact phrase returned %d results", len(books))
+        except Exception as e:
+            logger.debug("full_text_search: exact phrase failed: %s", e)
+
+    # Strategy 2: Try quoted query search
+    if not books:
+        quoted_query = f'"{query}"'
+        logger.info("full_text_search: trying quoted query '%s'", quoted_query)
+        try:
+            response = await eapi.search(
+                message=quoted_query,
+                limit=count,
+                languages=lang_list,
+                extensions=ext_list,
+            )
+            result_books = normalize_eapi_search_response(response)
+            if result_books:
+                books = result_books
+                search_type = "quoted_query"
+                logger.info("full_text_search: quoted query returned %d results", len(books))
+        except Exception as e:
+            logger.debug("full_text_search: quoted query failed: %s", e)
+
+    # Strategy 3: Fall back to standard search
+    if not books:
+        logger.info("full_text_search: falling back to standard search for '%s'", query)
+        result = await search(
+            query=query,
+            exact=exact,
+            from_year=None,
+            to_year=None,
+            languages=languages,
+            extensions=extensions,
+            content_types=content_types,
+            count=count,
+        )
+        books = result.get("books", [])
+        search_type = "standard_fallback"
+        logger.info("full_text_search: standard search returned %d results", len(books))
+
+    # Tag results with search type
+    for book in books:
+        book['search_type'] = 'content_fallback'
+
+    return {
+        "retrieved_from_url": f"EAPI full-text search: {query}",
+        "books": books,
+        "search_type": search_type,
+        "note": (
+            "True full-text content search is not available via EAPI. "
+            f"Results obtained using '{search_type}' strategy as a content-aware fallback."
+        ),
+    }
 
 
 async def get_download_history(count=10):
@@ -456,11 +518,10 @@ async def download_book(book_details: dict, output_dir: str, process_for_rag: bo
     """
     Downloads a book, optionally processes it, and returns file paths.
 
-    Uses the AsyncZlib client for the actual download (which handles
-    the download page scraping internally).
+    Uses EAPIClient.download_file for the actual download.
 
     Args:
-        book_details: Book dictionary from search (must have 'url' or 'href')
+        book_details: Book dictionary from search (must have 'id' and 'hash'/'book_hash')
         output_dir: Directory to save downloaded file
         process_for_rag: If True, also extract text for RAG
         processed_output_format: Format for RAG output ('txt' or 'markdown')
@@ -468,26 +529,32 @@ async def download_book(book_details: dict, output_dir: str, process_for_rag: bo
     Returns:
         dict with 'file_path' and optional 'processed_file_path'
     """
-    # Get the legacy client for download (download still uses AsyncZlib)
-    zlib = await client_manager.get_default_client()
+    eapi = await get_eapi_client()
 
-    # Normalize book details to ensure 'url' and 'book_hash' fields
+    # Normalize book details to ensure 'book_hash' field
     book_details = normalize_book_details(book_details)
 
-    # Now get the URL (normalized function ensures it exists)
-    book_page_url = book_details.get('url')
+    book_id = book_details.get('id')
+    book_hash = book_details.get('hash') or book_details.get('book_hash', '')
 
-    if not book_page_url:
-        logger.error(f"Critical: Neither 'url' nor 'href' found in book_details: {list(book_details.keys())}")
-        raise ValueError("Missing 'url' or 'href' key in bookDetails object. Cannot download without book page URL.")
+    if not book_id:
+        logger.error(f"Critical: 'id' not found in book_details: {list(book_details.keys())}")
+        raise ValueError("Missing 'id' key in bookDetails object. Cannot download without book ID.")
+
+    if not book_hash:
+        logger.warning(f"No hash found in book_details for book ID {book_id}. Download may fail.")
 
     downloaded_file_path_str = None
-    final_file_path_str = None # Path with enhanced filename
-    processed_file_path_str = None # Path for RAG processed file
+    final_file_path_str = None  # Path with enhanced filename
+    processed_file_path_str = None  # Path for RAG processed file
 
     try:
-        # Step 1: Download the book using the library's method.
-        original_download_path_str = await zlib.download_book(book_details=book_details, output_dir_str=output_dir)
+        # Step 1: Download the book using EAPIClient.
+        original_download_path_str = await eapi.download_file(
+            book_id=int(book_id),
+            book_hash=book_hash,
+            output_dir=output_dir,
+        )
 
         if not original_download_path_str or not Path(original_download_path_str).exists():
             raise FileNotFoundError(f"Book download failed or file not found at: {original_download_path_str}")
@@ -530,7 +597,7 @@ async def download_book(book_details: dict, output_dir: str, process_for_rag: bo
         }
 
     except Exception as e:
-        logger.exception(f"Error in download_book for book ID {book_details.get('id')}, URL {book_page_url}")
+        logger.exception(f"Error in download_book for book ID {book_details.get('id')}")
         raise e
 
 

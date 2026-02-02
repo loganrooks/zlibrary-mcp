@@ -65,10 +65,10 @@ async def fetch_booklist(
         should_close = True
 
     try:
-        # EAPI has no booklist endpoint — fall back to topic-based search
+        # EAPI has no booklist endpoint — fall back to enriched topic search
         logger.info(
             "Booklist browsing not available via EAPI. "
-            "Falling back to search for topic: %s", topic
+            "Falling back to enriched topic search for: %s", topic
         )
         response = await client.search(
             message=topic,
@@ -76,6 +76,31 @@ async def fetch_booklist(
             page=page,
         )
         books = normalize_eapi_search_response(response)
+
+        # Enrich top results with metadata (description, categories, rating)
+        enriched_count = 0
+        for book in books[:5]:
+            book_id = book.get('id')
+            book_hash = book.get('hash') or book.get('book_hash')
+            if book_id and book_hash:
+                try:
+                    info = await client.get_book_info(int(book_id), book_hash)
+                    book_data = info.get('book', info) if info else {}
+                    if book_data.get('description'):
+                        book['description'] = book_data['description']
+                    if book_data.get('categories'):
+                        book['categories'] = book_data['categories']
+                    if book_data.get('rating'):
+                        book['rating'] = book_data['rating']
+                    enriched_count += 1
+                except Exception as e:
+                    logger.debug("Could not enrich book %s: %s", book_id, e)
+
+        logger.info("Enriched %d/%d top results with metadata", enriched_count, min(5, len(books)))
+
+        # Mark each book with source
+        for book in books:
+            book['source'] = 'topic_search_enriched'
 
         return {
             'booklist_id': booklist_id,
@@ -85,14 +110,16 @@ async def fetch_booklist(
                 'name': topic,
                 'total_books': len(books),
                 'description': (
-                    f'Booklist browsing is not available via EAPI. '
-                    f'Showing search results for "{topic}" instead. '
-                    f'Use search_books for more targeted results.'
+                    f'True booklist browsing is not available via EAPI. '
+                    f'These are curated topic search results for "{topic}" '
+                    f'with metadata enrichment for the top {enriched_count} results. '
+                    f'Use search_books with specific queries for more targeted results.'
                 ),
             },
             'books': books,
             'page': page,
             'degraded': True,
+            'source': 'topic_search_enriched',
         }
     finally:
         if should_close:

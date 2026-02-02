@@ -1,13 +1,15 @@
 """
-Z-Library Client Manager with proper lifecycle and resource management.
+DEPRECATED: Z-Library Client Manager (AsyncZlib wrapper).
 
-This module provides a managed Z-Library client that handles:
+This module is no longer used by production code as of plan 08-02.
+All downloads now route through EAPIClient.download_file() in eapi_client.py.
+The module is retained only for backward compatibility with existing tests.
+
+Previously provided a managed Z-Library client that handles:
 - Authentication lifecycle
 - Resource cleanup
 - Session management
 - Test isolation
-
-Replaces global zlib_client with dependency injection pattern.
 """
 
 import os
@@ -16,21 +18,23 @@ from typing import Optional
 import sys
 
 # Add zlibrary to path
-zlibrary_path = os.path.join(os.path.dirname(__file__), '..', 'zlibrary')
+zlibrary_path = os.path.join(os.path.dirname(__file__), "..", "zlibrary")
 sys.path.insert(0, zlibrary_path)
 
 from zlibrary import AsyncZlib
 
-logger = logging.getLogger('zlibrary')
+logger = logging.getLogger("zlibrary")
 
 
 class RateLimitError(Exception):
     """Raised when Z-Library rate limiting is detected."""
+
     pass
 
 
 class AuthenticationError(Exception):
     """Raised when Z-Library authentication fails."""
+
     pass
 
 
@@ -60,7 +64,7 @@ class ZLibraryClient:
         self,
         email: Optional[str] = None,
         password: Optional[str] = None,
-        mirror: Optional[str] = None
+        mirror: Optional[str] = None,
     ):
         """
         Initialize client manager.
@@ -70,9 +74,9 @@ class ZLibraryClient:
             password: Z-Library password (defaults to ZLIBRARY_PASSWORD env var)
             mirror: Optional mirror URL (defaults to ZLIBRARY_MIRROR env var)
         """
-        self.email = email or os.getenv('ZLIBRARY_EMAIL')
-        self.password = password or os.getenv('ZLIBRARY_PASSWORD')
-        self.mirror = mirror or os.getenv('ZLIBRARY_MIRROR', '')
+        self.email = email or os.getenv("ZLIBRARY_EMAIL")
+        self.password = password or os.getenv("ZLIBRARY_PASSWORD")
+        self.mirror = mirror or os.getenv("ZLIBRARY_MIRROR", "")
 
         if not self.email or not self.password:
             raise ValueError(

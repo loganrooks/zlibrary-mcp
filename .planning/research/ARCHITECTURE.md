@@ -1,322 +1,417 @@
-# Architecture: Decomposing rag_processing.py Monolith
+# Architecture Patterns — v1.1 Quality & Expansion
 
-**Domain:** Python monolith decomposition
-**Researched:** 2026-01-28
-**Overall confidence:** HIGH (based on direct codebase analysis + established Python packaging patterns)
+**Domain:** Z-Library MCP Server v1.1 feature integration
+**Researched:** 2026-02-01
+**Confidence:** HIGH (based on direct codebase analysis)
 
-## Current State
-
-`lib/rag_processing.py`: 4968 lines, 55 functions, 4 classes. Three complexity hotspots:
-- `process_pdf` (59 branches) - main PDF orchestrator
-- `_detect_footnotes_in_page` (40 branches) - footnote detection engine
-- `_analyze_pdf_block` (29 branches) - block-level analysis
-
-### Public API Surface
-
-Functions imported by external code (tests + `python_bridge.py`):
-
-| Function | Importers |
-|----------|-----------|
-| `process_pdf` | python_bridge, 8+ test files, scripts |
-| `process_epub` | python_bridge, test_rag_processing |
-| `process_txt` | python_bridge, test_run_rag_tests |
-| `process_document` | python_bridge (main entry) |
-| `save_processed_text` | python_bridge |
-| `detect_pdf_quality` | test_rag_processing |
-| `run_ocr_on_pdf` | test_rag_processing |
-| `QualityPipelineConfig` | test_quality_pipeline_integration, scripts |
-| `_detect_footnotes_in_page` | 6 test files |
-| `_is_superscript` | test_superscript_detection |
-| `_calculate_page_normal_font_size` | test_superscript_detection |
-| `_analyze_pdf_block` | test_rag_processing, test_phase_2_integration |
-| `_extract_publisher_from_front_matter` | test_publisher_extraction |
-| `_is_ocr_corrupted` | test_ocr_quality |
-| `_find_definition_for_marker` | test_rag_processing |
-| `_extract_and_format_toc` | test_rag_processing, test_toc_hybrid |
-
-## Recommended Architecture
-
-### Target Structure
+## Current Architecture Overview
 
 ```
-lib/
-  rag_processing.py          # Facade (~200 lines) - re-exports public API
-  rag/
-    __init__.py              # Package init, re-exports everything
-    orchestrator.py          # process_pdf, process_epub, process_txt, process_document, save_processed_text (~500 lines)
-    processors/
-      __init__.py
-      pdf.py                 # _format_pdf_markdown, _apply_formatting_to_text, _find_first_content_page (~300 lines)
-      epub.py                # _epub_node_to_markdown, _html_to_text (~150 lines)
-      txt.py                 # process_txt internals (~50 lines)
-    detection/
-      __init__.py
-      footnotes.py           # _detect_footnotes_in_page + all footnote helpers (~700 lines)
-      headings.py            # _detect_headings_from_fonts, _analyze_font_distribution (~200 lines)
-      toc.py                 # _extract_toc_from_pdf, _generate_markdown_toc_from_pdf, _extract_and_format_toc, _format_toc_lines_as_markdown (~250 lines)
-      front_matter.py        # _identify_and_remove_front_matter, _extract_publisher_from_front_matter (~200 lines)
-      page_numbers.py        # _extract_written_page_number, _detect_written_page_on_page, infer_written_page_numbers, roman numeral helpers (~200 lines)
-    quality/
-      __init__.py
-      analysis.py            # detect_pdf_quality, _determine_pdf_quality_category, _analyze_pdf_block (~300 lines)
-      pipeline.py            # QualityPipelineConfig, _apply_quality_pipeline, _stage_1/2/3 (~400 lines)
-    ocr/
-      __init__.py
-      recovery.py            # assess_pdf_ocr_quality, redo_ocr_with_tesseract, run_ocr_on_pdf (~250 lines)
-      spacing.py             # detect_letter_spacing_issue, correct_letter_spacing (~100 lines)
-      corruption.py          # _is_ocr_corrupted (~80 lines)
-    xmark/
-      __init__.py
-      detection.py           # _detect_xmarks_parallel, _detect_xmarks_single_page, _page_needs_xmark_detection_fast, _should_enable_xmark_detection_for_document (~200 lines)
-    utils/
-      __init__.py
-      text.py                # _slugify, _extract_text_from_block, _merge_bboxes (~80 lines)
-      cache.py               # _TEXTPAGE_CACHE, _get_cached_text_blocks, _clear_textpage_cache (~50 lines)
-      header.py              # _generate_document_header (~60 lines)
-      constants.py           # All module-level constants, SUPPORTED_FORMATS, thresholds (~50 lines)
-      exceptions.py          # TesseractNotFoundError, FileSaveError, OCRDependencyError (~20 lines)
+MCP Client
+  |
+  v
+src/index.ts (McpServer, Zod schemas, tool handlers)
+  |
+  v
+src/lib/zlibrary-api.ts (callPythonFunction via PythonShell)
+  |
+  v
+lib/python_bridge.py (dispatch: search/download/process_document/metadata)
+  |                        |
+  v                        v
+zlibrary/src/zlibrary/     lib/rag/
+  libasync.py (AsyncZlib)    orchestrator_pdf.py
+  eapi.py (EAPIClient)       detection/ (footnotes, headings, toc, front_matter, page_numbers)
+                              quality/ (analysis.py, pipeline.py, ocr_stage.py)
+                              processors/ (pdf.py, epub, txt)
+                              ocr/ (recovery, spacing, corruption)
+                              xmark/ (detection)
+                              utils/ (constants, cache, header, exceptions)
 ```
 
-## Extraction Order
+---
 
-Order is driven by: (1) fewest internal dependencies first, (2) most imported by others last.
+## Question 1: Where Does Margin Content Detection Fit?
 
-### Phase 1: Leaf modules (no internal dependencies)
+### Integration Point
 
-**Step 1.1: `utils/constants.py` + `utils/exceptions.py`**
-- Extract: all module-level constants, threshold values, SUPPORTED_FORMATS, exception classes
-- Risk: LOW. Pure data, no logic.
-- Dependencies: None
-- Dependents: Everything
+Margin detection is a **detection module** — it identifies content in PDF margins (marginalia, annotations, running headers/footers that contain substantive content). It belongs in `lib/rag/detection/` alongside existing detectors.
 
-**Step 1.2: `utils/text.py` + `utils/cache.py`**
-- Extract: `_slugify`, `_extract_text_from_block`, `_merge_bboxes`, `_TEXTPAGE_CACHE`, `_get_cached_text_blocks`, `_clear_textpage_cache`
-- Risk: LOW. Simple utilities.
-- Dependencies: constants only
+### New Module
 
-**Step 1.3: `ocr/spacing.py` + `ocr/corruption.py`**
-- Extract: `detect_letter_spacing_issue`, `correct_letter_spacing`, `_is_ocr_corrupted`
-- Risk: LOW. Self-contained string processing.
-- Dependencies: None (pure functions)
+**File:** `lib/rag/detection/margins.py`
 
-### Phase 2: Detection modules (depend on utils)
+**Responsibilities:**
+- Detect text blocks in page margins (top/bottom/left/right regions outside main content area)
+- Classify margin content: running header, running footer, marginalia (substantive), page number (already handled by `page_numbers.py`)
+- Return margin regions with classification for downstream pipeline decisions
 
-**Step 2.1: `detection/page_numbers.py`**
-- Extract: roman numeral helpers, page number detection/inference
-- Risk: LOW. Self-contained with clear boundaries.
-- Dependencies: utils only
+### Data Flow
 
-**Step 2.2: `detection/headings.py`**
-- Extract: `_analyze_font_distribution`, `_detect_headings_from_fonts`
-- Risk: LOW. Reads PDF pages, returns data.
-- Dependencies: utils only
+```
+orchestrator_pdf.py: process_pdf()
+  |
+  v
+  For each page:
+    fitz.Page.get_text("dict") -> blocks with bbox coordinates
+    |
+    v
+  [NEW] margins.detect_margin_content(page, blocks) -> MarginClassification
+    |     Uses bbox positions relative to page.rect (mediabox)
+    |     Returns: {running_headers: [...], running_footers: [...], marginalia: [...]}
+    |
+    v
+  [EXISTING] _format_pdf_markdown(page, ...)
+    |     Currently processes ALL text blocks
+    |     [MODIFIED] Skip running headers/footers, include marginalia
+    |
+    v
+  [EXISTING] quality/pipeline.py: _apply_quality_pipeline()
+    |     No changes needed — operates on PageRegion objects regardless of origin
+```
 
-**Step 2.3: `detection/toc.py`**
-- Extract: TOC extraction and formatting functions
-- Risk: LOW-MEDIUM. Some coupling to page number detection.
-- Dependencies: detection/page_numbers
+### Integration with Existing Detection Modules
 
-**Step 2.4: `detection/front_matter.py`**
-- Extract: front matter identification and publisher extraction
-- Risk: LOW. Self-contained analysis.
-- Dependencies: utils
+| Existing Module | Interaction with Margins |
+|----------------|--------------------------|
+| `page_numbers.py` | Margin detector should defer to page_numbers for numeric-only margin content. Call page_numbers first, then classify remaining margin blocks. |
+| `front_matter.py` | No conflict. Front matter detection operates at document level; margin detection at page level. |
+| `headings.py` | Marginalia should NOT be classified as headings even if font size is large. Margin detector runs before heading detection. |
+| `footnotes.py` | Bottom-margin content that matches footnote patterns should be deferred to footnote detection. Margin detector should flag but not extract footnotes. |
 
-**Step 2.5: `detection/footnotes.py`** (LARGEST single extraction ~700 lines)
-- Extract: `_detect_footnotes_in_page` + all footnote helpers (`_starts_with_marker`, `_markers_are_equivalent`, `_find_definition_for_marker`, `_find_markerless_content`, `_calculate_page_normal_font_size`, `_is_superscript`, `_footnote_with_continuation_to_dict`, `_format_footnotes_markdown`)
-- Risk: MEDIUM. Highest complexity. Many internal helper calls. Most-tested module.
-- Dependencies: utils/cache, utils/text, ocr/corruption
-- Mitigation: Extract as a single unit. Do NOT split footnote detection further yet.
+### Suggested Build Order
 
-### Phase 3: Quality and OCR (depend on detection)
+1. Add `MarginClassification` dataclass to `lib/rag_data_models.py`
+2. Create `lib/rag/detection/margins.py` with `detect_margin_content(page, blocks) -> MarginClassification`
+3. Modify `lib/rag/orchestrator_pdf.py` to call margin detection before `_format_pdf_markdown`
+4. Modify `lib/rag/processors/pdf.py` (`_format_pdf_markdown`) to accept margin classification and filter blocks accordingly
 
-**Step 3.1: `quality/analysis.py`**
-- Extract: `detect_pdf_quality`, `_determine_pdf_quality_category`, `_analyze_pdf_block`
-- Risk: MEDIUM. `_analyze_pdf_block` is high-complexity (29 branches).
-- Dependencies: utils/constants
+### Key Design Decision
 
-**Step 3.2: `quality/pipeline.py`**
-- Extract: `QualityPipelineConfig`, `_apply_quality_pipeline`, stages 1-3
-- Risk: MEDIUM. Stages reference OCR functions.
-- Dependencies: quality/analysis, ocr/
+**Margin detection must run BEFORE block formatting**, not as a quality pipeline stage. Reason: the quality pipeline (stages 1-3) operates on individual PageRegions after block extraction. Margin detection needs to filter WHICH blocks enter the pipeline at all. This is analogous to how `page_numbers.py` works — it runs early to remove page number blocks from content.
 
-**Step 3.3: `xmark/detection.py`**
-- Extract: all xmark detection functions
-- Risk: LOW-MEDIUM. Parallel processing, but self-contained.
-- Dependencies: quality/analysis
+---
 
-**Step 3.4: `ocr/recovery.py`**
-- Extract: `assess_pdf_ocr_quality`, `redo_ocr_with_tesseract`, `run_ocr_on_pdf`
-- Risk: LOW. External tool wrappers.
-- Dependencies: utils/exceptions, utils/constants
+## Question 2: Adaptive Resolution in quality/pipeline.py
 
-### Phase 4: Processors (depend on detection + quality)
+### Current Pipeline Structure
 
-**Step 4.1: `processors/epub.py` + `processors/txt.py`**
-- Extract: EPUB and TXT processing
-- Risk: LOW. Relatively independent from PDF pipeline.
-- Dependencies: detection/front_matter, detection/toc, utils
+```
+_apply_quality_pipeline(page_region, pdf_path, page_num, config, xmark_cache, ocr_cache)
+  Stage 1: _stage_1_statistical_detection() — garbled text analysis
+  Stage 2: _stage_2_visual_analysis() — X-mark/strikethrough detection (opencv)
+  Stage 3: _stage_3_ocr_recovery() — OCR text recovery (tesseract)
+```
 
-**Step 4.2: `processors/pdf.py`**
-- Extract: `_format_pdf_markdown`, `_apply_formatting_to_text`
-- Risk: MEDIUM. Called by process_pdf orchestrator.
-- Dependencies: detection/*, quality/*, ocr/*
+### What Adaptive Resolution Means
 
-### Phase 5: Orchestrator + Facade
+Adaptive resolution adjusts OCR/image processing DPI based on document quality characteristics detected in earlier stages. Low-quality scans need higher DPI; clean PDFs need less.
 
-**Step 5.1: `orchestrator.py`**
-- What remains: `process_pdf`, `process_epub`, `process_txt`, `process_document`, `save_processed_text`
-- These become thin orchestrators that call into extracted modules.
-- Risk: MEDIUM. `process_pdf` is the highest complexity (59 branches). Refactor into smaller steps only after extraction stabilizes.
+### Integration Point
 
-**Step 5.2: `rag_processing.py` becomes facade**
-- Replace entire file body with re-exports from `lib/rag/`
-- All existing imports (`from lib.rag_processing import X`) continue to work.
+Adaptive resolution modifies **Stage 3 (OCR recovery)** and the image conversion step. Currently in `lib/rag/quality/ocr_stage.py`.
 
-## Interface Contracts
+### Recommended Approach
 
-### Pattern: Each module exports explicit public API via `__all__`
+**File:** Modify `lib/rag/quality/ocr_stage.py` (not a new module)
+
+**Add to `QualityPipelineConfig`** in `lib/rag/quality/pipeline.py`:
+```python
+# Adaptive resolution settings
+adaptive_resolution: bool = True
+min_dpi: int = 150
+max_dpi: int = 600
+default_dpi: int = 300
+```
+
+**Logic flow:**
+```
+Stage 1 output (quality_score) + Stage 2 output (xmark detection confidence)
+  |
+  v
+[NEW] _determine_optimal_dpi(quality_score, xmark_result, config) -> int
+  |     quality_score < 0.3 -> max_dpi (600)  [heavily garbled]
+  |     quality_score < 0.7 -> 400             [moderate quality]
+  |     quality_score >= 0.7 -> min_dpi (150)  [clean text, OCR just for verification]
+  |     xmark detected -> at least 300         [need clear line detection]
+  |
+  v
+Stage 3: _stage_3_ocr_recovery() uses determined DPI for convert_from_path()
+```
+
+### No Structural Changes Needed
+
+The pipeline already passes `quality_score` and `xmark_result` into Stage 3. Adaptive resolution is a **parameter calculation** before the existing OCR call, not a new pipeline stage. Add `_determine_optimal_dpi()` as a helper in `ocr_stage.py`.
+
+---
+
+## Question 3: Second Book Source (Anna's Archive) Architecture
+
+### Current Source Architecture
+
+```
+python_bridge.py
+  +-- AsyncZlib (login, search, download) — zlibrary/src/zlibrary/libasync.py
+  +-- EAPIClient (search, metadata, download link) — zlibrary/src/zlibrary/eapi.py
+```
+
+The bridge currently hard-codes Z-Library as the only source. `callPythonFunction` in Node dispatches to one Python bridge, which uses one source.
+
+### Recommended Architecture: Source Abstraction Layer
+
+**New files:**
+- `lib/sources/__init__.py`
+- `lib/sources/base.py` — Abstract base class
+- `lib/sources/zlibrary.py` — Z-Library adapter (wraps existing EAPIClient)
+- `lib/sources/annas_archive.py` — Anna's Archive adapter
+- `lib/sources/registry.py` — Source registry and routing
 
 ```python
-# lib/rag/detection/footnotes.py
-__all__ = [
-    'detect_footnotes_in_page',
-    'format_footnotes_markdown',
-    'calculate_page_normal_font_size',
-    'is_superscript',
-]
+# lib/sources/base.py
+class BookSource(ABC):
+    name: str
+    @abstractmethod
+    async def search(query, filters) -> List[BookResult]
+    @abstractmethod
+    async def get_metadata(book_id, book_hash) -> BookMetadata
+    @abstractmethod
+    async def get_download_link(book_id, book_hash) -> str
+    @abstractmethod
+    async def download(book_id, book_hash, output_dir) -> Path
+    @abstractmethod
+    async def login(credentials) -> bool
+
+# lib/sources/registry.py
+class SourceRegistry:
+    sources: Dict[str, BookSource]
+    def register(source: BookSource)
+    def get(name: str) -> BookSource
+    async def search_all(query, filters) -> Dict[str, List[BookResult]]
 ```
 
-### Pattern: Modules accept data, not module references
+### Integration with Existing Code
 
-Functions should accept primitive data or PyMuPDF objects, never import other rag submodules at the function signature level. Cross-module dependencies go through the orchestrator.
+**Minimal disruption approach:**
+
+1. `lib/sources/zlibrary.py` wraps the existing `EAPIClient` behind the `BookSource` interface
+2. `lib/python_bridge.py` gets a new optional `source` parameter on search/download functions
+3. Default source = "zlibrary" (backward compatible)
+4. Node-side `src/lib/zlibrary-api.ts` passes optional `source` parameter
+5. `src/index.ts` adds `source` as optional Zod parameter on search/download tools
+
+### Anna's Archive Specifics
+
+Anna's Archive has no official API. Integration options:
+- Scraping search results (fragile, ToS concerns)
+- Tor hidden service access
+- Z-Library bridge (AA often mirrors Z-Library content)
+
+**Confidence: MEDIUM** — AA integration feasibility depends on their current access patterns, which change frequently. Recommend a research spike before implementation.
+
+### Data Flow with Two Sources
+
+```
+MCP Client: search_books(query, source="annas_archive")
+  v
+src/index.ts -> zlibrary-api.ts -> callPythonFunction("search", {source: "annas_archive"})
+  v
+python_bridge.py: search() checks args_dict.get("source", "zlibrary")
+  v
+sources/registry.py -> sources/annas_archive.py -> HTTP request
+  v
+Normalize response to common BookResult format -> return to Node
+```
+
+---
+
+## Question 4: Removing AsyncZlib While Keeping Downloads
+
+### Current Dependency Chain
+
+```
+python_bridge.py
+  imports: AsyncZlib (line 13: from zlibrary import AsyncZlib)
+  uses: AsyncZlib for login (cookie extraction), download_book()
+
+AsyncZlib.login() -> sets cookies, creates EAPIClient internally
+AsyncZlib.search() -> delegates to self._eapi.search() (already EAPI)
+AsyncZlib.download_book() -> self._eapi.get_download_link() then httpx stream
+```
+
+**Key finding:** AsyncZlib is already a thin wrapper. Its download_book() method (libasync.py lines 357-440) does:
+1. Call `self._eapi.get_download_link(book_id, book_hash)` — available directly on EAPIClient
+2. Stream download via httpx with cookies — easily extracted
+
+Meanwhile, `python_bridge.py` already has its own `initialize_eapi_client()` (lines 186-236) that creates a standalone EAPIClient with login and domain discovery, independent of AsyncZlib.
+
+### What AsyncZlib Still Provides
+
+| Capability | AsyncZlib | Standalone EAPIClient | Gap |
+|-----------|-----------|----------------------|-----|
+| Login | rpc.php POST + cookie jar | `/eapi/user/login` POST | None — EAPI login works independently |
+| Search | Delegates to _eapi.search() | .search() directly | None |
+| Download link | Delegates to _eapi.get_download_link() | .get_download_link() directly | None |
+| File streaming | httpx stream with cookies | Need to extract ~25 lines | Small |
+| Domain discovery | Via _eapi.get_domains() | .get_domains() directly | None |
+
+### Removal Strategy
+
+**Phase 1: Extract download to standalone function**
+
+**New file:** `lib/sources/download.py` (or inline in python_bridge.py)
 
 ```python
-# GOOD: detection/footnotes.py accepts a fitz.Page
-def detect_footnotes_in_page(page: 'fitz.Page', page_num: int) -> dict:
-    ...
-
-# BAD: detection/footnotes.py imports quality module
-from lib.rag.quality.analysis import analyze_pdf_block  # creates circular risk
+async def stream_download(eapi_client: EAPIClient, book_id: int, book_hash: str,
+                          output_dir: str, extension: str) -> str:
+    """Download book using EAPI client for auth and download link."""
+    dl_resp = await eapi_client.get_download_link(book_id, book_hash)
+    download_url = dl_resp.get("file", {}).get("downloadLink") or dl_resp.get("downloadLink", "")
+    # ... stream download logic (copy from libasync.py lines 418-440)
 ```
 
-### Pattern: Shared types via utils
+**Phase 2: Update python_bridge.py**
 
-If multiple modules need the same type/dataclass, put it in `utils/types.py`. Currently there are no shared dataclasses, but `FootnoteWithContinuation` (if it exists as a class) would go there.
+- Line 13: Remove `from zlibrary import AsyncZlib`
+- Line 36: Remove `zlib_client = None`
+- Line 472: Replace `zlib.download_book()` with `stream_download(_eapi_client, ...)`
+- Update `lib/client_manager.py`: Remove AsyncZlib client management
 
-## Maintaining Public API During Transition
+**Phase 3: Clean up vendored fork**
 
-### The Facade Pattern (critical)
+- `zlibrary/src/zlibrary/__init__.py`: Remove AsyncZlib export (keep EAPIClient)
+- Optionally remove libasync.py entirely
 
-`lib/rag_processing.py` becomes a thin facade that re-exports everything:
+### What Breaks
 
-```python
-# lib/rag_processing.py (after full extraction)
-"""
-Backward-compatible facade. All logic lives in lib/rag/ subpackages.
-"""
-from lib.rag.orchestrator import process_pdf, process_epub, process_txt, process_document, save_processed_text
-from lib.rag.quality.analysis import detect_pdf_quality
-from lib.rag.quality.pipeline import QualityPipelineConfig
-from lib.rag.ocr.recovery import run_ocr_on_pdf, assess_pdf_ocr_quality, redo_ocr_with_tesseract
-from lib.rag.detection.footnotes import (
-    _detect_footnotes_in_page,
-    _calculate_page_normal_font_size,
-    _is_superscript,
-    _format_footnotes_markdown,
-    _find_definition_for_marker,
-    _footnote_with_continuation_to_dict,
-)
-from lib.rag.detection.toc import _extract_and_format_toc
-from lib.rag.quality.analysis import _analyze_pdf_block
-from lib.rag.detection.front_matter import _extract_publisher_from_front_matter
-from lib.rag.ocr.corruption import _is_ocr_corrupted
-from lib.rag.utils.exceptions import TesseractNotFoundError, FileSaveError, OCRDependencyError
-from lib.rag.utils.constants import SUPPORTED_FORMATS, PROCESSED_OUTPUT_DIR
-# ... all other publicly imported names
+| File | Line | Current | Fix |
+|------|------|---------|-----|
+| `lib/python_bridge.py` | 13 | `from zlibrary import AsyncZlib` | Remove import |
+| `lib/python_bridge.py` | 490 | `await zlib.download_book(...)` | Use `stream_download(_eapi_client, ...)` |
+| `lib/client_manager.py` | all | `get_default_client()` returns AsyncZlib | Return EAPIClient or remove module |
+| Tests mocking AsyncZlib | various | Mock `zlibrary.AsyncZlib` | Mock new download function |
+
+### What Does NOT Break
+
+- All search operations (already use `_eapi_client` directly in python_bridge.py)
+- All metadata operations (already use `_eapi_client`)
+- All Node.js code (calls same Python functions via PythonShell)
+- RAG pipeline (no dependency on zlibrary package)
+
+---
+
+## Question 5: Node 20+ Upgrade Impact
+
+### Current State
+
+- `package.json`: `"engines": { "node": ">=18" }`
+- `tsconfig.json`: `"target": "ES2022"`, `"module": "NodeNext"`
+- `@types/node`: `^18.19.4`
+- Uses ESM (`"type": "module"`)
+- Jest requires `--experimental-vm-modules`
+
+### Breaking Changes Assessment
+
+| Area | Impact | Notes |
+|------|--------|-------|
+| ESM support | None | Stable in both 18 and 20 |
+| `--experimental-vm-modules` (Jest) | None | Still experimental in Node 20; stable in 22 |
+| `fetch` global | None | Project uses PythonShell, not fetch |
+| `fs/promises` | None | Stable in both |
+| `python-shell@5.0.0` | None | Pure JS, no native addons |
+| `@modelcontextprotocol/sdk@^1.25.3` | None | Standard ESM package |
+| `zod@^3.25.76` | None | Pure JS |
+
+### What Actually Breaks
+
+**Almost nothing.** The codebase uses standard Node.js APIs and ESM.
+
+Update items:
+1. `package.json` engines: `"node": ">=20"`
+2. `@types/node`: `"^20.11.0"` (accurate type definitions)
+3. Run `npm test` to verify
+
+### Risk Assessment: LOW
+
+Node 18 to 20 is a minor upgrade with no known breaking changes for this codebase.
+
+---
+
+## Component Boundaries Summary
+
+### New Components
+
+| Component | Location | Purpose | Depends On |
+|-----------|----------|---------|------------|
+| Margin detector | `lib/rag/detection/margins.py` | Classify margin content | PyMuPDF (fitz), rag_data_models |
+| Adaptive DPI helper | `lib/rag/quality/ocr_stage.py` (modify) | Calculate OCR resolution | Existing pipeline config |
+| Source abstraction | `lib/sources/` (new package) | Multi-source book access | httpx |
+| Download extractor | `lib/sources/download.py` | Standalone EAPI download | EAPIClient, httpx, aiofiles |
+| Anna's Archive adapter | `lib/sources/annas_archive.py` | AA search/download | httpx |
+
+### Modified Components
+
+| Component | File | Change |
+|-----------|------|--------|
+| PDF orchestrator | `lib/rag/orchestrator_pdf.py` | Call margin detection before formatting |
+| PDF formatter | `lib/rag/processors/pdf.py` | Accept margin classification, filter blocks |
+| Quality config | `lib/rag/quality/pipeline.py` | Add adaptive resolution settings to dataclass |
+| OCR stage | `lib/rag/quality/ocr_stage.py` | Add `_determine_optimal_dpi()` helper |
+| Python bridge | `lib/python_bridge.py` | Source parameter, remove AsyncZlib |
+| Client manager | `lib/client_manager.py` | Remove AsyncZlib dependency |
+| Data models | `lib/rag_data_models.py` | Add MarginClassification dataclass |
+| Node API | `src/lib/zlibrary-api.ts` | Pass source parameter |
+| MCP tools | `src/index.ts` | Add source to Zod schemas |
+| Package config | `package.json` | Node 20+ engine, @types/node bump |
+
+## Build Order (Dependencies)
+
 ```
+Phase A (independent, can parallelize):
+  A1. Node 20+ upgrade (package.json, @types/node, test)
+  A2. Margin detection module (lib/rag/detection/margins.py + data models)
+  A3. Adaptive resolution (modify ocr_stage.py + pipeline.py config)
 
-This means **zero changes to any test file or python_bridge.py** during extraction. Tests continue importing from `lib.rag_processing` and it works.
+Phase B (depends on nothing new):
+  B1. Extract download function from AsyncZlib -> lib/sources/download.py
+  B2. Remove AsyncZlib from python_bridge.py, update client_manager.py
 
-### Incremental Migration
+Phase C (depends on Phase B):
+  C1. Source abstraction layer (lib/sources/base.py, registry.py)
+  C2. Z-Library adapter (wraps existing EAPIClient)
+  C3. Anna's Archive adapter (research spike needed first)
 
-Each extraction step:
-1. Create new module file with extracted functions
-2. Replace functions in `rag_processing.py` with imports from new module
-3. Run ALL tests: `uv run pytest && npm test`
-4. Commit
-
-At no point does any external import break.
-
-## Testing Strategy During Decomposition
-
-### Rule 1: Never change tests during extraction
-
-Tests validate behavior. Changing tests AND code simultaneously removes the safety net. Extraction is pure refactoring -- tests must pass without modification.
-
-### Rule 2: Run full suite after each extraction step
-
-```bash
-uv run pytest  # All Python tests
-npm test        # All Jest tests (includes python_bridge integration)
+Phase D (depends on Phase A2):
+  D1. Integrate margin detection into orchestrator_pdf.py
+  D2. Update _format_pdf_markdown to use margin classification
 ```
-
-### Rule 3: One module per commit
-
-Each extraction step = one commit. If something breaks, `git revert` is trivial.
-
-### Rule 4: Add module-level tests after extraction stabilizes
-
-Once all extractions are complete and the facade is in place, add targeted tests for each new module to verify imports work directly (not just through the facade). This is Phase 6, after the extraction is done.
-
-### Test files that import private functions (highest risk)
-
-These files import underscore-prefixed functions directly and are most sensitive to extraction:
-
-| Test File | Imports |
-|-----------|---------|
-| test_footnote_validation.py | `_detect_footnotes_in_page` |
-| test_ocr_quality.py | `_is_ocr_corrupted`, `_detect_footnotes_in_page` |
-| test_inline_footnotes.py | `_detect_footnotes_in_page` |
-| test_superscript_detection.py | `_is_superscript`, `_calculate_page_normal_font_size` |
-| test_rag_processing.py | `_analyze_pdf_block`, `_find_definition_for_marker`, `_extract_and_format_toc` |
-| test_publisher_extraction.py | `_extract_publisher_from_front_matter` |
-| test_phase_2_integration.py | `_analyze_pdf_block` |
-| test_toc_hybrid.py | `_extract_and_format_toc` and others |
-
-All of these continue working because `rag_processing.py` re-exports everything.
-
-## Risk Mitigation
-
-| Step | Risk | Mitigation |
-|------|------|------------|
-| Constants extraction | Circular imports if constants import from other modules | Constants must be pure values, no imports from rag submodules |
-| Footnote extraction | Largest single move (700 lines), many internal calls | Move as single unit, do not split further |
-| Quality pipeline | References OCR functions | Extract OCR first (Phase 1.3), quality pipeline last in Phase 3 |
-| process_pdf orchestrator | 59 branches, calls everything | Extract last. Reduce complexity only after all dependencies are extracted |
-| Mock targets in tests | Tests mock `lib.rag_processing.X`; if X moves, mocks break | Facade re-exports mean the mock path `lib.rag_processing.X` still resolves correctly |
-| Import path in conftest/sys.path | Some tests add `lib/` to sys.path and import `rag_processing` directly | Facade handles this; `from rag_processing import X` still works |
 
 ## Anti-Patterns to Avoid
 
-### Anti-Pattern 1: Extracting and refactoring simultaneously
-**Why bad:** Two changes at once. If tests fail, you don't know which change caused it.
-**Instead:** Extract verbatim first. Refactor (rename, simplify, reduce complexity) only after extraction is stable.
+### Anti-Pattern 1: Coupling Anna's Archive to Z-Library internals
+**What:** Making AA adapter depend on zlibrary/ vendored code
+**Why bad:** Different APIs, different auth, different data formats
+**Instead:** Clean `BookSource` interface; each adapter is self-contained
 
-### Anti-Pattern 2: Splitting footnote detection into multiple files
-**Why bad:** `_detect_footnotes_in_page` (40 branches) calls many helpers that share local state/context. Splitting creates excessive cross-file coupling.
-**Instead:** Keep all footnote logic in one `detection/footnotes.py` file. Consider splitting later if needed.
+### Anti-Pattern 2: Margin detection inside quality pipeline
+**What:** Adding margin detection as Stage 0 in `_apply_quality_pipeline`
+**Why bad:** Quality pipeline operates on individual PageRegions. Margin detection needs to filter WHICH blocks become PageRegions. Wrong abstraction level.
+**Instead:** Margin detection in orchestrator, before block-level processing
 
-### Anti-Pattern 3: Changing function signatures during extraction
-**Why bad:** Breaks the facade contract. Tests fail.
-**Instead:** Move functions with identical signatures. Parameter changes come in a separate PR.
+### Anti-Pattern 3: Big bang AsyncZlib removal
+**What:** Removing AsyncZlib and adding Anna's Archive in one step
+**Why bad:** Two large changes compound risk. Download breakage blocks everything.
+**Instead:** Extract download first, verify, then add source abstraction
 
-### Anti-Pattern 4: Creating deep import chains
-**Why bad:** `orchestrator -> processors/pdf -> detection/footnotes -> utils/cache -> utils/constants` = 4 levels deep. Slow imports, hard to reason about.
-**Instead:** Orchestrator imports directly from each submodule. No submodule imports from another submodule unless strictly necessary.
+### Anti-Pattern 4: Over-engineering source abstraction before second source exists
+**What:** Building full registry/plugin system before Anna's Archive is proven feasible
+**Why bad:** YAGNI. AA may not be viable due to access pattern changes.
+**Instead:** Extract download, add simple source parameter routing. Build full abstraction only when AA adapter works.
 
 ## Sources
 
-- Direct codebase analysis of `lib/rag_processing.py` (4968 lines)
-- Import analysis across all test files and `python_bridge.py`
-- Python packaging best practices: `__init__.py` re-exports, `__all__` declarations
-- Confidence: HIGH -- all findings based on actual code inspection, no external sources needed
+- Direct codebase analysis (HIGH confidence)
+- `lib/rag/quality/pipeline.py` lines 252-318: 3-stage waterfall pipeline structure
+- `zlibrary/src/zlibrary/libasync.py` lines 357-440: AsyncZlib.download_book() delegates to EAPIClient
+- `zlibrary/src/zlibrary/eapi.py` lines 130-132: EAPIClient.get_download_link()
+- `lib/python_bridge.py` lines 186-236: Standalone EAPIClient initialization (independent of AsyncZlib)
+- `lib/python_bridge.py` lines 454-534: download_book() uses AsyncZlib via client_manager

@@ -39,9 +39,9 @@ Full details: `.planning/milestones/v1.0-ROADMAP.md`
 **Plans**: 3 plans
 
 Plans:
-- [ ] 08-01-PLAN.md — Node 22 upgrade + env-paths v4 + CI/Docker updates
-- [ ] 08-02-PLAN.md — AsyncZlib removal (EAPIClient download + legacy cleanup)
-- [ ] 08-03-PLAN.md — Docker opencv fix + EAPI booklist/full-text search improvements
+- [x] 08-01-PLAN.md — Node 22 upgrade + env-paths v4 + CI/Docker updates
+- [x] 08-02-PLAN.md — AsyncZlib removal (EAPIClient download + legacy cleanup)
+- [x] 08-03-PLAN.md — Docker opencv fix + EAPI booklist/full-text search improvements
 
 #### Phase 9: Margin Detection & Scholarly References
 **Goal**: Scholarly margin content (Stephanus, Bekker, line numbers, marginal notes) is detected, classified, and preserved as structured annotations without polluting body text
@@ -116,7 +116,7 @@ Phases execute in numeric order: 8 → 9 → 10 → 11 → 12
 | 5. Feature Porting & Branch Cleanup | v1.0 | 3/3 | Complete | 2026-02-01 |
 | 6. Documentation & Quality Gates | v1.0 | 2/2 | Complete | 2026-02-01 |
 | 7. EAPI Migration | v1.0 | 6/6 | Complete | 2026-02-01 |
-| 8. Infrastructure Modernization | v1.1 | 0/3 | Planned | - |
+| 8. Infrastructure Modernization | v1.1 | 3/3 | Complete | 2026-02-02 |
 | 9. Margin Detection & Scholarly References | v1.1 | 0/3 | Not started | - |
 | 10. Adaptive Resolution Pipeline | v1.1 | 0/1 | Not started | - |
 | 11. Body Text Purity Integration | v1.1 | 0/1 | Not started | - |

@@ -88,6 +88,15 @@ constraint-dependencies = [
     "pdfminer.six>=20251230", # CVE-2025-64512, GHSA-f83h-ghpp-7wcc
 ]
 
+# Ruff configuration
+[tool.ruff.lint]
+# E402: Module-level import not at top of file
+# Required because lib/ and __tests__/ scripts manipulate sys.path before imports
+ignore = ["E402"]
+
+# E741: Ambiguous variable names (single-letter vars in comprehensions)
+extend-ignore = ["E741"]
+
 # UV configuration options
 [tool.uv.pip]
 # Use PyPI as default index

@@ -46,6 +46,8 @@ from lib.rag.xmark.detection import (
 )
 from lib.rag.processors.pdf import _format_pdf_markdown
 from lib.rag.detection.margins import detect_margin_content
+from lib.rag.resolution.analyzer import analyze_document_fonts
+from lib.rag.resolution.models import DPIDecision
 
 from lib.footnote_continuation import CrossPageFootnoteParser
 
@@ -227,6 +229,27 @@ def process_pdf(
             "ocr_recommended", False
         )  # Use correct key 'ocr_recommended'
 
+        # --- Adaptive DPI Analysis ---
+        # Analyze font sizes for per-page DPI optimization
+        if ocr_needed or quality_category in ("IMAGE_ONLY", "SCANNED"):
+            page_dpi_map = {}  # Scanned/image PDFs: use default 300 everywhere
+            logger.info("Scanned/image PDF detected, using fixed DPI 300")
+        else:
+            try:
+                font_analysis = analyze_document_fonts(str(file_path))
+                page_dpi_map = {
+                    page_num: analysis.page_dpi
+                    for page_num, analysis in font_analysis.items()
+                }
+                logger.info(f"Adaptive DPI: analyzed {len(page_dpi_map)} pages")
+                # Log warnings for low-confidence pages
+                for pn, dpi_dec in page_dpi_map.items():
+                    if dpi_dec.confidence < 0.5:
+                        logger.warning(f"Low DPI confidence on page {pn}: {dpi_dec.confidence:.2f} (dpi={dpi_dec.dpi}, reason={dpi_dec.reason})")
+            except Exception as e:
+                logger.warning(f"Adaptive DPI analysis failed, using default 300: {e}")
+                page_dpi_map = {}
+
         # --- OCR (if needed and available) ---
         if ocr_needed:
             if _OCR_AVAILABLE:
@@ -235,7 +258,7 @@ def process_pdf(
                 )
                 try:
                     # Cycle 21 Refactor: Use run_ocr_on_pdf which now uses fitz
-                    ocr_text = _run_ocr_on_pdf(str(file_path))
+                    ocr_text = _run_ocr_on_pdf(str(file_path), page_dpi_map=page_dpi_map)
                     if ocr_text:
                         logging.info(f"OCR successful for {file_path}.")
 
@@ -661,6 +684,12 @@ def process_pdf(
                 )
 
         final_output = "\n\n".join(part for part in final_output_parts if part).strip()
+
+        # Log adaptive DPI metadata summary
+        if page_dpi_map:
+            dpi_summary = {pn: {"dpi": d.dpi, "confidence": d.confidence} for pn, d in page_dpi_map.items()}
+            logger.info(f"Adaptive DPI metadata: {len(dpi_summary)} pages analyzed, "
+                       f"DPI range: {min(d.dpi for d in page_dpi_map.values())}-{max(d.dpi for d in page_dpi_map.values())}")
 
         # Close doc before returning
         if doc is not None and not doc.is_closed:

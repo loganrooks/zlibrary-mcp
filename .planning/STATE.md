@@ -5,7 +5,7 @@
 See: .planning/PROJECT.md (updated 2026-02-01)
 
 **Core value:** Reliable, maintainable MCP server for Z-Library book access
-**Current focus:** v1.1 Quality & Expansion — Phase 9 in progress
+**Current focus:** v1.1 Quality & Expansion — Phase 9 complete
 
 ## Current Position
 
@@ -19,8 +19,8 @@ Progress: [██████░░░░░░░░░░] 60% (6/10 v1.1 plan
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 26 (22 v1.0 + 4 v1.1)
-- v1.1 plans completed: 5
+- Total plans completed: 27 (22 v1.0 + 5 v1.1)
+- v1.1 plans completed: 6
 - Total execution time: ~4 days (v1.0)
 
 **By Phase:** (v1.1)
@@ -61,7 +61,7 @@ None.
 - ~~Docker numpy/Alpine compilation issue~~ RESOLVED in 08-03 (opencv-python-headless)
 - ~~EAPI lacks booklist/full-text search endpoints~~ MITIGATED in 08-03 (enriched fallbacks)
 - ~~AsyncZlib removal must have integration test BEFORE swap (pitfall P-01)~~ RESOLVED in 08-02
-- Margin detection must annotate-don't-remove to avoid breaking footnote pipeline (pitfall P-06)
+- ~~Margin detection must annotate-don't-remove to avoid breaking footnote pipeline (pitfall P-06)~~ IMPLEMENTED in 09-02 (bbox exclusion, annotations not removal)
 - Anna's Archive API contract unknown — research spike required before implementation (Phase 12)
 - Pre-existing: paths.test.js has 1 failing test (requirements.txt removed in UV migration)
 - Pre-existing: 2 pytest collection errors in scripts/ (import issues)

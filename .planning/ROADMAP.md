@@ -56,9 +56,9 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 09-01-PLAN.md — Margin detection engine + typed classification (margins.py, margin_patterns.py, tests)
-- [ ] 09-02-PLAN.md — Pipeline integration (orchestrator + formatter wiring, margin_blocks parameter)
-- [ ] 09-03-PLAN.md — Integration tests + phase success criteria verification
+- [x] 09-01-PLAN.md — Margin detection engine + typed classification (margins.py, margin_patterns.py, tests)
+- [x] 09-02-PLAN.md — Pipeline integration (orchestrator + formatter wiring, margin_blocks parameter)
+- [x] 09-03-PLAN.md — Integration tests + phase success criteria verification
 
 #### Phase 10: Adaptive Resolution Pipeline
 **Goal**: OCR quality improves automatically by selecting optimal DPI per page and per region based on content analysis
@@ -117,7 +117,7 @@ Phases execute in numeric order: 8 → 9 → 10 → 11 → 12
 | 6. Documentation & Quality Gates | v1.0 | 2/2 | Complete | 2026-02-01 |
 | 7. EAPI Migration | v1.0 | 6/6 | Complete | 2026-02-01 |
 | 8. Infrastructure Modernization | v1.1 | 3/3 | Complete | 2026-02-02 |
-| 9. Margin Detection & Scholarly References | v1.1 | 0/3 | Not started | - |
+| 9. Margin Detection & Scholarly References | v1.1 | 3/3 | Complete | 2026-02-02 |
 | 10. Adaptive Resolution Pipeline | v1.1 | 0/1 | Not started | - |
 | 11. Body Text Purity Integration | v1.1 | 0/1 | Not started | - |
 | 12. Anna's Archive Integration | v1.1 | 0/2 | Not started | - |

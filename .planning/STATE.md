@@ -10,17 +10,17 @@ See: .planning/PROJECT.md (updated 2026-02-01)
 ## Current Position
 
 Phase: 11 of 12 (Body Text Purity)
-Plan: 4 of 7 in current phase (detector registry adapters + compositor done)
+Plan: 5 of 7 in current phase (runner + writer done)
 Status: In progress
-Last activity: 2026-02-02 — Completed 11-03-PLAN.md (Detector Registry Adapters)
+Last activity: 2026-02-02 — Completed 11-05-PLAN.md (Pipeline Runner & Writer)
 
-Progress: [████████████░░░░] 97% (15/18 v1.1 plans)
+Progress: [█████████████░░░] 89% (16/18 v1.1 plans)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 36 (22 v1.0 + 14 v1.1)
-- v1.1 plans completed: 15
+- Total plans completed: 37 (22 v1.0 + 15 v1.1)
+- v1.1 plans completed: 16
 - Total execution time: ~4 days (v1.0)
 
 **By Phase:** (v1.1)
@@ -64,6 +64,9 @@ v1.1 decisions:
 - COMPOSITOR-RECALL-BIAS: Unclaimed blocks and low-confidence claims (<0.6) default to BODY
 - COMPOSITOR-TYPE-PRIORITY: Footnote > Endnote > Margin > PageNumber > Header > Footer > TOC > FrontMatter > Citation > Heading > Body
 - COMPOSITOR-OVERLAP-THRESHOLD: 50% bbox overlap threshold to consider two bboxes as same block
+- PIPELINE-LAZY-IMPORT: Used __getattr__ lazy import in pipeline __init__.py to avoid circular import with detection registry
+- WRITER-PAGE-BREAK: Pages separated by double newline in body text (no explicit --- separator)
+- WRITER-MARGIN-APPEND: Margin annotations appended at end of their page's body text block
 
 ### Pending Todos
 

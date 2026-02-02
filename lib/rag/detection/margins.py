@@ -11,9 +11,46 @@ import os
 from collections import Counter
 from typing import Any, Dict, List, Optional, Tuple
 
+from lib.rag.detection.registry import register_detector
+from lib.rag.pipeline.models import (
+    BlockClassification,
+    ContentType,
+    DetectionResult,
+    DetectorScope,
+)
+
 from lib.rag.detection.margin_patterns import classify_margin_content
 
 logger = logging.getLogger(__name__)
+
+
+@register_detector("margins", priority=20, scope=DetectorScope.PAGE)
+def detect_margins_pipeline(
+    page: Any, page_num: int, context: Dict[str, Any]
+) -> DetectionResult:
+    """Pipeline adapter for margin detection. Excludes footnote bboxes."""
+    excluded = context.get("footnote_bboxes", [])
+    result = detect_margin_content(page, excluded_bboxes=excluded)
+    classifications: List[BlockClassification] = []
+    for block in result.get("margin_blocks", []):
+        classifications.append(
+            BlockClassification(
+                bbox=tuple(block["bbox"]),
+                content_type=ContentType.MARGIN,
+                text=block.get("text", ""),
+                confidence=0.8,
+                detector_name="margins",
+                page_num=page_num,
+                metadata={"margin_type": block.get("type"), "zone": block.get("zone")},
+            )
+        )
+    return DetectionResult(
+        detector_name="margins",
+        classifications=classifications,
+        page_num=page_num,
+        metadata=result,
+    )
+
 
 # Bin size for edge clustering (points)
 _BIN_SIZE = 5

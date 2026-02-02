@@ -68,35 +68,35 @@ Deferred to future milestone.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| INFRA-01 | — | Pending |
-| INFRA-02 | — | Pending |
-| INFRA-03 | — | Pending |
-| INFRA-04 | — | Pending |
-| INFRA-05 | — | Pending |
-| INFRA-06 | — | Pending |
-| MARG-01 | — | Pending |
-| MARG-02 | — | Pending |
-| MARG-03 | — | Pending |
-| MARG-04 | — | Pending |
-| MARG-05 | — | Pending |
-| MARG-06 | — | Pending |
-| MARG-07 | — | Pending |
-| DPI-01 | — | Pending |
-| DPI-02 | — | Pending |
-| DPI-03 | — | Pending |
-| BODY-01 | — | Pending |
-| BODY-02 | — | Pending |
-| BODY-03 | — | Pending |
-| ANNA-01 | — | Pending |
-| ANNA-02 | — | Pending |
-| ANNA-03 | — | Pending |
-| ANNA-04 | — | Pending |
+| INFRA-01 | Phase 8 | Pending |
+| INFRA-02 | Phase 8 | Pending |
+| INFRA-03 | Phase 8 | Pending |
+| INFRA-04 | Phase 8 | Pending |
+| INFRA-05 | Phase 8 | Pending |
+| INFRA-06 | Phase 8 | Pending |
+| MARG-01 | Phase 9 | Pending |
+| MARG-02 | Phase 9 | Pending |
+| MARG-03 | Phase 9 | Pending |
+| MARG-04 | Phase 9 | Pending |
+| MARG-05 | Phase 9 | Pending |
+| MARG-06 | Phase 9 | Pending |
+| MARG-07 | Phase 9 | Pending |
+| DPI-01 | Phase 10 | Pending |
+| DPI-02 | Phase 10 | Pending |
+| DPI-03 | Phase 10 | Pending |
+| BODY-01 | Phase 11 | Pending |
+| BODY-02 | Phase 11 | Pending |
+| BODY-03 | Phase 11 | Pending |
+| ANNA-01 | Phase 12 | Pending |
+| ANNA-02 | Phase 12 | Pending |
+| ANNA-03 | Phase 12 | Pending |
+| ANNA-04 | Phase 12 | Pending |
 
 **Coverage:**
 - v1.1 requirements: 23 total
-- Mapped to phases: 0 (pending roadmap)
-- Unmapped: 23
+- Mapped to phases: 23
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-02-01*
-*Last updated: 2026-02-01 after initial definition*
+*Last updated: 2026-02-01 after roadmap creation*

@@ -5,22 +5,22 @@
 See: .planning/PROJECT.md (updated 2026-02-01)
 
 **Core value:** Reliable, maintainable MCP server for Z-Library book access
-**Current focus:** v1.1 Quality & Expansion — Phase 8 complete
+**Current focus:** v1.1 Quality & Expansion — Phase 9 in progress
 
 ## Current Position
 
-Phase: 8 of 12 (Infrastructure Modernization)
-Plan: 3 of 3 in current phase
-Status: Phase complete
-Last activity: 2026-02-02 — Completed 08-02-PLAN.md (AsyncZlib removal)
+Phase: 9 of 12 (Margin Detection)
+Plan: 1 of 3 in current phase
+Status: In progress
+Last activity: 2026-02-02 — Completed 09-01-PLAN.md (Margin Detection Engine)
 
-Progress: [███░░░░░░░░░░░░░] 30% (3/10 v1.1 plans)
+Progress: [████░░░░░░░░░░░░] 40% (4/10 v1.1 plans)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 24 (22 v1.0 + 2 v1.1)
-- v1.1 plans completed: 3
+- Total plans completed: 25 (22 v1.0 + 3 v1.1)
+- v1.1 plans completed: 4
 - Total execution time: ~4 days (v1.0)
 
 **By Phase:** (v1.1)
@@ -28,6 +28,7 @@ Progress: [███░░░░░░░░░░░░░] 30% (3/10 v1.1 plan
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 08 | 3/3 | ~13min | ~4.3min |
+| 09 | 1/3 | ~5min | ~5min |
 
 ## Accumulated Context
 
@@ -46,6 +47,8 @@ v1.1 decisions:
 - INFRA-ASYNCZLIB-REMOVED: Downloads rewired from AsyncZlib to EAPIClient.download_file
 - INFRA-ADVANCED-SEARCH-DEPRECATED: search_books_advanced raises NotImplementedError (no EAPI equivalent)
 - INFRA-RUFF-E402: Added ruff config ignoring E402/E741 globally (pre-existing sys.path issues)
+- MARG-BEKKER-FIRST: Check Bekker regex before Stephanus (more specific pattern prevents ambiguity)
+- MARG-MIDPOINT-ZONE: Use block midpoint for margin-left vs margin-right classification
 
 ### Pending Todos
 
@@ -64,5 +67,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-02
-Stopped at: Completed 08-02-PLAN.md (AsyncZlib removal) — Phase 8 complete
+Stopped at: Completed 09-01-PLAN.md (Margin Detection Engine)
 Resume file: None

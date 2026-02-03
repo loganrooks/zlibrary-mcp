@@ -87,13 +87,13 @@ Plans:
 **Plans**: 7 plans
 
 Plans:
-- [ ] 11-01-PLAN.md — Data models (ContentType, BlockClassification, DetectionResult, DocumentOutput) + detector registry
-- [ ] 11-02-PLAN.md — Recall baseline snapshot + recall regression test
-- [ ] 11-03-PLAN.md — Detector adapter wrappers (all 6 detectors registered with typed output)
-- [ ] 11-04-PLAN.md — Compositor with conflict resolution + confidence scoring (TDD)
-- [ ] 11-05-PLAN.md — Pipeline runner + multi-file writer
-- [ ] 11-06-PLAN.md — Orchestrator refactor (process_pdf_structured + backward compat)
-- [ ] 11-07-PLAN.md — End-to-end integration tests + recall regression verification
+- [x] 11-01-PLAN.md — Data models (ContentType, BlockClassification, DetectionResult, DocumentOutput) + detector registry
+- [x] 11-02-PLAN.md — Recall baseline snapshot + recall regression test
+- [x] 11-03-PLAN.md — Detector adapter wrappers (all 6 detectors registered with typed output)
+- [x] 11-04-PLAN.md — Compositor with conflict resolution + confidence scoring (TDD)
+- [x] 11-05-PLAN.md — Pipeline runner + multi-file writer
+- [x] 11-06-PLAN.md — Orchestrator refactor (process_pdf_structured + backward compat)
+- [x] 11-07-PLAN.md — End-to-end integration tests + recall regression verification
 
 #### Phase 12: Anna's Archive Integration
 **Goal**: Users can search and download books from Anna's Archive as a fallback source when Z-Library is unavailable, with clear source attribution
@@ -128,5 +128,5 @@ Phases execute in numeric order: 8 → 9 → 10 → 11 → 12
 | 8. Infrastructure Modernization | v1.1 | 3/3 | Complete | 2026-02-02 |
 | 9. Margin Detection & Scholarly References | v1.1 | 3/3 | Complete | 2026-02-02 |
 | 10. Adaptive Resolution Pipeline | v1.1 | 4/4 | Complete | 2026-02-02 |
-| 11. Body Text Purity Integration | v1.1 | 0/7 | Not started | - |
+| 11. Body Text Purity Integration | v1.1 | 7/7 | Complete | 2026-02-03 |
 | 12. Anna's Archive Integration | v1.1 | 0/2 | Not started | - |

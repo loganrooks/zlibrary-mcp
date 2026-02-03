@@ -47,8 +47,8 @@ from lib.rag.xmark.detection import (
 from lib.rag.processors.pdf import _format_pdf_markdown
 from lib.rag.detection.margins import detect_margin_content
 from lib.rag.resolution.analyzer import analyze_document_fonts
-from lib.rag.resolution.models import DPIDecision, PageAnalysis
-from lib.rag.resolution.renderer import render_page_adaptive, AdaptiveRenderResult
+from lib.rag.pipeline.runner import run_document_pipeline
+from lib.rag.pipeline.models import DocumentOutput
 
 from lib.footnote_continuation import CrossPageFootnoteParser
 
@@ -94,7 +94,52 @@ def _get_facade():
     return _rp
 
 
-__all__ = ["process_pdf"]
+__all__ = ["process_pdf", "process_pdf_structured"]
+
+
+def process_pdf_structured(
+    file_path: Path,
+    output_format: str = "markdown",
+    include_metadata: bool = False,
+) -> DocumentOutput:
+    """Process a PDF using the unified detection pipeline.
+
+    Opens the PDF, runs the document pipeline (detectors, compositor, writer),
+    and returns a DocumentOutput with separated content streams.
+
+    Args:
+        file_path: Path to PDF file.
+        output_format: Output format ('markdown' or 'txt').
+        include_metadata: If True, include per-block classification details.
+
+    Returns:
+        DocumentOutput with body_text, footnotes, endnotes, citations, metadata.
+    """
+    _rp = _get_facade()
+    _fitz = getattr(_rp, "fitz", fitz)
+    _PYMUPDF_AVAILABLE = getattr(_rp, "PYMUPDF_AVAILABLE", PYMUPDF_AVAILABLE)
+
+    if not _PYMUPDF_AVAILABLE:
+        raise ImportError("Required library 'PyMuPDF' (fitz) is not installed.")
+
+    logger.info("Processing PDF (structured): %s", file_path)
+    doc = None
+    try:
+        doc = _fitz.open(str(file_path))
+        if doc.is_encrypted:
+            if not doc.authenticate(""):
+                raise ValueError(f"PDF {file_path} is encrypted and cannot be opened.")
+            logger.info("Successfully decrypted %s with empty password.", file_path)
+
+        output = run_document_pipeline(
+            doc,
+            output_format=output_format,
+            include_metadata=include_metadata,
+        )
+        return output
+    finally:
+        if doc is not None and not doc.is_closed:
+            doc.close()
 
 
 def process_pdf(
@@ -239,14 +284,15 @@ def process_pdf(
             try:
                 font_analysis = analyze_document_fonts(str(file_path))
                 page_analysis_map = {
-                    page_num: analysis
-                    for page_num, analysis in font_analysis.items()
+                    page_num: analysis for page_num, analysis in font_analysis.items()
                 }
                 logger.info(f"Adaptive DPI: analyzed {len(page_analysis_map)} pages")
                 # Log warnings for low-confidence pages
                 for pn, analysis in page_analysis_map.items():
                     if analysis.page_dpi.confidence < 0.5:
-                        logger.warning(f"Low DPI confidence on page {pn}: {analysis.page_dpi.confidence:.2f} (dpi={analysis.page_dpi.dpi}, reason={analysis.page_dpi.reason})")
+                        logger.warning(
+                            f"Low DPI confidence on page {pn}: {analysis.page_dpi.confidence:.2f} (dpi={analysis.page_dpi.dpi}, reason={analysis.page_dpi.reason})"
+                        )
             except Exception as e:
                 logger.warning(f"Adaptive DPI analysis failed, using default 300: {e}")
                 page_analysis_map = {}
@@ -259,7 +305,9 @@ def process_pdf(
                 )
                 try:
                     # Cycle 21 Refactor: Use run_ocr_on_pdf which now uses fitz
-                    ocr_text = _run_ocr_on_pdf(str(file_path), page_analysis_map=page_analysis_map)
+                    ocr_text = _run_ocr_on_pdf(
+                        str(file_path), page_analysis_map=page_analysis_map
+                    )
                     if ocr_text:
                         logging.info(f"OCR successful for {file_path}.")
 
@@ -688,9 +736,14 @@ def process_pdf(
 
         # Log adaptive DPI metadata summary
         if page_analysis_map:
-            dpi_summary = {pn: {"dpi": a.page_dpi.dpi, "confidence": a.page_dpi.confidence} for pn, a in page_analysis_map.items()}
-            logger.info(f"Adaptive DPI metadata: {len(dpi_summary)} pages analyzed, "
-                       f"DPI range: {min(a.page_dpi.dpi for a in page_analysis_map.values())}-{max(a.page_dpi.dpi for a in page_analysis_map.values())}")
+            dpi_summary = {
+                pn: {"dpi": a.page_dpi.dpi, "confidence": a.page_dpi.confidence}
+                for pn, a in page_analysis_map.items()
+            }
+            logger.info(
+                f"Adaptive DPI metadata: {len(dpi_summary)} pages analyzed, "
+                f"DPI range: {min(a.page_dpi.dpi for a in page_analysis_map.values())}-{max(a.page_dpi.dpi for a in page_analysis_map.values())}"
+            )
 
         # Close doc before returning
         if doc is not None and not doc.is_closed:

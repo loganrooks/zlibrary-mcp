@@ -32,9 +32,9 @@
 
 ### Body Text Purity
 
-- [ ] **BODY-01**: Unified detection pipeline composing all detectors (footnotes, margins, headings, page numbers, TOC)
-- [ ] **BODY-02**: Non-body content clearly separated in markdown output
-- [ ] **BODY-03**: Confidence scoring for detection decisions
+- [x] **BODY-01**: Unified detection pipeline composing all detectors (footnotes, margins, headings, page numbers, TOC)
+- [x] **BODY-02**: Non-body content clearly separated in markdown output
+- [x] **BODY-03**: Confidence scoring for detection decisions
 
 ### Anna's Archive
 
@@ -84,9 +84,9 @@ Deferred to future milestone.
 | DPI-01 | Phase 10 | Complete |
 | DPI-02 | Phase 10 | Complete |
 | DPI-03 | Phase 10 | Complete |
-| BODY-01 | Phase 11 | Pending |
-| BODY-02 | Phase 11 | Pending |
-| BODY-03 | Phase 11 | Pending |
+| BODY-01 | Phase 11 | Complete |
+| BODY-02 | Phase 11 | Complete |
+| BODY-03 | Phase 11 | Complete |
 | ANNA-01 | Phase 12 | Pending |
 | ANNA-02 | Phase 12 | Pending |
 | ANNA-03 | Phase 12 | Pending |

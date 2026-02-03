@@ -5,22 +5,22 @@
 See: .planning/PROJECT.md (updated 2026-02-01)
 
 **Core value:** Reliable, maintainable MCP server for Z-Library book access
-**Current focus:** v1.1 Quality & Expansion — Phase 11 in progress
+**Current focus:** v1.1 Quality & Expansion — Phase 11 complete, Phase 12 next
 
 ## Current Position
 
-Phase: 11 of 12 (Body Text Purity)
-Plan: 6 of 7 in current phase (orchestrator integration done)
-Status: In progress
-Last activity: 2026-02-03 — Completed 11-06-PLAN.md (Orchestrator Integration)
+Phase: 11 of 12 (Body Text Purity) — COMPLETE
+Plan: 7 of 7 in current phase (integration tests + recall regression)
+Status: Phase complete
+Last activity: 2026-02-03 — Completed 11-07-PLAN.md (Integration Tests & Recall)
 
-Progress: [██████████████░░] 94% (17/18 v1.1 plans)
+Progress: [███████████████░] 97% (18/18 v1.1 plans through Phase 11)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 38 (22 v1.0 + 16 v1.1)
-- v1.1 plans completed: 17
+- Total plans completed: 39 (22 v1.0 + 17 v1.1)
+- v1.1 plans completed: 18
 - Total execution time: ~4 days (v1.0)
 
 **By Phase:** (v1.1)
@@ -30,7 +30,7 @@ Progress: [██████████████░░] 94% (17/18 v1.1 pla
 | 08 | 3/3 | ~13min | ~4.3min |
 | 09 | 3/3 | ~12min | ~4min |
 | 10 | 4/4 | ~14min | ~3.5min |
-| 11 | 6/7 | ~35min | ~6min |
+| 11 | 7/7 | ~60min | ~8.5min |
 
 ## Accumulated Context
 
@@ -68,6 +68,7 @@ v1.1 decisions:
 - WRITER-PAGE-BREAK: Pages separated by double newline in body text (no explicit --- separator)
 - WRITER-MARGIN-APPEND: Margin annotations appended at end of their page's body text block
 - ORCHESTRATOR-NOQA: Added noqa markers to ~25 re-exported imports in orchestrator.py (facade pattern API surface)
+- TEST-SMALLEST-PDF: Used heidegger_pages_22-23 (smallest scholarly PDF) for integration tests — fast execution
 
 ### Pending Todos
 
@@ -86,5 +87,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-03
-Stopped at: Completed 11-06-PLAN.md (Orchestrator Integration)
+Stopped at: Completed 11-07-PLAN.md (Phase 11 complete)
 Resume file: None

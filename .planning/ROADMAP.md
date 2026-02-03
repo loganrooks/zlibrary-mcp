@@ -104,11 +104,12 @@ Plans:
   2. Anna's Archive base URL is configurable via environment variable (domain instability mitigation)
   3. When Z-Library search fails or is rate-limited, Anna's Archive search returns results as fallback
   4. Search results include a source indicator showing which source (Z-Library or Anna's Archive) returned each result
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 12-01: Research spike (API reverse engineering, legal review, go/no-go)
-- [ ] 12-02: Source abstraction layer + Anna's Archive adapter + fallback search
+- [ ] 12-01-PLAN.md — Source abstraction layer + LibGen/ZLib adapters (Python)
+- [ ] 12-02-PLAN.md — Source routing + fallback + MCP tool schema updates (full stack)
+- [ ] 12-03-PLAN.md — Parallel search mode + unit tests
 
 ## Progress
 
@@ -129,4 +130,4 @@ Phases execute in numeric order: 8 → 9 → 10 → 11 → 12
 | 9. Margin Detection & Scholarly References | v1.1 | 3/3 | Complete | 2026-02-02 |
 | 10. Adaptive Resolution Pipeline | v1.1 | 4/4 | Complete | 2026-02-02 |
 | 11. Body Text Purity Integration | v1.1 | 7/7 | Complete | 2026-02-03 |
-| 12. Anna's Archive Integration | v1.1 | 0/2 | Not started | - |
+| 12. Anna's Archive Integration | v1.1 | 0/3 | Not started | - |

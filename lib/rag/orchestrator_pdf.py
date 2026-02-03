@@ -47,6 +47,8 @@ from lib.rag.xmark.detection import (
 from lib.rag.processors.pdf import _format_pdf_markdown
 from lib.rag.detection.margins import detect_margin_content
 from lib.rag.resolution.analyzer import analyze_document_fonts
+from lib.rag.resolution.models import DPIDecision, PageAnalysis  # noqa: F401 - re-exported for tests
+from lib.rag.resolution.renderer import render_page_adaptive, AdaptiveRenderResult  # noqa: F401
 from lib.rag.pipeline.runner import run_document_pipeline
 from lib.rag.pipeline.models import DocumentOutput
 

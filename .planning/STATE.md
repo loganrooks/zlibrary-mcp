@@ -10,17 +10,17 @@ See: .planning/PROJECT.md (updated 2026-02-01)
 ## Current Position
 
 Phase: 11 of 12 (Body Text Purity)
-Plan: 5 of 7 in current phase (runner + writer done)
+Plan: 6 of 7 in current phase (orchestrator integration done)
 Status: In progress
-Last activity: 2026-02-02 — Completed 11-05-PLAN.md (Pipeline Runner & Writer)
+Last activity: 2026-02-03 — Completed 11-06-PLAN.md (Orchestrator Integration)
 
-Progress: [█████████████░░░] 89% (16/18 v1.1 plans)
+Progress: [██████████████░░] 94% (17/18 v1.1 plans)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 37 (22 v1.0 + 15 v1.1)
-- v1.1 plans completed: 16
+- Total plans completed: 38 (22 v1.0 + 16 v1.1)
+- v1.1 plans completed: 17
 - Total execution time: ~4 days (v1.0)
 
 **By Phase:** (v1.1)
@@ -30,7 +30,7 @@ Progress: [█████████████░░░] 89% (16/18 v1.1 pla
 | 08 | 3/3 | ~13min | ~4.3min |
 | 09 | 3/3 | ~12min | ~4min |
 | 10 | 4/4 | ~14min | ~3.5min |
-| 11 | 5/7 | ~31min | ~6min |
+| 11 | 6/7 | ~35min | ~6min |
 
 ## Accumulated Context
 
@@ -67,6 +67,7 @@ v1.1 decisions:
 - PIPELINE-LAZY-IMPORT: Used __getattr__ lazy import in pipeline __init__.py to avoid circular import with detection registry
 - WRITER-PAGE-BREAK: Pages separated by double newline in body text (no explicit --- separator)
 - WRITER-MARGIN-APPEND: Margin annotations appended at end of their page's body text block
+- ORCHESTRATOR-NOQA: Added noqa markers to ~25 re-exported imports in orchestrator.py (facade pattern API surface)
 
 ### Pending Todos
 
@@ -84,6 +85,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-02-02
-Stopped at: Completed 11-03-PLAN.md (Detector Registry Adapters)
+Last session: 2026-02-03
+Stopped at: Completed 11-06-PLAN.md (Orchestrator Integration)
 Resume file: None

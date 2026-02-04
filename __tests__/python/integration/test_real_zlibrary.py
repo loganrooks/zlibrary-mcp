@@ -61,45 +61,6 @@ def test_download_dir():
         shutil.rmtree(test_dir)
 
 
-@pytest.fixture(scope="module")
-async def zlib_client(credentials):
-    """
-    Provide a Z-Library client shared across ALL integration tests.
-
-    Scope is "module" to minimize login attempts and respect Z-Library's rate limits.
-    All tests share one authenticated session, which is created once and cleaned up
-    at the end.
-
-    This is necessary because Z-Library rate-limits login attempts, and creating
-    30 separate clients would exceed the limit.
-    """
-    from lib.client_manager import ZLibraryClient
-
-    # Add a small delay before first login to be respectful
-    await asyncio.sleep(2)
-
-    async with ZLibraryClient(
-        email=credentials['email'],
-        password=credentials['password'],
-        mirror=credentials.get('mirror', '')
-    ) as client:
-        yield client
-    # Automatic cleanup after all tests
-
-
-@pytest.fixture(autouse=True, scope="function")
-async def reset_global_client():
-    """
-    Reset the module-level default client before/after each test.
-
-    This prevents global state pollution between tests.
-    """
-    from lib import client_manager
-    await client_manager.reset_default_client()
-    yield
-    await client_manager.reset_default_client()
-
-
 @pytest.mark.integration
 class TestRealAuthentication:
     """Test real Z-Library authentication."""
@@ -466,47 +427,6 @@ class TestRealMetadataExtraction:
         # Verify we got data despite speed
         assert metadata is not None
         assert isinstance(metadata, dict)
-
-
-@pytest.mark.integration
-@pytest.mark.skip(reason="search_advanced removed during EAPI migration")
-class TestRealAdvancedSearch:
-    """Test advanced search with fuzzy match detection."""
-
-    @pytest.mark.asyncio
-    async def test_advanced_search_detects_fuzzy(self, credentials, zlib_client):
-        """Should detect fuzzy matches when present."""
-        await asyncio.sleep(1)
-
-        # Use a query likely to have fuzzy matches
-        result = await python_bridge.search_advanced(
-            query="Hegelian",
-            count=10
-        )
-
-        # Verify structure
-        assert 'has_fuzzy_matches' in result
-        assert 'exact_matches' in result
-        assert 'fuzzy_matches' in result
-        assert isinstance(result['has_fuzzy_matches'], bool)
-
-        # Should have at least exact matches
-        assert len(result['exact_matches']) + len(result['fuzzy_matches']) > 0
-
-    @pytest.mark.asyncio
-    async def test_advanced_search_no_fuzzy(self, credentials, zlib_client):
-        """Should handle searches with no fuzzy matches."""
-        await asyncio.sleep(1)
-
-        # Very specific query unlikely to have fuzzy matches
-        result = await python_bridge.search_advanced(
-            query="Python Programming",
-            count=5
-        )
-
-        # Should work even without fuzzy matches
-        assert 'exact_matches' in result
-        assert isinstance(result['exact_matches'], list)
 
 
 @pytest.mark.integration

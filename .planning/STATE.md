@@ -10,17 +10,17 @@ See: .planning/PROJECT.md (updated 2026-02-01)
 ## Current Position
 
 Phase: 12 of 12 (Anna's Archive Integration)
-Plan: 2 of 4 complete (12-01, 12-03)
+Plan: 3 of 4 complete (12-01, 12-02, 12-03)
 Status: In progress
-Last activity: 2026-02-04 — Completed 12-03-PLAN.md (LibGen adapter)
+Last activity: 2026-02-04 — Completed 12-02-PLAN.md (Anna's Archive adapter)
 
-Progress: [████████████████░] 91% (20/22 v1.1 plans)
+Progress: [████████████████░] 95% (21/22 v1.1 plans)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 40 (22 v1.0 + 18 v1.1)
-- v1.1 plans completed: 19
+- Total plans completed: 41 (22 v1.0 + 19 v1.1)
+- v1.1 plans completed: 20
 - Total execution time: ~4 days (v1.0)
 
 **By Phase:** (v1.1)
@@ -31,7 +31,7 @@ Progress: [████████████████░] 91% (20/22 v1.1 
 | 09 | 3/3 | ~12min | ~4min |
 | 10 | 4/4 | ~14min | ~3.5min |
 | 11 | 7/7 | ~60min | ~8.5min |
-| 12 | 2/4 | ~3min | ~1.5min |
+| 12 | 3/4 | ~5.5min | ~1.8min |
 
 ## Accumulated Context
 
@@ -96,11 +96,12 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-04
-Stopped at: Completed 12-03-PLAN.md (LibGen adapter)
-Resume with: `/gsd:execute-phase` or execute 12-02-PLAN.md (Anna's Archive adapter)
+Stopped at: Completed 12-02-PLAN.md (Anna's Archive adapter)
+Resume with: `/gsd:execute-phase` or execute 12-04-PLAN.md (Source router)
 Key files created:
 - `lib/sources/__init__.py` — package exports
 - `lib/sources/models.py` — UnifiedBookResult, DownloadResult, QuotaInfo, SourceType
 - `lib/sources/config.py` — SourceConfig, get_source_config()
 - `lib/sources/base.py` — SourceAdapter ABC
+- `lib/sources/annas.py` — AnnasArchiveAdapter with HTML search and fast download API
 - `lib/sources/libgen.py` — LibgenAdapter with async search/download

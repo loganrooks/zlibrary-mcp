@@ -409,10 +409,13 @@ def process_pdf(
                 if _page_needs_xmark_detection_fast(page_text, threshold=0.02):
                     pages_needing_xmark_check.append(page_num)
 
-            logging.info(
-                f"Pre-filter: {len(pages_needing_xmark_check)}/{len(doc)} pages flagged for X-mark detection "
-                f"({len(pages_needing_xmark_check) / len(doc) * 100:.1f}%)"
-            )
+            if len(doc) > 0:
+                logging.info(
+                    f"Pre-filter: {len(pages_needing_xmark_check)}/{len(doc)} pages flagged for X-mark detection "
+                    f"({len(pages_needing_xmark_check) / len(doc) * 100:.1f}%)"
+                )
+            else:
+                logging.warning("PDF has 0 pages, skipping X-mark pre-filter logging")
 
             # Parallel X-mark detection ONLY on flagged pages
             if pages_needing_xmark_check:

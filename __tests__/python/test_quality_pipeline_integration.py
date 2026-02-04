@@ -28,6 +28,20 @@ from lib.rag_processing import (
 from lib.rag_data_models import PageRegion, TextSpan
 from lib.garbled_text_detection import GarbledDetectionConfig
 
+# Check if OCR dependencies are available (not just tesseract binary)
+try:
+    import pytesseract
+    import pdf2image
+    from PIL import Image
+    TESSERACT_AVAILABLE = True
+except ImportError:
+    TESSERACT_AVAILABLE = False
+
+skip_without_tesseract = pytest.mark.skipif(
+    not TESSERACT_AVAILABLE,
+    reason="Tesseract OCR not installed - OCR recovery tests skipped"
+)
+
 
 # =============================================================================
 # Fixtures
@@ -325,6 +339,7 @@ def test_stage_3_graceful_degradation_no_ocr(garbled_page_region, quality_config
     assert 'recovery_unavailable' in result.quality_flags
 
 
+@skip_without_tesseract
 def test_stage_3_low_confidence_skips_recovery(garbled_page_region, quality_config):
     """Test Stage 3 skips recovery for low-confidence garbled text."""
     # Low confidence garbled (quality_score close to 1.0 = low garbled_confidence)
@@ -343,6 +358,7 @@ def test_stage_3_low_confidence_skips_recovery(garbled_page_region, quality_conf
     assert 'recovery_needed' not in result.quality_flags
 
 
+@skip_without_tesseract
 def test_stage_3_high_confidence_needs_recovery(garbled_page_region, quality_config):
     """Test Stage 3 flags high-confidence garbled text for recovery."""
     # High confidence garbled (quality_score low = high garbled_confidence)
@@ -428,6 +444,7 @@ def test_pipeline_stops_at_sous_rature(mock_detect, garbled_page_region, quality
     assert 'recovery_needed' not in result.quality_flags  # Stage 3 didn't run
 
 
+@skip_without_tesseract
 def test_pipeline_proceeds_to_stage_3(garbled_page_region, quality_config):
     """Test pipeline proceeds to Stage 3 when garbled but no X-marks."""
     with patch('lib.rag_processing.XMARK_AVAILABLE', True), \

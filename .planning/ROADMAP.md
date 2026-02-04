@@ -96,20 +96,22 @@ Plans:
 - [x] 11-07-PLAN.md — End-to-end integration tests + recall regression verification
 
 #### Phase 12: Anna's Archive Integration
-**Goal**: Users can search and download books from Anna's Archive as a fallback source when Z-Library is unavailable, with clear source attribution
+**Goal**: Users can search and download books from Anna's Archive (primary, user has API key) with LibGen fallback, clear source attribution
 **Depends on**: Phase 8 (AsyncZlib removed, source abstraction possible); independent of Phases 9-11
 **Requirements**: ANNA-01, ANNA-02, ANNA-03, ANNA-04
 **Success Criteria** (what must be TRUE):
-  1. Research spike has determined API feasibility with documented endpoints, auth method, rate limits, and legal considerations (go/no-go decision made)
-  2. Anna's Archive base URL is configurable via environment variable (domain instability mitigation)
-  3. When Z-Library search fails or is rate-limited, Anna's Archive search returns results as fallback
-  4. Search results include a source indicator showing which source (Z-Library or Anna's Archive) returned each result
-**Plans**: 3 plans
+  1. Anna's Archive search (HTML scraping) returns book results with MD5 hashes
+  2. Anna's Archive fast download API returns working download URLs (using domain_index=1)
+  3. LibGen fallback activates when Anna's quota exhausted or unavailable
+  4. Search results include source indicator ('annas_archive' or 'libgen')
+  5. Configuration via env vars: ANNAS_SECRET_KEY, ANNAS_BASE_URL, BOOK_SOURCE_DEFAULT
+**Plans**: 4 plans
 
 Plans:
-- [ ] 12-01-PLAN.md — Source abstraction layer + LibGen/ZLib adapters (Python)
-- [ ] 12-02-PLAN.md — Source routing + fallback + MCP tool schema updates (full stack)
-- [ ] 12-03-PLAN.md — Parallel search mode + unit tests
+- [ ] 12-01-PLAN.md — Foundation models + configuration (UnifiedBookResult, SourceConfig, SourceAdapter)
+- [ ] 12-02-PLAN.md — Anna's Archive adapter (TDD: search scraping + fast download API)
+- [ ] 12-03-PLAN.md — LibGen adapter (TDD: search + download via libgen-api-enhanced)
+- [ ] 12-04-PLAN.md — Source router + python_bridge integration + end-to-end tests
 
 ## Progress
 
@@ -130,4 +132,4 @@ Phases execute in numeric order: 8 → 9 → 10 → 11 → 12
 | 9. Margin Detection & Scholarly References | v1.1 | 3/3 | Complete | 2026-02-02 |
 | 10. Adaptive Resolution Pipeline | v1.1 | 4/4 | Complete | 2026-02-02 |
 | 11. Body Text Purity Integration | v1.1 | 7/7 | Complete | 2026-02-03 |
-| 12. Anna's Archive Integration | v1.1 | 0/3 | Not started | - |
+| 12. Anna's Archive Integration | v1.1 | 0/4 | Not started | - |

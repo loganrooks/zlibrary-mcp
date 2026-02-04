@@ -487,4 +487,16 @@ export async function searchAdvanced(args: {
   });
 }
 
+export async function searchMultiSource(args: {
+  query: string;
+  source?: 'auto' | 'annas' | 'libgen';
+  count?: number;
+}): Promise<any> {
+  return callPythonFunction('search_multi_source', {
+    query: args.query,
+    source: args.source || 'auto',
+    count: args.count || 10
+  });
+}
+
 // Removed unused downloadFile helper function

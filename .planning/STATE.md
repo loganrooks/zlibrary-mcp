@@ -12,9 +12,9 @@ See: .planning/PROJECT.md (updated 2026-02-01)
 Phase: 12 of 12 (Anna's Archive Integration)
 Plan: 4 of 4 complete (12-01, 12-02, 12-03, 12-04)
 Status: Phase 12 COMPLETE - v1.1 COMPLETE
-Last activity: 2026-02-04 — Completed quick-001 (Tech debt cleanup)
+Last activity: 2026-02-04 — Completed quick-002 (Test fixes)
 
-Progress: [████████████████████] 100% (22/22 v1.1 plans + 1 quick task)
+Progress: [████████████████████] 100% (22/22 v1.1 plans + 2 quick tasks)
 
 ## Performance Metrics
 
@@ -81,6 +81,9 @@ v1.1 decisions:
 - ROUTER-AUTO-SOURCE: Auto mode uses Anna's if ANNAS_SECRET_KEY set, else LibGen
 - ROUTER-LAZY-INIT: Adapters created only when first needed
 - ROUTER-QUOTA-FALLBACK: Zero downloads_left triggers fallback to LibGen
+- TEST-EAPI-MOCK: Mock get_eapi_client() not deprecated zlib_client for download tests
+- TEST-OCR-SKIP: Check Python modules (pytesseract/pdf2image/PIL) not just tesseract binary
+- TEST-ZERO-DIV: Guard len(doc) > 0 before division in orchestrator_pdf.py
 
 ### Pending Todos
 
@@ -99,8 +102,8 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-04
-Stopped at: Completed quick-001 (Tech debt cleanup) - search_multi_source MCP tool wired, AsyncZlib deprecated code removed
-Resume with: N/A - v1.1 roadmap complete
+Stopped at: Completed quick-002 (Test fixes) - restored green test suite after quick-001 refactoring
+Resume with: N/A - v1.1 roadmap complete, test suite green
 Key files created in Phase 12:
 - `lib/sources/__init__.py` — package exports
 - `lib/sources/models.py` — UnifiedBookResult, DownloadResult, QuotaInfo, SourceType

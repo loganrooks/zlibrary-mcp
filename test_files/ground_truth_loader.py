@@ -191,5 +191,14 @@ def list_ground_truth_tests() -> List[str]:
     if not gt_dir.exists():
         return []
 
+    # Utility files that are not actual ground truth test cases
+    EXCLUDED_FILES = {
+        'schema.json',           # JSON schema definition
+        'schema_v2.json',        # JSON schema v2
+        'schema_v3.json',        # JSON schema v3
+        'body_text_baseline.json',   # Recall baseline data
+        'correction_matrix.json',    # Validation results
+    }
+
     gt_files = gt_dir.glob('*.json')
-    return [f.stem for f in gt_files if f.name != 'schema.json']
+    return [f.stem for f in gt_files if f.name not in EXCLUDED_FILES]

@@ -105,6 +105,12 @@ const SearchAdvancedParamsSchema = z.object({
   count: z.number().int().optional().default(10).describe('Number of results to return'),
 });
 
+const SearchMultiSourceParamsSchema = z.object({
+  query: z.string().describe('Search query'),
+  source: z.enum(['auto', 'annas', 'libgen']).optional().default('auto').describe('Source selection: auto (Anna\'s Archive if key available, else LibGen), annas (force Anna\'s Archive), or libgen (force LibGen)'),
+  count: z.number().int().optional().default(10).describe('Maximum number of results to return'),
+});
+
 // ============================================================================
 // Tool Annotations (MCP Best Practice - helps AI assistants make better decisions)
 // ============================================================================
@@ -186,6 +192,12 @@ const toolAnnotations: Record<string, ToolAnnotations> = {
     openWorldHint: true,
     title: 'Advanced Search',
   },
+  search_multi_source: {
+    readOnlyHint: true,
+    idempotentHint: true,
+    openWorldHint: true,
+    title: 'Multi-Source Search',
+  },
 };
 
 // ============================================================================
@@ -205,6 +217,7 @@ interface HandlerMap {
     searchByAuthor: (args: any) => Promise<any>;
     fetchBooklist: (args: any) => Promise<any>;
     searchAdvanced: (args: any) => Promise<any>;
+    searchMultiSource: (args: any) => Promise<any>;
 }
 
 const handlers: HandlerMap = {
@@ -360,6 +373,18 @@ const handlers: HandlerMap = {
     } catch (error: any) {
       return { error: { message: error.message || 'Failed to perform advanced search' } };
     }
+  },
+
+  searchMultiSource: async (args: z.infer<typeof SearchMultiSourceParamsSchema>) => {
+    try {
+      return await zlibraryApi.searchMultiSource({
+        query: args.query,
+        source: args.source,
+        count: args.count
+      });
+    } catch (error: any) {
+      return { error: { message: error.message || 'Failed to search multi-source' } };
+    }
   }
 };
 
@@ -386,6 +411,7 @@ const toolRegistry: Record<string, ToolRegistryEntry> = {
   search_by_author: { description: 'Search by author', schema: SearchByAuthorParamsSchema, handler: handlers.searchByAuthor },
   fetch_booklist: { description: 'Fetch booklist', schema: FetchBooklistParamsSchema, handler: handlers.fetchBooklist },
   search_advanced: { description: 'Advanced search', schema: SearchAdvancedParamsSchema, handler: handlers.searchAdvanced },
+  search_multi_source: { description: 'Multi-source search', schema: SearchMultiSourceParamsSchema, handler: handlers.searchMultiSource },
 };
 
 // ============================================================================
@@ -442,7 +468,7 @@ async function start(opts: StartOptions = {}): Promise<{ server: McpServer; tran
     });
 
     // ========================================================================
-    // Register all 12 tools via server.tool()
+    // Register all 13 tools via server.tool()
     // ========================================================================
 
     // Helper to get annotations with proper typing
@@ -526,6 +552,12 @@ async function start(opts: StartOptions = {}): Promise<{ server: McpServer; tran
       'Advanced search with automatic separation of exact matches from fuzzy/approximate matches. Returns two arrays: exact_matches and fuzzy_matches, each containing books with title (string), author (string), and other metadata.',
       SearchAdvancedParamsSchema.shape, ann('search_advanced'),
       async (args) => wrapResult(await handlers.searchAdvanced(args as any), 'search_advanced'));
+
+    // 13. search_multi_source
+    server.tool('search_multi_source',
+      'Search for books across Anna\'s Archive and LibGen. Alternative to Z-Library EAPI. Returns books with md5, title, author, year, extension, size, source, download_url. Use source=auto to prefer Anna\'s Archive with LibGen fallback, or force a specific source.',
+      SearchMultiSourceParamsSchema.shape, ann('search_multi_source'),
+      async (args) => wrapResult(await handlers.searchMultiSource(args as any), 'search_multi_source'));
 
     // Create and connect the Stdio transport
     const transport = new StdioServerTransport();

@@ -21,7 +21,7 @@ sys.path.insert(0, str(project_root))
 sys.path.insert(0, str(project_root / 'test_files'))
 
 from lib.rag_processing import process_pdf
-from ground_truth_loader import load_ground_truth, validate_against_ground_truth, list_ground_truth_tests
+from ground_truth_loader import load_ground_truth, list_ground_truth_tests
 
 
 class TestRealWorldSousRature:
@@ -149,10 +149,17 @@ class TestRealWorldPerformance:
 
         Performance budgets defined in ground truth.
         """
-        gt = load_ground_truth(test_name)
+        try:
+            gt = load_ground_truth(test_name)
+        except FileNotFoundError as e:
+            pytest.skip(f"{test_name}: PDF file not found - {e}")
+
+        # Skip if this ground truth file doesn't have performance budget
+        if 'expected_quality' not in gt or 'processing_time_max_ms' not in gt.get('expected_quality', {}):
+            pytest.skip(f"{test_name}: no performance budget defined (expected_quality.processing_time_max_ms)")
 
         start = time.time()
-        result = process_pdf(Path(gt['pdf_file']))
+        process_pdf(Path(gt['pdf_file']))
         elapsed_ms = (time.time() - start) * 1000
 
         max_time = gt['expected_quality']['processing_time_max_ms']
@@ -266,7 +273,7 @@ def _calculate_similarity(text1: str, text2: str) -> float:
         return 1.0
 
     # Count matching characters
-    min_len = min(len(text1), len(text2))
+    min(len(text1), len(text2))
     max_len = max(len(text1), len(text2))
 
     matching = sum(1 for a, b in zip(text1, text2) if a == b)

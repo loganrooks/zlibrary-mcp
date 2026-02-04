@@ -13,6 +13,7 @@ Usage:
     # Adapters implement SourceAdapter ABC
 """
 
+from .annas import AnnasArchiveAdapter, QuotaExhaustedError
 from .base import SourceAdapter
 from .config import SourceConfig, get_source_config
 from .libgen import LibgenAdapter
@@ -26,5 +27,7 @@ __all__ = [
     "SourceConfig",
     "get_source_config",
     "SourceAdapter",
+    "AnnasArchiveAdapter",
+    "QuotaExhaustedError",
     "LibgenAdapter",
 ]

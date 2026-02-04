@@ -1,77 +1,89 @@
 # Phase 12: Anna's Archive Integration - Context
 
 **Gathered:** 2026-02-02
+**Updated:** 2026-02-03 (after experimental validation)
 **Status:** Ready for planning
 
 <domain>
 ## Phase Boundary
 
-Users can search and download books from Anna's Archive (or alternative digital archive) as a fallback source when Z-Library is unavailable, with clear source attribution. Research spike determines feasibility and go/no-go. If Anna's Archive is not viable, pivot to other free digital archives.
+Users can search and download books from Anna's Archive as the primary source (user has API key with 25 fast downloads/day), with LibGen as fallback when quota is exhausted or Anna's is unavailable. Clear source attribution in results.
+
+**Experimental findings (see 12-EXPERIMENT.md and 12-RESEARCH.md):**
+- Anna's Archive fast download API works with `domain_index=1`
+- Search requires HTML scraping (no search API)
+- Slow downloads blocked by DDoS-Guard — not implementing
+- LibGen works via `libgen-api-enhanced` library
 
 </domain>
 
 <decisions>
 ## Implementation Decisions
 
+### Source priority (UPDATED)
+- **Primary: Anna's Archive** — user has paid API key (25 fast downloads/day)
+- **Fallback: LibGen** — free, no quota, for when Anna's quota exhausted
+- Default source is `auto` (Anna's Archive if key present, else LibGen)
+- Manual override via `source` parameter on search tools
+
+### Anna's Archive implementation
+- **Search:** HTML scraping at `/search?q=...` (selector: `a[href^='/md5/']`)
+- **Download:** Fast download API at `/dyn/api/fast_download.json`
+- **CRITICAL:** Use `domain_index=1` parameter — domain_index=0 returns HTTPS URLs with SSL errors
+- Track quota via `account_fast_download_info` in API response
+- Trigger fallback when `downloads_left` reaches 0
+
+### LibGen implementation
+- Use `libgen-api-enhanced` library (import as `libgen_api_enhanced`, NOT `libgen_api`)
+- Wrap sync calls in `asyncio.to_thread()` to avoid blocking
+- Download via `tor_download_link` field or resolved mirrors
+
+### What NOT to implement
+- Anna's Archive slow downloads (blocked by DDoS-Guard, requires browser automation)
+- Parallel mode (defer to future enhancement)
+
 ### Fallback trigger logic
-- Fallback activates on: Z-Lib errors/timeouts, empty results, proactive rate-limit detection, and manual override
-- Manual override via `source` parameter on search tools (e.g., `source: 'annas_archive' | 'zlibrary' | 'auto'`)
-- Default source is `auto` (Z-Library primary), but primary source is configurable via env var
-- Optional parallel mode: user can opt into querying both sources and getting merged results
-- On mid-search fallback: clean switch — discard partial Z-Lib results, return only alternative source results
+- Fallback activates on: Anna's quota exhausted, Anna's errors/timeouts, manual override
+- Manual override via `source` parameter (`source: 'annas' | 'libgen' | 'auto'`)
+- On fallback: clean switch — return only fallback source results
 
-### Source attribution & result merging
-- Clean switch on fallback — no partial result mixing
-- In parallel mode, deduplication and result limits are Claude's discretion
-- Schema normalization and source indicator approach are Claude's discretion based on what the API actually returns
+### Source attribution & result schema
+- All results include `source` field ('annas_archive' or 'libgen')
+- Unified result schema with common fields: md5, title, author, year, extension, size, download_url
+- Source-specific extras in `extra` dict if needed
 
-### Go/no-go criteria
-- Legal risk tolerance: match Z-Library approach (undocumented APIs acceptable if stable and widely used)
-- **Hard constraint: free sources only — no paid APIs**
-- Minimum feature parity for "go": must support both search AND download
-- API stability assessment: Claude evaluates whether instability is mitigatable
-- Research strategy (Anna's-first vs comparative): Claude's discretion
-- Rate limit evaluation: Claude assesses whether alternative's limits make it a useful fallback
-
-### No-go pivot strategy
-- If Anna's Archive is not feasible, pivot to researching other free digital archives
-- Claude discovers alternative candidates during research spike (no predetermined list)
-- Goal is to find at least one viable free alternative source — phase doesn't close without exploration
-
-### Configuration & user control
-- Full control desired: URL, credentials (if needed), preferred source, fallback enable/disable, timeouts
-- Configurable primary source via env var (default Z-Library)
-- Auth pattern, kill switch, config granularity, status tooling, download directory organization: Claude's discretion based on what emerges from research
-
-### Claude's Discretion
-- Retry behavior before fallback (fail fast vs use existing retry/circuit-breaker)
-- Whether fallback applies to downloads (depends on research spike findings)
-- Which search tools get fallback (depends on alternative's capabilities)
-- Auto-promote to alternative during Z-Lib outage behavior
-- Logging/notification level when fallback activates
-- Download source inference from book metadata vs explicit parameter
-- Result schema (unified vs source-specific extras)
-- Source indicator format (metadata field vs human-readable note)
-- Per-tool config granularity vs global config
-- Health-check/status tool value assessment
-- Download directory organization (source-aware folders vs single folder)
+### Configuration
+- `ANNAS_SECRET_KEY` — required for Anna's Archive downloads
+- `ANNAS_BASE_URL` — optional, for mirror switching (default: https://annas-archive.li)
+- `LIBGEN_MIRROR` — optional, LibGen mirror (default: li)
+- `BOOK_SOURCE_DEFAULT` — 'auto' | 'annas' | 'libgen' (default: auto)
+- `BOOK_SOURCE_FALLBACK_ENABLED` — true/false (default: true)
 
 </decisions>
 
 <specifics>
-## Specific Ideas
+## Specific Implementation Notes
 
-- User explicitly wants to avoid paid APIs — this is a hard constraint, not a preference
-- The `source` parameter approach was specifically chosen over creating separate tools
-- Configurable primary source was chosen over fixed Z-Library-first priority
-- Parallel mode (query both sources) was explicitly requested as an option
+### Validated code patterns (from experiments)
+All patterns in 12-RESEARCH.md are experimentally validated and can be used directly.
+
+### Critical details
+1. **domain_index=1 is mandatory** — domain_index=0 SSL errors confirmed
+2. **Import path:** `from libgen_api_enhanced import LibgenSearch`
+3. **Quota tracking:** API returns `downloads_left`, `downloads_done_today`, `downloads_per_day`
+4. **Async wrapping:** LibGen library is sync, must use `asyncio.to_thread()`
+
+### Environment setup
+User has `.env` file with `ANNAS_SECRET_KEY` set. The experiment scripts in `scripts/experiments/` demonstrate working patterns.
 
 </specifics>
 
 <deferred>
 ## Deferred Ideas
 
-None — discussion stayed within phase scope
+- Parallel mode (query both sources, merge results) — add in future if needed
+- Anna's Archive slow downloads — would require Playwright, not worth complexity
+- Advanced search filters — implement basic search first
 
 </deferred>
 
@@ -79,3 +91,4 @@ None — discussion stayed within phase scope
 
 *Phase: 12-annas-archive*
 *Context gathered: 2026-02-02*
+*Updated after experiments: 2026-02-03*

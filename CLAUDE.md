@@ -2,6 +2,17 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## GSD Model Profile
+
+**IMPORTANT:** Before spawning any GSD subagent, read `.planning/config.json` and use the `model_profile` value to select the correct model. Never hardcode or assume the profile.
+
+| Agent | quality | balanced | budget |
+|-------|---------|----------|--------|
+| gsd-phase-researcher | opus | sonnet | haiku |
+| gsd-planner | opus | opus | sonnet |
+| gsd-plan-checker | sonnet | sonnet | haiku |
+| gsd-executor | opus | sonnet | sonnet |
+
 ## 🚀 Quick Start for Claude Code
 
 **Essential Reading Order**:

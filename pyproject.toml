@@ -33,6 +33,8 @@ dependencies = [
     "nltk>=3.8.1", # Sentence boundary detection
     "ocrmypdf>=15.4.4",
     "opencv-python-headless>=4.12.0.88",
+    "python-dotenv>=1.2.1",
+    "libgen-api-enhanced>=1.2.4",
 ]
 
 # UV source configuration for vendored zlibrary

@@ -14,9 +14,9 @@ Detect margin content in scholarly PDFs, classify it by type, and output it as s
 ## Implementation Decisions
 
 ### Reference type coverage
-- All margin content captured generically — no type-specific classification in this phase
-- Single generic marker format: `{{margin: content}}` for all detected margin text
-- Typed variants (e.g., `{{stephanus: 231a}}`, `{{bekker: 1094a1}}`) deferred to future milestone — the bracket format is designed to support this extension
+- **Updated**: Typed classification IS in scope for this phase per roadmap success criterion #2: "Stephanus references and Bekker references appear as structured annotations in output metadata"
+- Typed marker format: `{{stephanus: 231a}}`, `{{bekker: 1094a1}}`, `{{line_number: 25}}`, `{{margin: content}}`
+- ~~All margin content captured generically~~ — superseded by roadmap requirements during planning
 - Marginal glosses (explanatory notes, not just reference numbers) are captured the same way
 - No attempt to differentiate printed marginalia from handwritten annotations in this phase
 

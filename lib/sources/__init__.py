@@ -15,6 +15,7 @@ Usage:
 
 from .base import SourceAdapter
 from .config import SourceConfig, get_source_config
+from .libgen import LibgenAdapter
 from .models import DownloadResult, QuotaInfo, SourceType, UnifiedBookResult
 
 __all__ = [
@@ -25,4 +26,5 @@ __all__ = [
     "SourceConfig",
     "get_source_config",
     "SourceAdapter",
+    "LibgenAdapter",
 ]

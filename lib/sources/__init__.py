@@ -18,6 +18,7 @@ from .base import SourceAdapter
 from .config import SourceConfig, get_source_config
 from .libgen import LibgenAdapter
 from .models import DownloadResult, QuotaInfo, SourceType, UnifiedBookResult
+from .router import SourceRouter
 
 __all__ = [
     "UnifiedBookResult",
@@ -30,4 +31,5 @@ __all__ = [
     "AnnasArchiveAdapter",
     "QuotaExhaustedError",
     "LibgenAdapter",
+    "SourceRouter",
 ]

@@ -3,7 +3,7 @@
 ## Milestones
 
 - ✅ **v1.0 Audit Cleanup & Modernization** — Phases 1-7 (shipped 2026-02-01)
-- 🚧 **v1.1 Quality & Expansion** — Phases 8-12 (in progress)
+- ✅ **v1.1 Quality & Expansion** — Phases 8-12 (shipped 2026-02-04)
 
 ## Phases
 
@@ -22,7 +22,7 @@ Full details: `.planning/milestones/v1.0-ROADMAP.md`
 
 </details>
 
-### 🚧 v1.1 Quality & Expansion (In Progress)
+### ✅ v1.1 Quality & Expansion (SHIPPED 2026-02-04)
 
 **Milestone Goal:** Stabilize infrastructure (Node 22, EAPI gaps, Docker), improve extraction quality for scholarly texts (margin content, adaptive resolution, body text purity), and explore Anna's Archive as alternative source.
 
@@ -108,10 +108,10 @@ Plans:
 **Plans**: 4 plans
 
 Plans:
-- [ ] 12-01-PLAN.md — Foundation models + configuration (UnifiedBookResult, SourceConfig, SourceAdapter)
-- [ ] 12-02-PLAN.md — Anna's Archive adapter (TDD: search scraping + fast download API)
-- [ ] 12-03-PLAN.md — LibGen adapter (TDD: search + download via libgen-api-enhanced)
-- [ ] 12-04-PLAN.md — Source router + python_bridge integration + end-to-end tests
+- [x] 12-01-PLAN.md — Foundation models + configuration (UnifiedBookResult, SourceConfig, SourceAdapter)
+- [x] 12-02-PLAN.md — Anna's Archive adapter (TDD: search scraping + fast download API)
+- [x] 12-03-PLAN.md — LibGen adapter (TDD: search + download via libgen-api-enhanced)
+- [x] 12-04-PLAN.md — Source router + python_bridge integration + end-to-end tests
 
 ## Progress
 
@@ -132,4 +132,4 @@ Phases execute in numeric order: 8 → 9 → 10 → 11 → 12
 | 9. Margin Detection & Scholarly References | v1.1 | 3/3 | Complete | 2026-02-02 |
 | 10. Adaptive Resolution Pipeline | v1.1 | 4/4 | Complete | 2026-02-02 |
 | 11. Body Text Purity Integration | v1.1 | 7/7 | Complete | 2026-02-03 |
-| 12. Anna's Archive Integration | v1.1 | 0/4 | Not started | - |
+| 12. Anna's Archive Integration | v1.1 | 4/4 | Complete | 2026-02-04 |

@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 2026-02-01)
 
 ## Current Position
 
-Phase: 11 of 12 (Body Text Purity) — COMPLETE
-Plan: 7 of 7 in current phase (integration tests + recall regression)
-Status: Phase complete
-Last activity: 2026-02-03 — Completed 11-07-PLAN.md (Integration Tests & Recall)
+Phase: 12 of 12 (Anna's Archive Integration)
+Plan: 1 of 4 complete
+Status: In progress
+Last activity: 2026-02-04 — Completed 12-01-PLAN.md (foundation models)
 
-Progress: [███████████████░] 97% (18/18 v1.1 plans through Phase 11)
+Progress: [███████████████░] 86% (19/22 v1.1 plans)
 
 ## Performance Metrics
 
@@ -31,6 +31,7 @@ Progress: [███████████████░] 97% (18/18 v1.1 pla
 | 09 | 3/3 | ~12min | ~4min |
 | 10 | 4/4 | ~14min | ~3.5min |
 | 11 | 7/7 | ~60min | ~8.5min |
+| 12 | 1/4 | ~1min | ~1min |
 
 ## Accumulated Context
 
@@ -69,6 +70,13 @@ v1.1 decisions:
 - WRITER-MARGIN-APPEND: Margin annotations appended at end of their page's body text block
 - ORCHESTRATOR-NOQA: Added noqa markers to ~25 re-exported imports in orchestrator.py (facade pattern API surface)
 - TEST-SMALLEST-PDF: Used heidegger_pages_22-23 (smallest scholarly PDF) for integration tests — fast execution
+- ANNAS-DOMAIN-INDEX-1: Use domain_index=1 for Anna's Archive fast download API (domain_index=0 has SSL errors)
+- ANNAS-SCRAPE-SEARCH: Anna's Archive search via HTML scraping (no search API exists)
+- ANNAS-NO-SLOW-DOWNLOAD: Do not implement slow downloads (blocked by DDoS-Guard, requires Playwright)
+- LIBGEN-IMPORT: Import as `from libgen_api_enhanced import LibgenSearch` (not libgen_api)
+- LIBGEN-ASYNC-THREAD: Wrap LibGen sync calls in asyncio.to_thread()
+- SOURCE-ANNAS-PRIMARY: Anna's Archive is primary source (user has API key with 25/day quota)
+- SOURCE-LIBGEN-FALLBACK: LibGen is fallback when Anna's quota exhausted or unavailable
 
 ### Pending Todos
 
@@ -80,12 +88,17 @@ None.
 - ~~EAPI lacks booklist/full-text search endpoints~~ MITIGATED in 08-03 (enriched fallbacks)
 - ~~AsyncZlib removal must have integration test BEFORE swap (pitfall P-01)~~ RESOLVED in 08-02
 - ~~Margin detection must annotate-don't-remove to avoid breaking footnote pipeline (pitfall P-06)~~ IMPLEMENTED in 09-02 (bbox exclusion, annotations not removal)
-- Anna's Archive API contract unknown — research spike required before implementation (Phase 12)
+- ~~Anna's Archive API contract unknown~~ RESOLVED in Phase 12 experiments (API works with domain_index=1)
 - Pre-existing: paths.test.js has 1 failing test (requirements.txt removed in UV migration)
 - Pre-existing: 2 pytest collection errors in scripts/ (import issues)
 
 ## Session Continuity
 
-Last session: 2026-02-03
-Stopped at: Completed 11-07-PLAN.md (Phase 11 complete)
-Resume file: None
+Last session: 2026-02-04
+Stopped at: Completed 12-01-PLAN.md (foundation models)
+Resume with: `/gsd:execute-phase` or execute 12-02-PLAN.md (Anna's Archive adapter)
+Key files created:
+- `lib/sources/__init__.py` — package exports
+- `lib/sources/models.py` — UnifiedBookResult, DownloadResult, QuotaInfo, SourceType
+- `lib/sources/config.py` — SourceConfig, get_source_config()
+- `lib/sources/base.py` — SourceAdapter ABC

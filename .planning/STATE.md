@@ -5,22 +5,22 @@
 See: .planning/PROJECT.md (updated 2026-02-01)
 
 **Core value:** Reliable, maintainable MCP server for Z-Library book access
-**Current focus:** v1.1 Quality & Expansion — Phase 11 complete, Phase 12 next
+**Current focus:** v1.1 Quality & Expansion — COMPLETE
 
 ## Current Position
 
 Phase: 12 of 12 (Anna's Archive Integration)
-Plan: 3 of 4 complete (12-01, 12-02, 12-03)
-Status: In progress
-Last activity: 2026-02-04 — Completed 12-02-PLAN.md (Anna's Archive adapter)
+Plan: 4 of 4 complete (12-01, 12-02, 12-03, 12-04)
+Status: Phase 12 COMPLETE - v1.1 COMPLETE
+Last activity: 2026-02-03 — Completed 12-04-PLAN.md (Source router)
 
-Progress: [████████████████░] 95% (21/22 v1.1 plans)
+Progress: [████████████████████] 100% (22/22 v1.1 plans)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 41 (22 v1.0 + 19 v1.1)
-- v1.1 plans completed: 20
+- Total plans completed: 44 (22 v1.0 + 22 v1.1)
+- v1.1 plans completed: 22
 - Total execution time: ~4 days (v1.0)
 
 **By Phase:** (v1.1)
@@ -31,7 +31,7 @@ Progress: [████████████████░] 95% (21/22 v1.1 
 | 09 | 3/3 | ~12min | ~4min |
 | 10 | 4/4 | ~14min | ~3.5min |
 | 11 | 7/7 | ~60min | ~8.5min |
-| 12 | 3/4 | ~5.5min | ~1.8min |
+| 12 | 4/4 | ~11.5min | ~2.9min |
 
 ## Accumulated Context
 
@@ -78,6 +78,9 @@ v1.1 decisions:
 - SOURCE-ANNAS-PRIMARY: Anna's Archive is primary source (user has API key with 25/day quota)
 - SOURCE-LIBGEN-FALLBACK: LibGen is fallback when Anna's quota exhausted or unavailable
 - LIBGEN-RATE-LIMIT: 2.0s MIN_REQUEST_INTERVAL to avoid server blocks
+- ROUTER-AUTO-SOURCE: Auto mode uses Anna's if ANNAS_SECRET_KEY set, else LibGen
+- ROUTER-LAZY-INIT: Adapters created only when first needed
+- ROUTER-QUOTA-FALLBACK: Zero downloads_left triggers fallback to LibGen
 
 ### Pending Todos
 
@@ -95,13 +98,26 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-02-04
-Stopped at: Completed 12-02-PLAN.md (Anna's Archive adapter)
-Resume with: `/gsd:execute-phase` or execute 12-04-PLAN.md (Source router)
-Key files created:
+Last session: 2026-02-03
+Stopped at: Completed 12-04-PLAN.md (Source router) - v1.1 COMPLETE
+Resume with: N/A - v1.1 roadmap complete
+Key files created in Phase 12:
 - `lib/sources/__init__.py` — package exports
 - `lib/sources/models.py` — UnifiedBookResult, DownloadResult, QuotaInfo, SourceType
 - `lib/sources/config.py` — SourceConfig, get_source_config()
 - `lib/sources/base.py` — SourceAdapter ABC
 - `lib/sources/annas.py` — AnnasArchiveAdapter with HTML search and fast download API
 - `lib/sources/libgen.py` — LibgenAdapter with async search/download
+- `lib/sources/router.py` — SourceRouter with fallback logic
+- `__tests__/python/test_source_router.py` — Router integration tests
+
+## v1.1 Completion Summary
+
+All 5 phases of v1.1 roadmap complete:
+- Phase 08: Infrastructure Modernization (3/3 plans)
+- Phase 09: Margin Detection (3/3 plans)
+- Phase 10: Adaptive Resolution (4/4 plans)
+- Phase 11: Pipeline Integration (7/7 plans)
+- Phase 12: Anna's Archive Integration (4/4 plans)
+
+Total: 22 plans executed, ~110.5 minutes total execution time.

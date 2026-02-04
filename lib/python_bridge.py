@@ -21,6 +21,10 @@ from lib import rag_processing
 # Import enhanced metadata extraction
 from lib import enhanced_metadata
 
+# Import multi-source router
+from lib.sources.router import SourceRouter
+from lib.sources.config import get_source_config
+
 # Add zlibrary source directory to path for EAPI imports
 zlibrary_src_path = os.path.join(os.path.dirname(__file__), "..", "zlibrary", "src")
 if zlibrary_src_path not in sys.path:
@@ -35,6 +39,9 @@ logger = logging.getLogger("zlibrary")  # Get the 'zlibrary' logger instance
 
 # Module-level EAPI client (created after login)
 _eapi_client: EAPIClient = None
+
+# Module-level source router (for multi-source search)
+_source_router: SourceRouter = None
 
 # Debug mode configuration (ISSUE-009)
 # Enable with: ZLIBRARY_DEBUG=1 or DEBUG=1
@@ -853,6 +860,80 @@ async def get_recent_books(count: int = 10) -> dict:
     }
 
 
+# ===== PHASE 12: MULTI-SOURCE SEARCH (Anna's Archive + LibGen) =====
+
+
+async def get_source_router() -> SourceRouter:
+    """Get or create the source router.
+
+    Creates a SourceRouter instance using configuration from environment
+    variables. The router is cached at module level for reuse.
+
+    Returns:
+        Configured SourceRouter instance
+    """
+    global _source_router
+    if _source_router is None:
+        config = get_source_config()
+        _source_router = SourceRouter(config)
+    return _source_router
+
+
+async def search_multi_source(
+    query: str,
+    source: str = "auto",
+    count: int = 10,
+    **kwargs,
+) -> dict:
+    """Search for books across multiple sources (Anna's Archive, LibGen).
+
+    This function provides an alternative to the Z-Library EAPI search,
+    routing queries to Anna's Archive (primary) with LibGen fallback.
+
+    Args:
+        query: Search query string
+        source: Source selection ('auto', 'annas', 'libgen')
+            - 'auto': Use Anna's if ANNAS_SECRET_KEY is set, else LibGen
+            - 'annas': Force Anna's Archive (requires ANNAS_SECRET_KEY)
+            - 'libgen': Force LibGen
+        count: Maximum number of results to return
+        **kwargs: Additional arguments passed to adapters
+
+    Returns:
+        dict with:
+            - books: List of book dicts with md5, title, author, etc.
+            - sources_used: List of source names that provided results
+
+    Environment:
+        ANNAS_SECRET_KEY: API key for Anna's Archive fast downloads
+        LIBGEN_MIRROR: LibGen mirror suffix (default: 'li')
+        BOOK_SOURCE_FALLBACK_ENABLED: Enable fallback (default: 'true')
+    """
+    router = await get_source_router()
+    results = await router.search(query, source=source, **kwargs)
+
+    # Convert UnifiedBookResult to dict format for JSON serialization
+    books = [
+        {
+            "md5": r.md5,
+            "title": r.title,
+            "author": r.author,
+            "year": r.year,
+            "extension": r.extension,
+            "size": r.size,
+            "source": r.source.value,
+            "download_url": r.download_url,
+            **r.extra,
+        }
+        for r in results[:count]
+    ]
+
+    return {
+        "books": books,
+        "sources_used": list(set(b["source"] for b in books)),
+    }
+
+
 async def main():
     parser = argparse.ArgumentParser(description="Z-Library Python Bridge")
     parser.add_argument("function_name", help="Name of the function to call")
@@ -880,8 +961,8 @@ async def main():
         sys.exit(1)
 
     try:
-        # Initialize EAPI client for all functions except local file processing
-        if function_name not in ["process_document"]:
+        # Initialize EAPI client for all functions except local file processing and multi-source search
+        if function_name not in ["process_document", "search_multi_source"]:
             await initialize_eapi_client()
 
         # Standardize 'language' key to 'languages' if present for search functions
@@ -928,6 +1009,8 @@ async def main():
             result = await get_recent_books(**args_dict)
         elif function_name == "eapi_health_check":
             result = await eapi_health_check()
+        elif function_name == "search_multi_source":
+            result = await search_multi_source(**args_dict)
         else:
             raise ValueError(f"Unknown function: {function_name}")
 
@@ -948,6 +1031,9 @@ async def main():
         # Clean up EAPI client
         if _eapi_client:
             await _eapi_client.close()
+        # Clean up source router
+        if _source_router:
+            await _source_router.close()
 
 
 if __name__ == "__main__":

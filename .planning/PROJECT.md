@@ -2,11 +2,11 @@
 
 ## What This Is
 
-An MCP server enabling AI assistants to search, download, and process books from Z-Library. The codebase was modernized in v1.0 with updated dependencies, decomposed Python architecture, EAPI transport layer, and comprehensive quality gates.
+An MCP server enabling AI assistants to search, download, and process books from Z-Library with scholarly text extraction (margin detection, adaptive DPI, body text purity), and Anna's Archive as alternative source with LibGen fallback. Built on Node 22 LTS with modernized dependencies, decomposed Python architecture, and EAPI JSON transport.
 
 ## Core Value
 
-Reliable, maintainable MCP server for Z-Library book access — built on a clean foundation ready for feature development.
+Reliable, maintainable MCP server for book access — production-ready infrastructure with high-quality scholarly text extraction.
 
 ## Requirements
 
@@ -34,41 +34,51 @@ Reliable, maintainable MCP server for Z-Library book access — built on a clean
 - ✓ EAPI JSON transport (bypasses Cloudflare) — v1.0
 - ✓ Husky pre-commit hooks + GitHub Actions CI — v1.0
 - ✓ All docs updated with Last Verified timestamps — v1.0
+- ✓ Node 22 LTS with env-paths v4 (pure ESM) — v1.1
+- ✓ AsyncZlib removed, pure EAPIClient downloads — v1.1
+- ✓ Docker builds fixed (opencv-python-headless) — v1.1
+- ✓ EAPI booklist/full-text search improved fallbacks — v1.1
+- ✓ Margin detection (Stephanus, Bekker, line numbers, marginal notes) — v1.1
+- ✓ Adaptive DPI pipeline (150-400 based on content) — v1.1
+- ✓ Region-level re-rendering for footnotes/margins — v1.1
+- ✓ Unified body text purity pipeline with confidence scoring — v1.1
+- ✓ Multi-file output (body.md + _meta.json) — v1.1
+- ✓ Recall regression tests (34/34 pass) — v1.1
+- ✓ Anna's Archive adapter (HTML scraping search + fast download API) — v1.1
+- ✓ LibGen fallback adapter with rate limiting — v1.1
+- ✓ Source router with auto selection and quota-based fallback — v1.1
 
 ### Active
 
-**Infrastructure Stability**
-- [ ] Upgrade to Node 20+ (unlocks env-paths v4, modern features)
-- [ ] Fill EAPI gaps (booklist browsing, full-text search alternatives)
-- [ ] Remove AsyncZlib legacy download client (pure EAPI downloads)
-- [ ] Fix Docker numpy/Alpine compilation issue
-
-**Extraction Quality**
-- [ ] Margin content detection & extraction (scholarly numbering, marginal notes, line numbers)
-- [ ] Adaptive resolution pipeline (higher DPI for small text, footnotes, margin content)
-- [ ] Body text purity (detect and separate all non-body content from markdown output)
-
-**Expansion**
-- [ ] Anna's Archive integration (research-first — fallback/alternative book source)
+(For next milestone — awaiting `/gsd:new-milestone`)
 
 ### Out of Scope
 
 - Rewrite Python bridge in TypeScript — Python has better doc-processing libs
 - ML-based text recovery — research task, not product scope
-- OS keychain for credentials — security improvement for future milestone
 - Push to 100% test coverage — 78-82% is healthy
+- Full Zod 4 migration — Zod 3.25.x bridge works, defer until breaking changes resolved
+- Anna's Archive slow downloads — blocked by DDoS-Guard, requires Playwright
 
-## Current Milestone: v1.1 Quality & Expansion
+## Current State
 
-**Goal:** Stabilize infrastructure (Node 20+, EAPI gaps, Docker), improve extraction quality for scholarly texts (margin content, adaptive resolution), and explore Anna's Archive as alternative source.
+Shipped v1.1 Quality & Expansion with ~43,790 LOC (TypeScript + Python).
 
-## Context
+**Tech stack:**
+- Node 22 LTS with TypeScript MCP server
+- Python bridge with 31 decomposed modules
+- Vendored zlibrary fork with EAPI JSON transport
+- RAG pipeline with margin detection, adaptive DPI, unified body text purity
+- Multi-source support (Z-Library + Anna's Archive + LibGen fallback)
 
-Shipped v1.0 with 45,231 LOC (TypeScript + Python).
-Tech stack: Node.js/TypeScript MCP server, Python bridge, vendored zlibrary fork, EAPI JSON transport.
-7 phases completed in 4 days: test harness → deps → SDK → decomposition → feature porting → docs → EAPI.
-Known limitations: EAPI lacks booklist/full-text search endpoints (graceful degradation in place).
-v1.1 focus: scholarly text extraction quality (Stephanus, Bekker, margin notes, line numbers) and infrastructure modernization.
+**Key capabilities:**
+- 11 MCP tools for search, download, and RAG processing
+- Scholarly text extraction (Stephanus, Bekker, line numbers, marginal notes)
+- Automatic DPI selection (150-400) with region re-rendering
+- Body text purity with 6 detectors, confidence scoring, multi-file output
+- Anna's Archive integration with quota-based LibGen fallback
+
+**v1.1 delivery:** 5 phases, 21 plans, 103 commits in 3 days.
 
 ## Key Decisions
 
@@ -81,13 +91,21 @@ v1.1 focus: scholarly text extraction quality (Stephanus, Bekker, margin notes, 
 | McpServer class with server.tool() | Modern SDK pattern, cleaner than legacy Server | ✓ Good — simpler registration |
 | Facade pattern for decomposition | Zero breakage to existing imports | ✓ Good — all tests passed unchanged |
 | EAPI over HTML scraping | Cloudflare blocking all HTML requests | ✓ Good — restored full functionality |
-| Keep AsyncZlib for downloads | EAPI download returns URL, needs legacy client | ⚠️ Revisit — technical debt |
+| Node 22 LTS (not Node 20) | Unlocks pure ESM deps, LTS until Apr 2027 | ✓ Good — modern runtime |
+| opencv-python-headless | No GUI deps, pre-built Alpine wheels | ✓ Good — Docker builds fixed |
+| AsyncZlib removal | Technical debt from hybrid download path | ✓ Good — clean EAPI-only downloads |
+| Bekker regex before Stephanus | More specific pattern prevents ambiguity | ✓ Good — correct scholarly citations |
+| Block midpoint for margin zone | Statistical approach, no hardcoded widths | ✓ Good — adapts to all layouts |
+| Compositor recall bias to BODY | Unclaimed/low-confidence defaults safe | ✓ Good — no body text loss |
+| Anna's domain_index=1 | domain_index=0 has SSL errors | ✓ Good — fast downloads work |
+| LibGen as fallback only | Anna's has API key with quota | ✓ Good — quota-based fallback |
 
 ## Constraints
 
 - **No regressions**: All existing tests must continue passing
 - **Incremental commits**: Each logical change committed separately
 - **Test-first for refactoring**: Tests pass before and after each change
+- **Recall preservation**: No body text lost by unified pipeline
 
 ---
-*Last updated: 2026-02-01 after v1.1 milestone start*
+*Last updated: 2026-02-04 after v1.1 milestone*

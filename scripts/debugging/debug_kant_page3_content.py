@@ -10,7 +10,6 @@ This script will show ALL text blocks on page 3 to understand why continuation i
 """
 
 import fitz  # PyMuPDF
-import json
 
 # Open the PDF
 pdf_path = "test_files/kant_critique_pages_80_85.pdf"
@@ -24,9 +23,9 @@ page_rect = page.rect
 page_height = page_rect.height
 footnote_threshold = page_height * 0.80  # Bottom 20%
 
-print(f"=" * 80)
-print(f"PAGE 3 (Index 2) ANALYSIS")
-print(f"=" * 80)
+print("=" * 80)
+print("PAGE 3 (Index 2) ANALYSIS")
+print("=" * 80)
 print(f"Page height: {page_height}")
 print(f"Footnote threshold (80%): {footnote_threshold}")
 print(f"Footnote area: y > {footnote_threshold}")
@@ -63,7 +62,7 @@ print("FOOTNOTE AREA BLOCKS (Bottom 20%)")
 print("=" * 80)
 
 for i, block in enumerate(footnote_blocks):
-    print(f"\n--- Block {i+1} ---")
+    print(f"\n--- Block {i + 1} ---")
     print(f"BBox: {block['bbox']}")
     print(f"Lines: {len(block.get('lines', []))}")
     print()
@@ -81,7 +80,12 @@ for i, block in enumerate(footnote_blocks):
     print()
 
     # Check if this looks like continuation
-    if full_block_text and not full_block_text[0].isdigit() and not full_block_text[0].isalpha() and full_block_text[0] not in ['*', '†', '‡', '§']:
+    if (
+        full_block_text
+        and not full_block_text[0].isdigit()
+        and not full_block_text[0].isalpha()
+        and full_block_text[0] not in ["*", "†", "‡", "§"]
+    ):
         # Might be continuation (doesn't start with marker)
         print("⚠️  POTENTIAL CONTINUATION: No obvious marker at start")
     elif full_block_text.startswith("which "):
@@ -89,10 +93,11 @@ for i, block in enumerate(footnote_blocks):
 
     # Check for marker patterns
     import re
+
     marker_patterns = {
-        'numeric': r'^\d+[\.\s\t]',
-        'letter': r'^[a-z][\.\s\t]',
-        'symbol': r'^[*†‡§¶#][\.\s\t]'
+        "numeric": r"^\d+[\.\s\t]",
+        "letter": r"^[a-z][\.\s\t]",
+        "symbol": r"^[*†‡§¶#][\.\s\t]",
     }
 
     for pattern_name, pattern in marker_patterns.items():

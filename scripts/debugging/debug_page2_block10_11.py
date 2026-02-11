@@ -15,9 +15,9 @@ footnote_threshold = page_height * 0.80
 
 blocks = page.get_text("dict", flags=fitz.TEXT_PRESERVE_WHITESPACE)["blocks"]
 
-print(f"=" * 80)
-print(f"PAGE 2 - BLOCK 10 AND 11 (ASTERISK FOOTNOTE)")
-print(f"=" * 80)
+print("=" * 80)
+print("PAGE 2 - BLOCK 10 AND 11 (ASTERISK FOOTNOTE)")
+print("=" * 80)
 print(f"Page height: {page_height}")
 print(f"Footnote threshold (80%): {footnote_threshold}")
 print()
@@ -25,7 +25,7 @@ print()
 # Block 10
 if len(blocks) > 9:
     block10 = blocks[9]  # 0-indexed
-    print(f"BLOCK 10:")
+    print("BLOCK 10:")
     print(f"BBox: {block10['bbox']}")
     print(f"Y-position: {block10['bbox'][1]}")
     print(f"In footnote area: {block10['bbox'][1] >= footnote_threshold}")
@@ -48,7 +48,7 @@ if len(blocks) > 9:
 # Block 11
 if len(blocks) > 10:
     block11 = blocks[10]  # 0-indexed
-    print(f"BLOCK 11:")
+    print("BLOCK 11:")
     print(f"BBox: {block11['bbox']}")
     print(f"Y-position: {block11['bbox'][1]}")
     print(f"In footnote area: {block11['bbox'][1] >= footnote_threshold}")

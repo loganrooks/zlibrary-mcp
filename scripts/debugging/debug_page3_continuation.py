@@ -15,9 +15,9 @@ footnote_threshold = page_height * 0.80
 
 blocks = page.get_text("dict", flags=fitz.TEXT_PRESERVE_WHITESPACE)["blocks"]
 
-print(f"=" * 80)
-print(f"PAGE 3 - SEARCHING FOR CONTINUATION")
-print(f"=" * 80)
+print("=" * 80)
+print("PAGE 3 - SEARCHING FOR CONTINUATION")
+print("=" * 80)
 print(f"Page height: {page_height}")
 print(f"Footnote threshold (80%): {footnote_threshold}")
 print()

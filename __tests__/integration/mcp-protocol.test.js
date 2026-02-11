@@ -27,7 +27,8 @@ const EXPECTED_TOOLS = [
   'search_by_term',
   'search_by_author',
   'fetch_booklist',
-  'search_advanced'
+  'search_advanced',
+  'search_multi_source'
 ];
 
 // Tools that should be marked read-only (no side effects)
@@ -40,7 +41,8 @@ const READ_ONLY_TOOLS = [
   'search_by_term',
   'search_by_author',
   'fetch_booklist',
-  'search_advanced'
+  'search_advanced',
+  'search_multi_source'
 ];
 
 // Tools that modify state (download files, process documents)
@@ -117,7 +119,7 @@ describe('MCP Protocol Integration Tests', () => {
   // ========================================
 
   describe('Tool Discovery (tools/list)', () => {
-    test('should expose all 11 expected tools via toolRegistry', async () => {
+    test('should expose all expected tools via toolRegistry', async () => {
       const { toolRegistry } = await setupMockedServer();
 
       const toolNames = Object.keys(toolRegistry);
@@ -131,9 +133,9 @@ describe('MCP Protocol Integration Tests', () => {
     test('McpServer.tool() should be called for all tools (including get_recent_books)', async () => {
       await setupMockedServer();
 
-      // 12 tools registered via server.tool() (11 in toolRegistry + get_recent_books)
+      // 13 tools registered via server.tool()
       const registeredNames = Object.keys(registeredTools);
-      expect(registeredNames.length).toBeGreaterThanOrEqual(11);
+      expect(registeredNames.length).toBeGreaterThanOrEqual(13);
 
       EXPECTED_TOOLS.forEach(expectedTool => {
         expect(registeredNames).toContain(expectedTool);
@@ -210,7 +212,8 @@ describe('MCP Protocol Integration Tests', () => {
         'search_by_term',
         'search_by_author',
         'fetch_booklist',
-        'search_advanced'
+        'search_advanced',
+        'search_multi_source'
       ];
 
       for (const toolName of externalTools) {
@@ -241,6 +244,7 @@ describe('MCP Protocol Integration Tests', () => {
         'search_by_term',
         'search_by_author',
         'search_advanced',
+        'search_multi_source',
         'get_book_metadata',
         'fetch_booklist',
         'process_document_for_rag'
@@ -476,7 +480,7 @@ describe('Schema Validation (Standalone)', () => {
 
     expect(toolRegistry).toBeDefined();
     expect(typeof toolRegistry).toBe('object');
-    expect(Object.keys(toolRegistry).length).toBe(12);
+    expect(Object.keys(toolRegistry).length).toBe(13);
   });
 
   test('all tools should have Zod schemas that can be converted to JSON Schema', async () => {

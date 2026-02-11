@@ -11,7 +11,7 @@ import {
   getPythonScriptPath,
   getPythonLibDirectory,
   getPackageJsonPath,
-  getRequirementsTxtPath,
+  getPyprojectTomlPath,
   getVenvPath
 } from '../dist/lib/paths.js';
 import { existsSync, readFileSync } from 'fs';
@@ -71,8 +71,7 @@ describe('Path Resolution Helpers', () => {
       const scripts = [
         'python_bridge.py',
         'rag_processing.py',
-        'enhanced_metadata.py',
-        'client_manager.py'
+        'enhanced_metadata.py'
       ];
 
       scripts.forEach(scriptName => {
@@ -119,13 +118,13 @@ describe('Path Resolution Helpers', () => {
     });
   });
 
-  describe('getRequirementsTxtPath()', () => {
-    test('should return path to requirements.txt', () => {
-      const reqPath = getRequirementsTxtPath();
+  describe('getPyprojectTomlPath()', () => {
+    test('should return path to pyproject.toml', () => {
+      const tomlPath = getPyprojectTomlPath();
 
-      expect(reqPath).toBeTruthy();
-      expect(reqPath).toContain('requirements.txt');
-      expect(existsSync(reqPath)).toBe(true);
+      expect(tomlPath).toBeTruthy();
+      expect(tomlPath).toContain('pyproject.toml');
+      expect(existsSync(tomlPath)).toBe(true);
     });
   });
 
@@ -145,13 +144,13 @@ describe('Path Resolution Helpers', () => {
       const scriptPath = getPythonScriptPath('python_bridge.py');
       const libDir = getPythonLibDirectory();
       const pkgPath = getPackageJsonPath();
-      const reqPath = getRequirementsTxtPath();
+      const tomlPath = getPyprojectTomlPath();
       const venvPath = getVenvPath();
 
       expect(scriptPath).toContain(root);
       expect(libDir).toContain(root);
       expect(pkgPath).toContain(root);
-      expect(reqPath).toContain(root);
+      expect(tomlPath).toContain(root);
       expect(venvPath).toContain(root);
     });
 

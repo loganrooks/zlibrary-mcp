@@ -1,417 +1,799 @@
-# Architecture Patterns — v1.1 Quality & Expansion
+# Architecture Patterns
 
-**Domain:** Z-Library MCP Server v1.1 feature integration
-**Researched:** 2026-02-01
-**Confidence:** HIGH (based on direct codebase analysis)
+**Domain:** MCP Server with Dual-Language RAG Pipeline (v1.2 Production Readiness)
+**Researched:** 2026-02-11
+**Confidence:** HIGH (based on deep analysis of existing codebase, not external sources)
 
 ## Current Architecture Overview
 
-```
-MCP Client
-  |
-  v
-src/index.ts (McpServer, Zod schemas, tool handlers)
-  |
-  v
-src/lib/zlibrary-api.ts (callPythonFunction via PythonShell)
-  |
-  v
-lib/python_bridge.py (dispatch: search/download/process_document/metadata)
-  |                        |
-  v                        v
-zlibrary/src/zlibrary/     lib/rag/
-  libasync.py (AsyncZlib)    orchestrator_pdf.py
-  eapi.py (EAPIClient)       detection/ (footnotes, headings, toc, front_matter, page_numbers)
-                              quality/ (analysis.py, pipeline.py, ocr_stage.py)
-                              processors/ (pdf.py, epub, txt)
-                              ocr/ (recovery, spacing, corruption)
-                              xmark/ (detection)
-                              utils/ (constants, cache, header, exceptions)
-```
-
----
-
-## Question 1: Where Does Margin Content Detection Fit?
-
-### Integration Point
-
-Margin detection is a **detection module** — it identifies content in PDF margins (marginalia, annotations, running headers/footers that contain substantive content). It belongs in `lib/rag/detection/` alongside existing detectors.
-
-### New Module
-
-**File:** `lib/rag/detection/margins.py`
-
-**Responsibilities:**
-- Detect text blocks in page margins (top/bottom/left/right regions outside main content area)
-- Classify margin content: running header, running footer, marginalia (substantive), page number (already handled by `page_numbers.py`)
-- Return margin regions with classification for downstream pipeline decisions
-
-### Data Flow
+The Z-Library MCP server is a dual-language system:
 
 ```
-orchestrator_pdf.py: process_pdf()
-  |
-  v
-  For each page:
-    fitz.Page.get_text("dict") -> blocks with bbox coordinates
+MCP Client (AI Assistant)
     |
-    v
-  [NEW] margins.detect_margin_content(page, blocks) -> MarginClassification
-    |     Uses bbox positions relative to page.rect (mediabox)
-    |     Returns: {running_headers: [...], running_footers: [...], marginalia: [...]}
+    v  (JSON-RPC over stdio)
+Node.js/TypeScript MCP Server  [src/index.ts]
     |
-    v
-  [EXISTING] _format_pdf_markdown(page, ...)
-    |     Currently processes ALL text blocks
-    |     [MODIFIED] Skip running headers/footers, include marginalia
+    v  (spawn + JSON over stdout/stderr)
+Python Bridge  [lib/python_bridge.py]
     |
-    v
-  [EXISTING] quality/pipeline.py: _apply_quality_pipeline()
-    |     No changes needed — operates on PageRegion objects regardless of origin
+    +---> Z-Library EAPI  [zlibrary/ vendored fork]
+    +---> RAG Pipeline    [lib/rag/ decomposed modules]
+    +---> Multi-Source     [lib/sources/ adapters]
 ```
 
-### Integration with Existing Detection Modules
+### Component Inventory (Current State)
 
-| Existing Module | Interaction with Margins |
-|----------------|--------------------------|
-| `page_numbers.py` | Margin detector should defer to page_numbers for numeric-only margin content. Call page_numbers first, then classify remaining margin blocks. |
-| `front_matter.py` | No conflict. Front matter detection operates at document level; margin detection at page level. |
-| `headings.py` | Marginalia should NOT be classified as headings even if font size is large. Margin detector runs before heading detection. |
-| `footnotes.py` | Bottom-margin content that matches footnote patterns should be deferred to footnote detection. Margin detector should flag but not extract footnotes. |
+| Layer | Location | Files | Purpose |
+|-------|----------|-------|---------|
+| MCP Server | `src/index.ts` | 1 | Tool registration, schema validation, stdio transport |
+| TS Bridge | `src/lib/python-bridge.ts` | 1 | Spawns Python, JSON serialization |
+| TS Utilities | `src/lib/*.ts` | 5 | paths, venv-manager, retry, circuit-breaker, errors |
+| TS API Layer | `src/lib/zlibrary-api.ts` | 1 | Maps tool calls to Python bridge calls |
+| Python Bridge | `lib/python_bridge.py` | 1 | Dispatches function calls, JSON IO |
+| RAG Facade | `lib/rag_processing.py` | 1 (201 lines) | Backward-compatible re-export module |
+| RAG Pipeline | `lib/rag/` | 31 modules | Detection, quality, OCR, resolution, pipeline |
+| Sources | `lib/sources/` | 6 modules | Anna's Archive, LibGen, routing |
+| Top-level Lib | `lib/*.py` | ~15 modules | Tools, metadata, quality, detection |
+| Vendored Dep | `zlibrary/` | fork | Z-Library EAPI client |
 
-### Suggested Build Order
+### Data Flow: RAG Processing
 
-1. Add `MarginClassification` dataclass to `lib/rag_data_models.py`
-2. Create `lib/rag/detection/margins.py` with `detect_margin_content(page, blocks) -> MarginClassification`
-3. Modify `lib/rag/orchestrator_pdf.py` to call margin detection before `_format_pdf_markdown`
-4. Modify `lib/rag/processors/pdf.py` (`_format_pdf_markdown`) to accept margin classification and filter blocks accordingly
+```
+download_book_to_file (MCP tool)
+  -> zlibraryApi.downloadBookToFile()
+    -> callPythonFunction("download_book_to_file", args)
+      -> python_bridge.py dispatch
+        -> EAPI download to ./downloads/
+        -> process_document() [lib/rag/orchestrator.py]
+          -> process_pdf_structured() [lib/rag/orchestrator_pdf.py]
+            -> run_document_pipeline() [lib/rag/pipeline/runner.py]
+              Phase 1: Document-level detectors (TOC, page numbers, front matter)
+              Phase 2: Page-level detectors (footnotes, margins, headings)
+              Phase 3: Compositor resolves conflicts
+              Phase 4: Writer builds DocumentOutput
+            -> DocumentOutput.write_files()
+              -> body.md
+              -> body_footnotes.md (if present)
+              -> body_meta.json
+          -> save_processed_text() with metadata sidecar
+```
 
-### Key Design Decision
+### Build/Runtime Path Strategy
 
-**Margin detection must run BEFORE block formatting**, not as a quality pipeline stage. Reason: the quality pipeline (stages 1-3) operates on individual PageRegions after block extraction. Margin detection needs to filter WHICH blocks enter the pipeline at all. This is analogous to how `page_numbers.py` works — it runs early to remove page number blocks from content.
+```
+Source:  src/**/*.ts  --tsc-->  dist/**/*.js
+         lib/**/*.py  (NOT copied, stays in source)
+
+Runtime: dist/lib/python-bridge.js
+           path.resolve(__dirname, '..', '..', 'lib', 'python_bridge.py')
+           = project_root/lib/python_bridge.py
+```
+
+This is a critical architectural invariant: Python scripts are NEVER in dist/. The postbuild step (`scripts/validate-python-bridge.js`) validates this.
 
 ---
 
-## Question 2: Adaptive Resolution in quality/pipeline.py
+## v1.2 Integration Analysis
 
-### Current Pipeline Structure
+### Feature 1: Test Reorganization
+
+**Current State (Problems):**
+- Jest tests: `__tests__/*.test.js` (flat, 8 files)
+- Jest integration: `__tests__/integration/` (4 files + fixtures)
+- Jest E2E: `__tests__/e2e/` (1 Docker test)
+- Pytest tests: `__tests__/python/` (35+ test files, flat)
+- Pytest fixtures: `__tests__/python/fixtures/rag_robustness/`
+- Ground truth: `test_files/ground_truth/` (3 schema versions: v1, v2, v3)
+- Test PDFs: `test_files/*.pdf` (real PDFs at root of test_files)
+- Additional test data: `test_data/` (2 files, separate from test_files)
+- Stale debug scripts at root: 7 `debug_*.py` files, 2 `test_*.py` files
+
+**Proposed Structure:**
 
 ```
-_apply_quality_pipeline(page_region, pdf_path, page_num, config, xmark_cache, ocr_cache)
-  Stage 1: _stage_1_statistical_detection() — garbled text analysis
-  Stage 2: _stage_2_visual_analysis() — X-mark/strikethrough detection (opencv)
-  Stage 3: _stage_3_ocr_recovery() — OCR text recovery (tesseract)
+__tests__/
+  node/                          # Renamed from root-level .test.js files
+    unit/
+      circuit-breaker.test.js
+      paths.test.js
+      retry-manager.test.js
+      venv-manager.test.js
+    integration/
+      bridge-tools.test.js
+      mcp-protocol.test.js
+      python-bridge-integration.test.js
+      brk-001-reproduction.test.js
+      fixtures/                  # Existing recorded responses stay here
+    e2e/
+      docker-mcp-e2e.test.js
+  python/
+    unit/                        # Pure logic tests (no real PDFs)
+      test_garbled_text_detection.py
+      test_filename_utils.py
+      test_rag_data_models.py
+      test_note_classification.py
+      ...
+    integration/                 # Tests using real PDFs
+      test_pipeline_integration.py
+      test_real_footnotes.py
+      test_real_world_validation.py
+      test_real_zlibrary.py
+      ...
+    performance/                 # Benchmarks and perf tests
+      test_garbled_performance.py
+      test_performance_footnote_features.py
+    fixtures/                    # Test fixtures (existing + consolidated)
+      rag_robustness/
+      recorded_responses/
+  ground_truth/                  # UNIFIED - moved from test_files/ground_truth/
+    schema.json                  # Single canonical schema (v3, retired v1/v2)
+    corpora/                     # Per-book ground truth data
+      derrida_footnotes.json
+      heidegger_being_time.json
+      kant_footnotes.json
+      ...
+    baseline_texts/              # Expected output baselines
+    pdfs/                        # Test PDFs (consolidated from test_files/ + test_data/)
 ```
 
-### What Adaptive Resolution Means
+**Integration Points (files that change):**
+- `jest.config.js`: Update `testMatch` patterns for new `__tests__/node/` structure
+- `pytest.ini`: Update `testpaths` and possibly add `markers` for unit/integration/performance
+- `.github/workflows/ci.yml`: No change (already runs `jest` and `pytest` at root level)
+- `conftest.py`: Update project root path computation (stays the same since we use `os.path`)
+- Individual test files: Update `import` paths for fixtures when moved from `test_files/` to `__tests__/ground_truth/`
 
-Adaptive resolution adjusts OCR/image processing DPI based on document quality characteristics detected in earlier stages. Low-quality scans need higher DPI; clean PDFs need less.
+**Structural Impact:** MEDIUM. ~45 file moves, config changes to jest.config.js and pytest.ini. No source code changes in `lib/` or `src/`. Tests themselves need minor fixture path updates.
 
-### Integration Point
+**Dependency on other features:** None. Can be done first as foundation.
 
-Adaptive resolution modifies **Stage 3 (OCR recovery)** and the image conversion step. Currently in `lib/rag/quality/ocr_stage.py`.
+### Feature 2: Structured RAG Output
 
-### Recommended Approach
+**Current State:**
+- `DocumentOutput` dataclass in `lib/rag/pipeline/models.py` already has: `body_text`, `footnotes`, `endnotes`, `citations`, `document_metadata`, `processing_metadata`
+- `DocumentOutput.write_files()` already writes: `{stem}.md` (body), `{stem}_footnotes.md`, `{stem}_endnotes.md`, `{stem}_citations.md`, `{stem}_meta.json`
+- `save_processed_text()` in `lib/rag/orchestrator.py` calls `doc_output.write_files()` and also writes its own metadata sidecar via `metadata_generator.py`
+- Result: DUPLICATE metadata files. `DocumentOutput.write_files()` writes `{stem}_meta.json` and `save_processed_text()` writes a separate `{stem}_meta.json` via `metadata_generator.py`. These two have DIFFERENT schemas.
 
-**File:** Modify `lib/rag/quality/ocr_stage.py` (not a new module)
+**Problem: Two Metadata Systems**
 
-**Add to `QualityPipelineConfig`** in `lib/rag/quality/pipeline.py`:
+1. **Pipeline metadata** (`lib/rag/pipeline/writer.py::format_metadata_sidecar`):
+   ```json
+   {
+     "title": "",
+     "toc": {...},
+     "front_matter": {...},
+     "page_count": N,
+     "processing": {"total_blocks": N, "classifications": [...]}
+   }
+   ```
+
+2. **Orchestrator metadata** (`lib/metadata_generator.py::generate_metadata_sidecar`):
+   ```json
+   {
+     "document_type": "book",
+     "source": {"zlibrary_id": ..., "original_filename": ..., "format": ...},
+     "frontmatter": {"title": ..., "author": ..., "publisher": ..., ...},
+     "toc": [...],
+     "page_line_mapping": {...},
+     "processing": {"date": ..., "word_count": ..., "page_count": ...},
+     "verification": {...}
+   }
+   ```
+
+**Proposed Architecture:**
+
+Merge the two metadata systems into a single, comprehensive metadata sidecar:
+
+```
+processed_rag_output/
+  author_title_id.pdf.processed.md       # Body text (clean for RAG)
+  author_title_id.pdf.footnotes.md       # Footnotes by page
+  author_title_id.pdf.endnotes.md        # Endnotes (if present)
+  author_title_id.pdf.citations.md       # Citations (if present)
+  author_title_id.pdf.meta.json          # SINGLE unified metadata
+```
+
+**Unified `meta.json` schema:**
+
+```json
+{
+  "version": "1.0",
+  "source": {
+    "zlibrary_id": "3505318",
+    "original_filename": "book.pdf",
+    "format": "pdf"
+  },
+  "document": {
+    "title": "The Burnout Society",
+    "author": "Byung-Chul Han",
+    "publisher": "Stanford University Press",
+    "year": "2015",
+    "isbn": "9780804795098"
+  },
+  "structure": {
+    "toc": [...],
+    "front_matter": {...},
+    "page_count": 117,
+    "page_line_mapping": {...}
+  },
+  "output_files": {
+    "body": "author_title_id.pdf.processed.md",
+    "footnotes": "author_title_id.pdf.footnotes.md",
+    "metadata": "author_title_id.pdf.meta.json"
+  },
+  "quality": {
+    "overall_score": 0.92,
+    "content_types_produced": ["body", "footnotes"],
+    "ocr_quality_score": null,
+    "corrections_applied": []
+  },
+  "processing": {
+    "date": "2026-02-11T...",
+    "word_count": 28500,
+    "pipeline_metadata": {
+      "total_blocks": 450,
+      "classifications": [...]
+    }
+  },
+  "verification": {
+    "api_vs_extracted": {...}
+  }
+}
+```
+
+**Integration Points (files that change):**
+- `lib/rag/pipeline/models.py`: Modify `DocumentOutput.write_files()` to use unified naming
+- `lib/rag/pipeline/writer.py`: Modify `format_metadata_sidecar()` to include both metadata sources
+- `lib/rag/orchestrator.py`: Simplify `save_processed_text()` -- delegate ALL file writing to `DocumentOutput.write_files()`, remove duplicate metadata generation
+- `lib/metadata_generator.py`: Merge useful fields into the pipeline writer, mark module for deprecation
+- `lib/python_bridge.py`: No change (already returns result dict from `process_document`)
+- `src/lib/zlibrary-api.ts`: No change (passes through Python response)
+
+**Structural Impact:** MEDIUM. Changes are localized to 4-5 Python files. The key refactor is making `DocumentOutput.write_files()` the single authority for output, with the orchestrator's `save_processed_text()` becoming a thin wrapper.
+
+**Dependency:** Should be done AFTER test reorganization (to have proper test infrastructure for validating output format changes).
+
+### Feature 3: Quality Scoring in CI
+
+**Current State:**
+- `lib/quality_verification.py`: Standalone module (750 lines), compares PDF vs markdown output, generates `QualityReport` with scored issues
+- `lib/rag/quality/pipeline.py`: 3-stage quality pipeline (statistical detection, visual X-mark analysis, OCR recovery) -- this runs DURING processing, not as post-hoc validation
+- `test_files/ground_truth/`: Human-verified ground truth data with v3 schema including footnote markers, bboxes, corruption models
+- No automated quality scoring in CI today
+- `lib/rag/quality/analysis.py`: PDF quality detection (density, image ratio)
+
+**Proposed Architecture:**
+
+Two distinct quality systems:
+
+1. **Processing-time quality** (existing, runs during RAG pipeline):
+   - Garbled text detection, X-mark analysis, OCR recovery
+   - Already integrated in `_apply_quality_pipeline()`
+   - No changes needed
+
+2. **Post-processing quality scoring** (NEW, runs in CI):
+   ```
+   scripts/ci/
+     quality_score.py        # Entry point for CI
+   lib/quality/
+     scorer.py               # Precision/recall against ground truth
+     ground_truth_loader.py  # Loads and validates ground truth JSON
+     report.py               # Generates CI-friendly output (JSON + summary)
+   ```
+
+**Quality Scoring Algorithm:**
+
 ```python
-# Adaptive resolution settings
-adaptive_resolution: bool = True
-min_dpi: int = 150
-max_dpi: int = 600
-default_dpi: int = 300
+# For each ground truth corpus:
+#   1. Run RAG pipeline on test PDF
+#   2. Parse output files (body.md, footnotes.md, meta.json)
+#   3. Compare against ground truth:
+#      - Footnote detection: precision/recall of detected vs expected footnotes
+#      - Body text: similarity score (existing SequenceMatcher approach)
+#      - Metadata accuracy: field-level comparison
+#   4. Aggregate into per-corpus and overall scores
+#   5. Fail CI if score < threshold
 ```
 
-**Logic flow:**
-```
-Stage 1 output (quality_score) + Stage 2 output (xmark detection confidence)
-  |
-  v
-[NEW] _determine_optimal_dpi(quality_score, xmark_result, config) -> int
-  |     quality_score < 0.3 -> max_dpi (600)  [heavily garbled]
-  |     quality_score < 0.7 -> 400             [moderate quality]
-  |     quality_score >= 0.7 -> min_dpi (150)  [clean text, OCR just for verification]
-  |     xmark detected -> at least 300         [need clear line detection]
-  |
-  v
-Stage 3: _stage_3_ocr_recovery() uses determined DPI for convert_from_path()
+**CI Integration:**
+
+```yaml
+# .github/workflows/ci.yml additions:
+quality:
+  runs-on: ubuntu-latest
+  steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+    - uses: astral-sh/setup-uv@v4
+    - run: uv sync
+    - run: uv run python scripts/ci/quality_score.py --threshold 0.80 --output quality-report.json
+    - uses: actions/upload-artifact@v4
+      with:
+        name: quality-report
+        path: quality-report.json
 ```
 
-### No Structural Changes Needed
+**Integration Points (files that change):**
+- NEW: `scripts/ci/quality_score.py` (entry point)
+- NEW: `lib/quality/scorer.py`, `lib/quality/ground_truth_loader.py`, `lib/quality/report.py`
+- MODIFY: `.github/workflows/ci.yml` (add quality job)
+- REUSE: `lib/quality_verification.py` (existing comparison logic, refactored into `lib/quality/`)
+- MOVE: Ground truth data from `test_files/ground_truth/` to `__tests__/ground_truth/`
 
-The pipeline already passes `quality_score` and `xmark_result` into Stage 3. Adaptive resolution is a **parameter calculation** before the existing OCR call, not a new pipeline stage. Add `_determine_optimal_dpi()` as a helper in `ocr_stage.py`.
+**Structural Impact:** LOW-MEDIUM. New files in `lib/quality/` and `scripts/ci/`. Existing `lib/quality_verification.py` gets refactored but functionality preserved. CI workflow gets one new job.
+
+**Dependency:** Depends on test reorganization (ground truth location), and partially on structured RAG output (to know what output files to validate).
+
+### Feature 4: Repo Cleanup
+
+**Current State -- Items to Remove/Move:**
+
+Root-level artifacts (clearly dead):
+- `debug_asterisk_full_search.py` -- debug script
+- `debug_find_asterisk_anywhere.py` -- debug script
+- `debug_kant_page2_asterisk.py` -- debug script
+- `debug_kant_page3_content.py` -- debug script
+- `debug_page2_block10_11.py` -- debug script
+- `debug_page3_block8_full.py` -- debug script
+- `debug_page3_continuation.py` -- debug script
+- `test_footnote_validation.py` -- root-level test (should be in __tests__)
+- `test_kant_page2_debug.py` -- root-level debug test
+- `multi_corpus_validation.py` -- validation script (move to scripts/)
+- `footnote_validation_results.json` -- output artifact
+- `performance_baseline.json` -- should be in test_files/ or __tests__/
+- `BUG_5_OPTIMIZATION_PLAN.md` -- stale issue doc
+- `CONTINUATION_INTEGRATION_SUMMARY.md` -- stale session note
+- `DOCUMENTATION_MAP.md` -- stale (docs reorganized in v1.0)
+- `VALIDATION_SUMMARY.md` -- stale validation report
+- `QUICKSTART.md` -- fold into README.md or docs/
+- `MagicMock/` -- pytest artifact directory
+- `__pycache__/` at root -- cache directory
+- `dummy_output/` -- test artifact
+- `.benchmarks/` -- empty directory
+
+Source artifacts to clean:
+- `src/*.js`, `src/lib/*.js` -- compiled JS in source directory (should only be in dist/)
+- `src/zlibrary_mcp.egg-info/` -- Python packaging artifact in TS source dir
+- `index.js` at root -- stale entry point (should be dist/index.js)
+- `requirements-dev.txt` -- superseded by pyproject.toml [tool.uv.dev-dependencies]
+- `setup_venv.sh` -- superseded by setup-uv.sh
+
+**Consolidation Opportunities:**
+- `test_files/` + `test_data/` --> `__tests__/ground_truth/pdfs/` (one location for test PDFs)
+- `claudedocs/` --> `docs/internal/` (AI session notes don't need separate root dir)
+- `.claude/` stays (Claude Code convention, well-documented)
+- `docs/archive/` stays (historical reference per user preference)
+
+**Proposed Clean Top-Level:**
+
+```
+zlibrary-mcp/
+  .claude/              # AI assistant documentation
+  .github/              # CI workflows
+  .husky/               # Git hooks
+  .planning/            # GSD workflow artifacts
+  __tests__/            # ALL tests (node + python + ground truth)
+  dist/                 # Compiled TypeScript output (gitignored)
+  docker/               # Docker configurations
+  docs/                 # ADRs, specs, architecture, internal notes
+  lib/                  # Python source (bridge, RAG pipeline, sources)
+  scripts/              # Utility and CI scripts
+  src/                  # TypeScript source
+  zlibrary/             # Vendored Z-Library fork
+  .dockerignore
+  .env.example
+  .gitignore
+  .mcp.json.example
+  .npmignore
+  .nvmrc
+  CLAUDE.md
+  ISSUES.md
+  LICENSE
+  README.md
+  jest.config.js
+  jest.teardown.js
+  package.json
+  package-lock.json
+  pyproject.toml
+  pytest.ini
+  tsconfig.json
+  uv.lock
+  setup-uv.sh
+```
+
+**Integration Points:**
+- `.gitignore`: Add patterns for cleaned items, remove entries for deleted files
+- `.npmignore`: Update for new structure
+- `CLAUDE.md`: Update file organization section
+- `README.md`: Update quick start and structure references
+- `pyproject.toml`: No changes needed (already correct)
+- `package.json`: Remove stale `"main": "index.js"` (should point to `dist/index.js`)
+
+**Structural Impact:** HIGH for file moves/deletes, but LOW risk (no source logic changes). Pure housekeeping.
+
+**Dependency:** Should be done FIRST or in parallel with test reorganization (since both move files around).
+
+### Feature 5: Documentation Generation
+
+**Current State:**
+- No automated API docs
+- CLAUDE.md serves as primary developer reference (16KB, comprehensive)
+- `docs/` has ADRs, architecture notes, specs, archive
+- `.claude/` has workflow-specific guides (TDD, debugging, patterns, etc.)
+- `claudedocs/` has AI session notes and research
+
+**Proposed Architecture:**
+
+```
+docs/
+  api/                    # Auto-generated API docs
+    README.md             # Overview with tool listing
+    tools/                # Per-tool documentation (from Zod schemas)
+      search-books.md
+      download-book.md
+      process-for-rag.md
+      ...
+  architecture/           # Keep existing
+  adr/                    # Keep existing
+  specifications/         # Keep existing
+  guides/
+    quickstart.md         # Moved from root QUICKSTART.md
+    contributing.md       # New contributor guide
+    rag-output-format.md  # Documents the structured output format
+  internal/               # Moved from claudedocs/
+    session-notes/
+    research/
+    phase-reports/
+  archive/                # Keep existing
+```
+
+**API Docs Generation:**
+
+Since the MCP tools are defined with Zod schemas in `src/index.ts`, we can generate documentation from them:
+
+```typescript
+// scripts/generate-api-docs.ts (or .js)
+// 1. Import tool schemas and descriptions from src/index.ts
+// 2. For each tool: generate markdown with params table, description, examples
+// 3. Write to docs/api/tools/
+```
+
+This is a simple script, not a framework dependency. The Zod schemas already contain descriptions for every parameter. No external doc generation tool needed.
+
+**Integration Points:**
+- NEW: `scripts/generate-api-docs.js` (runs after build, generates docs/api/)
+- MODIFY: `package.json`: Add `"docs": "node scripts/generate-api-docs.js"` script
+- MOVE: `QUICKSTART.md` -> `docs/guides/quickstart.md`
+- MOVE: `claudedocs/` -> `docs/internal/`
+- MODIFY: `README.md`: Add links to generated API docs
+
+**Structural Impact:** LOW. New script, file moves, README update. No source logic changes.
+
+**Dependency:** Depends on repo cleanup (to have clean docs/ structure before generating into it).
+
+### Feature 6: npm Packaging
+
+**Current State:**
+- `package.json` has `"exports"`, `"bin"`, `"prepublishOnly"`, `"main"` fields
+- `.npmignore` exists but is minimal (15 lines)
+- `package.json` `"main": "index.js"` is WRONG (should be `"dist/index.js"` or removed since `exports` handles it)
+- `"bin": { "zlibrary-mcp": "./dist/index.js" }` is correct
+- Python `lib/` directory MUST be included in npm package (runtime dependency)
+- `zlibrary/` vendored fork MUST be included (runtime dependency)
+- `pyproject.toml` and `uv.lock` MUST be included (for Python env setup)
+
+**Proposed `.npmignore`:**
+
+```
+# Development
+.git/
+.github/
+.vscode/
+.claude/
+.planning/
+.serena/
+.husky/
+
+# Test and debug
+__tests__/
+test_files/
+test_data/
+coverage/
+*.test.js
+*.test.ts
+
+# Python build artifacts
+__pycache__/
+*.py[cod]
+*.so
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# Development configs
+.env
+.env.*
+.mcp.json
+tsconfig.tsbuildinfo
+jest.config.js
+jest.teardown.js
+pytest.ini
+
+# Documentation (not needed at runtime)
+docs/
+claudedocs/
+CLAUDE.md
+ISSUES.md
+QUICKSTART.md
+BUG_5_OPTIMIZATION_PLAN.md
+CONTINUATION_INTEGRATION_SUMMARY.md
+DOCUMENTATION_MAP.md
+VALIDATION_SUMMARY.md
+
+# Build/debug artifacts
+scripts/
+docker/
+docker-compose.test.yml
+Dockerfile.test
+logs/
+downloads/
+processed_rag_output/
+dummy_output/
+MagicMock/
+
+# Source TypeScript (dist/ has compiled JS)
+src/**/*.ts
+
+# Stale root files
+debug_*.py
+test_*.py
+multi_corpus_validation.py
+footnote_validation_results.json
+performance_baseline.json
+```
+
+**What MUST be in the npm package:**
+
+```
+dist/                   # Compiled TypeScript
+lib/                    # Python source (runtime dependency)
+zlibrary/               # Vendored Z-Library fork
+pyproject.toml          # For `uv sync` during setup
+uv.lock                 # For reproducible Python env
+setup-uv.sh             # Setup helper
+package.json
+README.md
+LICENSE
+.nvmrc
+.env.example
+.npmignore              # (excluded by npm itself)
+```
+
+**Integration Points:**
+- MODIFY: `package.json`: Fix `"main"` field, add `"files"` array for explicit inclusion
+- MODIFY: `.npmignore`: Comprehensive exclusion list
+- MODIFY: `README.md`: Add npm install instructions
+- NEW: Post-install hook consideration: `"postinstall": "bash setup-uv.sh"` (careful -- not all users have bash)
+
+**Structural Impact:** LOW. Config file changes only. No source logic changes.
+
+**Dependency:** Should be done LAST (after cleanup, test reorg, and structured output are stable).
 
 ---
 
-## Question 3: Second Book Source (Anna's Archive) Architecture
+## Recommended Architecture: Component Boundaries
 
-### Current Source Architecture
+### Python Layer Responsibilities
 
 ```
-python_bridge.py
-  +-- AsyncZlib (login, search, download) — zlibrary/src/zlibrary/libasync.py
-  +-- EAPIClient (search, metadata, download link) — zlibrary/src/zlibrary/eapi.py
+lib/
+  python_bridge.py          # Entry point: JSON dispatch to functions
+  rag_processing.py         # Facade: re-exports from lib/rag/*
+  rag/
+    orchestrator.py         # Main: process_document(), save_processed_text()
+    orchestrator_pdf.py     # PDF-specific: process_pdf(), process_pdf_structured()
+    pipeline/
+      runner.py             # Detection pipeline orchestration
+      compositor.py         # Conflict resolution between detectors
+      models.py             # DocumentOutput, BlockClassification, ContentType
+      writer.py             # Output formatting and file writing
+    detection/              # Content type detectors (footnotes, margins, headings, etc.)
+    quality/
+      pipeline.py           # Processing-time quality (garbled, X-mark, OCR)
+      analysis.py           # PDF quality detection
+      scorer.py             # NEW: Post-processing quality scoring
+      ground_truth_loader.py # NEW: Ground truth schema loading
+      report.py             # NEW: CI reporting
+    ocr/                    # OCR corruption and recovery
+    resolution/             # Adaptive DPI rendering
+    xmark/                  # X-mark (sous-rature) detection
+    processors/             # Format-specific processors (epub, pdf, txt)
+    utils/                  # Constants, text helpers, caching
+  sources/                  # Multi-source search (Anna's Archive, LibGen)
+  metadata_generator.py     # DEPRECATED in v1.2 (merged into pipeline/writer.py)
+  quality_verification.py   # REFACTORED into lib/quality/ in v1.2
+  [other top-level modules]  # Footnote tools, garbled detection, etc.
 ```
 
-The bridge currently hard-codes Z-Library as the only source. `callPythonFunction` in Node dispatches to one Python bridge, which uses one source.
+### TypeScript Layer Responsibilities
 
-### Recommended Architecture: Source Abstraction Layer
+```
+src/
+  index.ts                  # MCP server, tool registration, Zod schemas
+  lib/
+    zlibrary-api.ts         # Tool-to-Python function mapping
+    python-bridge.ts        # Python process spawning
+    venv-manager.ts         # UV venv path resolution
+    paths.ts                # Path resolution helpers
+    circuit-breaker.ts      # Retry circuit breaker
+    retry-manager.ts        # Exponential backoff retry
+    errors.ts               # Error types
+```
 
-**New files:**
-- `lib/sources/__init__.py`
-- `lib/sources/base.py` — Abstract base class
-- `lib/sources/zlibrary.py` — Z-Library adapter (wraps existing EAPIClient)
-- `lib/sources/annas_archive.py` — Anna's Archive adapter
-- `lib/sources/registry.py` — Source registry and routing
+No changes to TS layer for v1.2. All v1.2 features are either Python-side or config/infra.
 
+---
+
+## Patterns to Follow
+
+### Pattern 1: Single Authority for Output Files
+
+**What:** All RAG output file writing goes through `DocumentOutput.write_files()`. The orchestrator's `save_processed_text()` becomes a thin wrapper that calls `write_files()` with enriched metadata.
+
+**When:** Any time RAG output format changes.
+
+**Example:**
 ```python
-# lib/sources/base.py
-class BookSource(ABC):
-    name: str
-    @abstractmethod
-    async def search(query, filters) -> List[BookResult]
-    @abstractmethod
-    async def get_metadata(book_id, book_hash) -> BookMetadata
-    @abstractmethod
-    async def get_download_link(book_id, book_hash) -> str
-    @abstractmethod
-    async def download(book_id, book_hash, output_dir) -> Path
-    @abstractmethod
-    async def login(credentials) -> bool
+# BEFORE (v1.1 -- two parallel write paths):
+saved_path = await save_processed_text(...)  # Writes body + metadata sidecar
+doc_output.write_files(saved_base)           # Writes body + footnotes + meta
 
-# lib/sources/registry.py
-class SourceRegistry:
-    sources: Dict[str, BookSource]
-    def register(source: BookSource)
-    def get(name: str) -> BookSource
-    async def search_all(query, filters) -> Dict[str, List[BookResult]]
+# AFTER (v1.2 -- single path):
+doc_output.enrich_metadata(book_details, verification_report)
+written_paths = doc_output.write_files(output_dir, filename_base)
+# Returns: {"body": Path, "footnotes": Path, "metadata": Path, ...}
 ```
 
-### Integration with Existing Code
+### Pattern 2: Ground Truth as Test Contract
 
-**Minimal disruption approach:**
+**What:** Ground truth JSON files serve as the contract between the RAG pipeline and quality scoring. The schema is versioned and validated.
 
-1. `lib/sources/zlibrary.py` wraps the existing `EAPIClient` behind the `BookSource` interface
-2. `lib/python_bridge.py` gets a new optional `source` parameter on search/download functions
-3. Default source = "zlibrary" (backward compatible)
-4. Node-side `src/lib/zlibrary-api.ts` passes optional `source` parameter
-5. `src/index.ts` adds `source` as optional Zod parameter on search/download tools
+**When:** Adding new ground truth corpora or changing output format.
 
-### Anna's Archive Specifics
-
-Anna's Archive has no official API. Integration options:
-- Scraping search results (fragile, ToS concerns)
-- Tor hidden service access
-- Z-Library bridge (AA often mirrors Z-Library content)
-
-**Confidence: MEDIUM** — AA integration feasibility depends on their current access patterns, which change frequently. Recommend a research spike before implementation.
-
-### Data Flow with Two Sources
-
-```
-MCP Client: search_books(query, source="annas_archive")
-  v
-src/index.ts -> zlibrary-api.ts -> callPythonFunction("search", {source: "annas_archive"})
-  v
-python_bridge.py: search() checks args_dict.get("source", "zlibrary")
-  v
-sources/registry.py -> sources/annas_archive.py -> HTTP request
-  v
-Normalize response to common BookResult format -> return to Node
-```
-
----
-
-## Question 4: Removing AsyncZlib While Keeping Downloads
-
-### Current Dependency Chain
-
-```
-python_bridge.py
-  imports: AsyncZlib (line 13: from zlibrary import AsyncZlib)
-  uses: AsyncZlib for login (cookie extraction), download_book()
-
-AsyncZlib.login() -> sets cookies, creates EAPIClient internally
-AsyncZlib.search() -> delegates to self._eapi.search() (already EAPI)
-AsyncZlib.download_book() -> self._eapi.get_download_link() then httpx stream
-```
-
-**Key finding:** AsyncZlib is already a thin wrapper. Its download_book() method (libasync.py lines 357-440) does:
-1. Call `self._eapi.get_download_link(book_id, book_hash)` — available directly on EAPIClient
-2. Stream download via httpx with cookies — easily extracted
-
-Meanwhile, `python_bridge.py` already has its own `initialize_eapi_client()` (lines 186-236) that creates a standalone EAPIClient with login and domain discovery, independent of AsyncZlib.
-
-### What AsyncZlib Still Provides
-
-| Capability | AsyncZlib | Standalone EAPIClient | Gap |
-|-----------|-----------|----------------------|-----|
-| Login | rpc.php POST + cookie jar | `/eapi/user/login` POST | None — EAPI login works independently |
-| Search | Delegates to _eapi.search() | .search() directly | None |
-| Download link | Delegates to _eapi.get_download_link() | .get_download_link() directly | None |
-| File streaming | httpx stream with cookies | Need to extract ~25 lines | Small |
-| Domain discovery | Via _eapi.get_domains() | .get_domains() directly | None |
-
-### Removal Strategy
-
-**Phase 1: Extract download to standalone function**
-
-**New file:** `lib/sources/download.py` (or inline in python_bridge.py)
-
+**Example:**
 ```python
-async def stream_download(eapi_client: EAPIClient, book_id: int, book_hash: str,
-                          output_dir: str, extension: str) -> str:
-    """Download book using EAPI client for auth and download link."""
-    dl_resp = await eapi_client.get_download_link(book_id, book_hash)
-    download_url = dl_resp.get("file", {}).get("downloadLink") or dl_resp.get("downloadLink", "")
-    # ... stream download logic (copy from libasync.py lines 418-440)
+# __tests__/ground_truth/schema.json defines the contract
+# lib/quality/ground_truth_loader.py validates all corpus files against it
+# lib/quality/scorer.py compares pipeline output against loaded ground truth
+
+def load_ground_truth(corpus_dir: Path) -> List[GroundTruthCorpus]:
+    schema = json.loads((corpus_dir / "schema.json").read_text())
+    corpora = []
+    for f in corpus_dir.glob("corpora/*.json"):
+        data = json.loads(f.read_text())
+        validate(data, schema)  # jsonschema validation
+        corpora.append(GroundTruthCorpus.from_dict(data))
+    return corpora
 ```
 
-**Phase 2: Update python_bridge.py**
+### Pattern 3: CI Quality Gate with Artifact Upload
 
-- Line 13: Remove `from zlibrary import AsyncZlib`
-- Line 36: Remove `zlib_client = None`
-- Line 472: Replace `zlib.download_book()` with `stream_download(_eapi_client, ...)`
-- Update `lib/client_manager.py`: Remove AsyncZlib client management
+**What:** Quality scoring runs as a separate CI job that produces a JSON artifact. The job fails if overall score drops below threshold but always uploads the report.
 
-**Phase 3: Clean up vendored fork**
+**When:** Every push/PR to master.
 
-- `zlibrary/src/zlibrary/__init__.py`: Remove AsyncZlib export (keep EAPIClient)
-- Optionally remove libasync.py entirely
-
-### What Breaks
-
-| File | Line | Current | Fix |
-|------|------|---------|-----|
-| `lib/python_bridge.py` | 13 | `from zlibrary import AsyncZlib` | Remove import |
-| `lib/python_bridge.py` | 490 | `await zlib.download_book(...)` | Use `stream_download(_eapi_client, ...)` |
-| `lib/client_manager.py` | all | `get_default_client()` returns AsyncZlib | Return EAPIClient or remove module |
-| Tests mocking AsyncZlib | various | Mock `zlibrary.AsyncZlib` | Mock new download function |
-
-### What Does NOT Break
-
-- All search operations (already use `_eapi_client` directly in python_bridge.py)
-- All metadata operations (already use `_eapi_client`)
-- All Node.js code (calls same Python functions via PythonShell)
-- RAG pipeline (no dependency on zlibrary package)
+**Example:**
+```yaml
+quality:
+  needs: test  # Only run if tests pass
+  steps:
+    - run: uv run python scripts/ci/quality_score.py
+    - uses: actions/upload-artifact@v4
+      if: always()  # Upload even on failure
+      with:
+        name: quality-report
+        path: quality-report.json
+```
 
 ---
-
-## Question 5: Node 20+ Upgrade Impact
-
-### Current State
-
-- `package.json`: `"engines": { "node": ">=18" }`
-- `tsconfig.json`: `"target": "ES2022"`, `"module": "NodeNext"`
-- `@types/node`: `^18.19.4`
-- Uses ESM (`"type": "module"`)
-- Jest requires `--experimental-vm-modules`
-
-### Breaking Changes Assessment
-
-| Area | Impact | Notes |
-|------|--------|-------|
-| ESM support | None | Stable in both 18 and 20 |
-| `--experimental-vm-modules` (Jest) | None | Still experimental in Node 20; stable in 22 |
-| `fetch` global | None | Project uses PythonShell, not fetch |
-| `fs/promises` | None | Stable in both |
-| `python-shell@5.0.0` | None | Pure JS, no native addons |
-| `@modelcontextprotocol/sdk@^1.25.3` | None | Standard ESM package |
-| `zod@^3.25.76` | None | Pure JS |
-
-### What Actually Breaks
-
-**Almost nothing.** The codebase uses standard Node.js APIs and ESM.
-
-Update items:
-1. `package.json` engines: `"node": ">=20"`
-2. `@types/node`: `"^20.11.0"` (accurate type definitions)
-3. Run `npm test` to verify
-
-### Risk Assessment: LOW
-
-Node 18 to 20 is a minor upgrade with no known breaking changes for this codebase.
-
----
-
-## Component Boundaries Summary
-
-### New Components
-
-| Component | Location | Purpose | Depends On |
-|-----------|----------|---------|------------|
-| Margin detector | `lib/rag/detection/margins.py` | Classify margin content | PyMuPDF (fitz), rag_data_models |
-| Adaptive DPI helper | `lib/rag/quality/ocr_stage.py` (modify) | Calculate OCR resolution | Existing pipeline config |
-| Source abstraction | `lib/sources/` (new package) | Multi-source book access | httpx |
-| Download extractor | `lib/sources/download.py` | Standalone EAPI download | EAPIClient, httpx, aiofiles |
-| Anna's Archive adapter | `lib/sources/annas_archive.py` | AA search/download | httpx |
-
-### Modified Components
-
-| Component | File | Change |
-|-----------|------|--------|
-| PDF orchestrator | `lib/rag/orchestrator_pdf.py` | Call margin detection before formatting |
-| PDF formatter | `lib/rag/processors/pdf.py` | Accept margin classification, filter blocks |
-| Quality config | `lib/rag/quality/pipeline.py` | Add adaptive resolution settings to dataclass |
-| OCR stage | `lib/rag/quality/ocr_stage.py` | Add `_determine_optimal_dpi()` helper |
-| Python bridge | `lib/python_bridge.py` | Source parameter, remove AsyncZlib |
-| Client manager | `lib/client_manager.py` | Remove AsyncZlib dependency |
-| Data models | `lib/rag_data_models.py` | Add MarginClassification dataclass |
-| Node API | `src/lib/zlibrary-api.ts` | Pass source parameter |
-| MCP tools | `src/index.ts` | Add source to Zod schemas |
-| Package config | `package.json` | Node 20+ engine, @types/node bump |
-
-## Build Order (Dependencies)
-
-```
-Phase A (independent, can parallelize):
-  A1. Node 20+ upgrade (package.json, @types/node, test)
-  A2. Margin detection module (lib/rag/detection/margins.py + data models)
-  A3. Adaptive resolution (modify ocr_stage.py + pipeline.py config)
-
-Phase B (depends on nothing new):
-  B1. Extract download function from AsyncZlib -> lib/sources/download.py
-  B2. Remove AsyncZlib from python_bridge.py, update client_manager.py
-
-Phase C (depends on Phase B):
-  C1. Source abstraction layer (lib/sources/base.py, registry.py)
-  C2. Z-Library adapter (wraps existing EAPIClient)
-  C3. Anna's Archive adapter (research spike needed first)
-
-Phase D (depends on Phase A2):
-  D1. Integrate margin detection into orchestrator_pdf.py
-  D2. Update _format_pdf_markdown to use margin classification
-```
 
 ## Anti-Patterns to Avoid
 
-### Anti-Pattern 1: Coupling Anna's Archive to Z-Library internals
-**What:** Making AA adapter depend on zlibrary/ vendored code
-**Why bad:** Different APIs, different auth, different data formats
-**Instead:** Clean `BookSource` interface; each adapter is self-contained
+### Anti-Pattern 1: Duplicate Metadata Generation
 
-### Anti-Pattern 2: Margin detection inside quality pipeline
-**What:** Adding margin detection as Stage 0 in `_apply_quality_pipeline`
-**Why bad:** Quality pipeline operates on individual PageRegions. Margin detection needs to filter WHICH blocks become PageRegions. Wrong abstraction level.
-**Instead:** Margin detection in orchestrator, before block-level processing
+**What:** Two separate systems generating metadata sidecars with different schemas.
+**Why bad:** Consumers don't know which `_meta.json` to trust. Data can diverge.
+**Instead:** Merge into a single `meta.json` with a versioned schema. One write path.
 
-### Anti-Pattern 3: Big bang AsyncZlib removal
-**What:** Removing AsyncZlib and adding Anna's Archive in one step
-**Why bad:** Two large changes compound risk. Download breakage blocks everything.
-**Instead:** Extract download first, verify, then add source abstraction
+### Anti-Pattern 2: Root-Level Script Proliferation
 
-### Anti-Pattern 4: Over-engineering source abstraction before second source exists
-**What:** Building full registry/plugin system before Anna's Archive is proven feasible
-**Why bad:** YAGNI. AA may not be viable due to access pattern changes.
-**Instead:** Extract download, add simple source parameter routing. Build full abstraction only when AA adapter works.
+**What:** Debug scripts, validation scripts, and test files at project root.
+**Why bad:** Clutters the repo, confuses contributors about what's current vs stale.
+**Instead:** Scripts go in `scripts/` with subdirectories (archive/, debugging/, ci/). Tests go in `__tests__/`.
+
+### Anti-Pattern 3: Schema Version Fragmentation
+
+**What:** Three ground truth schema versions (v1, v2, v3) all present, tests reference different versions.
+**Why bad:** Unclear which schema is canonical. New tests might use wrong version.
+**Instead:** Keep ONLY v3 (latest). Migrate any v1/v2 ground truth data to v3 format. Delete old schemas.
+
+### Anti-Pattern 4: Compiled JS in Source Directory
+
+**What:** `src/*.js` and `src/lib/*.js` files alongside `.ts` source.
+**Why bad:** Confuses which files are authoritative. Can cause stale JS to be loaded.
+**Instead:** Compiled output goes ONLY to `dist/`. Add `src/**/*.js` to `.gitignore`.
+
+---
+
+## Build Order for v1.2 Features
+
+The following order respects dependencies:
+
+```
+Phase 1: Repo Cleanup + Test Reorganization  [parallel, foundational]
+  |
+  |-- 1a: Delete dead files, clean root
+  |-- 1b: Move tests to new structure
+  |-- 1c: Consolidate ground truth (single v3 schema)
+  |-- 1d: Update jest.config.js, pytest.ini
+  |
+Phase 2: Structured RAG Output  [depends on test infra]
+  |
+  |-- 2a: Merge metadata systems (metadata_generator -> pipeline/writer)
+  |-- 2b: Implement unified meta.json schema
+  |-- 2c: Update DocumentOutput.write_files()
+  |-- 2d: Simplify orchestrator save_processed_text()
+  |
+Phase 3: Quality Scoring CI  [depends on structured output + ground truth]
+  |
+  |-- 3a: Create lib/quality/ scoring modules
+  |-- 3b: Create CI entry point script
+  |-- 3c: Add quality job to ci.yml
+  |
+Phase 4: Documentation + Packaging  [depends on everything being stable]
+  |
+  |-- 4a: Generate API docs from Zod schemas
+  |-- 4b: Reorganize docs/ structure
+  |-- 4c: Fix package.json, update .npmignore
+  |-- 4d: Refresh README.md
+```
+
+**Rationale for this order:**
+1. Cleanup first because it reduces noise and establishes clean file locations
+2. Test reorg in parallel with cleanup because both are structural moves with no logic changes
+3. Structured output after tests because we need proper test infrastructure to validate format changes
+4. Quality scoring after structured output because scoring must know the output format
+5. Documentation and packaging last because everything they document must be finalized
+
+---
+
+## Scalability Considerations
+
+| Concern | Current (v1.1) | v1.2 Target | Future (v2+) |
+|---------|----------------|-------------|---------------|
+| Test corpus size | 5 PDFs, 3 schema versions | 5+ PDFs, 1 schema | 20+ PDFs, automated corpus generation |
+| Output format | body.md + meta.json (dual) | Unified multi-file with linked meta.json | Structured JSON output for LLM consumption |
+| CI quality check | None | Per-corpus scoring, overall threshold | Per-commit regression detection with trend graphs |
+| npm package size | ~unknown | Measured, documented | Optimized (tree-shake unused Python modules) |
+| Documentation | Manual CLAUDE.md | Generated API docs + CLAUDE.md | Versioned docs with docusaurus or similar |
+
+---
 
 ## Sources
 
-- Direct codebase analysis (HIGH confidence)
-- `lib/rag/quality/pipeline.py` lines 252-318: 3-stage waterfall pipeline structure
-- `zlibrary/src/zlibrary/libasync.py` lines 357-440: AsyncZlib.download_book() delegates to EAPIClient
-- `zlibrary/src/zlibrary/eapi.py` lines 130-132: EAPIClient.get_download_link()
-- `lib/python_bridge.py` lines 186-236: Standalone EAPIClient initialization (independent of AsyncZlib)
-- `lib/python_bridge.py` lines 454-534: download_book() uses AsyncZlib via client_manager
+All findings based on direct analysis of the codebase at commit `4350456`:
+- `src/index.ts`: 587 lines, 13 MCP tools registered
+- `lib/rag/`: 31 Python modules in 7 subpackages
+- `lib/rag/pipeline/`: 4 modules (runner, compositor, models, writer) -- the core detection pipeline
+- `lib/rag/orchestrator.py` + `lib/rag/orchestrator_pdf.py`: Main entry points for document processing
+- `lib/metadata_generator.py`: 389 lines, YAML frontmatter + JSON sidecar generation
+- `lib/quality_verification.py`: 750 lines, post-processing quality verification
+- `__tests__/`: 8 JS test files + 35 Python test files
+- `test_files/ground_truth/`: 3 schema versions, 15+ ground truth JSON files
+- `.github/workflows/ci.yml`: 2 jobs (test, audit), no quality scoring
+- `.npmignore`: 15 lines (minimal)
+- `package.json`: Missing proper "main" field, has exports/bin/prepublishOnly

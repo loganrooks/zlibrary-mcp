@@ -50,7 +50,17 @@ Reliable, maintainable MCP server for book access — production-ready infrastru
 
 ### Active
 
-(For next milestone — awaiting `/gsd:new-milestone`)
+#### Current Milestone: v1.2 Production Readiness
+
+**Goal:** Make the repo deployment-ready with clean structure, proper test infrastructure, structured RAG output, and comprehensive documentation.
+
+- [ ] Fix known bugs (paths.test.js, pytest collection errors, deprecated code cleanup)
+- [ ] Reorganize test infrastructure with unified ground truth schema and proper labeling
+- [ ] Structured RAG output (body + footnotes + metadata as separate linked files)
+- [ ] Automated RAG quality scoring (precision/recall against ground truth, CI-integrated)
+- [ ] Repo cleanup (remove dead files, consolidate scattered docs, clean top-level)
+- [ ] Documentation overhaul (API docs, usage examples, contributor guide, architecture diagrams)
+- [ ] Packaging & publishing readiness (README refresh, npm publish, working CI pipeline)
 
 ### Out of Scope
 
@@ -108,4 +118,4 @@ Shipped v1.1 Quality & Expansion with ~43,790 LOC (TypeScript + Python).
 - **Recall preservation**: No body text lost by unified pipeline
 
 ---
-*Last updated: 2026-02-04 after v1.1 milestone*
+*Last updated: 2026-02-11 after v1.2 milestone start*

@@ -2,19 +2,19 @@
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-02-04)
+See: .planning/PROJECT.md (updated 2026-02-11)
 
 **Core value:** Reliable, maintainable MCP server for book access — production-ready infrastructure with high-quality scholarly text extraction
-**Current focus:** Planning next milestone
+**Current focus:** v1.2 Production Readiness — defining requirements
 
 ## Current Position
 
-Phase: N/A (between milestones)
-Plan: N/A
-Status: Ready for next milestone
-Last activity: 2026-02-04 — v1.1 milestone complete
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-02-11 — Milestone v1.2 started
 
-Progress: [████████████████████] 100% (v1.0 + v1.1 shipped)
+Progress: [░░░░░░░░░░░░░░░░░░░] 0%
 
 ## Milestones Shipped
 
@@ -50,22 +50,10 @@ From v1.1 audit (all non-blocking):
 
 ## Session Continuity
 
-Last session: 2026-02-04
-Stopped at: Completed v1.1 milestone archival
-Resume with: `/gsd:new-milestone` — start next milestone cycle
-
-## Next Steps
-
-```
-/gsd:new-milestone
-```
-
-This will:
-1. Gather context on what's next
-2. Research any unknowns
-3. Define requirements for v1.2
-4. Create roadmap with phases
+Last session: 2026-02-11
+Stopped at: Milestone v1.2 started, defining requirements
+Resume with: Continue requirements definition and roadmap creation
 
 ---
 
-_Last updated: 2026-02-04 after v1.1 milestone completion_
+_Last updated: 2026-02-11 after v1.2 milestone start_

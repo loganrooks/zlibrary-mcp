@@ -16,7 +16,7 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SERVER_PATH = path.resolve(__dirname, '..', '..', 'dist', 'index.js');
 
-const EXPECTED_TOOL_COUNT = 12;
+const EXPECTED_TOOL_COUNT = 13;
 const CONNECTION_TIMEOUT = 30_000;
 const TOOL_CALL_TIMEOUT = 60_000;
 

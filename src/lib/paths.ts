@@ -85,29 +85,29 @@ export function getPackageJsonPath(): string {
 }
 
 /**
- * Get path to requirements.txt
+ * Get path to pyproject.toml
  *
- * @returns {string} Absolute path to requirements.txt
+ * @returns {string} Absolute path to pyproject.toml
  *
  * @example
- * const reqPath = getRequirementsTxtPath();
- * // /home/user/zlibrary-mcp/requirements.txt
+ * const tomlPath = getPyprojectTomlPath();
+ * // /home/user/zlibrary-mcp/pyproject.toml
  */
-export function getRequirementsTxtPath(): string {
-  return path.join(getProjectRoot(), 'requirements.txt');
+export function getPyprojectTomlPath(): string {
+  return path.join(getProjectRoot(), 'pyproject.toml');
 }
 
 /**
  * Get path to venv directory
  *
- * @returns {string} Absolute path to venv directory
+ * @returns {string} Absolute path to .venv directory
  *
  * @example
  * const venvPath = getVenvPath();
- * // /home/user/zlibrary-mcp/venv
+ * // /home/user/zlibrary-mcp/.venv
  */
 export function getVenvPath(): string {
-  return path.join(getProjectRoot(), 'venv');
+  return path.join(getProjectRoot(), '.venv');
 }
 
 // Re-export path for convenience

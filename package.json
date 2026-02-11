@@ -25,7 +25,7 @@
     "prepare": "husky || true"
   },
   "lint-staged": {
-    "src/**/*.{ts,js}": "npm run build",
+    "src/**/*.{ts,js}": "bash -c 'tsc --noEmit'",
     "*.py": [
       "uv run ruff check --fix",
       "uv run ruff format"

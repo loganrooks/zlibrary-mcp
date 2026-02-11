@@ -24,7 +24,6 @@
         "page_index": 1,
         "word_under_erasure": "Sein",
         "bbox": [94.32, 141.88, 377.76, 154.06],
-        "corrupted_extraction": null,
         "expected_recovery": "Sein",
         "expected_output": "~~Sein~~",
         "confidence_min": 0.7

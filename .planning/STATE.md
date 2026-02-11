@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-02-11)
 ## Current Position
 
 Phase: 14 of 19 (Test Infrastructure)
-Plan: 01 complete
-Status: Plan 14-01 complete
-Last activity: 2026-02-11 — Phase 14 Plan 01 complete (pytest marker taxonomy)
+Plan: 02 complete
+Status: Plan 14-02 complete
+Last activity: 2026-02-11 — Phase 14 Plan 02 complete (ground truth v3 schema consolidation)
 
-Progress: [███░░░░░░░░░░░░░░░░░] 16% of v1.2
+Progress: [████░░░░░░░░░░░░░░░░] 18% of v1.2
 
 ## Milestones Shipped
 
@@ -23,7 +23,7 @@ Progress: [███░░░░░░░░░░░░░░░░░] 16% of 
 | v1.0 | Audit Cleanup & Modernization | 1-7 | 22 | 2026-02-01 |
 | v1.1 | Quality & Expansion | 8-12 | 21 | 2026-02-04 |
 
-**Total:** 12 phases, 43 plans executed (+ 2 plans in phase 13, 1 plan in phase 14)
+**Total:** 12 phases, 43 plans executed (+ 2 plans in phase 13, 2 plans in phase 14)
 
 ## Accumulated Context
 
@@ -35,6 +35,7 @@ All decisions logged in PROJECT.md Key Decisions table.
 - Used addopts = --strict-markers instead of strict_markers = true (pytest 8.x compatibility)
 - Kept existing class-level @pytest.mark decorators alongside module-level pytestmark (safe redundancy)
 - Converted test_real_zlibrary.py pytestmark from skipif-only to list with integration + skipif
+- Removed null corrupted_extraction from heidegger xmark data (invalid per v3 schema, field is optional)
 
 **Phase 13:**
 - Used Extension (not AsyncZlib) as the canonical zlibrary import check
@@ -71,8 +72,8 @@ From v1.1 audit (addressed by v1.2 scope):
 ## Session Continuity
 
 Last session: 2026-02-11
-Stopped at: Completed 14-01-PLAN.md (pytest marker taxonomy)
-Resume with: Check if more plans exist for phase 14, or `/gsd:plan-phase 15`
+Stopped at: Completed 14-02-PLAN.md (ground truth v3 schema consolidation)
+Resume with: Execute 14-03-PLAN.md or `/gsd:plan-phase 15`
 
 ### Performance Metrics
 
@@ -82,7 +83,8 @@ Resume with: Check if more plans exist for phase 14, or `/gsd:plan-phase 15`
 | 13-02      | 13min    | 2     | 12    |
 | quick-003  | 1min     | 2     | 2     |
 | 14-01      | 21min    | 2     | 40    |
+| 14-02      | 26min    | 2     | 4     |
 
 ---
 
-_Last updated: 2026-02-11 after 14-01 complete_
+_Last updated: 2026-02-11 after 14-02 complete_

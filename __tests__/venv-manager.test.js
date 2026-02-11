@@ -42,7 +42,7 @@ describe('venv-manager (UV-based)', () => {
       const { execSync } = await import('child_process');
 
       const result = execSync(
-        `"${pythonPath}" -c "from zlibrary import AsyncZlib; print('OK')"`,
+        `"${pythonPath}" -c "from zlibrary import Extension; print('OK')"`,
         { encoding: 'utf8' }
       ).trim();
 

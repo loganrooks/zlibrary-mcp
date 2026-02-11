@@ -56,7 +56,7 @@ echo ""
 
 # Verify zlibrary import
 echo "🔍 Verifying zlibrary installation..."
-if .venv/bin/python -c "from zlibrary import AsyncZlib, Extension, Language; print('✅ zlibrary ready')" 2>&1; then
+if .venv/bin/python -c "from zlibrary import Extension, Language; print('✅ zlibrary ready')" 2>&1; then
     echo ""
     echo "🎉 Python environment setup complete!"
     echo ""

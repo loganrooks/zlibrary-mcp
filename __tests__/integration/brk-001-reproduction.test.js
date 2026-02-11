@@ -94,7 +94,7 @@ describe('BRK-001: download_book with process_for_rag=true', () => {
         content: [{
           type: 'text',
           text: JSON.stringify({
-            error: "AttributeError: 'AsyncZlib' object has no attribute 'getDownloadLinks'",
+            error: "AttributeError: 'EAPIClient' object has no attribute 'getDownloadLinks'",
           }),
         }],
       };
@@ -117,7 +117,7 @@ describe('BRK-001: download_book with process_for_rag=true', () => {
       if (error) {
         console.log('[BRK-001] Error handling works:');
         console.log(`  Caught: ${error.message}`);
-        console.log('  The bridge properly surfaces Python AttributeError.');
+        console.log('  The bridge properly surfaces Python errors.');
       }
 
       // Test always passes

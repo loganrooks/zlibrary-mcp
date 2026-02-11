@@ -55,7 +55,7 @@ echo ""
 echo "✅ Verifying zlibrary installation..."
 
 # Verify import works
-if $CACHE_PYTHON -c "from zlibrary import AsyncZlib, Extension, Language; print('✅ zlibrary imports successful')" 2>&1; then
+if $CACHE_PYTHON -c "from zlibrary import Extension, Language; print('✅ zlibrary imports successful')" 2>&1; then
     echo ""
     echo "🎉 Cache venv fixed successfully!"
     echo ""

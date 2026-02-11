@@ -1,204 +1,54 @@
 {
-  "source": "Heidegger - Being and Time (Macquarrie & Robinson Translation)",
-  "pdf_file": "heidegger_pages_22-23_primary_footnote_test.pdf",
-  "pages": [22, 23],
-  "schema_version": "3.0",
-  "verification_method": "manual_visual_inspection",
-  "verification_date": "2025-10-30",
-  "ocr_quality": "medium",
-  "ocr_issues": [
-    "Tilde (~) corruption markers throughout text",
-    "Occasional character spacing issues",
-    "Some italics rendered with spacing artifacts"
-  ],
-
-  "footnotes": [
-    {
-      "id": "page22_fn1",
-      "marker": "1",
-      "actual_marker": "1",
-      "note_type": "footnote",
-      "note_source": "translator",
-      "page_number": 22,
-      "body_page": 22,
-      "footnote_page": 22,
-      "pages": [22],
-      "is_continued": false,
-      "is_multipage": false,
-      "superscript": true,
-      "content": "'Sein liegt im Dass- und Sosein, in Realität, Vorhandenheit, Bestand, Geltung, Dasein, im \"es gibt\".' On 'Vorhandenheit' ('presence-at-hand') see note 1, p. 48, H. 25. On 'Dasein', see note 1, p. 27.",
-      "classification_confidence": 0.95,
-      "classification_evidence": "Explains German philosophical terms with cross-references to other translator notes",
-      "marker_context": "in the 'there is'.1 In which entities",
-      "bbox": {
-        "x0": 108,
-        "y0": 650,
-        "x1": 500,
-        "y1": 680
-      }
-    },
-    {
-      "id": "page23_fn1",
-      "marker": "1",
-      "actual_marker": "1",
-      "note_type": "footnote",
-      "note_source": "translator",
-      "page_number": 23,
-      "body_page": 23,
-      "footnote_page": 23,
-      "pages": [23],
-      "is_continued": false,
-      "is_multipage": false,
-      "superscript": true,
-      "content": "The word 'Dasein' plays so important a role in this work and is already so familiar to the English-speaking reader who has read about Heidegger, that it seems simpler to leave it untranslated except in the relatively rare passages in which Heidegger himself breaks it up with a hyphen ('Da-sein') to show its etymological construction: literally 'Being-there'. Though in traditional German philosophy it may be used quite generally to stand for almost any kind of Being or 'existence' which we can say that something has (the 'existence' of God, for example), in everyday usage it tends to be used more narrowly to stand for the kind of Being that belongs to persons. Heidegger follows the everyday usage in this respect, but goes somewhat further in that he often uses it to stand for any person who has such Being, and who is thus an 'entity' himself. See H. 11 below.",
-      "classification_confidence": 0.98,
-      "classification_evidence": "Macquarrie & Robinson explaining their translation decision for 'Dasein', direct translator commentary",
-      "marker_context": "by the term \"Dasein\".1 If we are to formulate",
-      "bbox": {
-        "x0": 108,
-        "y0": 545,
-        "x1": 500,
-        "y1": 640
-      }
-    }
-  ],
-
-  "pdf_text_layer_limitations": {
-    "description": "This PDF has OCR quality issues - footnote markers 2 and 3 are NOT encoded as superscript in the text layer",
-    "markers_in_pdf_text": ["1", "1"],
-    "markers_visually_present_but_not_extractable": ["2", "3"],
-    "reason": "OCR converted superscript 2 to bullet (•) and superscript 3 to letter I",
-    "verified_date": "2025-11-24"
+  "test_name": "heidegger_22_23_footnotes",
+  "pdf_file": "test_files/heidegger_pages_22-23_primary_footnote_test.pdf",
+  "metadata": {
+    "pages": 2,
+    "created_date": "2025-10-30",
+    "verified_by": "human",
+    "description": "Heidegger - Being and Time pages 22-23 with translator footnotes. Tests OCR corruption resistance and superscript numeral detection. Only 2 footnotes detectable from PDF text layer due to OCR issues with markers 2 and 3."
   },
 
-  "expected_detections": 2,
-  "actual_footnote_count": {
-    "page_22": 1,
-    "page_23": 1,
-    "total": 2,
-    "note": "Only 2 footnotes are detectable from PDF text layer due to OCR issues"
+  "features": {
+    "footnotes": [
+      {
+        "page_index": 0,
+        "marker": {
+          "symbol": "1",
+          "location_type": "superscript_inline"
+        },
+        "definition": {
+          "content": "'Sein liegt im Dass- und Sosein, in Realit\u00e4t, Vorhandenheit, Bestand, Geltung, Dasein, im \"es gibt\".' On 'Vorhandenheit' ('presence-at-hand') see note 1, p. 48, H. 25. On 'Dasein', see note 1, p. 27."
+        },
+        "note_source": "translator",
+        "classification_confidence": 0.95,
+        "classification_method": "manual_verification"
+      },
+      {
+        "page_index": 1,
+        "marker": {
+          "symbol": "1",
+          "location_type": "superscript_inline"
+        },
+        "definition": {
+          "content": "The word 'Dasein' plays so important a role in this work and is already so familiar to the English-speaking reader who has read about Heidegger, that it seems simpler to leave it untranslated except in the relatively rare passages in which Heidegger himself breaks it up with a hyphen ('Da-sein') to show its etymological construction: literally 'Being-there'. Though in traditional German philosophy it may be used quite generally to stand for almost any kind of Being or 'existence' which we can say that something has (the 'existence' of God, for example), in everyday usage it tends to be used more narrowly to stand for the kind of Being that belongs to persons. Heidegger follows the everyday usage in this respect, but goes somewhat further in that he often uses it to stand for any person who has such Being, and who is thus an 'entity' himself. See H. 11 below."
+        },
+        "note_source": "translator",
+        "classification_confidence": 0.98,
+        "classification_method": "manual_verification"
+      }
+    ]
   },
 
-  "false_positive_examples": [
-    {
-      "text": "the~",
-      "context": "however we may discuss the~ in detail",
-      "page": 22,
-      "reason": "OCR corruption marker, not a footnote"
-    },
-    {
-      "text": "of~·",
-      "context": "character of~· .. ,.,,. p• ,:;:c;ible entitv",
-      "page": 22,
-      "reason": "OCR corruption with multiple symbols, not a footnote"
-    },
-    {
-      "text": "en~ity·s",
-      "context": "is an en~ity·s mQI!e of",
-      "page": 23,
-      "reason": "OCR corruption within word, not a footnote marker"
-    },
-    {
-      "text": "pre.",
-      "context": "the entities pre. sented to us",
-      "page": 23,
-      "reason": "Line break artifact, period should not trigger detection"
-    },
-    {
-      "text": "h",
-      "context": "single character 'h' in various positions",
-      "page": 22,
-      "reason": "Regular letter, not a footnote marker"
-    }
-  ],
+  "expected_quality": {
+    "quality_score_min": 0.85,
+    "processing_time_max_ms": 15000
+  },
 
   "validation_criteria": {
-    "marker_detection": {
-      "expected_count": 2,
-      "expected_markers": ["1", "1"],
-      "false_positive_threshold": "< 5%",
-      "false_negative_threshold": "0%",
-      "description": "Must detect both footnotes with marker '1' (one per page). Markers 2 and 3 are NOT extractable from PDF text layer."
-    },
-    "classification": {
-      "expected_source": "translator",
-      "confidence_threshold": "> 0.80",
-      "all_notes_translator": true,
-      "description": "All footnotes are Macquarrie & Robinson translator notes explaining German terminology"
-    },
-    "multi_page": {
-      "expected": false,
-      "description": "None of these footnotes span multiple pages; each is self-contained on its page",
-      "page_22_notes": 1,
-      "page_23_notes": 1,
-      "note": "Only 2 total notes are detectable from PDF text layer"
-    },
-    "superscript_detection": {
-      "all_superscript": true,
-      "description": "All markers should be detected as superscript numerals"
-    },
-    "content_extraction": {
-      "minimum_length_chars": 50,
-      "requires_complete_extraction": true,
-      "description": "Full footnote content must be extracted, not truncated"
-    }
+    "all_footnotes_detected": true,
+    "classification_accurate": true,
+    "no_false_positives": true
   },
 
-  "test_scenarios": [
-    {
-      "scenario": "ocr_corruption_resistance",
-      "description": "Verify system ignores tilde (~) and bullet (·) corruption markers",
-      "expected_behavior": "Should NOT detect 'the~', 'of~·', 'en~ity·s' as footnotes",
-      "test_cases": [
-        "the~ in detail",
-        "character of~· .. ,.,,.",
-        "en~ity·s mQI!e"
-      ]
-    },
-    {
-      "scenario": "superscript_numeral_detection",
-      "description": "Detect numbered superscript footnote markers",
-      "expected_behavior": "Should detect both numeric superscript markers '1' (one per page)",
-      "test_cases": ["1"]
-    },
-    {
-      "scenario": "translator_note_classification",
-      "description": "Classify all notes as translator source",
-      "expected_behavior": "Both detected footnotes should be classified as 'translator' with confidence > 0.80",
-      "classification_features": [
-        "German term explanations",
-        "Translation choice justifications",
-        "Cross-references to other translator notes",
-        "Meta-commentary about translation decisions"
-      ]
-    },
-    {
-      "scenario": "page_boundary_handling",
-      "description": "Verify no false multi-page detection",
-      "expected_behavior": "Each footnote should be marked as single-page only",
-      "test_cases": [
-        "Page 22 footnote 1: single page",
-        "Page 23 footnote 1: single page"
-      ]
-    }
-  ],
-
-  "quality_metrics": {
-    "precision_target": 1.0,
-    "recall_target": 1.0,
-    "f1_score_target": 1.0,
-    "classification_accuracy_target": 0.95
-  },
-
-  "notes": [
-    "This ground truth is specifically designed to test the fix for ISSUE-FN-002 (false positive detection)",
-    "OCR corruption markers (~ and ·) are prevalent and must NOT be detected as footnotes",
-    "All footnotes are translator notes by Macquarrie & Robinson",
-    "No author footnotes from Heidegger himself on these pages",
-    "Page numbering: text shows '26' and '27' but PDF structure shows pages 1-2",
-    "IMPORTANT: Only 2 footnotes are detectable from PDF text layer - markers 2 and 3 were OCR'd incorrectly",
-    "Marker 2 appears as bullet (•) in text layer, marker 3 appears as letter 'I'",
-    "Ground truth updated 2025-11-24 after programmatic verification of PDF text layer",
-    "Visual verification of 4 footnotes on 2025-10-30 was correct for visual appearance, but not text layer content"
-  ]
+  "notes": "Ground truth designed to test ISSUE-FN-002 (false positive detection). OCR corruption markers (~ and \u00b7) must NOT be detected as footnotes. All footnotes are Macquarrie & Robinson translator notes. Only 2 footnotes detectable from PDF text layer - markers 2 and 3 were OCR'd incorrectly. Ground truth updated 2025-11-24 after programmatic verification of PDF text layer."
 }

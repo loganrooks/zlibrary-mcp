@@ -75,7 +75,11 @@ Plans:
   3. `uv run pytest -m "not slow and not integration"` runs a fast subset that completes in under 30 seconds
   4. No test files exist at the repo root — all are under `__tests__/` or `scripts/`
   5. CI configuration distinguishes fast tests (every PR) from full suite (available separately)
-**Plans**: TBD
+**Plans:** 3 plans
+Plans:
+- [ ] 14-01-PLAN.md -- Register complete marker taxonomy and apply pytestmark to all test files (TEST-01, TEST-02)
+- [ ] 14-02-PLAN.md -- Consolidate ground truth to v3 schema with validation test (TEST-03, TEST-04)
+- [ ] 14-03-PLAN.md -- Relocate root Python files and split CI into fast/full jobs (TEST-05, TEST-06)
 
 ### Phase 15: Repo Cleanup
 **Goal**: Repository root contains only essential files, with no dead scripts, stale artifacts, or conflicting entry points
@@ -153,7 +157,7 @@ Plans:
 | 11. Body Text Purity Integration | v1.1 | 7/7 | Complete | 2026-02-03 |
 | 12. Anna's Archive Integration | v1.1 | 4/4 | Complete | 2026-02-04 |
 | 13. Bug Fixes & Test Hygiene | v1.2 | 2/2 | Complete | 2026-02-11 |
-| 14. Test Infrastructure | v1.2 | 0/TBD | Not started | - |
+| 14. Test Infrastructure | v1.2 | 0/3 | Planned | - |
 | 15. Repo Cleanup | v1.2 | 0/TBD | Not started | - |
 | 16. Structured RAG Output | v1.2 | 0/TBD | Not started | - |
 | 17. Quality Scoring | v1.2 | 0/TBD | Not started | - |

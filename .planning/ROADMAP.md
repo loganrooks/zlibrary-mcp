@@ -60,7 +60,10 @@ Full details: `.planning/milestones/v1.1-ROADMAP.md`
   3. Running `uv run pytest --strict-markers` succeeds (all markers registered in pytest.ini)
   4. Searching the codebase for `AsyncZlib` returns zero hits outside of git history
   5. `npm test && uv run pytest` run back-to-back both exit green on a clean checkout of master
-**Plans**: TBD
+**Plans:** 2 plans
+Plans:
+- [ ] 13-01-PLAN.md -- Fix test configuration and stale assertions (BUG-01, BUG-02, BUG-03)
+- [ ] 13-02-PLAN.md -- Remove deprecated AsyncZlib references (BUG-04)
 
 ### Phase 14: Test Infrastructure
 **Goal**: Tests are organized with a complete marker taxonomy, unified ground truth schema, and CI can run fast tests separately from slow ones
@@ -149,7 +152,7 @@ Full details: `.planning/milestones/v1.1-ROADMAP.md`
 | 10. Adaptive Resolution Pipeline | v1.1 | 4/4 | Complete | 2026-02-02 |
 | 11. Body Text Purity Integration | v1.1 | 7/7 | Complete | 2026-02-03 |
 | 12. Anna's Archive Integration | v1.1 | 4/4 | Complete | 2026-02-04 |
-| 13. Bug Fixes & Test Hygiene | v1.2 | 0/TBD | Not started | - |
+| 13. Bug Fixes & Test Hygiene | v1.2 | 0/2 | Not started | - |
 | 14. Test Infrastructure | v1.2 | 0/TBD | Not started | - |
 | 15. Repo Cleanup | v1.2 | 0/TBD | Not started | - |
 | 16. Structured RAG Output | v1.2 | 0/TBD | Not started | - |
@@ -159,4 +162,4 @@ Full details: `.planning/milestones/v1.1-ROADMAP.md`
 
 ---
 
-_Last updated: 2026-02-11 after v1.2 roadmap creation_
+_Last updated: 2026-02-11 after Phase 13 planning_

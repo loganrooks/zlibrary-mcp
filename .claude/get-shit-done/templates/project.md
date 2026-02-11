@@ -182,3 +182,34 @@ See: .planning/PROJECT.md (updated [date])
 This ensures Claude reads current PROJECT.md context.
 
 </state_reference>
+
+<open_questions>
+
+## Open Questions
+
+Add to PROJECT.md during project initialization:
+
+```markdown
+## Open Questions
+
+| Question | Why It Matters | Criticality | Status |
+|----------|----------------|-------------|--------|
+| {Question identified during Q&A} | {Impact if we get this wrong} | {Critical/Medium/Low} | Pending |
+
+Capture uncertainties during project initialization. Research phase will attempt to resolve these. Unresolved critical questions may trigger spikes.
+```
+
+**Purpose:** Enables the Open Questions flow from mark through verify to spike. Questions captured here flow to research, where they're either resolved or identified as genuine gaps that may trigger spikes.
+
+**Criticality levels:**
+- **Critical:** Wrong answer fundamentally breaks the project
+- **Medium:** Significant rework if wrong
+- **Low:** Minor impact, can adjust later
+
+**Status values:**
+- **Pending:** Not yet investigated
+- **Resolved:** Answered during research
+- **Spike:** Triggered empirical investigation
+- **Accepted-risk:** Proceeding with uncertainty acknowledged
+
+</open_questions>

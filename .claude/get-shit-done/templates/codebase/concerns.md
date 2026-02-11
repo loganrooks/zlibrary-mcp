@@ -113,6 +113,20 @@ Template for `.planning/codebase/CONCERNS.md` - captures known issues and areas 
 - Priority: [High/Medium/Low]
 - Difficulty to test: [Why it's not tested yet]
 
+## DevOps Gaps
+
+**[Gap description]:**
+- Problem: [What's missing or misconfigured]
+- Risk: [What could go wrong without it]
+- Detection: [How it was identified]
+- Recommendation: [Suggested fix]
+
+**[Gap description]:**
+- Problem: [What's missing or misconfigured]
+- Risk: [What could go wrong without it]
+- Detection: [How it was identified]
+- Recommendation: [Suggested fix]
+
 ---
 
 *Concerns audit: [date]*
@@ -254,6 +268,20 @@ Template for `.planning/codebase/CONCERNS.md` - captures known issues and areas 
 - Priority: Medium
 - Difficulty to test: Need to intentionally trigger errors in test environment
 
+## DevOps Gaps
+
+**No CI/CD for test suite:**
+- Problem: 47 test files exist but no CI pipeline to run them
+- Risk: Tests rot silently, regressions go undetected in PRs
+- Detection: Found `tests/` directory with 47 files, no `.github/workflows/` or equivalent
+- Recommendation: Add GitHub Actions workflow with `npm test` on PR/push
+
+**Missing .gitignore entries:**
+- Problem: `node_modules/` and `.env` not in .gitignore
+- Risk: Secrets committed to repository, bloated git history
+- Detection: .gitignore exists but missing standard entries for Node.js project
+- Recommendation: Add Node.js standard entries to .gitignore
+
 ---
 
 *Concerns audit: 2025-01-20*
@@ -272,6 +300,7 @@ Template for `.planning/codebase/CONCERNS.md` - captures known issues and areas 
 - Dependencies that need attention
 - Missing features that block workflows
 - Test coverage gaps
+- DevOps Gaps (missing CI, deployment config, git hygiene)
 
 **What does NOT belong here:**
 - Opinions without evidence ("code is messy")

@@ -30,7 +30,7 @@ A comprehensive 7-phase cleanup was executed to modernize the codebase, resolve 
 ### What Works
 - 12 MCP tools registered via McpServer `server.tool()` API
 - EAPI JSON transport for all search/metadata operations (bypasses Cloudflare)
-- Downloads via legacy AsyncZlib client (EAPI returns URL, file download needs cookies)
+- Downloads via EAPIClient (handles URL resolution and file download)
 - RAG pipeline: EPUB, TXT, PDF extraction with quality detection
 - UV-based Python dependency management (.venv/ project-local)
 - Python monolith decomposed into lib/rag/ domain modules with facade pattern

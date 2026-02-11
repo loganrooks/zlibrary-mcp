@@ -33,14 +33,14 @@
 |         Z-Library EAPI Endpoints                            |
 |  - /eapi/book/search — search operations                   |
 |  - /eapi/book/{id}/{hash} — book metadata                  |
-|  - Legacy AsyncZlib for file downloads only                 |
+|  - EAPIClient handles all operations (search, metadata, downloads) |
 +-----------------------------------------------------------+
 ```
 
 ### Data Flow Patterns
 
 **Search**: Client -> MCP -> Python -> EAPI JSON endpoint -> Normalized results
-**Download**: Client -> MCP -> Python -> EAPI (get URL) -> AsyncZlib (download file)
+**Download**: Client -> MCP -> Python -> EAPIClient (search + download)
 **RAG**: File -> lib/rag/ pipeline -> Quality analysis -> Extracted Markdown -> File
 
 **Critical Design**: RAG returns **file paths**, not raw text (prevents context overflow)
@@ -99,7 +99,6 @@ All registered via `server.tool()` (McpServer API, MCP SDK 1.25+).
 | `booklist_tools.py` | Booklist fetch (graceful degradation) | Stable |
 | `enhanced_metadata.py` | Book metadata extraction via EAPI | Stable |
 | `advanced_search.py` | Fuzzy match search | Stable |
-| `client_manager.py` | AsyncZlib client lifecycle | Stable |
 
 ### RAG Domain Modules (lib/rag/)
 
@@ -186,7 +185,6 @@ zlibrary-mcp/
 |   +-- booklist_tools.py         # Booklist fetch
 |   +-- enhanced_metadata.py      # Book metadata
 |   +-- advanced_search.py        # Fuzzy search
-|   +-- client_manager.py         # AsyncZlib lifecycle
 |   +-- rag_processing.py         # Legacy facade
 |   +-- rag/                      # Decomposed RAG pipeline
 |       +-- __init__.py           # Facade (backward compat)

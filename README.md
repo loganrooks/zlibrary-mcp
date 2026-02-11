@@ -26,7 +26,7 @@ This Model Context Protocol (MCP) server provides access to Z-Library for AI cod
 - **Python Bridge**: Z-Library EAPI client (httpx) + document processing (lib/rag/ modules)
 - **EAPI Transport**: JSON API endpoints at `/eapi/` bypass Cloudflare browser challenges
 - **UV-Based Python Environment**: Project-local `.venv/` with `uv.lock` for reproducible builds
-- **Vendored Z-Library Fork**: Custom EAPI client + legacy AsyncZlib for file downloads
+- **Vendored Z-Library Fork**: Custom EAPI client for search and file downloads
 - **RAG Pipeline**: EPUB/PDF/TXT extraction with quality detection, output to files (not memory)
 
 ## Prerequisites

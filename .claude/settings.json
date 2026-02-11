@@ -8,6 +8,14 @@
             "command": "node .claude/hooks/gsd-check-update.js"
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/hooks/gsd-version-check.js"
+          }
+        ]
       }
     ]
   },

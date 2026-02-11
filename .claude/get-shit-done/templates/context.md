@@ -281,3 +281,34 @@ The output should answer: "What does the researcher need to investigate? What ch
 - `gsd-planner` uses decisions + research to create executable tasks
 - Downstream agents should NOT need to ask the user again about captured decisions
 </guidelines>
+
+<open_questions>
+
+## Open Questions
+
+Add to CONTEXT.md during phase discussion:
+
+```markdown
+## Open Questions
+
+| Question | Why It Matters | Criticality | Status |
+|----------|----------------|-------------|--------|
+| {Question from phase discussion} | {Impact on this phase} | {Critical/Medium/Low} | Pending |
+
+Capture uncertainties during phase discussion. Phase research will attempt to resolve these.
+```
+
+**Purpose:** Questions identified during discuss-phase that need investigation before planning. Research agent reads these and either resolves them or flags them as genuine gaps.
+
+**When to add questions:**
+- User expresses uncertainty about an approach
+- Implementation choice depends on unknown factors
+- Technology selection needs validation
+
+**Flow:**
+1. Captured here during discuss-phase
+2. Research attempts to resolve
+3. Unresolved critical questions may trigger spikes
+4. Resolved questions inform planning
+
+</open_questions>

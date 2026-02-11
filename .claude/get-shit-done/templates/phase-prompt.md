@@ -38,7 +38,7 @@ Output: [What artifacts will be created]
 
 <execution_context>
 @./.claude/get-shit-done/workflows/execute-plan.md
-@./.claude/get-shit-done/templates/summary.md
+@./.claude/get-shit-done/templates/summary-standard.md
 [If plan contains checkpoint tasks (type="checkpoint:*"), add:]
 @./.claude/get-shit-done/references/checkpoints.md
 </execution_context>
@@ -373,7 +373,7 @@ Output: Working dashboard component.
 
 <execution_context>
 @./.claude/get-shit-done/workflows/execute-plan.md
-@./.claude/get-shit-done/templates/summary.md
+@./.claude/get-shit-done/templates/summary-standard.md
 @./.claude/get-shit-done/references/checkpoints.md
 </execution_context>
 

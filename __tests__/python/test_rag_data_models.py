@@ -28,6 +28,8 @@ from lib.rag_data_models import (
     create_text_span_from_pymupdf,
 )
 
+pytestmark = pytest.mark.unit
+
 
 class TestValidFormats:
     """Test VALID_FORMATS constant."""
@@ -39,8 +41,15 @@ class TestValidFormats:
     def test_valid_formats_contains_expected(self):
         """VALID_FORMATS should contain all expected formatting types."""
         expected = {
-            "bold", "italic", "strikethrough", "sous-erasure", "underline",
-            "superscript", "subscript", "serifed", "monospaced"
+            "bold",
+            "italic",
+            "strikethrough",
+            "sous-erasure",
+            "underline",
+            "superscript",
+            "subscript",
+            "serifed",
+            "monospaced",
         }
         assert VALID_FORMATS == expected
 
@@ -49,7 +58,7 @@ class TestValidFormats:
         assert "bold" in VALID_FORMATS
         assert "italic" in VALID_FORMATS
         assert "strikethrough" in VALID_FORMATS  # Horizontal line (editorial)
-        assert "sous-erasure" in VALID_FORMATS   # X-mark (Derridean technique)
+        assert "sous-erasure" in VALID_FORMATS  # X-mark (Derridean technique)
         assert "invalid_format" not in VALID_FORMATS
 
 
@@ -88,7 +97,7 @@ class TestNoteInfo:
             note_type=NoteType.FOOTNOTE,
             role=NoteRole.REFERENCE,
             marker="1",
-            scope=NoteScope.PAGE
+            scope=NoteScope.PAGE,
         )
 
         assert note_info.note_type == NoteType.FOOTNOTE
@@ -106,7 +115,7 @@ class TestNoteInfo:
             marker="23",
             scope=NoteScope.CHAPTER,
             chapter_number=3,
-            section_title="Notes to Chapter 3"
+            section_title="Notes to Chapter 3",
         )
 
         assert note_info.note_type == NoteType.ENDNOTE
@@ -124,7 +133,7 @@ class TestNoteInfo:
             marker="1",
             scope=NoteScope.PAGE,
             is_continued=True,
-            continued_from="1"
+            continued_from="1",
         )
 
         assert note_info.is_continued
@@ -137,10 +146,7 @@ class TestListInfo:
     def test_ordered_list_creation(self):
         """Test creating ordered list info."""
         list_info = ListInfo(
-            is_list_item=True,
-            list_type="ol",
-            marker="1",
-            indent_level=0
+            is_list_item=True, list_type="ol", marker="1", indent_level=0
         )
 
         assert list_info.is_list_item
@@ -151,10 +157,7 @@ class TestListInfo:
     def test_unordered_list_creation(self):
         """Test creating unordered list info."""
         list_info = ListInfo(
-            is_list_item=True,
-            list_type="ul",
-            marker="*",
-            indent_level=0
+            is_list_item=True, list_type="ul", marker="*", indent_level=0
         )
 
         assert list_info.is_list_item
@@ -164,10 +167,7 @@ class TestListInfo:
     def test_nested_list(self):
         """Test nested list with indent level."""
         list_info = ListInfo(
-            is_list_item=True,
-            list_type="ul",
-            marker="*",
-            indent_level=2
+            is_list_item=True, list_type="ul", marker="*", indent_level=2
         )
 
         assert list_info.indent_level == 2
@@ -183,7 +183,7 @@ class TestTextSpan:
             formatting=set(),
             font_size=12.0,
             font_name="Arial",
-            bbox=(10.0, 20.0, 100.0, 32.0)
+            bbox=(10.0, 20.0, 100.0, 32.0),
         )
 
         assert span.text == "example text"
@@ -198,7 +198,7 @@ class TestTextSpan:
             text="bold text",
             formatting={"bold"},
             font_size=12.0,
-            font_name="Arial-Bold"
+            font_name="Arial-Bold",
         )
 
         assert "bold" in span.formatting
@@ -207,11 +207,7 @@ class TestTextSpan:
 
     def test_multiple_formats(self):
         """Test text span with multiple formats."""
-        span = TextSpan(
-            text="emphasis",
-            formatting={"bold", "italic"},
-            font_size=12.0
-        )
+        span = TextSpan(text="emphasis", formatting={"bold", "italic"}, font_size=12.0)
 
         assert "bold" in span.formatting
         assert "italic" in span.formatting
@@ -220,11 +216,7 @@ class TestTextSpan:
 
     def test_derrida_sous_rature(self):
         """Test sous-erasure (X-mark) for Derrida's philosophical technique."""
-        span = TextSpan(
-            text="Being",
-            formatting={"sous-erasure"},
-            font_size=12.0
-        )
+        span = TextSpan(text="Being", formatting={"sous-erasure"}, font_size=12.0)
 
         assert "sous-erasure" in span.formatting
         assert span.has_format("sous-erasure")
@@ -232,9 +224,7 @@ class TestTextSpan:
     def test_regular_strikethrough(self):
         """Test regular strikethrough (horizontal line) for editorial deletion."""
         span = TextSpan(
-            text="deleted text",
-            formatting={"strikethrough"},
-            font_size=12.0
+            text="deleted text", formatting={"strikethrough"}, font_size=12.0
         )
 
         assert "strikethrough" in span.formatting
@@ -247,16 +237,14 @@ class TestTextSpan:
             TextSpan(
                 text="invalid",
                 formatting={"blod", "itlalic"},  # Typos!
-                font_size=12.0
+                font_size=12.0,
             )
 
     def test_validation_allows_valid_formats(self):
         """Test that all valid formats are accepted."""
         # Should not raise
         span = TextSpan(
-            text="all formats",
-            formatting=VALID_FORMATS.copy(),
-            font_size=12.0
+            text="all formats", formatting=VALID_FORMATS.copy(), font_size=12.0
         )
 
         assert span.formatting == VALID_FORMATS
@@ -309,7 +297,7 @@ class TestPageRegion:
             region_type="body",
             spans=[span],
             bbox=(50.0, 100.0, 500.0, 700.0),
-            page_num=1
+            page_num=1,
         )
 
         assert region.region_type == "body"
@@ -327,7 +315,7 @@ class TestPageRegion:
             spans=[span],
             bbox=(50.0, 100.0, 500.0, 120.0),
             page_num=5,
-            heading_level=2  # H2
+            heading_level=2,  # H2
         )
 
         assert region.heading_level == 2
@@ -337,17 +325,14 @@ class TestPageRegion:
         """Test region with list info (first-class field)."""
         span = TextSpan(text="First point", font_size=10.0)
         list_info = ListInfo(
-            is_list_item=True,
-            list_type="ol",
-            marker="1",
-            indent_level=0
+            is_list_item=True, list_type="ol", marker="1", indent_level=0
         )
         region = PageRegion(
             region_type="body",
             spans=[span],
             bbox=(50.0, 200.0, 500.0, 220.0),
             page_num=5,
-            list_info=list_info
+            list_info=list_info,
         )
 
         assert region.list_info is not None
@@ -359,7 +344,7 @@ class TestPageRegion:
         spans = [
             TextSpan(text="Hello ", formatting=set()),
             TextSpan(text="world", formatting={"bold"}),
-            TextSpan(text="!", formatting=set())
+            TextSpan(text="!", formatting=set()),
         ]
         region = PageRegion(region_type="body", spans=spans)
 
@@ -370,7 +355,7 @@ class TestPageRegion:
         spans = [
             TextSpan(text="The ", formatting=set()),
             TextSpan(text="bold", formatting={"bold"}),
-            TextSpan(text=" word.", formatting=set())
+            TextSpan(text=" word.", formatting=set()),
         ]
         region = PageRegion(region_type="body", spans=spans)
 
@@ -387,11 +372,7 @@ class TestEntity:
 
     def test_simple_entity(self):
         """Test creating a simple entity."""
-        entity = Entity(
-            entity_type="heading",
-            content="Chapter 1",
-            id="h_ch1"
-        )
+        entity = Entity(entity_type="heading", content="Chapter 1", id="h_ch1")
 
         assert entity.entity_type == "heading"
         assert entity.content == "Chapter 1"
@@ -405,13 +386,10 @@ class TestEntity:
             note_type=NoteType.FOOTNOTE,
             role=NoteRole.REFERENCE,
             marker="1",
-            scope=NoteScope.PAGE
+            scope=NoteScope.PAGE,
         )
         entity = Entity(
-            entity_type="note",
-            content="1",
-            id="fn_page5_1",
-            note_info=note_info
+            entity_type="note", content="1", id="fn_page5_1", note_info=note_info
         )
 
         assert entity.is_note()
@@ -426,13 +404,13 @@ class TestEntity:
             role=NoteRole.DEFINITION,
             marker="23",
             scope=NoteScope.CHAPTER,
-            chapter_number=3
+            chapter_number=3,
         )
         entity = Entity(
             entity_type="note",
             content="See Heidegger, Being and Time, p. 42.",
             id="en_ch3_23",
-            note_info=note_info
+            note_info=note_info,
         )
 
         assert entity.is_note()
@@ -445,13 +423,10 @@ class TestEntity:
         region = PageRegion(
             region_type="body",
             spans=[TextSpan(text="text", font_size=10.0)],
-            page_num=5
+            page_num=5,
         )
         entity = Entity(
-            entity_type="citation",
-            content="Derrida 1967",
-            id="cite_1",
-            position=region
+            entity_type="citation", content="Derrida 1967", id="cite_1", position=region
         )
 
         assert entity.position is not None
@@ -462,7 +437,7 @@ class TestEntity:
         entity = Entity(
             entity_type="block_quote",
             content="Quote text",
-            metadata={"source": "Being and Time", "page": 42}
+            metadata={"source": "Being and Time", "page": 42},
         )
 
         assert entity.metadata["source"] == "Being and Time"
@@ -475,87 +450,87 @@ class TestPyMuPDFConversion:
     def test_create_text_span_bold(self):
         """Test creating TextSpan from PyMuPDF span with bold (CORRECTED)."""
         pymupdf_span = {
-            'text': 'bold text',
-            'size': 12.0,
-            'font': 'Arial-Bold',
-            'flags': 16,  # Bit 4 = bold (CORRECTED from bit 1!)
-            'bbox': (10.0, 20.0, 100.0, 32.0)
+            "text": "bold text",
+            "size": 12.0,
+            "font": "Arial-Bold",
+            "flags": 16,  # Bit 4 = bold (CORRECTED from bit 1!)
+            "bbox": (10.0, 20.0, 100.0, 32.0),
         }
 
         span = create_text_span_from_pymupdf(pymupdf_span)
 
-        assert span.text == 'bold text'
-        assert 'bold' in span.formatting
+        assert span.text == "bold text"
+        assert "bold" in span.formatting
         assert span.font_size == 12.0
-        assert span.font_name == 'Arial-Bold'
+        assert span.font_name == "Arial-Bold"
         assert span.bbox == (10.0, 20.0, 100.0, 32.0)
 
     def test_create_text_span_italic(self):
         """Test creating TextSpan with italic (CORRECTED)."""
         pymupdf_span = {
-            'text': 'italic text',
-            'size': 12.0,
-            'font': 'Arial-Italic',
-            'flags': 2,  # Bit 1 = italic (CORRECTED from bit 2!)
-            'bbox': (10.0, 20.0, 100.0, 32.0)
+            "text": "italic text",
+            "size": 12.0,
+            "font": "Arial-Italic",
+            "flags": 2,  # Bit 1 = italic (CORRECTED from bit 2!)
+            "bbox": (10.0, 20.0, 100.0, 32.0),
         }
 
         span = create_text_span_from_pymupdf(pymupdf_span)
 
-        assert 'italic' in span.formatting
-        assert 'bold' not in span.formatting
+        assert "italic" in span.formatting
+        assert "bold" not in span.formatting
 
     def test_create_text_span_superscript(self):
         """Test creating TextSpan with superscript (footnote marker)."""
         pymupdf_span = {
-            'text': '1',
-            'size': 8.0,
-            'font': 'Arial',
-            'flags': 1,  # Bit 0 = superscript
-            'bbox': (10.0, 20.0, 15.0, 26.0)
+            "text": "1",
+            "size": 8.0,
+            "font": "Arial",
+            "flags": 1,  # Bit 0 = superscript
+            "bbox": (10.0, 20.0, 15.0, 26.0),
         }
 
         span = create_text_span_from_pymupdf(pymupdf_span)
 
-        assert 'superscript' in span.formatting
+        assert "superscript" in span.formatting
 
     def test_create_text_span_multiple_flags(self):
         """Test creating TextSpan with multiple flags."""
         pymupdf_span = {
-            'text': 'bold italic',
-            'size': 12.0,
-            'font': 'Arial-BoldItalic',
-            'flags': 18,  # 16 (bold) + 2 (italic) = 18
-            'bbox': (10.0, 20.0, 100.0, 32.0)
+            "text": "bold italic",
+            "size": 12.0,
+            "font": "Arial-BoldItalic",
+            "flags": 18,  # 16 (bold) + 2 (italic) = 18
+            "bbox": (10.0, 20.0, 100.0, 32.0),
         }
 
         span = create_text_span_from_pymupdf(pymupdf_span)
 
-        assert 'bold' in span.formatting
-        assert 'italic' in span.formatting
+        assert "bold" in span.formatting
+        assert "italic" in span.formatting
 
     def test_create_text_span_monospaced(self):
         """Test creating TextSpan with monospaced flag."""
         pymupdf_span = {
-            'text': 'code',
-            'size': 10.0,
-            'font': 'Courier',
-            'flags': 8,  # Bit 3 = monospaced
-            'bbox': (10.0, 20.0, 40.0, 30.0)
+            "text": "code",
+            "size": 10.0,
+            "font": "Courier",
+            "flags": 8,  # Bit 3 = monospaced
+            "bbox": (10.0, 20.0, 40.0, 30.0),
         }
 
         span = create_text_span_from_pymupdf(pymupdf_span)
 
-        assert 'monospaced' in span.formatting
+        assert "monospaced" in span.formatting
 
     def test_create_text_span_no_flags(self):
         """Test creating TextSpan with no flags (plain text)."""
         pymupdf_span = {
-            'text': 'plain text',
-            'size': 10.0,
-            'font': 'Arial',
-            'flags': 0,
-            'bbox': (10.0, 20.0, 100.0, 30.0)
+            "text": "plain text",
+            "size": 10.0,
+            "font": "Arial",
+            "flags": 0,
+            "bbox": (10.0, 20.0, 100.0, 30.0),
         }
 
         span = create_text_span_from_pymupdf(pymupdf_span)
@@ -565,15 +540,15 @@ class TestPyMuPDFConversion:
     def test_create_text_span_missing_fields(self):
         """Test creating TextSpan with missing optional fields."""
         pymupdf_span = {
-            'text': 'minimal',
+            "text": "minimal",
             # Missing: size, font, flags, bbox
         }
 
         span = create_text_span_from_pymupdf(pymupdf_span)
 
-        assert span.text == 'minimal'
+        assert span.text == "minimal"
         assert span.font_size == 10.0  # Default
-        assert span.font_name == ''    # Default
+        assert span.font_name == ""  # Default
         assert span.formatting == set()  # No flags
         assert span.bbox == (0.0, 0.0, 0.0, 0.0)  # Default
 
@@ -587,7 +562,7 @@ class TestIntegrationScenarios:
         spans = [
             TextSpan(text="Being ", formatting=set()),
             TextSpan(text="is", formatting={"strikethrough"}),  # sous rature!
-            TextSpan(text=" neither present nor absent", formatting=set())
+            TextSpan(text=" neither present nor absent", formatting=set()),
         ]
 
         region = PageRegion(region_type="body", spans=spans, page_num=42)
@@ -608,8 +583,8 @@ class TestIntegrationScenarios:
                 note_type=NoteType.FOOTNOTE,
                 role=NoteRole.DEFINITION,
                 marker="*",
-                scope=NoteScope.PAGE
-            )
+                scope=NoteScope.PAGE,
+            ),
         )
 
         # Endnote (document-global)
@@ -622,8 +597,8 @@ class TestIntegrationScenarios:
                 role=NoteRole.DEFINITION,
                 marker="23",
                 scope=NoteScope.CHAPTER,
-                chapter_number=3
-            )
+                chapter_number=3,
+            ),
         )
 
         # Should be distinguishable
@@ -638,17 +613,13 @@ class TestIntegrationScenarios:
 
     def test_heading_with_bold_formatting(self):
         """Test heading region with bold formatting."""
-        span = TextSpan(
-            text="Introduction",
-            formatting={"bold"},
-            font_size=18.0
-        )
+        span = TextSpan(text="Introduction", formatting={"bold"}, font_size=18.0)
 
         region = PageRegion(
             region_type="body",
             spans=[span],
             page_num=1,
-            heading_level=1  # H1
+            heading_level=1,  # H1
         )
 
         assert region.is_heading()
@@ -661,14 +632,14 @@ class TestIntegrationScenarios:
             is_list_item=True,
             list_type="ul",
             marker="*",
-            indent_level=2  # Nested 2 levels deep
+            indent_level=2,  # Nested 2 levels deep
         )
 
         region = PageRegion(
             region_type="body",
             spans=[TextSpan(text="Nested point", font_size=10.0)],
             page_num=5,
-            list_info=list_info
+            list_info=list_info,
         )
 
         assert region.is_list_item()

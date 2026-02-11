@@ -10,6 +10,8 @@ Tests cover:
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+pytestmark = pytest.mark.unit
+
 # Test data: mocked HTML response for search
 MOCK_SEARCH_HTML = """
 <!DOCTYPE html>

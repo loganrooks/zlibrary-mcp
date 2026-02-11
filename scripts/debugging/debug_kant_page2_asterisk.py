@@ -19,9 +19,9 @@ page_rect = page.rect
 page_height = page_rect.height
 footnote_threshold = page_height * 0.80  # Bottom 20%
 
-print(f"=" * 80)
-print(f"PAGE 2 (Index 1) ANALYSIS - LOOKING FOR ASTERISK FOOTNOTE")
-print(f"=" * 80)
+print("=" * 80)
+print("PAGE 2 (Index 1) ANALYSIS - LOOKING FOR ASTERISK FOOTNOTE")
+print("=" * 80)
 print(f"Page height: {page_height}")
 print(f"Footnote threshold (80%): {footnote_threshold}")
 print()
@@ -49,10 +49,12 @@ for i, block in enumerate(blocks):
         for span in line["spans"]:
             text = span["text"]
             # Check for asterisk
-            if '*' in text:
-                print(f"\n⭐ ASTERISK FOUND IN BLOCK {i+1}")
+            if "*" in text:
+                print(f"\n⭐ ASTERISK FOUND IN BLOCK {i + 1}")
                 print(f"BBox: {block['bbox']}")
-                print(f"Y-position: {y_pos} ({'BODY' if y_pos < footnote_threshold else 'FOOTNOTE'} area)")
+                print(
+                    f"Y-position: {y_pos} ({'BODY' if y_pos < footnote_threshold else 'FOOTNOTE'} area)"
+                )
                 print(f"Is superscript: {(span.get('flags', 0) & (1 << 0)) != 0}")
                 print(f"Font: {span.get('font', 'unknown')}")
                 print(f"Size: {span.get('size', 0)}")
@@ -90,9 +92,9 @@ for i, block in enumerate(blocks):
 
     # Check if ends with "to" or "criticism"
     if full_block_text.endswith(" to") or "criticism" in full_block_text:
-        print(f"\n🔍 POTENTIAL MATCH IN BLOCK {i+1}")
+        print(f"\n🔍 POTENTIAL MATCH IN BLOCK {i + 1}")
         print(f"BBox: {block['bbox']}")
-        print(f"Content (last 200 chars):")
+        print("Content (last 200 chars):")
         if len(full_block_text) > 200:
             print(f"...{full_block_text[-200:]}")
         else:
@@ -101,9 +103,9 @@ for i, block in enumerate(blocks):
 
         # Check for marker at start
         marker_patterns = {
-            'numeric': r'^\d+[\.\s\t]',
-            'letter': r'^[a-z][\.\s\t]',
-            'symbol': r'^[*†‡§¶#][\.\s\t]'
+            "numeric": r"^\d+[\.\s\t]",
+            "letter": r"^[a-z][\.\s\t]",
+            "symbol": r"^[*†‡§¶#][\.\s\t]",
         }
 
         for pattern_name, pattern in marker_patterns.items():
@@ -111,6 +113,6 @@ for i, block in enumerate(blocks):
                 print(f"✅ Marker type: {pattern_name}")
                 break
         else:
-            print(f"⚠️  NO MARKER at start")
+            print("⚠️  NO MARKER at start")
 
 doc.close()

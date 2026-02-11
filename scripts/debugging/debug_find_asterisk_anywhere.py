@@ -9,9 +9,9 @@ import fitz  # PyMuPDF
 pdf_path = "test_files/kant_critique_pages_80_85.pdf"
 doc = fitz.open(pdf_path)
 
-print(f"=" * 80)
-print(f"FINDING ALL TEXT WITH 'criticism' OR ASTERISK")
-print(f"=" * 80)
+print("=" * 80)
+print("FINDING ALL TEXT WITH 'criticism' OR ASTERISK")
+print("=" * 80)
 print()
 
 for page_idx in range(len(doc)):
@@ -19,9 +19,9 @@ for page_idx in range(len(doc)):
     page_height = page.rect.height
     footnote_threshold = page_height * 0.80
 
-    print(f"{"=" * 80}")
+    print(f"{'=' * 80}")
     print(f"PAGE {page_idx + 1} (Index {page_idx})")
-    print(f"{"=" * 80}")
+    print(f"{'=' * 80}")
     print()
 
     blocks = page.get_text("dict", flags=fitz.TEXT_PRESERVE_WHITESPACE)["blocks"]
@@ -51,7 +51,9 @@ for page_idx in range(len(doc)):
         if has_criticism or has_asterisk or starts_with_asterisk:
             print(f"Block {block_idx + 1} [{location}]")
             print(f"BBox: {block['bbox']}")
-            print(f"Has '*': {has_asterisk}, Starts with '*': {starts_with_asterisk}, Has 'criticism': {has_criticism}")
+            print(
+                f"Has '*': {has_asterisk}, Starts with '*': {starts_with_asterisk}, Has 'criticism': {has_criticism}"
+            )
             print(f"\nContent ({len(full_block_text)} chars):")
 
             # Show context around "criticism" or asterisk

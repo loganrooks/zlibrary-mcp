@@ -18,9 +18,9 @@ blocks = page.get_text("dict", flags=fitz.TEXT_PRESERVE_WHITESPACE)["blocks"]
 # Block 8 (0-indexed: 7)
 block8 = blocks[7]
 
-print(f"=" * 80)
-print(f"PAGE 3 - BLOCK 8 (ASTERISK FOOTNOTE CONTINUATION)")
-print(f"=" * 80)
+print("=" * 80)
+print("PAGE 3 - BLOCK 8 (ASTERISK FOOTNOTE CONTINUATION)")
+print("=" * 80)
 print(f"Page height: {page_height}")
 print(f"Footnote threshold (80%): {footnote_threshold}")
 print()

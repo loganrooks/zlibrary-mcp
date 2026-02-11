@@ -8,5 +8,17 @@
     "research": true,
     "plan_check": true,
     "verifier": true
-  }
+  },
+  "health_check": {
+    "frequency": "milestone-only",
+    "stale_threshold_days": 7,
+    "blocking_checks": false
+  },
+  "devops": {
+    "ci_provider": "none",
+    "deploy_target": "none",
+    "commit_convention": "freeform",
+    "environments": []
+  },
+  "gsd_reflect_version": "1.13.0"
 }

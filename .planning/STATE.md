@@ -51,6 +51,12 @@ None.
 - ~~zlib_client fixture missing from integration tests~~ RESOLVED by quick-003
 - ~~booklist_tools.py discover_eapi_domain() missing argument~~ RESOLVED by quick-003
 
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 003 | Fix zlib_client fixture + booklist_tools discover_eapi_domain bug | 2026-02-11 | 69c7d5b | [003-fix-zlib-client-fixture](./quick/003-fix-zlib-client-fixture/) |
+
 ### Tech Debt Inventory
 
 From v1.1 audit (addressed by v1.2 scope):

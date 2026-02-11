@@ -1,306 +1,358 @@
 # Project Research Summary
 
-**Project:** Z-Library MCP v1.1 Quality & Expansion
-**Domain:** Scholarly document processing & multi-source book retrieval for AI consumption
-**Researched:** 2026-02-01
-**Confidence:** MEDIUM-HIGH
+**Project:** zlibrary-mcp v1.2 Production Readiness
+**Domain:** MCP server production packaging, dual-language tooling, npm publishing infrastructure
+**Researched:** 2026-02-11
+**Confidence:** HIGH
 
 ## Executive Summary
 
-This milestone focuses on dramatically improving text extraction quality for scholarly works while expanding source diversity. The research reveals a **zero-dependency approach** — all five capabilities (margin detection, adaptive DPI, Anna's Archive integration, Node 22 upgrade, AsyncZlib removal) require no new library additions. PyMuPDF already provides spatial text analysis and variable-resolution rendering needed for quality improvements. The existing httpx client handles Anna's Archive API integration.
+The v1.2 "Production Readiness" milestone transforms an existing, functional dual-language MCP server (Node.js + Python) into a professionally publishable npm package. The project already has 11+ working MCP tools and a sophisticated RAG pipeline with 871+ tests. The focus is infrastructure, quality assurance, and developer experience rather than new end-user functionality.
 
-The recommended approach prioritizes **quality foundations before expansion**. Margin detection and adaptive resolution directly serve the core value proposition (clean text for AI consumption of academic texts). Body text purity unifies all detection modules into a cohesive pipeline. Anna's Archive adds source resilience but carries legal/technical risk worth deferring until quality pipeline is stable. The AsyncZlib removal simplifies architecture by eliminating redundant web scraping paths now that EAPI handles all operations.
+The recommended approach prioritizes foundational hygiene (fix tests, clean repo) before visible features (structured output, quality scoring) before final packaging. This order respects critical dependency chains discovered in architecture analysis: green CI is the prerequisite for everything else. The dual-language nature creates unique challenges—three independent configuration systems (Jest, pytest, TypeScript) must stay synchronized, and the current npm package would ship 44 MB of test PDFs and internal documentation without intervention.
 
-**Critical risks:** (1) Margin detection false positives on multi-column layouts could lose body text, (2) AsyncZlib removal may break download flow without obvious test failures due to mocked unit tests, (3) Anna's Archive integration creates book identity model complexity across incompatible ID schemes. Mitigation requires page-level margin modeling (not fixed thresholds), adapter pattern with integration tests for download flow, and BookReference abstraction with source provenance tracking.
+Key risks center on breaking changes during refactoring. Test reorganization can break three separate systems simultaneously (Jest paths, pytest discovery, CI workflows). Output format changes break MCP client integrations. File deletions can remove runtime dependencies hidden by dynamic Python imports. The mitigation strategy is surgical: one system per commit, comprehensive validation between changes, and explicit backward compatibility for any user-facing changes.
 
 ## Key Findings
 
 ### Recommended Stack
 
-**No new dependencies required for any v1.1 capability.** The current stack (PyMuPDF >=1.26.0, httpx, Node.js) provides all necessary primitives. This milestone is architectural work — new detection modules, source abstraction layer, and code simplification.
+Five new devDependencies enable production readiness without adding production weight: TypeDoc for API documentation, Ajv for ground truth validation, knip for dead code detection, pytest-json-report for CI quality gates, and comprehensive `.npmignore` or `package.json` `files` field configuration. Notably, the research recommends AGAINST common solutions like scikit-learn (overkill for precision/recall math), Zod v4 (incompatible with MCP SDK), and semantic-release (over-engineered for manual release process).
 
 **Core technologies:**
-- **PyMuPDF >=1.26.0**: Spatial text analysis (`get_text("dict")` with bbox coordinates), variable DPI rendering (`get_pixmap(matrix)`), region clipping — everything needed for margin detection and adaptive resolution already exists
-- **httpx**: Already vendored in zlibrary fork; handles Anna's Archive REST API with no new dependency
-- **Node.js 22 LTS**: Upgrade path from 18 is straightforward (10-15% V8 perf gain, stable fetch API, security patches until April 2027); codebase uses standard APIs with minimal breaking change risk
-- **EAPIClient**: AsyncZlib download path already delegates to EAPI; removing AsyncZlib web scraping simplifies to 77% less code (406→92 lines in venv-manager.ts) with zero functional loss
+- **TypeDoc + typedoc-plugin-markdown**: API doc generation from Zod schemas — de facto TypeScript standard, ESM-native, GitHub-friendly Markdown output
+- **Ajv**: JSON Schema validation for ground truth — fastest validator, directly handles existing draft-07 schemas without conversion
+- **knip**: Dead code detection — single tool replaces depcheck + ts-prune, understands Jest/TypeScript/GitHub Actions
+- **pytest-json-report**: Structured test output for CI — enables quality scoring dashboard and regression gates
+- **package.json `files` field**: Whitelist for npm package — safer than `.npmignore` blacklist, prevents 44 MB bloat
 
-**Key architectural insight:** The bottleneck isn't libraries — it's detection logic quality. Existing tools provide low-level primitives (text coordinates, font metadata, DPI control). Value comes from intelligent use: page-level margin models instead of fixed thresholds, cross-page pattern analysis for running headers, per-source retry configuration.
+**Critical constraint:** MCP SDK 1.25.3 locks Zod to 3.25.x. Attempting to use Zod v4 features (native `toJSONSchema()`) causes `w._parse is not a function` errors. This drives the Ajv recommendation for schema validation instead of Zod-based approaches.
 
 ### Expected Features
 
-Research identified four capability clusters with clear must-have vs defer boundaries:
+Table stakes are all about trust signals: zero failing tests, clean npm package, working CI, documented API, contributor guide. The project already passes the functionality bar—users need to trust it's maintainable. Differentiators focus on RAG quality: structured multi-file output (body + footnotes + metadata separated for selective retrieval), automated precision/recall scoring against ground truth (no other MCP server does this), and unified test taxonomy enabling fast/slow CI splits.
 
-**Must have for v1.1 (table stakes):**
-- **Margin zone detection + scholarly reference patterns** — Stephanus numbers (Plato), Bekker numbers (Aristotle), line numbers; without this, margin text leaks into body as noise
-- **Body text purity pipeline** — Unified filter composing all detection modules (footnotes, headings, TOC, page numbers, margins); the integration feature that delivers clean body text
-- **Anna's Archive search + download** — Second book source with configurable API key/base URL; provides source resilience when Z-Library unavailable
+**Must have (table stakes):**
+- Zero failing tests in CI — any published package with red CI signals abandonment
+- Clean `npm test` output — warnings and collection errors confuse contributors
+- `.npmignore` or `files` field excluding dev artifacts — publishing test PDFs to npm is wasteful and leaks internal tooling
+- API documentation per MCP tool — users need parameter schemas, example requests, error cases
+- Contributor setup guide — fork → install → test → PR flow
+- No dead files at repo root — ~15 stale debug scripts and summaries signal messiness
 
-**Should have (differentiators):**
-- **Adaptive resolution (page-level DPI selection)** — Quality improvement but not new capability; text-heavy = 150-200 DPI, fine print = 300 DPI, based on font size analysis
-- **Auto-detect margin zone widths per document** — Handles varied publishers (Loeb uses outer margins, Oxford uses inner) without manual config
-- **Best-format selection across sources** — Prefer EPUB over PDF when same book available from multiple sources
+**Should have (competitive):**
+- Structured multi-file RAG output — separate body/footnotes/metadata/quality files enable selective AI retrieval (scholarly users especially benefit)
+- Automated precision/recall scoring — enables regression detection at feature level, quantitative quality tracking
+- Unified test taxonomy — proper pytest markers enable selective CI (fast tests on every PR, slow/real-PDF tests nightly)
+- Unified ground truth schema — consolidate v1/v2/v3 into single canonical v3 schema
+- Smithery/npx installation support — modern MCP distribution (zero-config `npx @smithery/cli install`)
 
-**Defer to v2+ (anti-features to avoid):**
-- **Critical apparatus parsing** — Enormously complex (variants, sigla, nested refs); just detect and separate, don't parse
-- **GROBID integration** — ML-based zone classification for academic papers; high complexity, defer until PyMuPDF4LLM integration proven insufficient
-- **Open Library integration** — Legal public domain source; adds little beyond AA which aggregates it
-- **Super-resolution upscaling** — Heavy ML dependency, marginal gain over simple DPI increase
-
-**Build order (from FEATURES.md dependency analysis):**
-1. Adaptive Resolution (independent, improves OCR for all downstream)
-2. Margin Detection (needed by Body Text Purity)
-3. Body Text Purity (composes all detectors)
-4. Anna's Archive (independent but has legal/technical risk worth deferring)
+**Defer (v2+):**
+- 100% test coverage — current 78% is healthy, chasing 100% leads to brittle tests for trivial code
+- Monorepo split — Python bridge makes this impractical without clear user benefit
+- Web UI for quality dashboard — adds frontend build burden, quality should be CI-integrated
+- Semantic chunking in RAG output — requires research into optimal chunk sizes, scope creep for v1.2
 
 ### Architecture Approach
 
-**Layered integration without structural disruption.** The existing architecture cleanly accommodates all five capabilities through targeted module additions:
+The dual-language design has clear boundaries: Node.js handles MCP protocol and tool registration, Python owns document processing and Z-Library API interaction. The critical v1.2 changes are all Python-side or config/infra—no TypeScript layer changes needed. The architecture reveals **duplicate metadata systems** as the key refactoring opportunity: `DocumentOutput.write_files()` and `save_processed_text()` both write metadata sidecars with different schemas. Merging into a single authority eliminates confusion and enables richer structured output.
 
 **Major components:**
-1. **Detection Layer** (`lib/rag/detection/`) — Add `margins.py` alongside existing `footnotes.py`, `headings.py`, `page_numbers.py`, `toc.py`, `front_matter.py`; margins runs early to annotate blocks (not remove), downstream stages filter tagged content
-2. **Quality Pipeline** (`lib/rag/quality/pipeline.py`) — Adaptive resolution adds DPI calculation helper to existing `ocr_stage.py`; uses Stage 1 quality_score + Stage 2 xmark results to determine optimal DPI (no new pipeline stage)
-3. **Source Abstraction** (`lib/sources/` new package) — `BookSource` protocol defines interface; `zlibrary.py` wraps existing EAPIClient; `annas_archive.py` implements same interface; `registry.py` manages routing
-4. **Download Extraction** (`lib/sources/download.py`) — Extract AsyncZlib.download_book() streaming logic (~25 lines) to standalone function using EAPIClient; removes AsyncZlib dependency from 7 modules
-5. **Node.js Layer** (minimal changes) — `src/index.ts` adds optional `source` parameter to Zod schemas; `src/lib/zlibrary-api.ts` passes through to Python bridge
-
-**Key design decisions:**
-- **Margin detection runs BEFORE block formatting**, not as quality pipeline stage (pipeline operates on individual PageRegions; margin detection filters which blocks become regions)
-- **Annotate-don't-remove pattern** — Margin detector tags blocks but leaves them in stream; downstream stages decide inclusion based on tags
-- **Source provenance tracking** — BookReference abstraction carries source identity (Z-Lib vs AA) + original ID + metadata to handle incompatible ID schemes
-- **Gradual AsyncZlib removal** — Adapter first (present AsyncZlib interface, delegate to EAPIClient), then swap internals, then remove adapter (not big bang)
-
-**Build order (from ARCHITECTURE.md dependencies):**
-```
-Phase A (parallel):
-  - Node 20+ upgrade (package.json, types, test isolation)
-  - Margin detection module + data models
-  - Adaptive resolution (DPI helper in ocr_stage.py)
-
-Phase B (extract before abstract):
-  - Download extraction (AsyncZlib → standalone function)
-  - AsyncZlib removal from python_bridge.py
-
-Phase C (depends on Phase B):
-  - Source abstraction layer (base, registry)
-  - Z-Library adapter (wraps EAPIClient)
-  - Anna's Archive adapter (research spike for API patterns)
-
-Phase D (depends on Phase A margin detection):
-  - Integrate margin detection into orchestrator_pdf.py
-  - Update _format_pdf_markdown to use margin classification
-```
+1. **Test infrastructure reorganization** — Move from flat `__tests__/` to categorized `__tests__/{node/python}/{unit/integration/performance}`, consolidate ground truth from `test_files/` to `__tests__/ground_truth/`, unify schemas to v3 only. Impacts jest.config.js, pytest.ini, conftest.py.
+2. **Structured RAG output** — Merge duplicate metadata systems into single `DocumentOutput.write_files()` authority. Output format: `{name}/body.md`, `{name}/footnotes.md`, `{name}/metadata.json`, `{name}/quality.json`. Changes localized to 4-5 Python modules.
+3. **Quality scoring CI** — New `lib/quality/` modules (scorer, ground truth loader, report generator) + `scripts/ci/quality_score.py` entry point. Separate CI job that produces JSON artifact. Uses pytest-json-report for structured results.
+4. **Repo cleanup** — Remove ~15 dead files at root (debug scripts, stale summaries), consolidate `test_files/` + `test_data/`, move `claudedocs/` to `docs/internal/`, fix conflicting entry points (`index.js` vs `dist/index.js`).
+5. **npm packaging** — Add `package.json` `files` whitelist, fix `main` field, verify with `npm pack --dry-run`, add CI check that fails if tarball > 10 MB.
 
 ### Critical Pitfalls
 
-Research identified 11 pitfalls; top 5 by severity and phase relevance:
+1. **44 MB npm tarball ships test PDFs and planning artifacts** — Current `.npmignore` is minimal 15-line blacklist; `npm pack` reveals 1,017 files including 22 MB Derrida PDF, all `.claude/` and `claudedocs/` dirs. Switch to `package.json` `files` whitelist (dist/, lib/, zlibrary/, pyproject.toml, uv.lock, setup-uv.sh). Add CI check that fails if tarball > 10 MB.
 
-1. **Margin Detection False Positives (P-02, CRITICAL)** — Multi-column layouts, indented paragraphs, and scanned documents with skew cause bbox-based heuristics to misclassify body text as marginal. **Prevention:** Build page-level margin model (analyze x-position distribution, identify clusters) instead of fixed thresholds; test with single-column, two-column, scanned-with-skew, and legal/line-numbered documents; expose confidence scores.
+2. **Test reorganization breaks CI in three independent ways** — Jest moduleNameMapper hardcodes `^../lib/`, pytest pythonpath assumes test location, CI workflow uses bare `pytest` command. Update all four configs (jest.config.js, pytest.ini, tsconfig.json, ci.yml) in SAME commit. Run both `npm test` AND `uv run pytest` locally before pushing.
 
-2. **AsyncZlib Removal Breaks Download Silently (P-01, CRITICAL)** — `client_manager.py` and 6 other modules reference AsyncZlib API (search, fetch, download, login). EAPIClient has different method surface. Swapping import without mapping call sites produces runtime failures that unit tests (which mock clients) won't catch. **Prevention:** Map full AsyncZlib API surface across all 7 files; write adapter presenting AsyncZlib interface delegating to EAPIClient; add integration test exercising real download path; deprecate gradually (adapter → swap internals → remove adapter).
+3. **Breaking RAG output format without consumer migration** — Current `{filename}.processed.markdown` + `{filename}.metadata.json` is the API surface for MCP clients. Changes to path patterns or JSON structure break consumers. ADD new fields/files, do not remove/rename. Include `format_version` field. Add integration test that pins exact JSON structure.
 
-3. **Anna's Archive Book Identity Complexity (P-03, CRITICAL)** — Z-Library and AA use different ID schemes (Z-Lib ID vs MD5 hash), metadata schemas, search structures. Merging results without unified identity model creates duplicates in search, broken "download by ID" flows. **Prevention:** Design `BookReference` abstraction carrying source provenance; never expose raw source IDs to MCP tools (use composite identifier encoding source); implement deduplication at merge layer using ISBN/MD5; make source explicit in responses.
+4. **Conflicting entry points** — Three `index.js` files exist: root (legacy CJS), `dist/index.js` (compiled ESM), `src/index.js` (stale artifact). `package.json` has contradictory `"main": "index.js"` vs `"exports": "./dist/index.js"`. Remove root and src versions, set `"main": "dist/index.js"`, verify with `npx .` testing.
 
-4. **Adaptive DPI Coordinate Space Confusion (P-04, HIGH)** — PyMuPDF `get_text("dict")` returns point-based coordinates (DPI-independent, 72 DPI reference), but `get_pixmap(dpi=X)` returns pixel coordinates. Mixing these breaks existing footnote detection which uses absolute values from text extraction. Changing DPI silently regresses quality metrics. **Prevention:** Audit pipeline for coordinate space assumptions; normalize ALL coordinates to point-space before detection; add regression test (process same PDF at 72, 150, 300 DPI, assert identical detection within tolerance).
-
-5. **Margin/Footnote Pipeline Interference (P-06, HIGH)** — Both systems consume same text blocks and make spatial assumptions. If margin content stripped before footnote detection, margin footnotes are lost. If footnote detection runs first, margin annotations may be misclassified as footnote definitions. **Prevention:** Define explicit pipeline stages with documented contracts in `orchestrator_pdf.py`; margin detection ANNOTATES blocks (tags as "margin") but doesn't remove; downstream stages decide handling; integration test on PDFs with margin footnotes (common in legal/classical texts).
-
-**Legal/TOS consideration (P-03 subset):** Anna's Archive lost multiple domains (org, se) in January 2026 due to court injunction; service availability is inconsistent. Make AA opt-in source (`ANNAS_ARCHIVE_ENABLED=true` env var) so users make their own legal determination; document landscape in ADR; graceful degradation when unavailable (return Z-Library-only results, not error).
+5. **Quality scoring creates flaky CI from non-determinism** — PDF extraction varies across PyMuPDF versions, OS encodings, renderer backends. Use score RANGES not exact thresholds (`0.75 <= score <= 1.0`), pin PyMuPDF exactly, consolidate ground truth schemas first, make scoring informational for 2 weeks before gating.
 
 ## Implications for Roadmap
 
-Based on research, suggested **5-phase structure** prioritizing quality foundations before expansion:
+Based on research, suggested phase structure:
 
-### Phase 1: Foundation Cleanup & Node Upgrade
-**Rationale:** Remove technical debt and upgrade runtime before adding complexity. Node 18 is EOL (no security patches); AsyncZlib is redundant (EAPI handles all operations). Clean foundation prevents compounding issues when building detection features.
-
-**Delivers:**
-- Node 22 LTS environment with security patches until April 2027
-- Simplified download flow (AsyncZlib removed, standalone EAPI download function)
-- Updated type definitions and CI configuration
-- 77% code reduction in venv-manager.ts (406→92 lines)
-
-**Stack elements:** Node 22 LTS, EAPIClient (existing), download extraction pattern
-
-**Avoids:** P-01 (AsyncZlib removal breaking downloads), P-10 (auth lifecycle mismatch), P-05 (Node upgrade ESM/Jest breakage)
-
-**Research flag:** Standard upgrade patterns; no deep research needed. Follow Node.js 18→22 migration guides and AsyncZlib→EAPIClient API mapping.
-
----
-
-### Phase 2: Margin Detection & Scholarly References
-**Rationale:** Core quality feature for scholarly texts. Needed before Body Text Purity (Phase 4) can unify all detection modules. Independent of other features, can proceed after Phase 1.
+### Phase 1: Foundation (Bug Fixes + Test Hygiene)
+**Rationale:** Everything depends on green CI. Current failures in paths.test.js (references deleted `requirements.txt`) and pytest collection errors (2 scripts in wrong locations) must be fixed before any restructuring. Fixing bugs first prevents confusion about whether test failures are from the fix or from new regressions.
 
 **Delivers:**
-- `lib/rag/detection/margins.py` module with spatial analysis
-- Stephanus number pattern recognition (Plato, e.g. "514a")
-- Bekker number pattern recognition (Aristotle, e.g. "1094a1")
-- Line number detection (poetry, legal texts, code listings)
-- Margin content metadata in output headers (preserves scholarly refs without polluting body)
-- Page-level margin model (not fixed thresholds)
+- Zero test failures in both Jest and pytest
+- Registered pytest markers (`real_world`, `slow`)
+- Removed deprecated `AsyncZlib` references
+- Clean `npm test` and `uv run pytest` output
 
 **Addresses:**
-- FEATURES.md table stakes: margin zone detection, Stephanus/Bekker patterns, line numbers, margin exclusion from body
-- ARCHITECTURE.md: Detection layer addition, annotate-don't-remove pattern
+- Table stakes: zero failing tests, clean test output
+- Pitfall 8: fixing bugs breaks tests that depend on broken behavior
 
-**Avoids:** P-02 (false positives on multi-column), P-06 (margin/footnote interference), P-08 (line numbers confused with page numbers)
+**Avoids:**
+- Pitfall 3: test reorganization breaking already-broken CI
+- Compounding failures that make root cause analysis impossible
 
-**Research flag:** Needs research phase for Stephanus/Bekker pattern validation and margin zone width detection algorithms. Sparse documentation on automated scholarly reference extraction. Budget 3-5 days for pattern research and multi-layout testing.
-
----
-
-### Phase 3: Adaptive Resolution Pipeline
-**Rationale:** Independent quality improvement (doesn't block other features). Improves OCR accuracy for all downstream processing. Can run parallel with Phase 2 but sequenced for focus.
-
-**Delivers:**
-- DPI selection logic in `lib/rag/quality/ocr_stage.py`
-- Page-level quality analysis determining optimal resolution
-- Adaptive resolution config in `QualityPipelineConfig` (min_dpi, max_dpi, default_dpi, adaptive_resolution flag)
-- Performance budget awareness (quality vs speed tradeoff)
-- Text-heavy pages: 150-200 DPI; fine print/footnotes: 300 DPI; image-heavy: 300 DPI
-
-**Stack elements:** PyMuPDF `get_pixmap(matrix=fitz.Matrix(scale, scale))`, existing quality pipeline (Stages 1-3)
-
-**Implements:** Quality pipeline enhancement (ARCHITECTURE.md Question 2)
-
-**Avoids:** P-04 (coordinate space confusion), P-09 (performance regression without opt-out)
-
-**Research flag:** Standard PyMuPDF patterns; no deep research needed. Follow OCRmyPDF cookbook and Tesseract optimal DPI guidance.
+**Research flag:** NO — bug fixes are surgical, well-understood
 
 ---
 
-### Phase 4: Body Text Purity Integration
-**Rationale:** Depends on margin detection (Phase 2). Unifies all existing detection modules (footnotes, headings, TOC, page numbers, front matter) with new margin detection into cohesive pipeline. The integration feature delivering clean body text for AI consumption.
+### Phase 2: Test Infrastructure Reorganization
+**Rationale:** Test structure must stabilize before changing anything tests validate. Reorganization touches three independent config systems (Jest, pytest, CI). Dependencies chain from this phase: structured output needs proper tests, quality scoring needs ground truth consolidation, repo cleanup needs test coverage to verify deletions don't break runtime.
 
 **Delivers:**
-- Unified non-body content filter composing all detectors
-- Running head removal (cross-page repeated text)
-- Confidence-based inclusion/exclusion thresholds
-- Structured output mode (body + metadata separately)
-- Regression test suite ensuring no body text loss
+- Categorized test structure: `__tests__/{node/python}/{unit/integration/performance}`
+- Unified ground truth: migrate to v3 schema only, delete v1/v2
+- Schema validation test ensuring all ground truth conforms to v3
+- CI split: fast tests (`pytest -m "not slow and not integration"`) on PRs, full suite nightly
+- Organized test files: no more root-level `test_*.py` scripts
 
 **Addresses:**
-- FEATURES.md table stakes: unified filter, running head removal, structured output, regression tests
-- FEATURES.md differentiators: per-paragraph confidence scores, PyMuPDF4LLM integration (if proven valuable)
+- Must-haves: test taxonomy, ground truth consolidation
+- Should-haves: unified test markers, selective CI runs
+- Pitfall 3: test reorganization breaking CI (mitigated by updating all configs in same commit)
 
-**Avoids:** False positive filtering (losing body text worse than including noise)
+**Uses:**
+- pytest marker registration (from pytest.ini)
+- Ajv for ground truth schema validation
 
-**Research flag:** Minimal research needed; primarily integration work. PyMuPDF4LLM evaluation may need 1-2 days if integration pursued.
+**Avoids:**
+- Pitfall 3: breaking three systems simultaneously (by updating Jest, pytest, CI configs together)
+- Pitfall 8: tests referencing wrong schema versions
+
+**Research flag:** NO — well-documented pytest best practices, Jest moduleNameMapper is understood
 
 ---
 
-### Phase 5: Anna's Archive Multi-Source Integration
-**Rationale:** Defer until quality pipeline stable (Phases 2-4 complete). Source expansion adds resilience but carries legal/technical risk. Domain instability and TOS concerns make this lowest priority despite user value.
+### Phase 3: Structured RAG Output
+**Rationale:** Output format must be stable before building quality scoring on top of it. Depends on Phase 2's test infrastructure to validate format changes. Changes are localized to 4-5 Python modules (merge duplicate metadata systems). This is a **breaking change** for consumers, requiring careful backward compatibility.
 
 **Delivers:**
-- Source abstraction layer (`lib/sources/` package with BookSource protocol)
-- Anna's Archive adapter implementing search + download
-- Unified search results merging Z-Library + AA
-- BookReference abstraction with source provenance
-- Configurable API key (`ANNAS_ARCHIVE_API_KEY`) and base URL
-- Graceful degradation when source unavailable
-
-**Stack elements:** httpx (existing), source registry pattern, REST API integration
+- Unified metadata system: single `DocumentOutput.write_files()` authority
+- Multi-file output: `{name}/body.md`, `{name}/footnotes.md`, `{name}/metadata.json`, `{name}/quality.json`
+- Enriched metadata schema with source, structure, output_files, quality, processing sections
+- Backward-compatible transition: add `format_version` field, support old format temporarily
 
 **Addresses:**
-- FEATURES.md table stakes: AA search integration, unified results, source attribution, download from AA
-- FEATURES.md differentiators: automatic fallback, best-format selection, source health monitoring
+- Should-have: structured multi-file RAG output (competitive differentiator)
+- Architecture: eliminate duplicate metadata generation anti-pattern
 
-**Avoids:** P-03 (book identity model complexity), P-07 (rate limit mismatch), P-11 (API instability)
+**Uses:**
+- Existing `DocumentOutput` dataclass (extend, don't replace)
+- Ground truth schema v3 (for validating output format)
 
-**Research flag:** CRITICAL — Needs research phase for Anna's Archive API patterns (no official docs), rate limiting behavior, error response patterns, domain discovery. Study iosifache/annas-mcp reference implementation. Legal/TOS review required. Budget 5-7 days for API reverse engineering and integration spike.
+**Implements:**
+- Pattern 1: Single Authority for Output Files (from ARCHITECTURE.md)
+
+**Avoids:**
+- Pitfall 4: breaking consumers without migration path (by adding format_version and supporting old format)
+- Anti-pattern 1: duplicate metadata generation
+
+**Research flag:** NO — internal refactoring, well-scoped changes
+
+---
+
+### Phase 4: Repo Cleanup
+**Rationale:** Must come after test reorganization (both move files) but before documentation (docs should describe clean final state). Cleanup reduces noise for npm packaging phase. High file-move count but low risk since no source logic changes.
+
+**Delivers:**
+- Removed ~15 dead files at root (debug scripts, stale summaries, validation reports)
+- Consolidated test data: `test_files/` + `test_data/` → `__tests__/ground_truth/pdfs/`
+- Moved session notes: `claudedocs/` → `docs/internal/`
+- Fixed conflicting entry points: removed root `index.js` and `src/index.js`, set `"main": "dist/index.js"`
+- Clean top-level: only config files, README, LICENSE at root
+
+**Addresses:**
+- Must-haves: no dead files at root, contributor setup guide (needs clean structure to describe)
+- Pitfall 2: conflicting entry points
+- Pitfall 5: deleting files that are secretly imported
+
+**Avoids:**
+- Pitfall 5: runtime breakage (by creating dependency map before deletion, testing in small batches)
+- Anti-pattern 2: root-level script proliferation
+
+**Research flag:** NO — file moves and deletions, validated by test suite
+
+---
+
+### Phase 5: Automated Quality Scoring
+**Rationale:** Depends on Phase 2 (ground truth consolidation) and Phase 3 (structured output format). Should be informational-only initially to collect baseline data before gating. Scoring reveals regressions at feature level (footnote detection, body text purity).
+
+**Delivers:**
+- Quality scoring modules: `lib/quality/{scorer.py, ground_truth_loader.py, report.py}`
+- CI entry point: `scripts/ci/quality_score.py`
+- GitHub Actions quality job: runs after tests pass, uploads report artifact
+- Regression detection: compares scores against baselines, warns if drop > 5%
+- JSON report format for CI consumption (via pytest-json-report)
+
+**Addresses:**
+- Should-have: automated precision/recall scoring (competitive differentiator)
+- Pitfall 6: quality scoring flakiness
+
+**Uses:**
+- pytest-json-report for structured test results
+- Ground truth schema v3 (consolidated in Phase 2)
+- Structured output format (from Phase 3)
+
+**Implements:**
+- Pattern 2: Ground Truth as Test Contract
+- Pattern 3: CI Quality Gate with Artifact Upload
+
+**Avoids:**
+- Pitfall 6: flaky CI from non-determinism (by using score ranges, pinning PyMuPDF, collecting data before gating)
+
+**Research flag:** MAYBE — precision/recall computation is simple, but CI integration for non-deterministic scoring may need experimentation. Start informational, gate later.
+
+---
+
+### Phase 6: Documentation Overhaul
+**Rationale:** Must come after cleanup (docs describe final state) and after all features stabilize. Documentation touches five locations (.claude/, claudedocs/, docs/, root-level, .planning/), requiring careful consolidation with defined ownership.
+
+**Delivers:**
+- Refreshed README: badges (CI, npm version, license), npx usage, Mermaid architecture diagram
+- API documentation: generated from Zod schemas, one section per MCP tool with params/examples/errors
+- CONTRIBUTING.md: setup → test → PR flow, code patterns
+- CHANGELOG.md: entries for v1.0, v1.1, v1.2
+- Consolidated docs structure: delete `claudedocs/`, move content to `docs/internal/`, define doc ownership
+
+**Addresses:**
+- Must-haves: API documentation, contributor guide
+- Should-haves: architecture diagrams
+- Pitfall 9: documentation overhaul produces stale docs
+
+**Uses:**
+- TypeDoc (considered but research recommends simpler Zod-based script)
+- Custom `scripts/generate-api-docs.js` reading Zod schemas
+
+**Avoids:**
+- Pitfall 9: docs drift from code (by defining ownership, deleting session archives)
+- Anti-pattern 2: scattered documentation
+
+**Research flag:** NO — documentation is straightforward, Zod schema extraction is well-understood
+
+---
+
+### Phase 7: npm Publishing Readiness
+**Rationale:** Final gate. Depends on all previous phases: cleanup determines what exists to publish, docs must be complete, tests must be green, output format must be stable. This phase is pure packaging—no source code changes.
+
+**Delivers:**
+- `package.json` `files` whitelist: dist/, lib/, zlibrary/, pyproject.toml, uv.lock, setup-uv.sh, LICENSE, README.md
+- Fixed `main` field: points to `dist/index.js`
+- Verified `npx zlibrary-mcp` works
+- CI check: fails if `npm pack` tarball > 10 MB
+- Postinstall note/script for Python setup (`uv sync` requirement)
+- Tested install flow in clean Docker container
+
+**Addresses:**
+- Must-haves: clean npm package, npx functionality
+- Pitfall 1: 44 MB tarball ships test PDFs
+- Pitfall 7: npm postinstall Python bootstrap fails silently
+
+**Uses:**
+- npm builtin: `npm pack --dry-run` for pre-publish validation
+- npm provenance with GitHub Actions (supply chain security)
+
+**Avoids:**
+- Pitfall 1: bloated package (by using `files` whitelist + CI size check)
+- Pitfall 7: silent failure when Python missing (by startup health check + clear error)
+
+**Research flag:** NO — npm packaging best practices are well-documented, `files` field approach is standard
 
 ---
 
 ### Phase Ordering Rationale
 
-**Dependencies drive structure:**
-- Phase 1 (cleanup) must precede everything (AsyncZlib removal unblocks source abstraction; Node upgrade prevents compounding issues)
-- Phase 2 (margins) must precede Phase 4 (body purity integration)
-- Phase 3 (adaptive DPI) is independent; sequenced after Phase 2 for focus but could run parallel
-- Phase 5 (Anna's Archive) deferred to end due to legal/technical risk and independence from quality pipeline
+1. **Bug fixes first** — Cannot validate anything on broken CI. Fixes are surgical and low-risk.
+2. **Test reorg second** — Everything else depends on stable test infrastructure. Ground truth consolidation enables quality scoring.
+3. **Structured output third** — Needs test infrastructure to validate format changes. Must be stable before quality scoring.
+4. **Cleanup in parallel with or after tests** — Both move files; can overlap if done carefully. Must precede docs (which describe final state).
+5. **Quality scoring after output format** — Needs to know what format to validate. Should be informational before gating.
+6. **Docs after cleanup and features** — Documents the finalized state. No sense documenting intermediate states.
+7. **npm packaging last** — Everything must be stable. This is the "ship it" phase.
 
-**Risk mitigation:**
-- Front-load foundation cleanup (Phase 1) to prevent compounding AsyncZlib issues
-- Build quality features (Phases 2-4) before expansion (Phase 5) so core value is stable
-- Isolate high-risk Anna's Archive work to final phase when pipeline proven
+**Dependency chains discovered:**
+- Green CI → all other phases (foundational)
+- Ground truth v3 consolidation → quality scoring (scoring needs single schema)
+- Test infrastructure → structured output → quality scoring (each validates the next)
+- Cleanup → docs → npm packaging (each informs the next about what to document/publish)
 
-**Architecture alignment:**
-- Phases 1-2 map to ARCHITECTURE.md "Phase A + B" (cleanup + new modules)
-- Phase 3 maps to ARCHITECTURE.md "Phase A adaptive resolution"
-- Phase 4 maps to ARCHITECTURE.md "Phase D" (integration)
-- Phase 5 maps to ARCHITECTURE.md "Phase C" (source abstraction)
+**How this avoids pitfalls:**
+- Phases 1-2 fix CI before any restructuring (avoids compounding failures)
+- Phase 3 adds format_version field (avoids breaking consumers)
+- Phase 4 uses dependency mapping (avoids deleting runtime files)
+- Phase 5 starts informational (avoids flaky CI gating)
+- Phase 6 defines doc ownership (avoids doc drift)
+- Phase 7 uses `files` whitelist + CI size check (avoids 44 MB tarball)
 
 ### Research Flags
 
-**Phases needing deeper research during planning:**
+Phases likely needing deeper research during planning:
+- **Phase 5 (Quality Scoring):** CI integration for non-deterministic scoring may need experimentation with thresholds and pytest-json-report parsing. Start informational, gate later after collecting baseline data.
 
-- **Phase 2 (Margin Detection):** Scholarly reference pattern extraction is niche domain with sparse documentation. Need research phase for Stephanus/Bekker regex patterns, margin zone width detection algorithms, multi-layout testing strategies. Estimated 3-5 days.
-
-- **Phase 5 (Anna's Archive):** No official API documentation; integration requires reverse engineering from iosifache/annas-mcp or RapidAPI wrapper. Legal/TOS landscape unclear (January 2026 domain seizures). Rate limiting and error patterns unknown. Estimated 5-7 days for API research, legal review, integration spike.
-
-**Phases with standard patterns (skip research-phase):**
-
-- **Phase 1 (Node Upgrade & AsyncZlib Removal):** Well-documented migration paths. Node 18→22 has official guides (Auth0, HeroDevs). AsyncZlib→EAPIClient mapping is codebase analysis, not external research.
-
-- **Phase 3 (Adaptive Resolution):** Standard PyMuPDF pixmap rendering patterns. OCRmyPDF cookbook and Tesseract DPI guidance provide clear recipes.
-
-- **Phase 4 (Body Text Purity):** Integration work combining existing modules. PyMuPDF4LLM evaluation may need brief research but not full research-phase invocation.
+Phases with standard patterns (skip research-phase):
+- **Phase 1 (Bug Fixes):** Surgical fixes, well-understood
+- **Phase 2 (Test Reorg):** Pytest best practices well-documented, Jest moduleNameMapper understood
+- **Phase 3 (Structured Output):** Internal refactoring, changes localized to 4-5 Python modules
+- **Phase 4 (Cleanup):** File moves/deletions, validated by test suite
+- **Phase 6 (Documentation):** Straightforward, Zod schema extraction well-understood
+- **Phase 7 (npm Publishing):** npm best practices well-documented, `files` field approach standard
 
 ## Confidence Assessment
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| Stack | **HIGH** | Zero new dependencies; all capabilities use existing PyMuPDF/httpx/Node primitives. Research directly analyzed codebase and confirmed PyMuPDF APIs exist (get_text dict mode, get_pixmap matrix, clip parameter). |
-| Features | **MEDIUM-HIGH** | Table stakes vs differentiators clear from domain analysis. Build order validated via dependency mapping. Margin detection patterns (Stephanus/Bekker) confirmed from authoritative sources (Oxford, Proofed). Anti-features identified from complexity research. |
-| Architecture | **HIGH** | Based on direct codebase inspection (orchestrator_pdf.py, quality/pipeline.py, python_bridge.py, libasync.py, eapi.py). Integration points identified with line-level precision. Component boundaries map cleanly to existing structure. |
-| Pitfalls | **HIGH** | Identified from codebase analysis (coordinate space assumptions, pipeline ordering, client_manager dependencies) and domain knowledge (margin detection false positives, book identity complexity). Severity ratings calibrated to actual breakage risk. |
+| Stack | HIGH | TypeDoc, Ajv, knip, pytest-json-report all verified against npm registry and official docs. Zod v3 constraint validated via MCP SDK dependency inspection. |
+| Features | HIGH | Table stakes derived from npm package ecosystem standards and MCP best practices. Differentiators based on RAG quality framework already in codebase. Anti-features identified through analysis of scope creep risks. |
+| Architecture | HIGH | All findings from direct codebase inspection at commit 4350456. Component boundaries, data flow, and integration points verified through source analysis. Duplicate metadata system discovered and refactoring path clear. |
+| Pitfalls | HIGH | Critical pitfalls grounded in `npm pack --dry-run` output (44 MB tarball empirically measured), existing test failures, and conflicting package.json fields. Recovery strategies informed by git revert capabilities and npm unpublish time limits. |
 
-**Overall confidence:** **MEDIUM-HIGH**
+**Overall confidence:** HIGH
 
-Confidence is high on stack (no new deps, existing APIs confirmed) and architecture (codebase analysis with line references). Moderate-high on features due to scholarly reference pattern research being secondary sources (Oxford, Proofed) rather than direct academic standards documents. Pitfall severity is high-confidence based on code inspection.
+All research based on verified sources (official documentation, npm registry, codebase analysis) rather than inference. The dual-language nature and existing 44K LOC codebase provide concrete constraints that guide recommendations. No speculative architecture—all changes have clear integration points identified.
 
 ### Gaps to Address
 
-**Gap 1: Anna's Archive API contract unknown**
-- **Issue:** No official documentation; integration feasibility unclear until API reverse engineered
-- **Handling:** Research phase (Phase 5) must precede planning. Budget 2 days for API exploration spike. If API proves unstable/unusable, pivot to Z-Library-only for v1.1 and defer AA to v1.2.
-- **Decision point:** After research phase, evaluate API stability score (0-10). If <6, defer to v1.2.
+**Minimal gaps — research is comprehensive:**
 
-**Gap 2: PyMuPDF4LLM value proposition vs custom pipeline**
-- **Issue:** FEATURES.md identifies PyMuPDF4LLM as differentiator for body text purity, but unclear if it adds value over composing existing detectors
-- **Handling:** Phase 4 planning includes 1-2 day evaluation spike. Test PyMuPDF4LLM on scholarly PDFs with margin content. If precision <95% or recall <90% vs custom pipeline, skip integration.
-- **Decision point:** During Phase 4 planning, compare PyMuPDF4LLM output to custom pipeline on 10 test PDFs. Proceed with integration only if quality metrics superior.
+- **pytest-json-report integration:** While the library is well-documented, the exact JSON structure for quality dashboard parsing may need adjustment during Phase 5 implementation. Start with logging full report, then extract needed fields.
 
-**Gap 3: Margin zone width detection algorithm selection**
-- **Issue:** Research identified need for page-level margin model (not fixed thresholds) but specific algorithm unclear (k-means clustering on x-positions? DBSCAN? Histogram analysis?)
-- **Handling:** Phase 2 research phase must include algorithm selection. Test 3 approaches on varied layouts (single-column, two-column, narrow-margin, wide-margin). Select algorithm with highest precision on multi-layout test suite.
-- **Decision point:** During Phase 2 research, compare clustering approaches and select before implementation begins.
+- **Backward compatibility migration period:** Phase 3 (structured output) needs user communication strategy for format changes. Recommend supporting old format for one minor version (v1.2 introduces new, v1.3 deprecates old, v1.4 removes). This timeline should be validated with any known heavy users.
 
-**Gap 4: EAPIClient auth lifecycle compatibility**
-- **Issue:** PITFALLS.md (P-10) flags potential auth lifecycle mismatch between AsyncZlib and EAPIClient
-- **Handling:** Phase 1 planning begins with EAPIClient auth flow audit (`zlibrary/src/zlibrary/eapi.py` login method). Map to AsyncZlib's session cookie pattern. Identify gaps before adapter implementation.
-- **Validation:** Integration test must exercise full auth flow (login → search → download) before AsyncZlib removal declared complete.
+- **Docker clean-install testing:** Phase 7 (npm publishing) requires testing `npm install zlibrary-mcp` → `bash setup-uv.sh` → `npx zlibrary-mcp` in a clean container. Current CI uses pre-built environment. Add a separate Docker-based install test to CI during Phase 7.
+
+- **Smithery manifest:** Phase 7 mentions considering Smithery support for MCP registry. This is LOW priority but may need investigation if npx installation proves cumbersome for users. Defer until user feedback post-v1.2 release.
+
+**No blocking gaps identified.** All gaps are "how exactly" implementation details rather than "whether this works" architectural questions. Proceed to roadmap creation.
 
 ## Sources
 
 ### Primary (HIGH confidence)
-- **Direct codebase analysis** — `lib/rag/quality/pipeline.py` (3-stage waterfall structure), `lib/rag/detection/` modules, `zlibrary/src/zlibrary/libasync.py` (AsyncZlib download delegation), `zlibrary/src/zlibrary/eapi.py` (EAPIClient API surface), `lib/python_bridge.py` (client management), `lib/client_manager.py` (AsyncZlib dependencies)
-- **PyMuPDF official documentation** — [Text extraction](https://pymupdf.readthedocs.io/en/latest/app1.html) (block coordinates, dict mode), [Page API](https://pymupdf.readthedocs.io/en/latest/page.html) (clip parameter, get_pixmap), [Text recipes](https://pymupdf.readthedocs.io/en/latest/recipes-text.html)
-- **Node.js release notes** — [Node 22 announcement](https://nodejs.org/en/blog/announcements/v22-release-announce), breaking changes documented
-- **Scholarly reference standards** — [Oxford Scholarly Editions Bekker navigation](https://www.oxfordscholarlyeditions.com/newsitem/221/using-bekker-numbers-to-navigate-the-works-of-aristotle), [Proofed citing guide](https://proofed.com/writing-tips/citing-plato-and-aristotle-stephanus-and-bekker-numbers/)
+- **Codebase analysis at commit 4350456:** All architecture findings, component inventory, existing test structure, ground truth schemas, output format specifications
+- **`npm pack --dry-run` output:** 44.4 MB tarball, 1,017 files (empirical evidence for Pitfall 1)
+- **package.json, jest.config.js, pytest.ini, ci.yml:** Configuration analysis for integration points
+- **TypeDoc official site (v0.28.16):** API documentation generation, ESM support, configuration
+- **Ajv official docs (v8.17.1):** JSON Schema draft-07 validation, ESM compatibility
+- **knip official site (v5.83.1):** Dead code detection, plugin ecosystem
+- **pytest-json-report PyPI:** JSON test reporting for CI
+- **npm docs: files field:** Whitelist vs blacklist approach, official recommendation
+- **MCP SDK GitHub (v1.25.3):** Zod v3 peer dependency constraint verification
 
 ### Secondary (MEDIUM confidence)
-- **PyMuPDF community discussions** — [get_text coordinates Q&A](https://github.com/pymupdf/PyMuPDF/discussions/2128), [header/footer removal](https://github.com/pymupdf/PyMuPDF/discussions/2259)
-- **Node.js migration guides** — [Auth0 Node 18→22 migration](https://auth0.com/docs/troubleshoot/product-lifecycle/deprecations-and-migrations/migrate-nodejs-22), [HeroDevs Node 18 EOL analysis](https://www.herodevs.com/blog-posts/node-js-18-end-of-life-breaking-changes-aws-deadlines-and-what-to-do-next)
-- **Anna's Archive references** — [iosifache/annas-mcp GitHub](https://github.com/iosifache/annas-mcp) (reference MCP server), [RapidAPI wrapper](https://rapidapi.com/tribestick-tribestick-default/api/annas-archive-api), [SearXNG engine docs](https://docs.searxng.org/dev/engines/online/annas_archive.html)
-- **OCR optimization** — [OCRmyPDF cookbook](https://ocrmypdf.readthedocs.io/en/latest/cookbook.html), [Tesseract optimal DPI discussion](https://groups.google.com/g/tesseract-ocr/c/Wdh_JJwnw94/m/24JHDYQbBQAJ)
-- **PyMuPDF4LLM** — [Official documentation](https://pymupdf.readthedocs.io/en/latest/pymupdf4llm/)
+- **MCP Best Practices Guide:** Production readiness phasing, testing layers, deployment automation
+- **MCP TypeScript SDK examples:** Package structure conventions, tool registration patterns
+- **npm package best practices (reemus.dev):** files field, exports, publishing checklist
+- **Pytest Good Integration Practices:** pythonpath configuration, test discovery, marker registration
+- **RAG Pipeline Quality (Databricks):** Metadata enrichment, structured output best practices
+- **Document Extraction Quality Scoring (arxiv):** Precision/recall methodologies for information extraction
 
-### Tertiary (LOW confidence, needs validation)
-- **pdf_header_and_footer_detector** — [GitHub reference implementation](https://github.com/gentrith78/pdf_header_and_footer_detector) (pattern detection approach)
-- **DeepSeek OCR adaptive resolution** — [Blog post](https://sparkco.ai/blog/deepseek-ocr-maximizing-pdf-text-extraction-accuracy) (single source, needs validation)
+### Tertiary (LOW confidence)
+- **Smithery CLI documentation:** MCP server registry conventions (not yet critical, can defer)
+- **npm trusted publishing with Node 24+:** Requires Node 24; project on Node 22; using classic provenance instead
 
 ---
-*Research completed: 2026-02-01*
-*Ready for roadmap: yes*
+*Research completed: 2026-02-11*
+*Ready for roadmap: YES*

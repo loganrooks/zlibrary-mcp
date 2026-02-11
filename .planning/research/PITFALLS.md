@@ -1,239 +1,490 @@
-# Domain Pitfalls
+# Pitfalls Research
 
-**Project:** Z-Library MCP v1.1 Quality & Expansion
-**Researched:** 2026-02-01
-**Overall confidence:** HIGH (based on codebase inspection + domain knowledge)
-
----
+**Domain:** Production readiness for dual-language (TypeScript + Python) MCP server with npm publishing
+**Researched:** 2026-02-11
+**Confidence:** HIGH (grounded in direct codebase inspection + community evidence)
 
 ## Critical Pitfalls
 
-### P-01: AsyncZlib Removal Breaks Download Path Without Obvious Test Failures
-**Severity:** CRITICAL
-**Phase:** AsyncZlib deprecation / EAPIClient migration
+### Pitfall 1: 44 MB npm Tarball Ships Test PDFs, Planning Artifacts, and Debug Scripts
 
-**What goes wrong:** `client_manager.py` imports `AsyncZlib` directly. Six other modules in `lib/` reference it. The download flow (search -> fetch -> download) uses AsyncZlib's paginator and `book.fetch()` API. EAPIClient likely has a different method surface. Swapping the import without mapping every call site produces runtime failures that unit tests with mocked clients will not catch.
+**What goes wrong:**
+The current `.npmignore` is a minimal 15-line blacklist. Running `npm pack --dry-run` reveals a **44.4 MB tarball with 1,017 files**. This includes:
+- 43 PDF/EPUB files (22 MB Derrida PDF alone) in `test_files/`
+- All 354 files from `.claude/`, `claudedocs/`, `.planning/` directories
+- 10 root-level debug scripts (`debug_asterisk_full_search.py`, `test_footnote_validation.py`, etc.)
+- Complete `__tests__/` directory with Python test fixtures
+- `scripts/` with development validation and debugging tools
+- `BUG_5_OPTIMIZATION_PLAN.md`, `CONTINUATION_INTEGRATION_SUMMARY.md`, and other internal docs
+- `.serena/` directory, `.benchmarks/`, `dummy_output/`, `MagicMock/`
+- `performance_baseline.json`, `footnote_validation_results.json`
+- Multiple ground truth JSON files with schema versions
 
-**Why it happens:** The vendor fork exposes both clients but they are not interface-compatible. Tests mock the client, so they pass even when the real client changes.
+A published MCP server package should be under 5 MB. This is 9x over a reasonable limit.
 
-**Warning signs:**
-- Unit tests pass but integration/manual tests fail
-- `AttributeError` on EAPIClient instances at runtime
-- Download works for search but fails on `fetch()` or `download()`
+**Why it happens:**
+The `.npmignore` was written during early development and uses a blacklist approach. As the project grew from a simple MCP server to ~44K LOC with extensive test infrastructure, research docs, and AI-assistant planning files, the blacklist was never updated. The `.gitignore` excludes build artifacts but not development files (which are tracked in git but should not be published).
 
-**Prevention:**
-1. Map the full AsyncZlib API surface used across all 7 files (`client_manager.py`, `python_bridge.py`, `enhanced_metadata.py`, `booklist_tools.py`, `author_tools.py`, `term_tools.py`, `advanced_search.py`)
-2. Write an adapter/shim that presents the AsyncZlib interface but delegates to EAPIClient
-3. Add at least one integration test that exercises the real download path (can be skipped in CI but must exist)
-4. Deprecate gradually: adapter first, then swap internals, then remove adapter
-
-**Detection:** `grep -rn "await.*\.\(search\|fetch\|download\|login\|profile\)" lib/` to find every method call on the client object.
-
----
-
-### P-02: Margin Detection Misidentifies Body Text as Marginal Content
-**Severity:** CRITICAL
-**Phase:** Margin/scholarly numbering detection
-
-**What goes wrong:** Margin notes, line numbers, and scholarly apparatus appear in the same spatial regions as legitimate body text in multi-column layouts, narrow-margin academic papers, and scanned books with skew. A bbox-based heuristic (`x < threshold` = margin) produces false positives on indented paragraphs and false negatives on wide-margin annotations.
-
-**Why it happens:** The existing detection system (`lib/rag/detection/`) uses font size and spatial position for footnotes. Extending this to margins seems straightforward but margin content has no consistent font-size differential like footnotes do.
-
-**Warning signs:**
-- First few test PDFs work perfectly, then real-world academic PDFs fail
-- Paragraph first-lines get classified as margin notes
-- Two-column layouts lose an entire column
-
-**Prevention:**
-1. Do NOT use a single x-coordinate threshold. Build a page-level margin model: analyze the distribution of text block x-positions across the full page, identify clusters, and define margins relative to the dominant body cluster.
-2. Test with at minimum: single-column, two-column, scanned-with-skew, and legal/line-numbered documents.
-3. Add a confidence score to margin detections and expose it (don't silently strip content).
-4. Keep margin detection as a separate pipeline stage that can be disabled, not baked into core text extraction.
-
----
-
-### P-03: Anna's Archive Integration Creates Inconsistent Book Identity Model
-**Severity:** CRITICAL
-**Phase:** Anna's Archive source integration
-
-**What goes wrong:** Z-Library and Anna's Archive use different ID schemes, metadata schemas, and search result structures. Merging results from both sources without a unified book identity model leads to duplicates in search results, broken "download by ID" flows, and confused users who get different results depending on which source responded first.
-
-**Why it happens:** It's tempting to add Anna's Archive as "another search backend" and merge results at the tool level. But book identity (ISBN, MD5 hash, Z-Lib ID, AA ID) doesn't map 1:1 across sources.
+**How to avoid:**
+Switch from `.npmignore` (blacklist) to `package.json` `"files"` field (whitelist). This is the npm-recommended approach for complex projects. A correct whitelist:
+```json
+{
+  "files": [
+    "dist/",
+    "lib/",
+    "zlibrary/",
+    "pyproject.toml",
+    "uv.lock",
+    "setup-uv.sh",
+    "LICENSE",
+    "README.md"
+  ]
+}
+```
+Verify with `npm pack --dry-run` before every publish. Add a CI step that fails if tarball exceeds 10 MB.
 
 **Warning signs:**
-- Same book appears twice in search results with slightly different metadata
-- Download fails because the ID from search came from source A but download assumes source B
-- Metadata fields are null/missing for one source but not the other
+- `npm pack --dry-run | tail -5` shows file count > 50 or size > 10 MB
+- Published package includes directories not needed at runtime
 
-**Prevention:**
-1. Design a `BookReference` abstraction that carries source provenance (which source, which ID scheme, original metadata)
-2. Never expose raw source IDs to the MCP tool interface; use a composite identifier that encodes source
-3. Implement deduplication at the search merge layer using ISBN or MD5 hash
-4. Make the source explicit in tool responses so the AI assistant (and user) knows where a book came from
-
-**Legal/TOS considerations:**
-- Anna's Archive is a shadow library aggregator. Its legal status varies by jurisdiction.
-- Accessing AA programmatically may violate its TOS -- check current TOS before implementing.
-- Make AA an opt-in source (environment variable like `ANNAS_ARCHIVE_ENABLED=true`) rather than default, so users make their own legal determination.
-- Document the legal landscape in an ADR so the decision is traceable.
-- Consider that AA's availability is inconsistent (domain changes, Cloudflare protection) -- the integration must degrade gracefully.
+**Phase to address:**
+npm publishing phase (should be one of the last phases, after cleanup is complete). But the `"files"` field decision must be made BEFORE repo cleanup starts, because cleanup determines what exists to be published.
 
 ---
 
-## High Pitfalls
+### Pitfall 2: Conflicting Entry Points -- Legacy CJS index.js vs ESM dist/index.js
 
-### P-04: Adaptive DPI Causes Silent Quality Regression in Detection Pipeline
-**Severity:** HIGH
-**Phase:** Variable DPI / adaptive resolution
+**What goes wrong:**
+The project currently has THREE `index.js` files:
+1. **Root `index.js`** (16 KB) -- Legacy CommonJS using `require()` and `zod-to-json-schema`
+2. **`dist/index.js`** (43 KB) -- Compiled TypeScript ESM output
+3. **`src/index.js`** (6 KB) -- Another compiled artifact in source
 
-**What goes wrong:** Implementing adaptive DPI (higher for scanned/image-heavy pages, lower for text-native) seems like a pure optimization. But PyMuPDF's rendering at different DPI values affects coordinate spaces. The existing footnote detection system (`footnote_core.py`) uses `_calculate_page_normal_font_size` and `_is_superscript` with absolute values. When DPI changes, text block bboxes from `page.get_text("dict")` remain in point-space (72 DPI), but any pixmap-based OCR path returns pixel coordinates that scale with DPI.
+The `package.json` is contradictory:
+- `"main": "index.js"` -- points to legacy CJS root file
+- `"exports": { ".": "./dist/index.js" }` -- points to compiled ESM
+- `"bin": { "zlibrary-mcp": "./dist/index.js" }` -- points to compiled ESM
+- `"type": "module"` -- declares ESM
 
-**Why it happens:** Mixed coordinate spaces. `get_text("dict")` returns point-based coordinates (DPI-independent), but `get_pixmap(dpi=X)` returns pixel coordinates. If any detection logic mixes these, changing DPI breaks it silently.
+When npm resolves modules, the `exports` field takes precedence over `main` for modern Node.js (>=12.11.0), but tools and environments that do not support exports maps fall back to `main`. This means:
+- `npx zlibrary-mcp` uses `dist/index.js` (correct)
+- `require('zlibrary-mcp')` may resolve to root `index.js` (broken CJS)
+- Some MCP clients may use `main` field to launch the server
+
+Deleting the wrong `index.js` or updating `main` without testing all consumer paths will break installations.
+
+**Why it happens:**
+The project started as CJS, migrated to ESM TypeScript. The root `index.js` was the original entry point and was never removed. `src/index.js` appears to be a leftover compilation artifact (`.gitignore` excludes `*.js` in tests but not in `src/`).
+
+**How to avoid:**
+1. Remove root `index.js` (legacy CJS) and `src/index.js` (stale artifact)
+2. Update `package.json`: set `"main": "dist/index.js"` to match `exports`
+3. Verify `dist/index.js` has the shebang `#!/usr/bin/env node` for bin usage
+4. Test with `npx .` after changes to confirm the binary still works
+5. Test with `node -e "import('zlibrary-mcp')"` to verify module resolution
 
 **Warning signs:**
-- Footnote detection accuracy drops on pages processed at non-default DPI
-- OCR text positions don't align with text extraction positions
-- Performance improves but quality metrics regress
+- `ls *.js` in project root shows non-config JavaScript files
+- `main` and `exports` in package.json point to different files
+- MCP client fails to start server after install
 
-**Prevention:**
-1. Audit the pipeline for coordinate space assumptions. Determine which APIs are DPI-sensitive (`get_pixmap`, OCR) vs DPI-independent (`get_text`).
-2. Normalize ALL coordinates to point-space before any detection logic.
-3. Add a quality regression test: process the same PDF at 72, 150, and 300 DPI and assert detection results are identical (within tolerance).
-4. If adaptive DPI only affects OCR/image rendering and NOT text extraction, document this explicitly so future developers don't accidentally mix spaces.
+**Phase to address:**
+Repo cleanup phase. This must be fixed BEFORE npm publishing phase.
 
 ---
 
-### P-05: Node.js 18 to 20+ Upgrade Breaks ESM/Jest Setup
-**Severity:** HIGH
-**Phase:** Node.js upgrade
+### Pitfall 3: Test Reorganization Breaks CI in Three Independent Ways
 
-**What goes wrong:** The project uses `--experimental-vm-modules` for Jest ESM support. Node 20 changed ESM loader internals. `ts-jest` + `jest` + ESM is a notoriously fragile combination across Node versions. Additionally, `@types/node` is pinned to v18 -- type mismatches will surface.
+**What goes wrong:**
+Moving or renaming test files triggers three distinct failure modes simultaneously:
 
-**Why it happens:** Node 20's ESM resolution differs subtly from 18. The experimental VM modules flag behavior also changed. The combination of TypeScript compilation, Jest module mocking, and ESM creates a three-way version dependency.
+**a) Jest moduleNameMapper paths break:**
+The jest.config.js has hardcoded path mappings:
+```javascript
+moduleNameMapper: {
+  '^../lib/(.*)\\.js$': '<rootDir>/dist/lib/$1.js',
+  '^../(dist/)?index\\.js$': '<rootDir>/dist/index.js',
+}
+```
+If tests move from `__tests__/` to `__tests__/unit/` or `tests/`, these relative path patterns (`^../lib/`) stop matching. Every import in every moved test silently resolves to the wrong file or fails.
+
+**b) Pytest pythonpath breaks:**
+The `pytest.ini` sets `pythonpath = . lib`. If Python tests move directories, the relative path from the test to `lib/` changes. Additionally, `conftest.py` in `__tests__/python/` provides fixtures -- moving tests without moving conftest breaks fixture resolution.
+
+**c) CI workflow hardcodes paths:**
+The GitHub Actions `ci.yml` runs bare `uv run pytest` which uses `pytest.ini` for discovery. If test directory names change, pytest must be reconfigured, or collection errors multiply. Currently 2 collection errors already exist (`scripts/archive/test_tesseract_comparison.py` and `scripts/test_marginalia_detection.py` are collected by pytest despite not being in the test directory).
+
+All three break independently. Fixing one does not fix the others. If tests are moved in a single commit without updating all three configurations, CI goes red and stays red across multiple fix attempts.
+
+**Why it happens:**
+Dual test framework projects have configuration scattered across `jest.config.js`, `pytest.ini`, `tsconfig.json`, and `.github/workflows/ci.yml`. Each uses different path resolution logic. Developers fix one and commit, then discover the next breakage in CI.
+
+**How to avoid:**
+1. Create a branch specifically for test reorganization -- do NOT mix with feature work
+2. Update all four config files (jest.config.js, pytest.ini, tsconfig.json exclude, ci.yml) in the SAME commit
+3. Run `npm test` (Jest) AND `uv run pytest` locally before pushing
+4. Fix the existing 2 pytest collection errors FIRST (add `testpaths` to `pytest.ini` or move/delete the offending scripts)
+5. If renaming `__tests__/` to `tests/`, update `.gitignore` entries that reference `__tests__/`
 
 **Warning signs:**
-- `ERR_MODULE_NOT_FOUND` in test runs
-- `jest.mock()` stops working for ESM imports
-- `mock-fs` or `nock` behavior changes
-- TypeScript `@types/node` errors after upgrade
+- CI passes Jest but fails pytest (or vice versa)
+- `uv run pytest --co -q` shows collection errors
+- Tests pass locally but fail in CI (different working directory)
 
-**Prevention:**
-1. Update `@types/node` to match target Node version FIRST, fix type errors
-2. Test Jest + ESM setup in isolation before any code changes
-3. Check each test dependency for Node 20 compatibility: `mock-fs@5`, `nock@13`, `sinon@17`
-4. If Jest ESM breaks, consider moving to Vitest (native ESM, no experimental flags) as part of the upgrade
-5. Pin exact Node version in `engines` field and any Docker/CI config
+**Phase to address:**
+Test infrastructure phase -- must be the FIRST phase. Everything else depends on green CI.
 
 ---
 
-### P-06: Margin Detection Interferes with Existing Footnote Pipeline
-**Severity:** HIGH
-**Phase:** Margin/scholarly numbering detection
+### Pitfall 4: Breaking RAG Output Format Without Consumer Migration Path
 
-**What goes wrong:** `footnote_core.py` uses `_get_cached_text_blocks` and spatial analysis. Margin detection operating on the same text blocks creates ordering dependencies: if margin content is stripped before footnote detection, footnotes in margin areas are lost. If footnote detection runs first, it may misclassify margin annotations as footnote definitions.
+**What goes wrong:**
+The current RAG pipeline outputs two files per processed document:
+- `{filename}.processed.markdown` (body text)
+- `{filename}.metadata.json` (metadata)
 
-**Why it happens:** Both systems consume the same text block data and make spatial assumptions. The pipeline in `orchestrator_pdf.py` may not enforce ordering.
+If v1.2 introduces structured output (e.g., splitting body.md into sections, adding quality scores to metadata, renaming files to `body.md` + `_meta.json`), any MCP client that reads the old format breaks silently. The MCP tool `process_document_for_rag` returns file paths in its response -- if those path patterns change, clients that parse the response break too.
 
-**Prevention:**
-1. Define explicit pipeline stages with documented input/output contracts in `orchestrator_pdf.py`
-2. Margin detection should ANNOTATE blocks (tag as "margin") but NOT remove them from the block list. Downstream stages decide how to handle tagged blocks.
-3. Add integration tests that run margin + footnote detection together on PDFs that have margin footnotes (common in legal and classical texts)
+Worse: the Python bridge returns results as JSON through stdout. If the JSON schema changes (adding fields is safe, removing/renaming is breaking), the TypeScript layer that parses it via PythonShell may throw on unexpected structure.
 
----
+**Why it happens:**
+Internal refactoring of output format feels like "just improving code" rather than an API change. But MCP tool responses ARE the API surface. Any change to the content or path pattern of returned files is a breaking change for consumers.
 
-## Moderate Pitfalls
+**How to avoid:**
+1. Document the current output format as v1 contract BEFORE changing anything
+2. When adding quality scores or structured output, ADD new fields/files -- do not remove or rename existing ones
+3. If the output directory structure must change, implement version detection: check for old format, emit deprecation warning, support both for one version
+4. Add integration test that verifies the exact JSON structure returned by `process_document_for_rag` tool -- this test becomes the contract guardian
+5. In the MCP tool response, include a `format_version` field so clients can adapt
 
-### P-07: Anna's Archive Rate Limiting and Error Handling Mismatch
-**Severity:** MODERATE
-**Phase:** Anna's Archive integration
+**Warning signs:**
+- `process_document_for_rag` returns different JSON keys than tests expect
+- Integration tests pass but manual MCP client testing shows wrong output
+- TypeScript bridge throws "Cannot read property of undefined" on Python response
 
-**What goes wrong:** AA has different rate limits, availability patterns, and error responses than Z-Library. The existing retry/circuit-breaker logic (configured via `RETRY_*` and `CIRCUIT_BREAKER_*` env vars) is tuned for Z-Library. Reusing it for AA leads to either too-aggressive retrying (getting IP banned) or too-conservative backing off.
-
-**Prevention:**
-1. Make retry configuration per-source, not global
-2. AA uses Cloudflare protection -- handle HTTP 403/503 as "temporarily unavailable" not "permanent error"
-3. Test with AA unavailable and verify graceful degradation (return Z-Library-only results, not an error)
-4. Implement source-level circuit breakers (AA down shouldn't trip Z-Library's circuit breaker)
-
----
-
-### P-08: Scholarly Line Numbers Confused with Page Numbers
-**Severity:** MODERATE
-**Phase:** Margin/scholarly numbering detection
-
-**What goes wrong:** The existing `page_numbers.py` detection identifies page numbers by position and numeric pattern. Scholarly line numbers (poetry, legal texts, code listings) appear in similar positions. Adding line number detection without coordinating with `page_numbers.py` creates conflicts where the same number is claimed by both systems.
-
-**Prevention:**
-1. Line numbers are sequential within a page and reset per page. Page numbers increment across pages. Use cross-page patterns to disambiguate.
-2. Run page number detection first (it already exists and works), then exclude identified page numbers from line number candidates.
-3. Expose detection as "scholarly apparatus" to handle verse numbers, section numbers, and line numbers under one umbrella.
+**Phase to address:**
+Structured RAG output phase -- must come AFTER test infrastructure is stable, so integration tests can guard the contract.
 
 ---
 
-### P-09: Adaptive DPI Doubles Processing Time Without Escape Hatch
-**Severity:** MODERATE
-**Phase:** Variable DPI / adaptive resolution
+### Pitfall 5: Deleting Files That Are Secretly Imported at Runtime
 
-**What goes wrong:** Adaptive DPI requires a pre-analysis pass on each page to determine optimal resolution. For a 500-page PDF, this adds significant overhead. If most pages are text-native (common case), the analysis is wasted.
+**What goes wrong:**
+Repo cleanup targets obvious candidates for deletion: debug scripts, old validation files, duplicate docs. But some files that look like development artifacts are actually imported at runtime:
+- `lib/rag_processing.py` is a "facade" that delegates to `lib/rag/` -- deleting it as "old monolith code" breaks the Python bridge which imports it directly
+- `lib/__init__.py` makes `lib/` a Python package -- deleting it as "boilerplate" breaks all imports
+- Root-level `index.js` is referenced by `"main"` in package.json -- deleting it without updating package.json breaks CJS consumers
+- `zlibrary/` vendored fork is an editable install (`-e ./zlibrary` in pyproject.toml) -- moving it breaks the UV dependency resolution
+- `setup-uv.sh` is referenced in installation docs and possibly user setups
 
-**Prevention:**
-1. Make adaptive DPI opt-in via parameter on `process_document_for_rag`, defaulting to current fixed DPI
-2. Use a fast heuristic for the pre-pass: check if page has images > X% of page area (PyMuPDF `page.get_images()` is cheap)
-3. Cache DPI decisions so reprocessing the same document skips analysis
-4. Set a page budget -- if first N pages are all text-native, skip analysis for remaining pages
+Additionally, the `scripts/validate-python-bridge.js` is run as a `postbuild` hook. Deleting or moving it without updating `package.json` breaks the build.
 
----
+**Why it happens:**
+With 1,017 files across TypeScript and Python, it is impossible to visually determine which files are runtime dependencies. Python's dynamic imports and the PythonShell bridge add invisible dependency chains that do not show up in TypeScript's `import` statements or `tsconfig.json`.
 
-### P-10: EAPIClient Has Different Auth Lifecycle Than AsyncZlib
-**Severity:** MODERATE
-**Phase:** AsyncZlib removal
+**How to avoid:**
+1. Before deleting ANY Python file, search for it in three places: `import` statements, PythonShell `scriptPath` arguments, and pytest fixtures
+2. Before deleting ANY JavaScript/TypeScript file, check `package.json` (scripts, bin, main, exports), `jest.config.js`, and `tsconfig.json`
+3. Create a dependency map BEFORE cleanup: `grep -r "import\|require\|scriptPath" lib/ src/ __tests__/`
+4. Delete in small batches (5-10 files), run full test suite between batches
+5. Safe deletion order: docs first (no imports), then scripts (check package.json), then source files (highest risk)
 
-**What goes wrong:** `ZLibraryClient` in `client_manager.py` wraps AsyncZlib's login flow (email/password -> session). EAPIClient in `eapi.py` may authenticate differently. The `__aenter__`/`__aexit__` lifecycle and env vars (`ZLIBRARY_EMAIL`, `ZLIBRARY_PASSWORD`) may not map to EAPIClient's model.
+**Warning signs:**
+- Build fails with "postbuild script not found"
+- Python bridge throws ModuleNotFoundError at runtime (not at import time)
+- `uv sync` fails with "package not found" after moving vendored dependency
 
-**Prevention:**
-1. Study `zlibrary/src/zlibrary/eapi.py` auth flow thoroughly BEFORE starting migration
-2. The client_manager abstraction is the right place to handle auth differences -- don't leak EAPIClient internals into the 7 consuming modules
-3. Keep both auth flows working during transition (feature flag, not hard cutover)
-
----
-
-### P-11: Anna's Archive Search API Instability
-**Severity:** MODERATE
-**Phase:** Anna's Archive integration
-
-**What goes wrong:** AA doesn't have a stable public API. Integrations typically scrape search results or use undocumented endpoints. These break without notice when AA updates their frontend or anti-scraping measures.
-
-**Prevention:**
-1. Isolate AA integration behind a clean interface so the scraping/API logic is contained in one module
-2. Add health-check/smoke-test that verifies AA integration works (run periodically, not just at release)
-3. Design for AA being unavailable -- it's a supplementary source, not a primary one
-4. Version-stamp the AA integration so when it breaks, you know which AA change caused it
+**Phase to address:**
+Repo cleanup phase. Must come AFTER test infrastructure is green (so deletions can be validated). Must come BEFORE npm publishing (so only needed files are published).
 
 ---
 
-## Phase-Specific Warnings
+### Pitfall 6: Quality Scoring Creates Flaky CI From Non-Deterministic Outputs
 
-| Phase Topic | Likely Pitfall | Severity | Mitigation |
-|-------------|---------------|----------|------------|
-| Margin detection | False positives on indented text (P-02) | CRITICAL | Page-level margin model, not fixed threshold |
-| Margin detection | Interference with footnote pipeline (P-06) | HIGH | Annotate-don't-remove pattern |
-| Margin detection | Confusion with page numbers (P-08) | MODERATE | Cross-page pattern analysis, run after page_numbers.py |
-| Adaptive DPI | Breaks detection thresholds via mixed coordinate spaces (P-04) | HIGH | Audit and normalize to point-space |
-| Adaptive DPI | Performance regression without opt-out (P-09) | MODERATE | Opt-in parameter, fast heuristic pre-pass |
-| Anna's Archive | Inconsistent book identity (P-03) | CRITICAL | BookReference abstraction with source provenance |
-| Anna's Archive | Legal/TOS exposure (P-03) | CRITICAL | Opt-in source, document in ADR |
-| Anna's Archive | Different error patterns (P-07) | MODERATE | Per-source retry config and circuit breakers |
-| Anna's Archive | Unstable scraping target (P-11) | MODERATE | Isolated module, health checks, graceful degradation |
-| Node.js upgrade | ESM/Jest breakage (P-05) | HIGH | Test Jest setup first, consider Vitest |
-| AsyncZlib removal | Silent download breakage (P-01) | CRITICAL | Adapter pattern, integration test |
-| AsyncZlib removal | Auth lifecycle mismatch (P-10) | MODERATE | Study EAPIClient auth before starting |
+**What goes wrong:**
+Automated quality scoring for RAG output introduces non-determinism into CI. PDF extraction is inherently non-deterministic across:
+- Different PyMuPDF versions (text extraction order can change)
+- Different OS character encoding defaults
+- Different PDF renderer backends
+
+If quality scoring thresholds are set based on one environment's output (e.g., developer's machine), CI running on Ubuntu GitHub Actions with different library versions may produce slightly different scores, causing intermittent test failures.
+
+Additionally, ground truth files in `test_files/ground_truth/` currently have THREE schema versions (`schema.json`, `schema_v2.json`, `schema_v3.json`). If quality scoring references the wrong schema version, scores are calculated against incorrect expectations.
+
+**Why it happens:**
+Quality scoring feels like "just adding a number" but it creates a floating-point comparison problem. A 0.85 quality score on macOS might be 0.83 on Linux. Hard threshold (e.g., `assert score >= 0.85`) passes locally, fails in CI.
+
+**How to avoid:**
+1. Use score RANGES not exact thresholds: `assert 0.75 <= score <= 1.0` for CI gates
+2. Pin PyMuPDF version exactly in `pyproject.toml` (currently `>=1.26.0` -- pin to `==1.26.x`)
+3. Consolidate ground truth schemas to a single version BEFORE adding scoring
+4. Make quality scoring informational in CI first (log scores, do not gate on them) for at least 2 weeks of data collection
+5. If gating, use percentile-based thresholds from collected data, not absolute numbers
+6. Mark scoring tests with a custom pytest marker and allow CI to soft-fail them initially: `pytest -m "not quality_gate" && pytest -m quality_gate || true`
+
+**Warning signs:**
+- CI test failures that pass on retry without code changes
+- Quality scores differ by more than 5% between local and CI
+- Multiple ground truth schema versions referenced by different tests
+
+**Phase to address:**
+Quality scoring phase -- must come AFTER ground truth consolidation and AFTER test infrastructure stabilization. Consider making it an informational-only phase first, gating phase later.
 
 ---
+
+### Pitfall 7: npm postinstall Python Environment Bootstrap Fails Silently
+
+**What goes wrong:**
+The zlibrary-mcp package requires Python with UV to function. After `npm install zlibrary-mcp`, the user must also run `uv sync` or `setup-uv.sh` to create the `.venv/` with Python dependencies. If this step is missed, the MCP server starts but crashes on first tool invocation with an unhelpful Python error.
+
+Alternatives are equally dangerous:
+- A `postinstall` script that runs `uv sync` will fail if UV is not installed, failing the entire npm install
+- A `postinstall` script that runs `pip install` ignores the vendored zlibrary editable install
+- Checking for Python at startup adds 2-3 seconds of latency to every MCP server start
+
+**Why it happens:**
+npm's package lifecycle assumes Node.js-only dependencies. Dual-language packages that require system-level tooling (Python, UV) have no standard mechanism for dependency bootstrapping. The MCP protocol's stdio transport makes it hard to communicate setup failures to users -- the server just fails to respond.
+
+**How to avoid:**
+1. Add a `postinstall` script that CHECKS (does not install): verify UV exists, verify `.venv/` exists, emit clear instructions if missing
+2. In the MCP server startup (`src/index.ts`), add a health check that verifies Python venv before registering tools -- fail fast with a clear error message
+3. Document the two-step install in README: `npm install zlibrary-mcp && cd node_modules/zlibrary-mcp && bash setup-uv.sh`
+4. Consider shipping a `bin/setup` script that handles the Python setup separately
+5. Test the install flow from scratch in a clean Docker container
+
+**Warning signs:**
+- `npm install` succeeds but `npx zlibrary-mcp` crashes immediately
+- Error messages reference Python paths that do not exist
+- Users open issues about "server not responding" (actually a Python crash hidden by stdio transport)
+
+**Phase to address:**
+npm publishing phase. Must include a documented "install verification" step.
+
+---
+
+### Pitfall 8: Fixing Existing Bugs Breaks Tests That Depend on Broken Behavior
+
+**What goes wrong:**
+The project has known bugs that tests have been written around:
+
+1. **paths.test.js fails** because `getRequirementsTxtPath()` references `requirements.txt` (deleted during UV migration) and `getVenvPath()` references `venv` (now `.venv`). Tests check for file existence -- fixing the functions to reference `pyproject.toml` and `.venv` means updating the functions AND the test expectations. But other code may depend on the old paths.
+
+2. **mcp-protocol.test.js fails** with "Expected length: 12, Received length: 13" -- tests expect 11 tools but 13 now exist (after v1.1 added tools). Fixing the test means updating the expected count, but the test name says "11 expected tools" which is now wrong.
+
+3. **2 pytest collection errors** on `scripts/archive/test_tesseract_comparison.py` and `scripts/test_marginalia_detection.py` -- these are scripts that happen to match pytest's test discovery pattern but are not actual test files. "Fixing" by adding them to testpaths exclusion could hide real test files.
+
+If multiple bug fixes are mixed into a single commit, it becomes impossible to determine whether a new test failure is from the fix or from an introduced regression.
+
+**Why it happens:**
+Tests often encode the current behavior, not the correct behavior. After extended development (44K LOC, 103 commits in v1.1 alone), tests accumulate assumptions about the environment that become invisible contracts.
+
+**How to avoid:**
+1. Fix each bug in its own commit with a clear test update in the same commit
+2. For paths.test.js: update the functions FIRST (change `requirements.txt` to `pyproject.toml`, `venv` to `.venv`), then update the test assertions
+3. For mcp-protocol.test.js: do NOT hardcode tool counts -- use `expect(tools.length).toBeGreaterThanOrEqual(11)` or dynamically detect
+4. For pytest collection: add `testpaths = __tests__/python` to `pytest.ini` to explicitly scope test discovery
+5. Run the full test suite between each individual bug fix to isolate regressions
+
+**Warning signs:**
+- A "simple fix" changes more than 3 files
+- Fixing one test causes a different test to fail
+- Test names no longer match what they test ("should expose 11 tools" but expects 12)
+
+**Phase to address:**
+Bug fixes should be the FIRST thing in v1.2, done in the test infrastructure phase before any new features. Fix known bugs, get to green CI, then stabilize.
+
+---
+
+### Pitfall 9: Documentation Overhaul Produces Stale Docs That Mislead Future Development
+
+**What goes wrong:**
+The project has documentation in FIVE locations:
+1. `.claude/` (13 files, 1.9 MB) -- AI assistant guides
+2. `claudedocs/` (30+ files, 4.5 MB) -- session notes, analyses, research
+3. `docs/` (40+ files, 1.3 MB) -- specs, ADRs, architecture
+4. Root level (CLAUDE.md, README.md, QUICKSTART.md, DOCUMENTATION_MAP.md, ISSUES.md)
+5. `.planning/` (40+ files, 1.5 MB) -- GSD planning artifacts
+
+A documentation "overhaul" typically consolidates and rewrites. The pitfall: consolidated docs become stale within one development cycle because:
+- The new docs describe the code AS IT WAS when written, not as it evolves
+- Generated API docs from code comments require re-running after every change
+- If docs are auto-generated, important context written by humans gets overwritten
+- Multiple doc locations persist because different tools (Claude, GSD, developers) expect different paths
+
+**Why it happens:**
+Documentation overhauls are satisfying one-time projects. But docs are only valuable when maintained. The current 5-location sprawl happened because each tool created its own documentation home. Consolidation without changing the tools that create docs means the sprawl returns.
+
+**How to avoid:**
+1. Do NOT consolidate all docs into one location. Instead, define ownership: `.claude/` for AI context (updated by Claude), `docs/` for user-facing docs (updated by devs), `.planning/` for project management (updated by GSD)
+2. Delete `claudedocs/` entirely -- it is archived session notes, not living documentation
+3. Move root-level docs (`QUICKSTART.md`, `DOCUMENTATION_MAP.md`, `BUG_5_OPTIMIZATION_PLAN.md`, etc.) into `docs/` or delete
+4. Keep CLAUDE.md at root (MCP ecosystem convention) but make it reference docs/ rather than duplicating content
+5. For any doc that references code paths or configuration: add a `<!-- verify: command -->` comment with a check command. A CI step can run these periodically.
+
+**Warning signs:**
+- Same information documented in 3+ places with different versions
+- Docs reference files that no longer exist
+- README installation instructions differ from QUICKSTART.md instructions
+
+**Phase to address:**
+Documentation phase -- should come AFTER repo cleanup (so docs describe the final state) and AFTER test stabilization (so doc examples are verified).
+
+---
+
+### Pitfall 10: Husky Pre-Commit Runs lint-staged Which Triggers Full TypeScript Build
+
+**What goes wrong:**
+The current pre-commit hook runs `npx lint-staged`, which is configured to:
+```json
+"lint-staged": {
+  "src/**/*.{ts,js}": "npm run build",
+  "*.py": ["uv run ruff check --fix", "uv run ruff format"]
+}
+```
+
+The `npm run build` runs the FULL TypeScript compilation (`tsc`) on EVERY commit that touches any `.ts` or `.js` file in `src/`. This takes 5-15 seconds depending on the machine. For a v1.2 phase that involves heavy code changes (test reorganization, source cleanup), this means every commit attempt runs a full build.
+
+When combined with test infrastructure changes, this creates a feedback loop: fix test config, try to commit, build fails because source is in flux, cannot commit the fix.
+
+**Why it happens:**
+lint-staged was configured to ensure broken TypeScript never gets committed. This is correct for a stable codebase, but during active refactoring phases, it creates friction. The build also runs `postbuild` (validate-python-bridge.js) which checks for file existence -- if files are being moved, validation fails.
+
+**How to avoid:**
+1. During refactoring phases, temporarily change lint-staged to run `tsc --noEmit` (type-check without build) instead of `npm run build`
+2. Or use `--no-verify` flag explicitly for WIP commits during active reorganization (document this practice)
+3. Keep the full build check in CI as the safety net
+4. After refactoring is complete, restore the full build in lint-staged
+
+**Warning signs:**
+- Developers skipping pre-commit with `--no-verify` on every commit (means the hook is too aggressive)
+- Pre-commit takes more than 10 seconds
+- Pre-commit fails on intermediate states during multi-file refactoring
+
+**Phase to address:**
+Acknowledge during test infrastructure phase. Adjust lint-staged config at phase start, restore at phase end.
+
+---
+
+## Technical Debt Patterns
+
+Shortcuts that seem reasonable but create long-term problems.
+
+| Shortcut | Immediate Benefit | Long-term Cost | When Acceptable |
+|----------|-------------------|----------------|-----------------|
+| Blacklist `.npmignore` instead of whitelist `files` | Easier to write initially | Ships 44 MB of test PDFs and internal docs | Never for published packages |
+| Hardcoded tool count in tests (`toHaveLength(12)`) | Easy assertion | Breaks every time a tool is added | Never -- use dynamic counts |
+| Three ground truth schema versions | Backward compat | Tests reference wrong schema, scoring is inconsistent | Only during migration, consolidate ASAP |
+| `"main": "index.js"` pointing to legacy CJS | Preserves old behavior | Confuses module resolution, ships dead code | Never after ESM migration |
+| Root-level debug scripts | Quick debugging | Pollutes project root, ships in npm package | Only on branches, never on master |
+| Python facade in `rag_processing.py` | Backward compat for imports | Two files to maintain, confusion about which is canonical | Acceptable for one version, then remove |
+
+## Integration Gotchas
+
+Common mistakes when connecting to external services in this project's context.
+
+| Integration | Common Mistake | Correct Approach |
+|-------------|----------------|------------------|
+| PythonShell bridge | Assuming Python errors will be caught by Node.js try/catch | PythonShell emits errors on stderr -- must listen to `pythonShell.on('error')` and `pythonShell.on('stderr')` separately |
+| UV venv in npm package | Assuming `.venv/` exists after `npm install` | Check for `.venv/` at startup, emit clear error with setup instructions |
+| Vendored zlibrary fork | Moving `zlibrary/` directory without updating `pyproject.toml` sources | The `tool.uv.sources` config has a relative path `"./zlibrary"` -- must move both together |
+| GitHub Actions CI | Assuming `uv` is available | Must use `astral-sh/setup-uv@v4` action before any `uv` commands |
+| MCP client tool discovery | Changing tool names or schemas without versioning | MCP clients cache tool lists -- renamed tools appear as "new" while old tool calls fail |
+
+## Performance Traps
+
+Patterns that work at small scale but fail as usage grows.
+
+| Trap | Symptoms | Prevention | When It Breaks |
+|------|----------|------------|----------------|
+| Full TypeScript build in pre-commit | 15s commit times | Use `tsc --noEmit` for type-checking only | Any project with >20 TypeScript files |
+| pytest collecting scripts/ directory | 2 extra seconds + collection errors | Add `testpaths` to pytest.ini | When scripts/ grows beyond 10 files |
+| 44 MB npm tarball | Slow install, registry rejection | Whitelist with `"files"` field | npm rejects packages >50 MB |
+| Ground truth PDFs in test suite | CI downloads 40 MB of fixtures per run | Store large fixtures in Git LFS or separate fixture package | When CI runner disk fills or download times exceed timeout |
+
+## Security Mistakes
+
+Domain-specific security issues for this project.
+
+| Mistake | Risk | Prevention |
+|---------|------|------------|
+| Publishing `.env.example` with real credential patterns | Users copy-paste and expose credentials | Use generic placeholders: `YOUR_EMAIL_HERE` not `user@example.com` |
+| npm tarball includes `.planning/config.json` | Exposes project management details, model choices | Whitelist `"files"` in package.json |
+| PythonShell passes user input to Python eval | Command injection via search queries | Verify python_bridge.py uses JSON parsing, never `eval()` |
+| Vendored zlibrary fork may contain hardcoded test credentials | Credential exposure in npm package | Audit `zlibrary/src/test.py` before publishing (40 KB file) |
+| MCP server runs with user's full filesystem access | Malicious input could write to arbitrary paths | Validate download directory is under allowed path, not `/` or `~` |
+
+## UX Pitfalls
+
+Common user experience mistakes for MCP server packages.
+
+| Pitfall | User Impact | Better Approach |
+|---------|-------------|-----------------|
+| Silent failure when Python venv is missing | Server appears to start but every tool call fails | Fail fast at startup with clear "Run setup-uv.sh" message |
+| Changing tool names between versions | Claude/Cline integrations break silently | Keep old tool names as aliases for one version cycle |
+| Output format change breaks MCP client parsing | Client shows raw error instead of book data | Version output format, support old format for one cycle |
+| Requiring Node 22+ without checking | Cryptic ESM errors on Node 18/20 | `engines` field already correct, but add runtime version check in startup |
+| npm package requires manual Python setup | User installs via npm, expects it to work | Clear error message at startup, or document two-step install prominently |
+
+## "Looks Done But Isn't" Checklist
+
+Things that appear complete but are missing critical pieces.
+
+- [ ] **npm publish:** Package seems small -- verify with `npm pack --dry-run` that test PDFs are excluded
+- [ ] **Test reorganization:** Jest passes -- verify pytest ALSO passes (separate test runner, separate config)
+- [ ] **Bug fixes:** paths.test.js passes -- verify the PATH FUNCTIONS still work at runtime (test checks existence, runtime uses the path)
+- [ ] **Documentation cleanup:** README is updated -- verify CLAUDE.md, QUICKSTART.md, and docs/ all agree
+- [ ] **Quality scoring:** Scores look good locally -- verify they are reproducible on Ubuntu CI runner
+- [ ] **Repo cleanup:** No TypeScript errors -- verify Python imports still resolve (PythonShell runtime errors not caught by tsc)
+- [ ] **Entry point fix:** `npx zlibrary-mcp` works -- verify `require('zlibrary-mcp')` also resolves correctly
+- [ ] **Ground truth consolidation:** Schema v3 is active -- verify no test still references schema v1 or v2
+- [ ] **Pre-commit hooks:** lint-staged passes -- verify it does not run full build during active refactoring phases
+- [ ] **Vendored fork:** `uv sync` works -- verify after any directory moves that `tool.uv.sources` path is still valid
+
+## Recovery Strategies
+
+When pitfalls occur despite prevention, how to recover.
+
+| Pitfall | Recovery Cost | Recovery Steps |
+|---------|---------------|----------------|
+| 44 MB package published to npm | LOW | `npm unpublish zlibrary-mcp@version` (within 72 hours), fix `files` field, republish with bumped version |
+| Tests broken after reorganization | MEDIUM | `git stash` changes, fix config files first in isolation, then replay reorganization |
+| RAG output format broke consumers | HIGH | Cannot un-break consumers. Must publish patch release with backward-compatible format. Introduce versioned output alongside. |
+| Deleted runtime-needed file | LOW | `git checkout -- path/to/file` if uncommitted. If committed and pushed, revert commit. |
+| Flaky quality scoring in CI | LOW | Add `|| true` to quality scoring step in CI, making it informational while investigating |
+| Python env missing after npm install | MEDIUM | Add startup health check, publish clear error message, update README with troubleshooting |
+| Published .env or credentials | CRITICAL | Rotate ALL credentials immediately. `npm unpublish` if within window. Cannot undo exposure. |
+
+## Pitfall-to-Phase Mapping
+
+How roadmap phases should address these pitfalls.
+
+| Pitfall | Prevention Phase | Verification |
+|---------|------------------|--------------|
+| Test reorganization breaks CI (Pitfall 3) | Phase 1: Test Infrastructure | `npm test && uv run pytest` both pass, 0 collection errors |
+| Fixing bugs introduces regressions (Pitfall 8) | Phase 1: Test Infrastructure / Bug Fixes | Each bug fix is one commit, full suite green between fixes |
+| Pre-commit friction during refactoring (Pitfall 10) | Phase 1: Test Infrastructure | lint-staged adjusted to `tsc --noEmit` during refactoring |
+| RAG output format breaks consumers (Pitfall 4) | Phase 2: Structured RAG Output | Integration test pins exact JSON structure of tool response |
+| Quality scoring flaky in CI (Pitfall 6) | Phase 3: Quality Scoring | Scores logged for 2 weeks before gating. Range thresholds, not exact. |
+| Deleting needed files (Pitfall 5) | Phase 4: Repo Cleanup | Dependency map created before deletion. Small batches with test runs. |
+| Docs drift from code (Pitfall 9) | Phase 5: Documentation | `claudedocs/` deleted. Doc ownership defined. Verify commands in doc comments. |
+| Conflicting entry points (Pitfall 2) | Phase 4: Repo Cleanup | `main` and `exports` both point to `dist/index.js`. Root `index.js` deleted. |
+| 44 MB npm tarball (Pitfall 1) | Phase 6: npm Publishing | `"files"` whitelist in package.json. CI fails if tarball > 10 MB. |
+| Python env bootstrap (Pitfall 7) | Phase 6: npm Publishing | Clean Docker install test. Startup health check. Clear error messages. |
 
 ## Sources
 
-- Direct codebase analysis: `lib/client_manager.py`, `lib/rag/detection/footnote_core.py`, `lib/rag/detection/page_numbers.py`, `lib/rag/orchestrator_pdf.py`, `zlibrary/src/zlibrary/eapi.py`, `zlibrary/src/zlibrary/libasync.py`
-- `package.json` dependency and engine analysis
-- PyMuPDF coordinate space behavior: training knowledge (MEDIUM confidence -- verify `get_text("dict")` vs `get_pixmap` coordinate independence against current PyMuPDF docs)
-- Anna's Archive legal/availability status: training knowledge (MEDIUM confidence -- verify current TOS before implementation)
-- Node.js 18->20 ESM changes: training knowledge (HIGH confidence -- well-documented breaking changes)
+- Direct codebase inspection: `npm pack --dry-run` output showing 1,017 files / 44.4 MB tarball (PRIMARY SOURCE)
+- Direct codebase inspection: `package.json` conflicting `main` vs `exports` fields
+- Direct codebase inspection: Jest and pytest test failures and collection errors
+- Direct codebase inspection: Ground truth schema versions v1/v2/v3
+- [npm Files & Ignores documentation](https://github.com/npm/cli/wiki/Files-&-Ignores) -- `files` field vs `.npmignore` behavior
+- [npm package.json files field docs](https://docs.npmjs.com/cli/v7/configuring-npm/package-json/) -- whitelist approach recommended
+- [Pytest Good Integration Practices](https://docs.pytest.org/en/stable/explanation/goodpractices.html) -- pythonpath and test discovery configuration
+- [Atlassian: Taming Test Flakiness](https://www.atlassian.com/blog/atlassian-engineering/taming-test-flakiness-how-we-built-a-scalable-tool-to-detect-and-manage-flaky-tests) -- flakiness scoring approaches
+- [Backward Compatibility in Schema Evolution](https://www.dataexpert.io/blog/backward-compatibility-schema-evolution-guide) -- additive-only changes principle
+- [Semgrep: Malicious MCP Server on npm](https://semgrep.dev/blog/2025/so-the-first-malicious-mcp-server-has-been-found-on-npm-what-does-this-mean-for-mcp-security/) -- MCP security considerations
+- [MCP Server Publishing Guide](https://modelcontextprotocol.info/tools/registry/publishing/) -- MCP publishing best practices
+
+---
+*Pitfalls research for: v1.2 Production Readiness of zlibrary-mcp (dual TypeScript + Python MCP server)*
+*Researched: 2026-02-11*

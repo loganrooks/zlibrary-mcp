@@ -97,47 +97,47 @@ Deferred to v1.3+. Tracked but not in current roadmap.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| BUG-01 | — | Pending |
-| BUG-02 | — | Pending |
-| BUG-03 | — | Pending |
-| BUG-04 | — | Pending |
-| BUG-05 | — | Pending |
-| TEST-01 | — | Pending |
-| TEST-02 | — | Pending |
-| TEST-03 | — | Pending |
-| TEST-04 | — | Pending |
-| TEST-05 | — | Pending |
-| TEST-06 | — | Pending |
-| RAG-01 | — | Pending |
-| RAG-02 | — | Pending |
-| RAG-03 | — | Pending |
-| RAG-04 | — | Pending |
-| RAG-05 | — | Pending |
-| QUAL-01 | — | Pending |
-| QUAL-02 | — | Pending |
-| QUAL-03 | — | Pending |
-| QUAL-04 | — | Pending |
-| CLEAN-01 | — | Pending |
-| CLEAN-02 | — | Pending |
-| CLEAN-03 | — | Pending |
-| CLEAN-04 | — | Pending |
-| CLEAN-05 | — | Pending |
-| DOCS-01 | — | Pending |
-| DOCS-02 | — | Pending |
-| DOCS-03 | — | Pending |
-| DOCS-04 | — | Pending |
-| DOCS-05 | — | Pending |
-| PKG-01 | — | Pending |
-| PKG-02 | — | Pending |
-| PKG-03 | — | Pending |
-| PKG-04 | — | Pending |
-| PKG-05 | — | Pending |
+| BUG-01 | Phase 13 | Pending |
+| BUG-02 | Phase 13 | Pending |
+| BUG-03 | Phase 13 | Pending |
+| BUG-04 | Phase 13 | Pending |
+| BUG-05 | Phase 13 | Pending |
+| TEST-01 | Phase 14 | Pending |
+| TEST-02 | Phase 14 | Pending |
+| TEST-03 | Phase 14 | Pending |
+| TEST-04 | Phase 14 | Pending |
+| TEST-05 | Phase 14 | Pending |
+| TEST-06 | Phase 14 | Pending |
+| RAG-01 | Phase 16 | Pending |
+| RAG-02 | Phase 16 | Pending |
+| RAG-03 | Phase 16 | Pending |
+| RAG-04 | Phase 16 | Pending |
+| RAG-05 | Phase 16 | Pending |
+| QUAL-01 | Phase 17 | Pending |
+| QUAL-02 | Phase 17 | Pending |
+| QUAL-03 | Phase 17 | Pending |
+| QUAL-04 | Phase 17 | Pending |
+| CLEAN-01 | Phase 15 | Pending |
+| CLEAN-02 | Phase 15 | Pending |
+| CLEAN-03 | Phase 15 | Pending |
+| CLEAN-04 | Phase 15 | Pending |
+| CLEAN-05 | Phase 15 | Pending |
+| DOCS-01 | Phase 18 | Pending |
+| DOCS-02 | Phase 18 | Pending |
+| DOCS-03 | Phase 18 | Pending |
+| DOCS-04 | Phase 18 | Pending |
+| DOCS-05 | Phase 18 | Pending |
+| PKG-01 | Phase 19 | Pending |
+| PKG-02 | Phase 19 | Pending |
+| PKG-03 | Phase 19 | Pending |
+| PKG-04 | Phase 19 | Pending |
+| PKG-05 | Phase 19 | Pending |
 
 **Coverage:**
 - v1.2 requirements: 35 total
-- Mapped to phases: 0 (pending roadmap creation)
-- Unmapped: 35
+- Mapped to phases: 35
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-02-11*
-*Last updated: 2026-02-11 after initial definition*
+*Last updated: 2026-02-11 after roadmap creation (traceability filled)*

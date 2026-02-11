@@ -40,7 +40,7 @@ Full details: `.planning/milestones/v1.1-ROADMAP.md`
 
 **Milestone Goal:** Transform the functional MCP server into a professionally publishable npm package with clean CI, structured RAG output, automated quality scoring, and comprehensive documentation. No new end-user features — this is infrastructure, quality, and developer experience.
 
-- [ ] **Phase 13: Bug Fixes & Test Hygiene** - Green CI as foundation for everything else
+- [x] **Phase 13: Bug Fixes & Test Hygiene** - Green CI as foundation for everything else — completed 2026-02-11
 - [ ] **Phase 14: Test Infrastructure** - Unified marker taxonomy, ground truth v3, fast/slow CI split
 - [ ] **Phase 15: Repo Cleanup** - Remove dead files, fix entry points, clean repo root
 - [ ] **Phase 16: Structured RAG Output** - Multi-file output with unified metadata
@@ -62,8 +62,8 @@ Full details: `.planning/milestones/v1.1-ROADMAP.md`
   5. `npm test && uv run pytest` run back-to-back both exit green on a clean checkout of master
 **Plans:** 2 plans
 Plans:
-- [ ] 13-01-PLAN.md -- Fix test configuration and stale assertions (BUG-01, BUG-02, BUG-03)
-- [ ] 13-02-PLAN.md -- Remove deprecated AsyncZlib references (BUG-04)
+- [x] 13-01-PLAN.md -- Fix test configuration and stale assertions (BUG-01, BUG-02, BUG-03)
+- [x] 13-02-PLAN.md -- Remove deprecated AsyncZlib references (BUG-04)
 
 ### Phase 14: Test Infrastructure
 **Goal**: Tests are organized with a complete marker taxonomy, unified ground truth schema, and CI can run fast tests separately from slow ones
@@ -152,7 +152,7 @@ Plans:
 | 10. Adaptive Resolution Pipeline | v1.1 | 4/4 | Complete | 2026-02-02 |
 | 11. Body Text Purity Integration | v1.1 | 7/7 | Complete | 2026-02-03 |
 | 12. Anna's Archive Integration | v1.1 | 4/4 | Complete | 2026-02-04 |
-| 13. Bug Fixes & Test Hygiene | v1.2 | 0/2 | Not started | - |
+| 13. Bug Fixes & Test Hygiene | v1.2 | 2/2 | Complete | 2026-02-11 |
 | 14. Test Infrastructure | v1.2 | 0/TBD | Not started | - |
 | 15. Repo Cleanup | v1.2 | 0/TBD | Not started | - |
 | 16. Structured RAG Output | v1.2 | 0/TBD | Not started | - |
@@ -162,4 +162,4 @@ Plans:
 
 ---
 
-_Last updated: 2026-02-11 after Phase 13 planning_
+_Last updated: 2026-02-11 after Phase 13 execution complete_

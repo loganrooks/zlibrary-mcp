@@ -4,11 +4,15 @@ Verifies end-to-end: mock PDF page -> detect_margin_content -> _format_pdf_markd
 -> clean markdown with typed annotations.
 """
 
+import pytest
+
 from unittest.mock import MagicMock
 
 
 from lib.rag.detection.margins import detect_margin_content
 from lib.rag.processors.pdf import _format_pdf_markdown, _associate_margin_to_body
+
+pytestmark = pytest.mark.unit
 
 
 # ---------------------------------------------------------------------------

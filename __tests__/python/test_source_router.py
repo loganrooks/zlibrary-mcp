@@ -11,6 +11,8 @@ from lib.sources.config import SourceConfig
 from lib.sources.models import DownloadResult, QuotaInfo, SourceType, UnifiedBookResult
 from lib.sources.annas import QuotaExhaustedError
 
+pytestmark = pytest.mark.unit
+
 
 @pytest.fixture
 def config_with_annas():

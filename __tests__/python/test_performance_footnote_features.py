@@ -27,7 +27,6 @@ Example Usage:
 import time
 import pytest
 import statistics
-from pathlib import Path
 from typing import List, Tuple
 import cProfile
 import pstats
@@ -36,15 +35,16 @@ import io
 from lib.note_classification import (
     classify_note_comprehensive,
     classify_by_schema,
-    validate_classification_by_content
+    validate_classification_by_content,
 )
 from lib.footnote_continuation import (
     is_footnote_incomplete,
     analyze_footnote_batch,
     CrossPageFootnoteParser,
-    FootnoteWithContinuation
 )
 from lib.rag_data_models import NoteSource
+
+pytestmark = pytest.mark.performance
 
 
 # =============================================================================
@@ -57,27 +57,22 @@ SAMPLE_FOOTNOTES = [
     "German: 'Dasein'",
     "Lat.: tempus fugit",
     "French: être et temps",
-
     # Medium author notes
     "See chapter 5 for detailed discussion of this concept.",
     "Compare this with Heidegger's analysis in Being and Time, section 7.",
     "This argument follows from the previous section's demonstration.",
-
     # Long editorial notes
     "As in the first edition, we follow the German text here. "
     "Kant wrote extensively about this concept in the Critique of Pure Reason, "
     "where he develops the transcendental deduction. The editor has chosen to "
     "preserve the original punctuation despite some ambiguity.",
-
     # Multi-sentence academic notes
     "This refers to Hegel's concept of Aufhebung. "
     "The translator has chosen 'sublation' to capture both preservation and negation. "
     "See also the editor's note on page 42 regarding translation choices.",
-
     # Notes with cross-references
     "Cf. note 12, where this concept is introduced. "
     "For further discussion, see chapter 8, section 3.",
-
     # Incomplete notes (for continuation testing)
     "This concept refers to",
     "According to Kant, the transcendental",
@@ -90,7 +85,9 @@ SAMPLE_FOOTNOTES = [
 EXTENDED_SAMPLE = SAMPLE_FOOTNOTES * 7 + SAMPLE_FOOTNOTES[:9]  # 100 total
 
 
-def time_function(func, *args, iterations: int = 100, **kwargs) -> Tuple[float, float, List[float]]:
+def time_function(
+    func, *args, iterations: int = 100, **kwargs
+) -> Tuple[float, float, List[float]]:
     """
     Time a function with multiple iterations and return statistics.
 
@@ -144,6 +141,7 @@ def profile_function(func, *args, **kwargs):
 # Performance Tests: Note Classification
 # =============================================================================
 
+
 class TestPerformanceClassification:
     """Performance validation for note classification system."""
 
@@ -155,7 +153,9 @@ class TestPerformanceClassification:
 
         def classify_batch():
             for marker, schema_type in zip(markers, schema_types):
-                classify_by_schema(marker, schema_type, {'is_lowercase': marker.islower()})
+                classify_by_schema(
+                    marker, schema_type, {"is_lowercase": marker.islower()}
+                )
 
         avg_ms, median_ms, times = time_function(classify_batch, iterations=1000)
 
@@ -166,7 +166,9 @@ class TestPerformanceClassification:
         print(f"  Median: {median_ms / 5:.4f}ms per footnote")
 
         # Budget: <0.1ms per footnote
-        assert avg_per_footnote < 0.1, f"Schema classification too slow: {avg_per_footnote:.4f}ms"
+        assert avg_per_footnote < 0.1, (
+            f"Schema classification too slow: {avg_per_footnote:.4f}ms"
+        )
 
     def test_content_validation_performance(self):
         """Content validation is fast (<1ms per footnote)."""
@@ -174,7 +176,10 @@ class TestPerformanceClassification:
             ("German: 'Dasein'", NoteSource.TRANSLATOR),
             ("As in the first edition, Kant wrote", NoteSource.EDITOR),
             ("See chapter 5 for discussion", NoteSource.AUTHOR),
-            ("This is a long editorial note with extensive commentary " * 5, NoteSource.EDITOR),
+            (
+                "This is a long editorial note with extensive commentary " * 5,
+                NoteSource.EDITOR,
+            ),
         ]
 
         def validate_batch():
@@ -190,15 +195,22 @@ class TestPerformanceClassification:
         print(f"  Median: {median_ms / 4:.4f}ms per footnote")
 
         # Budget: <1ms per footnote
-        assert avg_per_footnote < 1.0, f"Content validation too slow: {avg_per_footnote:.4f}ms"
+        assert avg_per_footnote < 1.0, (
+            f"Content validation too slow: {avg_per_footnote:.4f}ms"
+        )
 
     def test_comprehensive_classification_performance(self):
         """Comprehensive classification meets <2ms per footnote budget."""
         test_cases = [
-            ("a", "German: 'Dasein'", "alphabetic", {'is_lowercase': True}),
-            ("1", "See chapter 5 for discussion", "numeric", {'is_superscript': True}),
-            ("*", "As in the first edition, Kant wrote extensively about this.", "symbolic", {}),
-            ("A", "This is an editor's note", "alphabetic", {'is_uppercase': True}),
+            ("a", "German: 'Dasein'", "alphabetic", {"is_lowercase": True}),
+            ("1", "See chapter 5 for discussion", "numeric", {"is_superscript": True}),
+            (
+                "*",
+                "As in the first edition, Kant wrote extensively about this.",
+                "symbolic",
+                {},
+            ),
+            ("A", "This is an editor's note", "alphabetic", {"is_uppercase": True}),
             ("i", "Author's own note with citation", "roman", {}),
         ]
 
@@ -211,20 +223,27 @@ class TestPerformanceClassification:
         # Average time for 5 classifications
         avg_per_footnote = avg_ms / 5
 
-        print(f"\n  Comprehensive classification: {avg_per_footnote:.4f}ms per footnote (avg)")
+        print(
+            f"\n  Comprehensive classification: {avg_per_footnote:.4f}ms per footnote (avg)"
+        )
         print(f"  Median: {median_ms / 5:.4f}ms per footnote")
         print(f"  95th percentile: {sorted(times)[int(len(times) * 0.95)] / 5:.4f}ms")
 
         # Budget: <2ms per footnote
-        assert avg_per_footnote < 2.0, f"Classification too slow: {avg_per_footnote:.4f}ms"
+        assert avg_per_footnote < 2.0, (
+            f"Classification too slow: {avg_per_footnote:.4f}ms"
+        )
 
     def test_classification_batch_performance(self):
         """Batch classification of 100 footnotes completes quickly."""
         # 100 varied footnotes
         test_cases = [
-            (f"fn{i % 10}", EXTENDED_SAMPLE[i],
-             ["numeric", "alphabetic", "symbolic"][i % 3],
-             {'is_lowercase': i % 2 == 0})
+            (
+                f"fn{i % 10}",
+                EXTENDED_SAMPLE[i],
+                ["numeric", "alphabetic", "symbolic"][i % 3],
+                {"is_lowercase": i % 2 == 0},
+            )
             for i in range(100)
         ]
 
@@ -247,6 +266,7 @@ class TestPerformanceClassification:
 # =============================================================================
 # Performance Tests: Incomplete Detection (NLTK)
 # =============================================================================
+
 
 class TestPerformanceIncompleteDetection:
     """Performance validation for NLTK-based incomplete detection."""
@@ -344,6 +364,7 @@ class TestPerformanceIncompleteDetection:
 # Performance Tests: State Machine Overhead
 # =============================================================================
 
+
 class TestPerformanceStateMachine:
     """Performance validation for cross-page state machine."""
 
@@ -366,15 +387,17 @@ class TestPerformanceStateMachine:
         """Single footnote processing overhead <0.5ms per page."""
         parser = CrossPageFootnoteParser()
 
-        page_footnotes = [{
-            'marker': '1',
-            'content': 'Simple footnote content.',
-            'is_complete': True,
-            'bbox': {'x0': 50, 'y0': 700, 'x1': 550, 'y1': 720},
-            'font_name': 'Times',
-            'font_size': 9.0,
-            'note_source': NoteSource.AUTHOR
-        }]
+        page_footnotes = [
+            {
+                "marker": "1",
+                "content": "Simple footnote content.",
+                "is_complete": True,
+                "bbox": {"x0": 50, "y0": 700, "x1": 550, "y1": 720},
+                "font_name": "Times",
+                "font_size": 9.0,
+                "note_source": NoteSource.AUTHOR,
+            }
+        ]
 
         def process_page():
             parser.process_page(page_footnotes, page_num=1)
@@ -392,27 +415,31 @@ class TestPerformanceStateMachine:
         parser = CrossPageFootnoteParser()
 
         # Page 1: Start incomplete footnote
-        page1_footnotes = [{
-            'marker': '*',
-            'content': 'This footnote continues',
-            'is_complete': False,
-            'bbox': {'x0': 50, 'y0': 700, 'x1': 550, 'y1': 720},
-            'font_name': 'Times',
-            'font_size': 9.0,
-            'note_source': NoteSource.TRANSLATOR
-        }]
+        page1_footnotes = [
+            {
+                "marker": "*",
+                "content": "This footnote continues",
+                "is_complete": False,
+                "bbox": {"x0": 50, "y0": 700, "x1": 550, "y1": 720},
+                "font_name": "Times",
+                "font_size": 9.0,
+                "note_source": NoteSource.TRANSLATOR,
+            }
+        ]
 
         parser.process_page(page1_footnotes, page_num=1)
 
         # Page 2: Continuation
-        page2_footnotes = [{
-            'marker': None,
-            'content': 'onto the next page.',
-            'is_continuation': True,
-            'bbox': {'x0': 50, 'y0': 50, 'x1': 550, 'y1': 70},
-            'font_name': 'Times',
-            'font_size': 9.0,
-        }]
+        page2_footnotes = [
+            {
+                "marker": None,
+                "content": "onto the next page.",
+                "is_continuation": True,
+                "bbox": {"x0": 50, "y0": 50, "x1": 550, "y1": 70},
+                "font_name": "Times",
+                "font_size": 9.0,
+            }
+        ]
 
         def process_continuation():
             parser.process_page(page2_footnotes, page_num=2)
@@ -435,13 +462,18 @@ class TestPerformanceStateMachine:
         for page_num in range(1, 101):
             footnotes = [
                 {
-                    'marker': f'{i}',
-                    'content': f'Footnote {i} on page {page_num}.',
-                    'is_complete': True,
-                    'bbox': {'x0': 50, 'y0': 700 + i * 20, 'x1': 550, 'y1': 720 + i * 20},
-                    'font_name': 'Times',
-                    'font_size': 9.0,
-                    'note_source': NoteSource.AUTHOR
+                    "marker": f"{i}",
+                    "content": f"Footnote {i} on page {page_num}.",
+                    "is_complete": True,
+                    "bbox": {
+                        "x0": 50,
+                        "y0": 700 + i * 20,
+                        "x1": 550,
+                        "y1": 720 + i * 20,
+                    },
+                    "font_name": "Times",
+                    "font_size": 9.0,
+                    "note_source": NoteSource.AUTHOR,
                 }
                 for i in range(1, 4)
             ]
@@ -466,6 +498,7 @@ class TestPerformanceStateMachine:
 # Performance Tests: Full Pipeline Integration
 # =============================================================================
 
+
 class TestPerformanceFullPipeline:
     """Performance validation for full pipeline with all features."""
 
@@ -477,12 +510,12 @@ class TestPerformanceFullPipeline:
         # Each footnote goes through: detection + classification + incomplete check + state machine
         footnotes = [
             {
-                'marker': f'{i}',
-                'content': SAMPLE_FOOTNOTES[i % len(SAMPLE_FOOTNOTES)],
-                'is_complete': True,
-                'bbox': {'x0': 50, 'y0': 700 + i * 20, 'x1': 550, 'y1': 720 + i * 20},
-                'font_name': 'Times',
-                'font_size': 9.0
+                "marker": f"{i}",
+                "content": SAMPLE_FOOTNOTES[i % len(SAMPLE_FOOTNOTES)],
+                "is_complete": True,
+                "bbox": {"x0": 50, "y0": 700 + i * 20, "x1": 550, "y1": 720 + i * 20},
+                "font_name": "Times",
+                "font_size": 9.0,
             }
             for i in range(1, 6)
         ]
@@ -491,18 +524,21 @@ class TestPerformanceFullPipeline:
             # Classification for each footnote
             for fn in footnotes:
                 result = classify_note_comprehensive(
-                    marker=fn['marker'],
-                    content=fn['content'],
-                    schema_type='numeric',
-                    marker_info={'is_superscript': True, 'content_length': len(fn['content'])}
+                    marker=fn["marker"],
+                    content=fn["content"],
+                    schema_type="numeric",
+                    marker_info={
+                        "is_superscript": True,
+                        "content_length": len(fn["content"]),
+                    },
                 )
-                fn['note_source'] = result['note_source']
-                fn['classification_confidence'] = result['confidence']
+                fn["note_source"] = result["note_source"]
+                fn["classification_confidence"] = result["confidence"]
 
             # Incomplete detection for each footnote
             for fn in footnotes:
-                is_incomplete, conf, reason = is_footnote_incomplete(fn['content'])
-                fn['is_complete'] = not is_incomplete
+                is_incomplete, conf, reason = is_footnote_incomplete(fn["content"])
+                fn["is_complete"] = not is_incomplete
 
             # State machine processing
             parser.process_page(footnotes, page_num=1)
@@ -523,11 +559,11 @@ class TestPerformanceFullPipeline:
         # Simulate page with 5 footnotes
         footnotes = [
             {
-                'marker': f'{i}',
-                'content': SAMPLE_FOOTNOTES[i % len(SAMPLE_FOOTNOTES)],
-                'bbox': {'x0': 50, 'y0': 700 + i * 20, 'x1': 550, 'y1': 720 + i * 20},
-                'font_name': 'Times',
-                'font_size': 9.0
+                "marker": f"{i}",
+                "content": SAMPLE_FOOTNOTES[i % len(SAMPLE_FOOTNOTES)],
+                "bbox": {"x0": 50, "y0": 700 + i * 20, "x1": 550, "y1": 720 + i * 20},
+                "font_name": "Times",
+                "font_size": 9.0,
             }
             for i in range(1, 6)
         ]
@@ -535,8 +571,8 @@ class TestPerformanceFullPipeline:
         # Baseline: just state machine (no classification/incomplete detection)
         def baseline_pipeline():
             for fn in footnotes:
-                fn['is_complete'] = True
-                fn['note_source'] = NoteSource.UNKNOWN
+                fn["is_complete"] = True
+                fn["note_source"] = NoteSource.UNKNOWN
             parser.process_page(footnotes, page_num=1)
 
         baseline_avg, _, _ = time_function(baseline_pipeline, iterations=100)
@@ -545,15 +581,18 @@ class TestPerformanceFullPipeline:
         def enhanced_pipeline():
             for fn in footnotes:
                 result = classify_note_comprehensive(
-                    marker=fn['marker'],
-                    content=fn['content'],
-                    schema_type='numeric',
-                    marker_info={'is_superscript': True, 'content_length': len(fn['content'])}
+                    marker=fn["marker"],
+                    content=fn["content"],
+                    schema_type="numeric",
+                    marker_info={
+                        "is_superscript": True,
+                        "content_length": len(fn["content"]),
+                    },
                 )
-                fn['note_source'] = result['note_source']
+                fn["note_source"] = result["note_source"]
 
-                is_incomplete, conf, reason = is_footnote_incomplete(fn['content'])
-                fn['is_complete'] = not is_incomplete
+                is_incomplete, conf, reason = is_footnote_incomplete(fn["content"])
+                fn["is_complete"] = not is_incomplete
 
             parser.process_page(footnotes, page_num=1)
 
@@ -570,7 +609,7 @@ class TestPerformanceFullPipeline:
         assert delta_ms < 10.0, f"Enhanced overhead too high: +{delta_ms:.2f}ms"
 
         # Report for documentation
-        print(f"\n  Performance Impact Summary:")
+        print("\n  Performance Impact Summary:")
         print(f"    - Classification adds ~{delta_ms * 0.6:.2f}ms")
         print(f"    - Incomplete detection adds ~{delta_ms * 0.3:.2f}ms")
         print(f"    - State machine adds ~{delta_ms * 0.1:.2f}ms")
@@ -580,13 +619,14 @@ class TestPerformanceFullPipeline:
 # Performance Tests: Profiling and Hotspot Detection
 # =============================================================================
 
+
 class TestPerformanceProfiling:
     """Profile full pipeline to identify hotspots."""
 
     def test_profile_classification_hotspots(self):
         """Profile classification to find slow functions."""
         test_cases = [
-            (f"fn{i}", EXTENDED_SAMPLE[i], "numeric", {'is_superscript': True})
+            (f"fn{i}", EXTENDED_SAMPLE[i], "numeric", {"is_superscript": True})
             for i in range(100)
         ]
 
@@ -600,7 +640,7 @@ class TestPerformanceProfiling:
         print("\n  Top 10 functions by cumulative time (classification):")
         stream = io.StringIO()
         stats.stream = stream
-        stats.sort_stats('cumulative')
+        stats.sort_stats("cumulative")
         stats.print_stats(10)
 
         output = stream.getvalue()
@@ -611,6 +651,7 @@ class TestPerformanceProfiling:
 
     def test_profile_incomplete_detection_hotspots(self):
         """Profile incomplete detection to find slow functions."""
+
         def detect_batch():
             analyze_footnote_batch(EXTENDED_SAMPLE)
 
@@ -620,7 +661,7 @@ class TestPerformanceProfiling:
         print("\n  Top 10 functions by cumulative time (incomplete detection):")
         stream = io.StringIO()
         stats.stream = stream
-        stats.sort_stats('cumulative')
+        stats.sort_stats("cumulative")
         stats.print_stats(10)
 
         output = stream.getvalue()
@@ -637,11 +678,16 @@ class TestPerformanceProfiling:
         for page_num in range(1, 11):
             footnotes = [
                 {
-                    'marker': f'{i}',
-                    'content': SAMPLE_FOOTNOTES[(page_num * i) % len(SAMPLE_FOOTNOTES)],
-                    'bbox': {'x0': 50, 'y0': 700 + i * 20, 'x1': 550, 'y1': 720 + i * 20},
-                    'font_name': 'Times',
-                    'font_size': 9.0
+                    "marker": f"{i}",
+                    "content": SAMPLE_FOOTNOTES[(page_num * i) % len(SAMPLE_FOOTNOTES)],
+                    "bbox": {
+                        "x0": 50,
+                        "y0": 700 + i * 20,
+                        "x1": 550,
+                        "y1": 720 + i * 20,
+                    },
+                    "font_name": "Times",
+                    "font_size": 9.0,
                 }
                 for i in range(1, 6)
             ]
@@ -652,17 +698,17 @@ class TestPerformanceProfiling:
                 # Classification
                 for fn in footnotes:
                     result = classify_note_comprehensive(
-                        marker=fn['marker'],
-                        content=fn['content'],
-                        schema_type='numeric',
-                        marker_info={'is_superscript': True}
+                        marker=fn["marker"],
+                        content=fn["content"],
+                        schema_type="numeric",
+                        marker_info={"is_superscript": True},
                     )
-                    fn['note_source'] = result['note_source']
+                    fn["note_source"] = result["note_source"]
 
                 # Incomplete detection
                 for fn in footnotes:
-                    is_incomplete, conf, reason = is_footnote_incomplete(fn['content'])
-                    fn['is_complete'] = not is_incomplete
+                    is_incomplete, conf, reason = is_footnote_incomplete(fn["content"])
+                    fn["is_complete"] = not is_incomplete
 
                 # State machine
                 parser.process_page(footnotes, page_num=page_num)
@@ -673,7 +719,7 @@ class TestPerformanceProfiling:
         print("\n  Top 15 functions by cumulative time (full pipeline):")
         stream = io.StringIO()
         stats.stream = stream
-        stats.sort_stats('cumulative')
+        stats.sort_stats("cumulative")
         stats.print_stats(15)
 
         output = stream.getvalue()
@@ -686,6 +732,7 @@ class TestPerformanceProfiling:
 # =============================================================================
 # Performance Tests: Budget Compliance
 # =============================================================================
+
 
 class TestPerformanceBudgetCompliance:
     """Validate all performance budgets are met."""
@@ -711,10 +758,10 @@ class TestPerformanceBudgetCompliance:
         end = time.perf_counter()
 
         classification_avg = ((end - start) * 1000) / 100
-        results['classification'] = {
-            'actual_ms': classification_avg,
-            'budget_ms': 2.0,
-            'status': '✅' if classification_avg < 2.0 else '❌'
+        results["classification"] = {
+            "actual_ms": classification_avg,
+            "budget_ms": 2.0,
+            "status": "✅" if classification_avg < 2.0 else "❌",
         }
 
         # 2. Incomplete detection budget (cached)
@@ -727,20 +774,22 @@ class TestPerformanceBudgetCompliance:
         end = time.perf_counter()
 
         incomplete_avg = ((end - start) * 1000) / 100
-        results['incomplete_detection'] = {
-            'actual_ms': incomplete_avg,
-            'budget_ms': 1.0,
-            'status': '✅' if incomplete_avg < 1.0 else '❌'
+        results["incomplete_detection"] = {
+            "actual_ms": incomplete_avg,
+            "budget_ms": 1.0,
+            "status": "✅" if incomplete_avg < 1.0 else "❌",
         }
 
         # 3. State machine budget
         parser = CrossPageFootnoteParser()
-        footnotes = [{
-            'marker': '1',
-            'content': 'Test footnote',
-            'is_complete': True,
-            'note_source': NoteSource.AUTHOR
-        }]
+        footnotes = [
+            {
+                "marker": "1",
+                "content": "Test footnote",
+                "is_complete": True,
+                "note_source": NoteSource.AUTHOR,
+            }
+        ]
 
         start = time.perf_counter()
         for i in range(100):
@@ -748,39 +797,41 @@ class TestPerformanceBudgetCompliance:
         end = time.perf_counter()
 
         state_machine_avg = ((end - start) * 1000) / 100
-        results['state_machine'] = {
-            'actual_ms': state_machine_avg,
-            'budget_ms': 0.5,
-            'status': '✅' if state_machine_avg < 0.5 else '❌'
+        results["state_machine"] = {
+            "actual_ms": state_machine_avg,
+            "budget_ms": 0.5,
+            "status": "✅" if state_machine_avg < 0.5 else "❌",
         }
 
         # 4. Full pipeline budget
         parser2 = CrossPageFootnoteParser()
         footnotes_full = [
             {
-                'marker': f'{i}',
-                'content': SAMPLE_FOOTNOTES[i % len(SAMPLE_FOOTNOTES)],
-                'bbox': {'x0': 50, 'y0': 700, 'x1': 550, 'y1': 720},
-                'font_name': 'Times',
-                'font_size': 9.0
+                "marker": f"{i}",
+                "content": SAMPLE_FOOTNOTES[i % len(SAMPLE_FOOTNOTES)],
+                "bbox": {"x0": 50, "y0": 700, "x1": 550, "y1": 720},
+                "font_name": "Times",
+                "font_size": 9.0,
             }
             for i in range(1, 6)
         ]
 
         start = time.perf_counter()
         for fn in footnotes_full:
-            result = classify_note_comprehensive(fn['marker'], fn['content'], 'numeric', {})
-            fn['note_source'] = result['note_source']
-            is_incomplete, _, _ = is_footnote_incomplete(fn['content'])
-            fn['is_complete'] = not is_incomplete
+            result = classify_note_comprehensive(
+                fn["marker"], fn["content"], "numeric", {}
+            )
+            fn["note_source"] = result["note_source"]
+            is_incomplete, _, _ = is_footnote_incomplete(fn["content"])
+            fn["is_complete"] = not is_incomplete
         parser2.process_page(footnotes_full, page_num=1)
         end = time.perf_counter()
 
         full_pipeline_ms = (end - start) * 1000
-        results['full_pipeline'] = {
-            'actual_ms': full_pipeline_ms,
-            'budget_ms': 10.0,
-            'status': '✅' if full_pipeline_ms < 10.0 else '❌'
+        results["full_pipeline"] = {
+            "actual_ms": full_pipeline_ms,
+            "budget_ms": 10.0,
+            "status": "✅" if full_pipeline_ms < 10.0 else "❌",
         }
 
         # Print summary report
@@ -797,7 +848,7 @@ class TestPerformanceBudgetCompliance:
         print("\n" + "=" * 70)
 
         # Assert all budgets met
-        failures = [k for k, v in results.items() if v['status'] == '❌']
+        failures = [k for k, v in results.items() if v["status"] == "❌"]
         assert not failures, f"Budget failures: {failures}"
 
 

@@ -13,6 +13,8 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from lib.rag.orchestrator_pdf import process_pdf
 
+pytestmark = [pytest.mark.slow, pytest.mark.ground_truth]
+
 BASELINE_PATH = PROJECT_ROOT / "test_files" / "ground_truth" / "body_text_baseline.json"
 BASELINE_TEXTS_DIR = PROJECT_ROOT / "test_files" / "ground_truth" / "baseline_texts"
 TEST_FILES_DIR = PROJECT_ROOT / "test_files"

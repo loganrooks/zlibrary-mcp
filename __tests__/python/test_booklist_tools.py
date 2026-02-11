@@ -6,7 +6,9 @@ the EAPI does not expose a direct booklist browsing endpoint.
 """
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock
+
+pytestmark = pytest.mark.unit
 
 
 class TestFetchBooklist:
@@ -18,11 +20,13 @@ class TestFetchBooklist:
         from lib.booklist_tools import fetch_booklist
 
         mock_client = AsyncMock()
-        mock_client.search = AsyncMock(return_value={
-            'books': [
-                {'id': 123, 'title': 'Book 1', 'author': 'Author 1', 'hash': 'abc'},
-            ]
-        })
+        mock_client.search = AsyncMock(
+            return_value={
+                "books": [
+                    {"id": 123, "title": "Book 1", "author": "Author 1", "hash": "abc"},
+                ]
+            }
+        )
 
         result = await fetch_booklist(
             booklist_id="409997",
@@ -33,11 +37,11 @@ class TestFetchBooklist:
             eapi_client=mock_client,
         )
 
-        assert result['booklist_id'] == '409997'
-        assert result['degraded'] is True
-        assert result['topic'] == 'philosophy'
-        assert len(result['books']) == 1
-        assert 'metadata' in result
+        assert result["booklist_id"] == "409997"
+        assert result["degraded"] is True
+        assert result["topic"] == "philosophy"
+        assert len(result["books"]) == 1
+        assert "metadata" in result
 
     @pytest.mark.asyncio
     async def test_fetch_booklist_with_eapi_client(self):
@@ -45,7 +49,7 @@ class TestFetchBooklist:
         from lib.booklist_tools import fetch_booklist
 
         mock_client = AsyncMock()
-        mock_client.search = AsyncMock(return_value={'books': []})
+        mock_client.search = AsyncMock(return_value={"books": []})
 
         result = await fetch_booklist(
             booklist_id="123",
@@ -56,8 +60,8 @@ class TestFetchBooklist:
             eapi_client=mock_client,
         )
 
-        assert result['degraded'] is True
-        assert result['books'] == []
+        assert result["degraded"] is True
+        assert result["books"] == []
         mock_client.search.assert_called_once()
 
     @pytest.mark.asyncio
@@ -66,14 +70,25 @@ class TestFetchBooklist:
         from lib.booklist_tools import fetch_booklist
 
         mock_client = AsyncMock()
-        mock_client.search = AsyncMock(return_value={'books': []})
+        mock_client.search = AsyncMock(return_value={"books": []})
 
         result = await fetch_booklist(
-            booklist_id="1", booklist_hash="h", topic="t",
-            email="", password="", eapi_client=mock_client,
+            booklist_id="1",
+            booklist_hash="h",
+            topic="t",
+            email="",
+            password="",
+            eapi_client=mock_client,
         )
 
-        for key in ['booklist_id', 'booklist_hash', 'topic', 'metadata', 'books', 'page']:
+        for key in [
+            "booklist_id",
+            "booklist_hash",
+            "topic",
+            "metadata",
+            "books",
+            "page",
+        ]:
             assert key in result
 
 
@@ -82,4 +97,5 @@ class TestFetchBooklistSync:
 
     def test_sync_wrapper_exists(self):
         from lib.booklist_tools import fetch_booklist_sync
+
         assert callable(fetch_booklist_sync)

@@ -11,6 +11,8 @@ import pytest
 from lib.sources.config import SourceConfig
 from lib.sources.models import SourceType
 
+pytestmark = pytest.mark.unit
+
 
 class TestLibgenAdapterSearch:
     """Tests for LibgenAdapter.search() method."""

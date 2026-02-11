@@ -14,6 +14,8 @@ from lib.rag.resolution.renderer import (
     render_region,
 )
 
+pytestmark = pytest.mark.unit
+
 # Shared fake PIL image for mocked pixmap conversions
 _FAKE_IMAGE = Image.new("RGB", (100, 100))
 

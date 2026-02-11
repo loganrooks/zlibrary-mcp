@@ -9,12 +9,11 @@ import sys
 from pathlib import Path
 
 # Add lib to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / 'lib'))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / "lib"))
 
-from rag_processing import (
-    detect_letter_spacing_issue,
-    correct_letter_spacing
-)
+from rag_processing import detect_letter_spacing_issue, correct_letter_spacing
+
+pytestmark = pytest.mark.unit
 
 
 class TestDetectLetterSpacingIssue:
@@ -46,7 +45,7 @@ class TestDetectLetterSpacingIssue:
     def test_spacing_issue_at_threshold(self):
         """Test detection at threshold boundary."""
         # Create text with exactly 60% single letters
-        text = "A B C D E F normal words here"
+        _text = "A B C D E F normal words here"
         # This should be close to threshold
         # May or may not detect depending on implementation
 
@@ -173,7 +172,7 @@ class TestPageMarkerInjection:
         import re
 
         marker = "`[p.42]`"
-        match = re.search(r'`\[p\.(\d+)\]`', marker)
+        match = re.search(r"`\[p\.(\d+)\]`", marker)
 
         assert match is not None
         assert match.group(1) == "42"
@@ -196,12 +195,12 @@ class TestSectionMarkerInjection:
         import re
 
         marker = "`[section.3: chapter03.xhtml]`"
-        match = re.search(r'`\[section\.(\d+): (.+)\]`', marker)
+        match = re.search(r"`\[section\.(\d+): (.+)\]`", marker)
 
         assert match is not None
         assert match.group(1) == "3"
         assert match.group(2) == "chapter03.xhtml"
 
 
-if __name__ == '__main__':
-    pytest.main([__file__, '-v'])
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])

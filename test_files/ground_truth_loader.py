@@ -14,6 +14,7 @@ from typing import List, Dict, Any, Optional
 @dataclass
 class ValidationResult:
     """Result from ground truth validation."""
+
     passed: bool
     all_detected: bool
     quality_score: float
@@ -51,7 +52,7 @@ def load_ground_truth(test_name: str) -> dict:
         FileNotFoundError: If ground truth doesn't exist
         ValueError: If ground truth invalid
     """
-    gt_file = Path('test_files/ground_truth') / f'{test_name}.json'
+    gt_file = Path("test_files/ground_truth") / f"{test_name}.json"
 
     if not gt_file.exists():
         raise FileNotFoundError(
@@ -59,7 +60,7 @@ def load_ground_truth(test_name: str) -> dict:
             f"Create ground truth first:\n"
             f"  1. Manually inspect PDF\n"
             f"  2. Document features in {gt_file}\n"
-            f"  3. Follow schema in test_files/ground_truth/schema.json"
+            f"  3. Follow schema in test_files/ground_truth/schema_v3.json"
         )
 
     with open(gt_file) as f:
@@ -69,7 +70,7 @@ def load_ground_truth(test_name: str) -> dict:
     _validate_ground_truth_schema(gt)
 
     # Validate referenced PDF exists
-    pdf_path = Path(gt['pdf_file'])
+    pdf_path = Path(gt["pdf_file"])
     if not pdf_path.exists():
         raise FileNotFoundError(f"Test PDF not found: {pdf_path}")
 
@@ -81,7 +82,7 @@ def validate_against_ground_truth(
     gt: dict,
     processing_time_ms: Optional[float] = None,
     quality_flags: Optional[set] = None,
-    quality_score: Optional[float] = None
+    quality_score: Optional[float] = None,
 ) -> ValidationResult:
     """
     Validate processing result against ground truth.
@@ -101,59 +102,68 @@ def validate_against_ground_truth(
     hallucinations = []
 
     # Validate X-marks
-    xmarks = gt.get('features', {}).get('xmarks', [])
+    xmarks = gt.get("features", {}).get("xmarks", [])
     for xmark in xmarks:
-        expected_word = xmark.get('expected_recovery') or xmark['word_under_erasure']
-        expected_output = xmark.get('expected_output', f'~~{expected_word}~~')
+        expected_word = xmark.get("expected_recovery") or xmark["word_under_erasure"]
+        expected_output = xmark.get("expected_output", f"~~{expected_word}~~")
 
         # Check if word recovered
         if expected_word not in output_text and expected_output not in output_text:
-            missed.append(f"X-mark word '{expected_word}' on page {xmark['page']}")
+            missed.append(
+                f"X-mark word '{expected_word}' on page {xmark['page_index']}"
+            )
 
         # Check if corrupted version NOT in output (should be recovered)
-        corrupted = xmark.get('corrupted_extraction')
+        corrupted = xmark.get("corrupted_extraction")
         if corrupted and corrupted in output_text:
-            missed.append(f"Corrupted text '{corrupted}' not recovered (should be '{expected_word}')")
+            missed.append(
+                f"Corrupted text '{corrupted}' not recovered (should be '{expected_word}')"
+            )
 
     # Validate footnotes
-    for footnote in gt.get('features', {}).get('footnotes', []):
-        marker = footnote['marker']
-        if f'^{marker}' not in output_text and f'[^{marker}]' not in output_text:
-            missed.append(f"Footnote marker '^{marker}'")
+    for footnote in gt.get("features", {}).get("footnotes", []):
+        marker = footnote["marker"]
+        # v3 schema: marker is an object with 'symbol' key
+        marker_symbol = marker["symbol"] if isinstance(marker, dict) else marker
+        if (
+            f"^{marker_symbol}" not in output_text
+            and f"[^{marker_symbol}]" not in output_text
+        ):
+            missed.append(f"Footnote marker '^{marker_symbol}'")
 
     # Validate formatting
-    for fmt in gt.get('features', {}).get('formatting', []):
-        expected = fmt['expected_output']
+    for fmt in gt.get("features", {}).get("formatting", []):
+        expected = fmt["expected_output"]
         if expected not in output_text:
             missed.append(f"Formatting '{expected}' for text '{fmt['text']}'")
 
     # Validate quality score
-    expected_quality = gt['expected_quality']
+    expected_quality = gt["expected_quality"]
     quality_ok = True
     if quality_score is not None:
-        quality_ok = quality_score >= expected_quality['quality_score_min']
+        quality_ok = quality_score >= expected_quality["quality_score_min"]
     else:
         quality_score = 0.0  # Unknown
 
     # Validate processing time
     processing_ok = True
     if processing_time_ms:
-        max_time = expected_quality['processing_time_max_ms']
+        max_time = expected_quality["processing_time_max_ms"]
         processing_ok = processing_time_ms < max_time
 
     # Check for expected quality flags
     if quality_flags is not None:
-        for expected_flag in expected_quality.get('quality_flags', []):
+        for expected_flag in expected_quality.get("quality_flags", []):
             if expected_flag not in quality_flags:
                 missed.append(f"Quality flag '{expected_flag}'")
 
     # Overall result
     passed = (
-        len(missed) == 0 and
-        len(false_positives) == 0 and
-        len(hallucinations) == 0 and
-        quality_ok and
-        processing_ok
+        len(missed) == 0
+        and len(false_positives) == 0
+        and len(hallucinations) == 0
+        and quality_ok
+        and processing_ok
     )
 
     return ValidationResult(
@@ -164,10 +174,7 @@ def validate_against_ground_truth(
         missed_features=missed,
         false_positives=false_positives,
         hallucinations=hallucinations,
-        details={
-            'quality_ok': quality_ok,
-            'processing_ok': processing_ok
-        }
+        details={"quality_ok": quality_ok, "processing_ok": processing_ok},
     )
 
 
@@ -182,32 +189,38 @@ def _validate_ground_truth_schema(gt: dict):
     Only pdf_file is truly required for all tests.
     """
     # Only pdf_file is universally required
-    if 'pdf_file' not in gt:
+    if "pdf_file" not in gt:
         raise ValueError("Ground truth missing required field: 'pdf_file'")
 
+    # v3 schema requires metadata
+    if "metadata" not in gt:
+        raise ValueError(
+            "Ground truth missing required field: 'metadata'. "
+            "All ground truth files must conform to v3 schema. "
+            "See test_files/ground_truth/schema_v3.json for the required structure."
+        )
+
     # Validate expected_quality subfields IF that section exists
-    if 'expected_quality' in gt:
-        eq = gt['expected_quality']
+    if "expected_quality" in gt:
+        eq = gt["expected_quality"]
         # These are required IF expected_quality exists
-        if 'quality_score_min' not in eq and 'processing_time_max_ms' not in eq:
+        if "quality_score_min" not in eq and "processing_time_max_ms" not in eq:
             # Warn but don't fail - some files may have partial expected_quality
             pass
 
 
 def list_ground_truth_tests() -> List[str]:
     """List all available ground truth tests."""
-    gt_dir = Path('test_files/ground_truth')
+    gt_dir = Path("test_files/ground_truth")
     if not gt_dir.exists():
         return []
 
     # Utility files that are not actual ground truth test cases
     EXCLUDED_FILES = {
-        'schema.json',           # JSON schema definition
-        'schema_v2.json',        # JSON schema v2
-        'schema_v3.json',        # JSON schema v3
-        'body_text_baseline.json',   # Recall baseline data
-        'correction_matrix.json',    # Validation results
+        "schema_v3.json",  # JSON schema v3 (canonical)
+        "body_text_baseline.json",  # Recall baseline data
+        "correction_matrix.json",  # Validation results
     }
 
-    gt_files = gt_dir.glob('*.json')
+    gt_files = gt_dir.glob("*.json")
     return [f.stem for f in gt_files if f.name not in EXCLUDED_FILES]

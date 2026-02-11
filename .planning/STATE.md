@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-02-11)
 ## Current Position
 
 Phase: 14 of 19 (Test Infrastructure)
-Plan: — (phase not yet planned)
-Status: Ready to plan
-Last activity: 2026-02-11 — Quick-003 complete (zlib_client fixture + booklist_tools fix)
+Plan: 01 complete
+Status: Plan 14-01 complete
+Last activity: 2026-02-11 — Phase 14 Plan 01 complete (pytest marker taxonomy)
 
-Progress: [██░░░░░░░░░░░░░░░░░░] 14% of v1.2
+Progress: [███░░░░░░░░░░░░░░░░░] 16% of v1.2
 
 ## Milestones Shipped
 
@@ -23,13 +23,18 @@ Progress: [██░░░░░░░░░░░░░░░░░░] 14% of 
 | v1.0 | Audit Cleanup & Modernization | 1-7 | 22 | 2026-02-01 |
 | v1.1 | Quality & Expansion | 8-12 | 21 | 2026-02-04 |
 
-**Total:** 12 phases, 43 plans executed (+ 2 plans in phase 13)
+**Total:** 12 phases, 43 plans executed (+ 2 plans in phase 13, 1 plan in phase 14)
 
 ## Accumulated Context
 
 ### Decisions
 
 All decisions logged in PROJECT.md Key Decisions table.
+
+**Phase 14:**
+- Used addopts = --strict-markers instead of strict_markers = true (pytest 8.x compatibility)
+- Kept existing class-level @pytest.mark decorators alongside module-level pytestmark (safe redundancy)
+- Converted test_real_zlibrary.py pytestmark from skipif-only to list with integration + skipif
 
 **Phase 13:**
 - Used Extension (not AsyncZlib) as the canonical zlibrary import check
@@ -66,8 +71,8 @@ From v1.1 audit (addressed by v1.2 scope):
 ## Session Continuity
 
 Last session: 2026-02-11
-Stopped at: Completed quick-003 (zlib_client fixture + booklist_tools fix)
-Resume with: `/gsd:plan-phase 14`
+Stopped at: Completed 14-01-PLAN.md (pytest marker taxonomy)
+Resume with: Check if more plans exist for phase 14, or `/gsd:plan-phase 15`
 
 ### Performance Metrics
 
@@ -76,7 +81,8 @@ Resume with: `/gsd:plan-phase 14`
 | 13-01      | 20min    | 2     | 6     |
 | 13-02      | 13min    | 2     | 12    |
 | quick-003  | 1min     | 2     | 2     |
+| 14-01      | 21min    | 2     | 40    |
 
 ---
 
-_Last updated: 2026-02-11 after quick-003 complete_
+_Last updated: 2026-02-11 after 14-01 complete_

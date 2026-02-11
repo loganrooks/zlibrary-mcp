@@ -57,7 +57,7 @@ class TestRealWorldSousRature:
         )
 
         print(
-            f"✅ Processed {gt['pages']} pages in {elapsed_ms:.0f}ms ({elapsed_ms / gt['pages']:.0f}ms/page)"
+            f"✅ Processed {gt['metadata']['pages']} pages in {elapsed_ms:.0f}ms ({elapsed_ms / gt['metadata']['pages']:.0f}ms/page)"
         )
 
     def test_derrida_sous_rature_detection(self):
@@ -83,7 +83,7 @@ class TestRealWorldSousRature:
 
         # Test X-mark detection on each ground truth X-mark
         for xmark in gt["features"]["xmarks"]:
-            page_num = xmark["page"]
+            page_num = xmark["page_index"]
             expected_bbox = xmark["bbox"]
             word_under_erasure = xmark["word_under_erasure"]
 

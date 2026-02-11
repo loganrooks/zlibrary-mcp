@@ -25,7 +25,7 @@ Build a robust, resilient MCP server for Z-Library integration that provides com
 +---------------------+
 |   Python Bridge     | <- Language boundary (PythonShell)
 +---------------------+
-| Z-Library Client    | <- Legacy AsyncZlib for downloads only
+| Z-Library Client    | <- EAPIClient handles all operations
 +---------------------+
 | RAG Pipeline        | <- lib/rag/ domain modules (decomposed)
 +---------------------+
@@ -42,7 +42,7 @@ Build a robust, resilient MCP server for Z-Library integration that provides com
 ### Working Features
 - 12 MCP tools via McpServer `server.tool()` API (MCP SDK 1.25+)
 - EAPI JSON transport for search, metadata, and browse operations
-- Downloads via legacy AsyncZlib client (EAPI returns URL, download needs cookies)
+- Downloads via EAPIClient (handles URL resolution and file download)
 - RAG processing (EPUB, TXT, PDF) with quality detection pipeline
 - UV-based Python dependency management (.venv/ project-local)
 - Python monolith decomposed into lib/rag/ domain modules with facade pattern

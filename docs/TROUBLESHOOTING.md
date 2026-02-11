@@ -4,13 +4,13 @@ Common issues and solutions for Z-Library MCP server.
 
 ---
 
-## ImportError: cannot import name 'AsyncZlib' from 'zlibrary'
+## ImportError: cannot import name from 'zlibrary'
 
 ### Symptom
 
 MCP tools fail with:
 ```
-ImportError: cannot import name 'AsyncZlib' from 'zlibrary' (unknown location)
+ImportError: cannot import name 'Extension' from 'zlibrary' (unknown location)
 ```
 
 ### Causes
@@ -45,7 +45,7 @@ PROJECT_ROOT=$(pwd)
 ~/.cache/zlibrary-mcp/zlibrary-mcp-venv/bin/pip install -e "$PROJECT_ROOT/zlibrary" --force-reinstall --no-deps
 
 # Verify
-~/.cache/zlibrary-mcp/zlibrary-mcp-venv/bin/python -c "from zlibrary import AsyncZlib; print('✅ Fixed')"
+~/.cache/zlibrary-mcp/zlibrary-mcp-venv/bin/python -c "from zlibrary import Extension; print('✅ Fixed')"
 ```
 
 **Then**: Restart Claude Code in your workspace
@@ -276,7 +276,7 @@ Should return JSON with download limits (not ImportError).
 cat ~/.cache/zlibrary-mcp/.venv_config
 
 # Check if that Python works
-$(cat ~/.cache/zlibrary-mcp/.venv_config) -c "from zlibrary import AsyncZlib; print('OK')"
+$(cat ~/.cache/zlibrary-mcp/.venv_config) -c "from zlibrary import Extension; print('OK')"
 
 # Check zlibrary installation location
 ~/.cache/zlibrary-mcp/zlibrary-mcp-venv/bin/pip show zlibrary | grep Location

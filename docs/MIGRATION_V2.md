@@ -162,7 +162,7 @@ The path to `dist/index.js` remains the same.
 ls -la .venv/bin/python
 
 # Verify zlibrary installed
-.venv/bin/python -c "from zlibrary import AsyncZlib; print('✅ Working')"
+.venv/bin/python -c "from zlibrary import Extension; print('✅ Working')"
 
 # Check uv.lock was generated
 ls -la uv.lock
@@ -221,14 +221,14 @@ rm -rf .venv
 uv sync
 ```
 
-### "ImportError: cannot import name 'AsyncZlib'"
+### "ImportError: cannot import name from 'zlibrary'"
 
 ```bash
 # Reinstall vendored zlibrary:
 uv sync --reinstall
 
 # Verify:
-.venv/bin/python -c "from zlibrary import AsyncZlib; print('OK')"
+.venv/bin/python -c "from zlibrary import Extension; print('OK')"
 ```
 
 ---

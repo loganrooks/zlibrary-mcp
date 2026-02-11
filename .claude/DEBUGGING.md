@@ -128,15 +128,17 @@ Error: Invalid credentials or login failed
 ```python
 # Test authentication manually
 import asyncio
-from zlibrary import AsyncZlib
+from zlibrary.eapi import EAPIClient
 
 async def test_auth():
-    lib = AsyncZlib()
+    client = EAPIClient("z-library.sk")
     try:
-        await lib.login("your_email", "your_password")
-        print("✅ Authentication successful")
-        profile = await lib.profile()
-        print(f"Downloads available: {profile.downloads_available}")
+        result = await client.login("your_email", "your_password")
+        if result.get("success") == 1:
+            print("✅ Authentication successful")
+        else:
+            print(f"❌ Authentication failed: {result}")
+        await client.close()
     except Exception as e:
         print(f"❌ Authentication failed: {e}")
 

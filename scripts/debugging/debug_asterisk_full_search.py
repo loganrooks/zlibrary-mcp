@@ -5,15 +5,14 @@ Looking for content ending with "to" that might continue.
 """
 
 import fitz  # PyMuPDF
-import re
 
 # Open the PDF
 pdf_path = "test_files/kant_critique_pages_80_85.pdf"
 doc = fitz.open(pdf_path)
 
-print(f"=" * 80)
-print(f"COMPREHENSIVE ASTERISK FOOTNOTE SEARCH")
-print(f"=" * 80)
+print("=" * 80)
+print("COMPREHENSIVE ASTERISK FOOTNOTE SEARCH")
+print("=" * 80)
 print()
 
 for page_idx in range(len(doc)):
@@ -46,8 +45,12 @@ for page_idx in range(len(doc)):
         full_block_text = " ".join(block_text_lines)
 
         # Check if starts with asterisk or ends with "to"
-        if full_block_text.startswith("*") or full_block_text.endswith(" to") or "criticism" in full_block_text.lower():
-            print(f"\n🔍 POTENTIAL FOOTNOTE:")
+        if (
+            full_block_text.startswith("*")
+            or full_block_text.endswith(" to")
+            or "criticism" in full_block_text.lower()
+        ):
+            print("\n🔍 POTENTIAL FOOTNOTE:")
             print(f"BBox: {block['bbox']}")
             print(f"Starts with asterisk: {full_block_text.startswith('*')}")
             print(f"Ends with 'to': {full_block_text.endswith(' to')}")
@@ -90,8 +93,10 @@ for page_idx in range(len(doc)):
         full_block_text = " ".join(block_text_lines)
 
         # Look for continuation markers
-        if full_block_text.startswith("which ") or full_block_text.startswith("everything"):
-            print(f"\n🔍 POTENTIAL CONTINUATION:")
+        if full_block_text.startswith("which ") or full_block_text.startswith(
+            "everything"
+        ):
+            print("\n🔍 POTENTIAL CONTINUATION:")
             print(f"BBox: {block['bbox']}")
             print(f"Content ({len(full_block_text)} chars):")
             print(full_block_text[:200] + ("..." if len(full_block_text) > 200 else ""))

@@ -30,6 +30,8 @@ from python_bridge import (
     fetch_booklist_bridge,
 )
 
+pytestmark = pytest.mark.unit
+
 
 # --- EAPI Mock Fixtures ---
 

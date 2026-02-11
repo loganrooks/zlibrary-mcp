@@ -1,6 +1,10 @@
 """Tests for adaptive resolution DPI computation and font analysis engine."""
 
+import pytest
+
 from unittest.mock import MagicMock, patch
+
+pytestmark = pytest.mark.unit
 
 
 class TestComputeOptimalDPI:

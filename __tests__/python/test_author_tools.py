@@ -7,11 +7,9 @@ exact name matching, multiple authors, and syntax variations.
 
 import pytest
 from unittest.mock import AsyncMock
-from lib.author_tools import (
-    format_author_query,
-    search_by_author,
-    validate_author_name
-)
+from lib.author_tools import format_author_query, search_by_author, validate_author_name
+
+pytestmark = pytest.mark.unit
 
 
 class TestAuthorQueryFormatting:
@@ -74,48 +72,65 @@ class TestSearchByAuthor:
     @pytest.mark.asyncio
     async def test_search_author_simple(self):
         mock_client = AsyncMock()
-        mock_client.search = AsyncMock(return_value={
-            'books': [{'id': 123, 'title': 'Science of Logic', 'author': 'Hegel', 'hash': 'abc'}]
-        })
+        mock_client.search = AsyncMock(
+            return_value={
+                "books": [
+                    {
+                        "id": 123,
+                        "title": "Science of Logic",
+                        "author": "Hegel",
+                        "hash": "abc",
+                    }
+                ]
+            }
+        )
 
         result = await search_by_author(
-            author="Hegel", email="", password="",
+            author="Hegel",
+            email="",
+            password="",
             eapi_client=mock_client,
         )
 
-        assert result['author'] == 'Hegel'
-        assert result['total_results'] == 1
-        assert len(result['books']) == 1
+        assert result["author"] == "Hegel"
+        assert result["total_results"] == 1
+        assert len(result["books"]) == 1
 
     @pytest.mark.asyncio
     async def test_search_author_exact_match(self):
         mock_client = AsyncMock()
-        mock_client.search = AsyncMock(return_value={'books': []})
+        mock_client.search = AsyncMock(return_value={"books": []})
 
         await search_by_author(
             author="Hegel, Georg Wilhelm Friedrich",
-            exact=True, email="", password="",
+            exact=True,
+            email="",
+            password="",
             eapi_client=mock_client,
         )
 
         call_kwargs = mock_client.search.call_args[1]
-        assert call_kwargs.get('exact') is True
+        assert call_kwargs.get("exact") is True
 
     @pytest.mark.asyncio
     async def test_search_author_with_filters(self):
         mock_client = AsyncMock()
-        mock_client.search = AsyncMock(return_value={'books': []})
+        mock_client.search = AsyncMock(return_value={"books": []})
 
         await search_by_author(
-            author="Hegel", email="", password="",
-            year_from=1800, year_to=1850, languages="German",
+            author="Hegel",
+            email="",
+            password="",
+            year_from=1800,
+            year_to=1850,
+            languages="German",
             eapi_client=mock_client,
         )
 
         call_kwargs = mock_client.search.call_args[1]
-        assert call_kwargs['year_from'] == 1800
-        assert call_kwargs['year_to'] == 1850
-        assert call_kwargs['languages'] == ['German']
+        assert call_kwargs["year_from"] == 1800
+        assert call_kwargs["year_to"] == 1850
+        assert call_kwargs["languages"] == ["German"]
 
     @pytest.mark.asyncio
     async def test_search_author_invalid_name(self):
@@ -129,39 +144,48 @@ class TestSearchByAuthor:
 
         with pytest.raises(Exception, match="Network error"):
             await search_by_author(
-                author="Hegel", email="", password="",
+                author="Hegel",
+                email="",
+                password="",
                 eapi_client=mock_client,
             )
 
     @pytest.mark.asyncio
     async def test_search_author_empty_results(self):
         mock_client = AsyncMock()
-        mock_client.search = AsyncMock(return_value={'books': []})
+        mock_client.search = AsyncMock(return_value={"books": []})
 
         result = await search_by_author(
-            author="NonexistentAuthor12345", email="", password="",
+            author="NonexistentAuthor12345",
+            email="",
+            password="",
             eapi_client=mock_client,
         )
 
-        assert result['total_results'] == 0
-        assert len(result['books']) == 0
+        assert result["total_results"] == 0
+        assert len(result["books"]) == 0
 
     @pytest.mark.asyncio
     async def test_search_author_pagination(self):
         mock_client = AsyncMock()
-        mock_client.search = AsyncMock(return_value={'books': []})
+        mock_client.search = AsyncMock(return_value={"books": []})
 
         await search_by_author(
-            author="Hegel", email="", password="",
-            page=2, limit=50, eapi_client=mock_client,
+            author="Hegel",
+            email="",
+            password="",
+            page=2,
+            limit=50,
+            eapi_client=mock_client,
         )
 
         call_kwargs = mock_client.search.call_args[1]
-        assert call_kwargs['limit'] == 50
-        assert call_kwargs['page'] == 2
+        assert call_kwargs["limit"] == 50
+        assert call_kwargs["page"] == 2
 
 
 class TestSyncWrapper:
     def test_sync_wrapper_exists(self):
         from lib.author_tools import search_by_author_sync
+
         assert callable(search_by_author_sync)

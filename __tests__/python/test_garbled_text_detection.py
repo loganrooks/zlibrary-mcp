@@ -16,15 +16,17 @@ import sys
 from pathlib import Path
 
 # Add lib directory to path
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / 'lib'))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / "lib"))
 
 from garbled_text_detection import (
     calculate_entropy,
     detect_garbled_text_enhanced,
     detect_garbled_text,
     GarbledDetectionConfig,
-    GarbledDetectionResult
+    GarbledDetectionResult,
 )
+
+pytestmark = pytest.mark.unit
 
 
 class TestCalculateEntropy:
@@ -82,7 +84,7 @@ class TestGarbledDetectionConfig:
             entropy_threshold=3.5,
             symbol_density_threshold=0.30,
             repetition_threshold=0.80,
-            min_text_length=20
+            min_text_length=20,
         )
         assert config.entropy_threshold == 3.5
         assert config.symbol_density_threshold == 0.30
@@ -94,7 +96,7 @@ class TestGarbledDetectionConfig:
         config = GarbledDetectionConfig(
             entropy_threshold=3.8,
             symbol_density_threshold=0.15,
-            repetition_threshold=0.25
+            repetition_threshold=0.25,
         )
         assert config.entropy_threshold == 3.8
         assert config.symbol_density_threshold == 0.15
@@ -104,7 +106,7 @@ class TestGarbledDetectionConfig:
         config = GarbledDetectionConfig(
             entropy_threshold=2.5,
             symbol_density_threshold=0.50,
-            repetition_threshold=0.85
+            repetition_threshold=0.85,
         )
         assert config.entropy_threshold == 2.5
         assert config.symbol_density_threshold == 0.50
@@ -118,20 +120,17 @@ class TestGarbledDetectionResult:
         result = GarbledDetectionResult(
             is_garbled=True,
             confidence=0.85,
-            metrics={'entropy': 2.5, 'symbol_density': 0.4},
-            flags={'low_entropy', 'high_symbols'}
+            metrics={"entropy": 2.5, "symbol_density": 0.4},
+            flags={"low_entropy", "high_symbols"},
         )
         assert result.is_garbled is True
         assert result.confidence == 0.85
-        assert 'entropy' in result.metrics
-        assert 'low_entropy' in result.flags
+        assert "entropy" in result.metrics
+        assert "low_entropy" in result.flags
 
     def test_result_defaults(self):
         """Test result with default values."""
-        result = GarbledDetectionResult(
-            is_garbled=False,
-            confidence=0.0
-        )
+        result = GarbledDetectionResult(is_garbled=False, confidence=0.0)
         assert result.metrics == {}
         assert result.flags == set()
 
@@ -155,8 +154,8 @@ class TestEnhancedDetection:
 
         assert result.is_garbled is True
         assert result.confidence > 0.6
-        assert 'low_entropy' in result.flags
-        assert result.metrics['entropy'] < 1.0
+        assert "low_entropy" in result.flags
+        assert result.metrics["entropy"] < 1.0
 
     def test_high_symbols_flagged(self):
         """Text with high symbol density should be flagged."""
@@ -164,8 +163,8 @@ class TestEnhancedDetection:
         result = detect_garbled_text_enhanced(text)
 
         assert result.is_garbled is True
-        assert 'high_symbols' in result.flags
-        assert result.metrics['symbol_density'] > 0.25
+        assert "high_symbols" in result.flags
+        assert result.metrics["symbol_density"] > 0.25
 
     def test_high_repetition_flagged(self):
         """Text with high character repetition should be flagged."""
@@ -173,8 +172,8 @@ class TestEnhancedDetection:
         result = detect_garbled_text_enhanced(text)
 
         assert result.is_garbled is True
-        assert 'repeated_chars' in result.flags
-        assert result.metrics['repetition_ratio'] > 0.7
+        assert "repeated_chars" in result.flags
+        assert result.metrics["repetition_ratio"] > 0.7
 
     def test_multiple_heuristics_high_confidence(self):
         """Multiple triggered heuristics should result in high confidence."""
@@ -216,7 +215,7 @@ class TestEnhancedDetection:
         text = "The equation is: x² + y² = z², where α = β + γ"
         result = detect_garbled_text_enhanced(text)
         # Should have some symbols but not be catastrophically garbled
-        assert result.metrics['symbol_density'] < 0.5
+        assert result.metrics["symbol_density"] < 0.5
 
     def test_very_long_text(self):
         """Very long text should be processed without issues."""
@@ -267,7 +266,7 @@ class TestConfidenceScoring:
             "aaaaaaaaaaaaa",
             "@#$%^&*()_+",
             "",
-            "x"
+            "x",
         ]
 
         for text in test_texts:
@@ -285,13 +284,13 @@ class TestCustomConfiguration:
         strict_config = GarbledDetectionConfig(
             entropy_threshold=3.8,
             symbol_density_threshold=0.15,
-            repetition_threshold=0.25
+            repetition_threshold=0.25,
         )
 
         lenient_config = GarbledDetectionConfig(
             entropy_threshold=2.5,
             symbol_density_threshold=0.50,
-            repetition_threshold=0.85
+            repetition_threshold=0.85,
         )
 
         strict_result = detect_garbled_text_enhanced(text, strict_config)
@@ -335,10 +334,7 @@ class TestBackwardCompatibility:
         """Legacy API should accept custom parameters."""
         text = "test text with some symbols!"
         result = detect_garbled_text(
-            text,
-            non_alpha_threshold=0.50,
-            repetition_threshold=0.90,
-            min_length=5
+            text, non_alpha_threshold=0.50, repetition_threshold=0.90, min_length=5
         )
         assert isinstance(result, bool)
 
@@ -351,9 +347,9 @@ class TestMetrics:
         text = "Sample text for metrics testing."
         result = detect_garbled_text_enhanced(text)
 
-        assert 'entropy' in result.metrics
-        assert 'symbol_density' in result.metrics
-        assert 'repetition_ratio' in result.metrics
+        assert "entropy" in result.metrics
+        assert "symbol_density" in result.metrics
+        assert "repetition_ratio" in result.metrics
 
     def test_entropy_metric_accuracy(self):
         """Entropy metric should match standalone calculation."""
@@ -362,32 +358,23 @@ class TestMetrics:
         result = detect_garbled_text_enhanced(text)
         standalone_entropy = calculate_entropy(text)
 
-        assert result.metrics['entropy'] == pytest.approx(standalone_entropy, rel=0.001)
+        assert result.metrics["entropy"] == pytest.approx(standalone_entropy, rel=0.001)
 
     def test_symbol_density_range(self):
         """Symbol density should be between 0 and 1."""
-        texts = [
-            "Normal text",
-            "Text with symbols!",
-            "!@#$%^&*()_+",
-            "OnlyLetters"
-        ]
+        texts = ["Normal text", "Text with symbols!", "!@#$%^&*()_+", "OnlyLetters"]
 
         for text in texts:
             result = detect_garbled_text_enhanced(text)
-            assert 0.0 <= result.metrics['symbol_density'] <= 1.0
+            assert 0.0 <= result.metrics["symbol_density"] <= 1.0
 
     def test_repetition_ratio_range(self):
         """Repetition ratio should be between 0 and 1."""
-        texts = [
-            "abcdefghij",
-            "aaaaaaaaaa",
-            "abc abc abc"
-        ]
+        texts = ["abcdefghij", "aaaaaaaaaa", "abc abc abc"]
 
         for text in texts:
             result = detect_garbled_text_enhanced(text)
-            assert 0.0 <= result.metrics['repetition_ratio'] <= 1.0
+            assert 0.0 <= result.metrics["repetition_ratio"] <= 1.0
 
 
 class TestErrorHandling:

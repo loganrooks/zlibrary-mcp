@@ -18,6 +18,8 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from lib.rag.orchestrator_pdf import process_pdf, process_pdf_structured
 from lib.rag.pipeline.models import DocumentOutput
 
+pytestmark = pytest.mark.integration
+
 TEST_FILES_DIR = PROJECT_ROOT / "test_files"
 
 # Use smallest scholarly PDF with footnotes for most tests (~2KB)

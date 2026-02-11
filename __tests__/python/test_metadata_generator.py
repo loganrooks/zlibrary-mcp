@@ -9,10 +9,9 @@ import json
 import tempfile
 import sys
 from pathlib import Path
-from datetime import datetime
 
 # Add lib to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / 'lib'))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / "lib"))
 
 from metadata_generator import (
     generate_yaml_frontmatter,
@@ -21,8 +20,10 @@ from metadata_generator import (
     extract_page_line_mapping,
     generate_metadata_sidecar,
     save_metadata_sidecar,
-    add_yaml_frontmatter_to_content
+    add_yaml_frontmatter_to_content,
 )
+
+pytestmark = pytest.mark.unit
 
 
 class TestYAMLEscape:
@@ -67,7 +68,7 @@ class TestGenerateYAMLFrontmatter:
             pages=117,
             format_type="pdf",
             ocr_quality=0.95,
-            book_id="3505318"
+            book_id="3505318",
         )
 
         assert "title: The Burnout Society" in result
@@ -90,7 +91,7 @@ class TestGenerateYAMLFrontmatter:
         """Test YAML structure is valid."""
         result = generate_yaml_frontmatter(title="Test Book", author="Test Author")
 
-        lines = result.split('\n')
+        lines = result.split("\n")
         assert lines[0] == "---"
         assert lines[-2] == "---"  # Second to last (last is empty)
 
@@ -112,12 +113,12 @@ Final content.
         toc = extract_toc_from_content(content, format_type="markdown")
 
         assert len(toc) == 3
-        assert toc[0]['title'] == 'Chapter 1'
-        assert toc[0]['level'] == 1
-        assert toc[1]['title'] == 'Section 1.1'
-        assert toc[1]['level'] == 2
-        assert toc[2]['title'] == 'Chapter 2'
-        assert toc[2]['level'] == 1
+        assert toc[0]["title"] == "Chapter 1"
+        assert toc[0]["level"] == 1
+        assert toc[1]["title"] == "Section 1.1"
+        assert toc[1]["level"] == 2
+        assert toc[2]["title"] == "Chapter 2"
+        assert toc[2]["level"] == 1
 
     def test_extract_toc_with_page_markers(self):
         """Test extracting TOC with page markers."""
@@ -132,10 +133,10 @@ Final content.
         toc = extract_toc_from_content(content, format_type="markdown")
 
         assert len(toc) == 2
-        assert toc[0]['title'] == 'Chapter 1'
-        assert toc[0]['page'] == 1
-        assert toc[1]['title'] == 'Section 1.1'
-        assert toc[1]['page'] == 5
+        assert toc[0]["title"] == "Chapter 1"
+        assert toc[0]["page"] == 1
+        assert toc[1]["title"] == "Section 1.1"
+        assert toc[1]["page"] == 5
 
     def test_extract_toc_empty_content(self):
         """Test with content containing no headings."""
@@ -168,8 +169,8 @@ Content for page 3.
         assert 2 in mapping
         assert 3 in mapping
 
-        assert mapping[1]['start'] < mapping[1]['end']
-        assert mapping[2]['start'] > mapping[1]['end']
+        assert mapping[1]["start"] < mapping[1]["end"]
+        assert mapping[2]["start"] > mapping[1]["end"]
 
     def test_page_mapping_no_markers(self):
         """Test with content containing no page markers."""
@@ -197,11 +198,7 @@ class TestGenerateMetadataSidecar:
 
     def test_basic_metadata_sidecar(self):
         """Test basic metadata generation with new schema."""
-        book_details = {
-            'title': 'Test Book',
-            'author': 'Test Author',
-            'id': '12345'
-        }
+        book_details = {"title": "Test Book", "author": "Test Author", "id": "12345"}
 
         content = """`[p.1]`
 
@@ -215,46 +212,48 @@ Some content.
             processed_content=content,
             book_details=book_details,
             format_type="pdf",
-            output_format="markdown"
+            output_format="markdown",
         )
 
         # Check new schema structure
-        assert 'document_type' in metadata
-        assert metadata['document_type'] == 'book'
+        assert "document_type" in metadata
+        assert metadata["document_type"] == "book"
 
-        assert 'source' in metadata
-        assert metadata['source']['zlibrary_id'] == '12345'
+        assert "source" in metadata
+        assert metadata["source"]["zlibrary_id"] == "12345"
 
-        assert 'frontmatter' in metadata
-        assert metadata['frontmatter']['title'] == 'Test Book'
-        assert metadata['frontmatter']['author'] == 'Test Author'
+        assert "frontmatter" in metadata
+        assert metadata["frontmatter"]["title"] == "Test Book"
+        assert metadata["frontmatter"]["author"] == "Test Author"
 
-        assert 'toc' in metadata
-        assert 'page_line_mapping' in metadata
-        assert 'processing' in metadata
+        assert "toc" in metadata
+        assert "page_line_mapping" in metadata
+        assert "processing" in metadata
 
     def test_metadata_with_corrections(self):
         """Test metadata with corrections applied."""
         metadata = generate_metadata_sidecar(
             original_filename="test.pdf",
             processed_content="Content",
-            book_details={'title': 'Test'},
-            corrections_applied=['letter_spacing_correction', 'ocr_enhancement']
+            book_details={"title": "Test"},
+            corrections_applied=["letter_spacing_correction", "ocr_enhancement"],
         )
 
-        assert 'letter_spacing_correction' in metadata['processing']['corrections_applied']
-        assert 'ocr_enhancement' in metadata['processing']['corrections_applied']
+        assert (
+            "letter_spacing_correction" in metadata["processing"]["corrections_applied"]
+        )
+        assert "ocr_enhancement" in metadata["processing"]["corrections_applied"]
 
     def test_metadata_with_ocr_quality(self):
         """Test metadata with OCR quality score."""
         metadata = generate_metadata_sidecar(
             original_filename="test.pdf",
             processed_content="Content",
-            book_details={'title': 'Test'},
-            ocr_quality_score=0.92
+            book_details={"title": "Test"},
+            ocr_quality_score=0.92,
         )
 
-        assert metadata['processing']['ocr_quality_score'] == 0.92
+        assert metadata["processing"]["ocr_quality_score"] == 0.92
 
     def test_metadata_word_count(self):
         """Test word count calculation."""
@@ -263,10 +262,10 @@ Some content.
         metadata = generate_metadata_sidecar(
             original_filename="test.pdf",
             processed_content=content,
-            book_details={'title': 'Test'}
+            book_details={"title": "Test"},
         )
 
-        assert metadata['processing']['word_count'] == 10
+        assert metadata["processing"]["word_count"] == 10
 
 
 class TestSaveMetadataSidecar:
@@ -275,10 +274,10 @@ class TestSaveMetadataSidecar:
     def test_save_metadata_to_file(self):
         """Test saving metadata to JSON file."""
         metadata = {
-            'source': {'title': 'Test'},
-            'toc': [],
-            'page_line_mapping': {},
-            'processing_metadata': {}
+            "source": {"title": "Test"},
+            "toc": [],
+            "page_line_mapping": {},
+            "processing_metadata": {},
         }
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -288,14 +287,14 @@ class TestSaveMetadataSidecar:
             assert Path(result).exists()
 
             # Verify content
-            with open(result, 'r') as f:
+            with open(result, "r") as f:
                 saved_data = json.load(f)
 
-            assert saved_data['source']['title'] == 'Test'
+            assert saved_data["source"]["title"] == "Test"
 
     def test_save_metadata_creates_directory(self):
         """Test that save creates parent directories."""
-        metadata = {'test': 'data'}
+        metadata = {"test": "data"}
 
         with tempfile.TemporaryDirectory() as tmpdir:
             output_path = Path(tmpdir) / "subdir" / "test.metadata.json"
@@ -312,16 +311,10 @@ class TestAddYAMLFrontmatterToContent:
         """Test prepending frontmatter to content."""
         content = "# Chapter 1\n\nContent here."
 
-        book_details = {
-            'title': 'Test Book',
-            'author': 'Test Author',
-            'id': '12345'
-        }
+        book_details = {"title": "Test Book", "author": "Test Author", "id": "12345"}
 
         result = add_yaml_frontmatter_to_content(
-            content,
-            book_details=book_details,
-            format_type="pdf"
+            content, book_details=book_details, format_type="pdf"
         )
 
         assert result.startswith("---")
@@ -331,12 +324,12 @@ class TestAddYAMLFrontmatterToContent:
     def test_frontmatter_separation(self):
         """Test that frontmatter is separated from content."""
         content = "Content"
-        book_details = {'title': 'Test'}
+        book_details = {"title": "Test"}
 
         result = add_yaml_frontmatter_to_content(content, book_details=book_details)
 
         # Should have frontmatter, blank line, then content
-        parts = result.split('\n\n')
+        parts = result.split("\n\n")
         assert len(parts) >= 2
 
     def test_frontmatter_without_book_details(self):
@@ -350,5 +343,5 @@ class TestAddYAMLFrontmatterToContent:
         assert "title: Unknown" in result
 
 
-if __name__ == '__main__':
-    pytest.main([__file__, '-v'])
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])

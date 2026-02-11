@@ -3,12 +3,13 @@
 import logging
 import fitz
 import pytest
-from pathlib import Path
 from unittest.mock import patch, MagicMock
 
 from lib.rag.resolution.analyzer import analyze_document_fonts
 from lib.rag.resolution.models import DPIDecision, PageAnalysis, RegionDPI
 from lib.rag.resolution.renderer import AdaptiveRenderResult
+
+pytestmark = pytest.mark.unit
 
 
 @pytest.fixture
@@ -20,9 +21,13 @@ def text_pdf(tmp_path):
         page = doc.new_page()
         # 12pt body text
         writer = fitz.TextWriter(page.rect)
-        writer.append((72, 100), f"Page {i+1} body text in twelve point font size for testing.", fontsize=12)
+        writer.append(
+            (72, 100),
+            f"Page {i + 1} body text in twelve point font size for testing.",
+            fontsize=12,
+        )
         # 8pt footnote
-        writer.append((72, 700), f"1. This is a footnote in small text.", fontsize=8)
+        writer.append((72, 700), "1. This is a footnote in small text.", fontsize=8)
         writer.write_text(page)
     doc.save(str(pdf_path))
     doc.close()
@@ -86,6 +91,7 @@ class TestOCRRecoveryAdaptiveDPI:
         """run_ocr_on_pdf should accept page_dpi_map parameter."""
         from lib.rag.ocr.recovery import run_ocr_on_pdf
         import inspect
+
         sig = inspect.signature(run_ocr_on_pdf)
         assert "page_dpi_map" in sig.parameters
         assert sig.parameters["page_dpi_map"].default is None
@@ -94,6 +100,7 @@ class TestOCRRecoveryAdaptiveDPI:
         """_stage_3_ocr_recovery should accept page_dpi_map parameter."""
         from lib.rag.quality.ocr_stage import _stage_3_ocr_recovery
         import inspect
+
         sig = inspect.signature(_stage_3_ocr_recovery)
         assert "page_dpi_map" in sig.parameters
         assert sig.parameters["page_dpi_map"].default is None
@@ -102,6 +109,7 @@ class TestOCRRecoveryAdaptiveDPI:
         """run_ocr_on_pdf should accept page_analysis_map parameter."""
         from lib.rag.ocr.recovery import run_ocr_on_pdf
         import inspect
+
         sig = inspect.signature(run_ocr_on_pdf)
         assert "page_analysis_map" in sig.parameters
         assert sig.parameters["page_analysis_map"].default is None
@@ -110,6 +118,7 @@ class TestOCRRecoveryAdaptiveDPI:
         """_stage_3_ocr_recovery should accept page_analysis_map parameter."""
         from lib.rag.quality.ocr_stage import _stage_3_ocr_recovery
         import inspect
+
         sig = inspect.signature(_stage_3_ocr_recovery)
         assert "page_analysis_map" in sig.parameters
         assert sig.parameters["page_analysis_map"].default is None
@@ -121,9 +130,10 @@ class TestOrchestratorAdaptiveIntegration:
     def test_orchestrator_imports_resolution(self):
         """orchestrator_pdf should import adaptive resolution modules."""
         import lib.rag.orchestrator_pdf as orc
+
         # Verify the imports exist at module level
-        assert hasattr(orc, 'analyze_document_fonts')
-        assert hasattr(orc, 'DPIDecision')
+        assert hasattr(orc, "analyze_document_fonts")
+        assert hasattr(orc, "DPIDecision")
 
     def test_adaptive_dpi_in_processing(self, text_pdf, caplog):
         """Processing a text PDF should trigger adaptive DPI analysis."""
@@ -151,7 +161,8 @@ class TestOrchestratorAdaptiveIntegration:
                 mock_facade.return_value = facade
 
                 from lib.rag.orchestrator_pdf import process_pdf
-                result = process_pdf(text_pdf, output_format="markdown")
+
+                _result = process_pdf(text_pdf, output_format="markdown")
 
             # Check that adaptive DPI analysis was logged
             assert any("Adaptive DPI" in msg for msg in caplog.messages), (
@@ -165,16 +176,10 @@ class TestResolutionExports:
     def test_all_exports_available(self):
         """All public symbols should be importable from resolution package."""
         from lib.rag.resolution import (
-            compute_optimal_dpi,
-            analyze_page_fonts,
-            analyze_document_fonts,
-            render_page_adaptive,
-            render_region,
             DPIDecision,
             PageAnalysis,
-            RegionDPI,
-            AdaptiveRenderResult,
         )
+
         # Just verify they're all importable
         assert DPIDecision is not None
         assert PageAnalysis is not None
@@ -189,11 +194,32 @@ class TestRegionReRenderingWiring:
         from PIL import Image
 
         # Build a PageAnalysis with a footnote region
-        footnote_dpi = DPIDecision(dpi=400, confidence=0.9, reason="small_text", font_size_pt=8.0, estimated_pixel_height=44.0)
-        page_dpi = DPIDecision(dpi=200, confidence=0.8, reason="body_text", font_size_pt=12.0, estimated_pixel_height=33.0)
-        region = RegionDPI(bbox=(50, 700, 500, 780), dpi_decision=footnote_dpi, region_type="footnote")
-        analysis = PageAnalysis(page_num=1, dominant_size=12.0, min_size=8.0, max_size=12.0,
-                                has_small_text=True, page_dpi=page_dpi, regions=[region])
+        footnote_dpi = DPIDecision(
+            dpi=400,
+            confidence=0.9,
+            reason="small_text",
+            font_size_pt=8.0,
+            estimated_pixel_height=44.0,
+        )
+        page_dpi = DPIDecision(
+            dpi=200,
+            confidence=0.8,
+            reason="body_text",
+            font_size_pt=12.0,
+            estimated_pixel_height=33.0,
+        )
+        region = RegionDPI(
+            bbox=(50, 700, 500, 780), dpi_decision=footnote_dpi, region_type="footnote"
+        )
+        analysis = PageAnalysis(
+            page_num=1,
+            dominant_size=12.0,
+            min_size=8.0,
+            max_size=12.0,
+            has_small_text=True,
+            page_dpi=page_dpi,
+            regions=[region],
+        )
         page_analysis_map = {1: analysis}
 
         # Mock render_page_adaptive to return known images
@@ -206,8 +232,12 @@ class TestRegionReRenderingWiring:
             metadata={"render_time_ms": 5.0},
         )
 
-        with patch("lib.rag.ocr.recovery.render_page_adaptive", return_value=mock_result) as mock_render, \
-             patch("lib.rag.ocr.recovery._get_facade") as mock_facade:
+        with (
+            patch(
+                "lib.rag.ocr.recovery.render_page_adaptive", return_value=mock_result
+            ) as mock_render,
+            patch("lib.rag.ocr.recovery._get_facade") as mock_facade,
+        ):
             facade = MagicMock()
             facade.OCR_AVAILABLE = True
             facade.PYMUPDF_AVAILABLE = True
@@ -217,7 +247,10 @@ class TestRegionReRenderingWiring:
             mock_doc.__len__ = MagicMock(return_value=1)
             mock_doc.is_closed = False
             facade.fitz.open.return_value = mock_doc
-            facade.pytesseract.image_to_string.side_effect = ["Page body text", "Footnote region text"]
+            facade.pytesseract.image_to_string.side_effect = [
+                "Page body text",
+                "Footnote region text",
+            ]
             facade.Image = Image
             mock_facade.return_value = facade
 
@@ -236,18 +269,38 @@ class TestRegionReRenderingWiring:
         from lib.rag.ocr.recovery import run_ocr_on_pdf
         from PIL import Image
 
-        page_dpi = DPIDecision(dpi=200, confidence=0.8, reason="body_text", font_size_pt=12.0, estimated_pixel_height=33.0)
-        analysis = PageAnalysis(page_num=1, dominant_size=12.0, min_size=12.0, max_size=12.0,
-                                has_small_text=False, page_dpi=page_dpi, regions=[])
+        page_dpi = DPIDecision(
+            dpi=200,
+            confidence=0.8,
+            reason="body_text",
+            font_size_pt=12.0,
+            estimated_pixel_height=33.0,
+        )
+        analysis = PageAnalysis(
+            page_num=1,
+            dominant_size=12.0,
+            min_size=12.0,
+            max_size=12.0,
+            has_small_text=False,
+            page_dpi=page_dpi,
+            regions=[],
+        )
         page_analysis_map = {1: analysis}
 
         page_img = Image.new("RGB", (100, 100), "white")
         mock_result = AdaptiveRenderResult(
-            page_image=page_img, region_images=[], page_dpi=200, metadata={},
+            page_image=page_img,
+            region_images=[],
+            page_dpi=200,
+            metadata={},
         )
 
-        with patch("lib.rag.ocr.recovery.render_page_adaptive", return_value=mock_result) as mock_render, \
-             patch("lib.rag.ocr.recovery._get_facade") as mock_facade:
+        with (
+            patch(
+                "lib.rag.ocr.recovery.render_page_adaptive", return_value=mock_result
+            ) as mock_render,
+            patch("lib.rag.ocr.recovery._get_facade") as mock_facade,
+        ):
             facade = MagicMock()
             facade.OCR_AVAILABLE = True
             facade.PYMUPDF_AVAILABLE = True
@@ -275,8 +328,10 @@ class TestRegionReRenderingWiring:
         from PIL import Image
         import io
 
-        with patch("lib.rag.ocr.recovery.render_page_adaptive") as mock_render, \
-             patch("lib.rag.ocr.recovery._get_facade") as mock_facade:
+        with (
+            patch("lib.rag.ocr.recovery.render_page_adaptive") as mock_render,
+            patch("lib.rag.ocr.recovery._get_facade") as mock_facade,
+        ):
             facade = MagicMock()
             facade.OCR_AVAILABLE = True
             facade.PYMUPDF_AVAILABLE = True

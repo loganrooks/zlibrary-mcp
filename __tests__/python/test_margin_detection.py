@@ -13,6 +13,8 @@ from lib.rag.detection.margins import (
     detect_margin_content,
 )
 
+pytestmark = pytest.mark.unit
+
 
 # ============================================================
 # classify_margin_content tests

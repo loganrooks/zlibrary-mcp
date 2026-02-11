@@ -33,10 +33,13 @@ import python_bridge
 
 
 # Skip all integration tests if credentials not available
-pytestmark = pytest.mark.skipif(
-    not os.getenv("ZLIBRARY_EMAIL") or not os.getenv("ZLIBRARY_PASSWORD"),
-    reason="Integration tests require ZLIBRARY_EMAIL and ZLIBRARY_PASSWORD environment variables",
-)
+pytestmark = [
+    pytest.mark.integration,
+    pytest.mark.skipif(
+        not os.getenv("ZLIBRARY_EMAIL") or not os.getenv("ZLIBRARY_PASSWORD"),
+        reason="Integration tests require ZLIBRARY_EMAIL and ZLIBRARY_PASSWORD environment variables",
+    ),
+]
 
 
 @pytest.fixture(scope="module")

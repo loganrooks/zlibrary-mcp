@@ -1,5 +1,7 @@
 """Tests for the compositor conflict resolution logic."""
 
+import pytest
+
 from lib.rag.pipeline.models import (
     BlockClassification,
     ContentType,
@@ -10,6 +12,8 @@ from lib.rag.pipeline.compositor import (
     compute_bbox_overlap,
     resolve_conflicts,
 )
+
+pytestmark = pytest.mark.unit
 
 
 class TestComputeBboxOverlap:

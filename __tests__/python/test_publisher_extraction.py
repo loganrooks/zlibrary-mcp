@@ -3,8 +3,10 @@ Tests for publisher extraction from PDF front matter.
 """
 
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 from lib.rag_processing import _extract_publisher_from_front_matter
+
+pytestmark = pytest.mark.unit
 
 
 def test_extract_cambridge_university_press():
@@ -204,7 +206,7 @@ def test_defensive_non_string_text():
     # First call returns non-string (MagicMock), second returns valid text
     mock_page.get_text.side_effect = [
         MagicMock(),  # Non-string, should be skipped
-        "Cambridge University Press\n© 2015"  # Valid string
+        "Cambridge University Press\n© 2015",  # Valid string
     ]
 
     publisher, year = _extract_publisher_from_front_matter(mock_doc, max_pages=5)

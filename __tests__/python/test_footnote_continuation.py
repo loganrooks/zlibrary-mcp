@@ -24,12 +24,13 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent / "lib"))
 from footnote_continuation import (
     FootnoteWithContinuation,
     CrossPageFootnoteParser,
-    ContinuationSignal,
     is_footnote_incomplete,
     analyze_footnote_batch,
-    get_incomplete_confidence_threshold
+    get_incomplete_confidence_threshold,
 )
 from rag_data_models import NoteSource
+
+pytestmark = pytest.mark.unit
 
 
 class TestFootnoteWithContinuation:
@@ -41,9 +42,9 @@ class TestFootnoteWithContinuation:
             marker="1",
             content="Brief citation.",
             pages=[5],
-            bboxes=[{'x0': 50, 'y0': 700, 'x1': 550, 'y1': 720}],
+            bboxes=[{"x0": 50, "y0": 700, "x1": 550, "y1": 720}],
             is_complete=True,
-            note_source=NoteSource.AUTHOR
+            note_source=NoteSource.AUTHOR,
         )
 
         assert footnote.marker == "1"
@@ -60,16 +61,16 @@ class TestFootnoteWithContinuation:
             marker="a",
             content="This is the first part",
             pages=[64],
-            bboxes=[{'x0': 50, 'y0': 700, 'x1': 550, 'y1': 780}],
+            bboxes=[{"x0": 50, "y0": 700, "x1": 550, "y1": 780}],
             is_complete=False,
-            note_source=NoteSource.TRANSLATOR
+            note_source=NoteSource.TRANSLATOR,
         )
 
         footnote.append_continuation(
             additional_content="and this continues.",
             page_num=65,
-            bbox={'x0': 50, 'y0': 50, 'x1': 550, 'y1': 70},
-            confidence=0.92
+            bbox={"x0": 50, "y0": 50, "x1": 550, "y1": 70},
+            confidence=0.92,
         )
 
         assert footnote.content == "This is the first part and this continues."
@@ -80,16 +81,11 @@ class TestFootnoteWithContinuation:
     def test_append_continuation_with_hyphen(self):
         """Test appending continuation with hyphenated word."""
         footnote = FootnoteWithContinuation(
-            marker="*",
-            content="This word is hyphen-",
-            pages=[1],
-            is_complete=False
+            marker="*", content="This word is hyphen-", pages=[1], is_complete=False
         )
 
         footnote.append_continuation(
-            additional_content="ated across pages.",
-            page_num=2,
-            confidence=0.90
+            additional_content="ated across pages.", page_num=2, confidence=0.90
         )
 
         assert footnote.content == "This word is hyphenated across pages."
@@ -101,7 +97,7 @@ class TestFootnoteWithContinuation:
             marker="†",
             content="Very long footnote starts here",
             pages=[10],
-            is_complete=False
+            is_complete=False,
         )
 
         footnote.append_continuation("and continues on page 2", 11, confidence=0.90)
@@ -119,7 +115,7 @@ class TestFootnoteWithContinuation:
             content="Brief note.",
             pages=[5],
             is_complete=True,
-            note_source=NoteSource.AUTHOR
+            note_source=NoteSource.AUTHOR,
         )
 
         summary = footnote.get_summary()
@@ -137,7 +133,7 @@ class TestFootnoteWithContinuation:
             pages=[64, 65],
             is_complete=True,
             continuation_confidence=0.92,
-            note_source=NoteSource.TRANSLATOR
+            note_source=NoteSource.TRANSLATOR,
         )
 
         summary = footnote.get_summary()
@@ -156,17 +152,17 @@ class TestCrossPageFootnoteParser:
 
         page1_notes = [
             {
-                'marker': '1',
-                'content': 'Complete footnote on page 1.',
-                'is_complete': True,
-                'note_source': NoteSource.AUTHOR
+                "marker": "1",
+                "content": "Complete footnote on page 1.",
+                "is_complete": True,
+                "note_source": NoteSource.AUTHOR,
             }
         ]
 
         completed = parser.process_page(page1_notes, page_num=1)
 
         assert len(completed) == 1
-        assert completed[0].marker == '1'
+        assert completed[0].marker == "1"
         assert completed[0].pages == [1]
         assert completed[0].is_complete is True
         assert len(parser.incomplete_footnotes) == 0
@@ -178,11 +174,11 @@ class TestCrossPageFootnoteParser:
         # Page 1: Incomplete footnote
         page1_notes = [
             {
-                'marker': '*',
-                'content': 'This footnote continues',
-                'is_complete': False,
-                'font_name': 'TimesNewRoman',
-                'font_size': 9.0
+                "marker": "*",
+                "content": "This footnote continues",
+                "is_complete": False,
+                "font_name": "TimesNewRoman",
+                "font_size": 9.0,
             }
         ]
 
@@ -193,19 +189,19 @@ class TestCrossPageFootnoteParser:
         # Page 2: Continuation (no marker, same font)
         page2_notes = [
             {
-                'marker': None,
-                'content': 'onto the next page.',
-                'is_complete': True,
-                'font_name': 'TimesNewRoman',
-                'font_size': 9.0
+                "marker": None,
+                "content": "onto the next page.",
+                "is_complete": True,
+                "font_name": "TimesNewRoman",
+                "font_size": 9.0,
             }
         ]
 
         completed = parser.process_page(page2_notes, page_num=2)
         assert len(completed) == 1
-        assert completed[0].marker == '*'
+        assert completed[0].marker == "*"
         assert completed[0].pages == [1, 2]
-        assert 'This footnote continues onto the next page.' in completed[0].content
+        assert "This footnote continues onto the next page." in completed[0].content
         assert completed[0].is_complete is True
         assert completed[0].continuation_confidence >= 0.85
 
@@ -214,34 +210,40 @@ class TestCrossPageFootnoteParser:
         parser = CrossPageFootnoteParser()
 
         # Page 1: Start
-        page1_notes = [{
-            'marker': 'a',
-            'content': 'Long translator gloss begins',
-            'is_complete': False,
-            'font_name': 'TimesNewRoman',
-            'font_size': 9.0
-        }]
+        page1_notes = [
+            {
+                "marker": "a",
+                "content": "Long translator gloss begins",
+                "is_complete": False,
+                "font_name": "TimesNewRoman",
+                "font_size": 9.0,
+            }
+        ]
         parser.process_page(page1_notes, page_num=1)
 
         # Page 2: Middle continuation
-        page2_notes = [{
-            'marker': None,
-            'content': 'and continues with more detail',
-            'is_complete': False,  # Still not done
-            'font_name': 'TimesNewRoman',
-            'font_size': 9.0
-        }]
+        page2_notes = [
+            {
+                "marker": None,
+                "content": "and continues with more detail",
+                "is_complete": False,  # Still not done
+                "font_name": "TimesNewRoman",
+                "font_size": 9.0,
+            }
+        ]
         completed = parser.process_page(page2_notes, page_num=2)
         assert len(completed) == 0  # Still incomplete
 
         # Page 3: Final continuation
-        page3_notes = [{
-            'marker': None,
-            'content': 'and finally concludes here.',
-            'is_complete': True,
-            'font_name': 'TimesNewRoman',
-            'font_size': 9.0
-        }]
+        page3_notes = [
+            {
+                "marker": None,
+                "content": "and finally concludes here.",
+                "is_complete": True,
+                "font_name": "TimesNewRoman",
+                "font_size": 9.0,
+            }
+        ]
         completed = parser.process_page(page3_notes, page_num=3)
 
         assert len(completed) == 1
@@ -254,38 +256,40 @@ class TestCrossPageFootnoteParser:
         parser = CrossPageFootnoteParser()
 
         # Page 1: Marked incomplete but actually complete
-        page1_notes = [{
-            'marker': '1',
-            'content': 'This looks incomplete but is actually complete.',
-            'is_complete': False
-        }]
+        page1_notes = [
+            {
+                "marker": "1",
+                "content": "This looks incomplete but is actually complete.",
+                "is_complete": False,
+            }
+        ]
         completed = parser.process_page(page1_notes, page_num=1)
         assert len(completed) == 0
         assert len(parser.incomplete_footnotes) == 1
 
         # Page 2: New footnote (no continuation)
-        page2_notes = [{
-            'marker': '2',
-            'content': 'A new footnote on page 2.',
-            'is_complete': True
-        }]
+        page2_notes = [
+            {"marker": "2", "content": "A new footnote on page 2.", "is_complete": True}
+        ]
         completed = parser.process_page(page2_notes, page_num=2)
 
         # Should mark previous as complete (false incomplete)
         assert len(completed) == 2  # Both previous and current
-        assert completed[0].marker == '1'
+        assert completed[0].marker == "1"
         assert completed[0].is_complete is True
-        assert completed[1].marker == '2'
+        assert completed[1].marker == "2"
 
     def test_orphaned_content_no_incomplete(self):
         """Test handling orphaned continuation content without incomplete footnote."""
         parser = CrossPageFootnoteParser()
 
         # Page 1: Content without marker but no incomplete to attach to
-        page1_notes = [{
-            'marker': None,
-            'content': 'Orphaned content with no previous footnote.',
-        }]
+        page1_notes = [
+            {
+                "marker": None,
+                "content": "Orphaned content with no previous footnote.",
+            }
+        ]
 
         completed = parser.process_page(page1_notes, page_num=1)
 
@@ -298,22 +302,26 @@ class TestCrossPageFootnoteParser:
         parser = CrossPageFootnoteParser()
 
         # Page 1: Incomplete with font metadata
-        page1_notes = [{
-            'marker': '*',
-            'content': 'Start of footnote',
-            'is_complete': False,
-            'font_name': 'TimesNewRoman',
-            'font_size': 9.0
-        }]
+        page1_notes = [
+            {
+                "marker": "*",
+                "content": "Start of footnote",
+                "is_complete": False,
+                "font_name": "TimesNewRoman",
+                "font_size": 9.0,
+            }
+        ]
         parser.process_page(page1_notes, page_num=1)
 
         # Page 2: Continuation with matching font
-        page2_notes = [{
-            'marker': None,
-            'content': 'continuation text.',
-            'font_name': 'TimesNewRoman',
-            'font_size': 9.0  # Exact match
-        }]
+        page2_notes = [
+            {
+                "marker": None,
+                "content": "continuation text.",
+                "font_name": "TimesNewRoman",
+                "font_size": 9.0,  # Exact match
+            }
+        ]
         completed = parser.process_page(page2_notes, page_num=2)
 
         assert len(completed) == 1
@@ -325,22 +333,26 @@ class TestCrossPageFootnoteParser:
         parser = CrossPageFootnoteParser()
 
         # Page 1: Incomplete
-        page1_notes = [{
-            'marker': 'a',
-            'content': 'Start of footnote',
-            'is_complete': False,
-            'font_name': 'TimesNewRoman',
-            'font_size': 9.0
-        }]
+        page1_notes = [
+            {
+                "marker": "a",
+                "content": "Start of footnote",
+                "is_complete": False,
+                "font_name": "TimesNewRoman",
+                "font_size": 9.0,
+            }
+        ]
         parser.process_page(page1_notes, page_num=1)
 
         # Page 2: Continuation with different font
-        page2_notes = [{
-            'marker': None,
-            'content': 'continuation with different font.',
-            'font_name': 'Arial',  # Different font
-            'font_size': 10.0
-        }]
+        page2_notes = [
+            {
+                "marker": None,
+                "content": "continuation with different font.",
+                "font_name": "Arial",  # Different font
+                "font_size": 10.0,
+            }
+        ]
         completed = parser.process_page(page2_notes, page_num=2)
 
         assert len(completed) == 1
@@ -351,18 +363,18 @@ class TestCrossPageFootnoteParser:
         """Test continuation detection with lowercase start."""
         parser = CrossPageFootnoteParser()
 
-        page1_notes = [{
-            'marker': '1',
-            'content': 'Incomplete note',
-            'is_complete': False
-        }]
+        page1_notes = [
+            {"marker": "1", "content": "Incomplete note", "is_complete": False}
+        ]
         parser.process_page(page1_notes, page_num=1)
 
         # Continuation starts lowercase
-        page2_notes = [{
-            'marker': None,
-            'content': 'and continues here.',  # lowercase start
-        }]
+        page2_notes = [
+            {
+                "marker": None,
+                "content": "and continues here.",  # lowercase start
+            }
+        ]
         completed = parser.process_page(page2_notes, page_num=2)
 
         assert len(completed) == 1
@@ -371,18 +383,18 @@ class TestCrossPageFootnoteParser:
         """Test continuation detection with conjunction start."""
         parser = CrossPageFootnoteParser()
 
-        page1_notes = [{
-            'marker': '2',
-            'content': 'Note starts here',
-            'is_complete': False
-        }]
+        page1_notes = [
+            {"marker": "2", "content": "Note starts here", "is_complete": False}
+        ]
         parser.process_page(page1_notes, page_num=1)
 
         # Continuation starts with conjunction
-        page2_notes = [{
-            'marker': None,
-            'content': 'However, the argument continues.',  # conjunction start
-        }]
+        page2_notes = [
+            {
+                "marker": None,
+                "content": "However, the argument continues.",  # conjunction start
+            }
+        ]
         completed = parser.process_page(page2_notes, page_num=2)
 
         assert len(completed) == 1
@@ -392,11 +404,13 @@ class TestCrossPageFootnoteParser:
         parser = CrossPageFootnoteParser()
 
         # Add incomplete footnote
-        page1_notes = [{
-            'marker': '*',
-            'content': 'Incomplete note at document end.',
-            'is_complete': False
-        }]
+        page1_notes = [
+            {
+                "marker": "*",
+                "content": "Incomplete note at document end.",
+                "is_complete": False,
+            }
+        ]
         parser.process_page(page1_notes, page_num=1)
 
         assert len(parser.incomplete_footnotes) == 1
@@ -405,7 +419,7 @@ class TestCrossPageFootnoteParser:
         remaining = parser.finalize()
 
         assert len(remaining) == 1
-        assert remaining[0].marker == '*'
+        assert remaining[0].marker == "*"
         assert remaining[0].is_complete is True  # Marked complete at doc end
         assert len(parser.incomplete_footnotes) == 0
 
@@ -414,11 +428,9 @@ class TestCrossPageFootnoteParser:
         parser = CrossPageFootnoteParser()
 
         # Process complete footnote
-        page1_notes = [{
-            'marker': '1',
-            'content': 'Complete note.',
-            'is_complete': True
-        }]
+        page1_notes = [
+            {"marker": "1", "content": "Complete note.", "is_complete": True}
+        ]
         parser.process_page(page1_notes, page_num=1)
 
         # Finalize
@@ -432,81 +444,79 @@ class TestCrossPageFootnoteParser:
         parser = CrossPageFootnoteParser()
 
         # Process multiple pages
-        page1_notes = [{
-            'marker': '1',
-            'content': 'First footnote.',
-            'is_complete': True
-        }]
+        page1_notes = [
+            {"marker": "1", "content": "First footnote.", "is_complete": True}
+        ]
         parser.process_page(page1_notes, page_num=1)
 
-        page2_notes = [{
-            'marker': '2',
-            'content': 'Second footnote.',
-            'is_complete': True
-        }]
+        page2_notes = [
+            {"marker": "2", "content": "Second footnote.", "is_complete": True}
+        ]
         parser.process_page(page2_notes, page_num=2)
 
         all_completed = parser.get_all_completed()
 
         assert len(all_completed) == 2
-        assert all_completed[0].marker == '1'
-        assert all_completed[1].marker == '2'
+        assert all_completed[0].marker == "1"
+        assert all_completed[1].marker == "2"
 
     def test_get_summary(self):
         """Test summary statistics."""
         parser = CrossPageFootnoteParser()
 
         # Single-page footnote
-        page1_notes = [{
-            'marker': '1',
-            'content': 'Single page note.',
-            'is_complete': True
-        }]
+        page1_notes = [
+            {"marker": "1", "content": "Single page note.", "is_complete": True}
+        ]
         parser.process_page(page1_notes, page_num=1)
 
         # Multi-page footnote
-        page2_notes = [{
-            'marker': 'a',
-            'content': 'Multi-page note starts',
-            'is_complete': False,
-            'font_name': 'TimesNewRoman',
-            'font_size': 9.0
-        }]
+        page2_notes = [
+            {
+                "marker": "a",
+                "content": "Multi-page note starts",
+                "is_complete": False,
+                "font_name": "TimesNewRoman",
+                "font_size": 9.0,
+            }
+        ]
         parser.process_page(page2_notes, page_num=2)
 
-        page3_notes = [{
-            'marker': None,
-            'content': 'and continues.',
-            'font_name': 'TimesNewRoman',
-            'font_size': 9.0
-        }]
+        page3_notes = [
+            {
+                "marker": None,
+                "content": "and continues.",
+                "font_name": "TimesNewRoman",
+                "font_size": 9.0,
+            }
+        ]
         parser.process_page(page3_notes, page_num=3)
 
         summary = parser.get_summary()
 
-        assert summary['total_completed'] == 2
-        assert summary['total_incomplete'] == 0
-        assert summary['single_page_count'] == 1
-        assert summary['multi_page_count'] == 1
-        assert summary['average_confidence'] > 0.0
+        assert summary["total_completed"] == 2
+        assert summary["total_incomplete"] == 0
+        assert summary["single_page_count"] == 1
+        assert summary["multi_page_count"] == 1
+        assert summary["average_confidence"] > 0.0
 
     def test_spatial_analysis_footnote_area(self):
         """Test spatial detection of footnote area."""
         parser = CrossPageFootnoteParser()
 
-        page1_notes = [{
-            'marker': '1',
-            'content': 'Incomplete note',
-            'is_complete': False
-        }]
+        page1_notes = [
+            {"marker": "1", "content": "Incomplete note", "is_complete": False}
+        ]
         parser.process_page(page1_notes, page_num=1)
 
         # Continuation in footnote area (bottom of page)
-        page2_notes = [{
-            'marker': None,
-            'content': 'continuation in footnote area.',
-            'bbox': {'x0': 50, 'y0': 700, 'x1': 550, 'y1': 720, 'y1': 750}  # Bottom area
-        }]
+        page2_notes = [
+            {
+                "marker": None,
+                "content": "continuation in footnote area.",
+                "bbox": {"x0": 50, "y0": 700, "x1": 550, "y1": 750},  # Bottom area
+            }
+        ]
         completed = parser.process_page(page2_notes, page_num=2)
 
         assert len(completed) == 1
@@ -518,53 +528,37 @@ class TestCrossPageFootnoteParser:
         parser = CrossPageFootnoteParser()
 
         page1_notes = [
-            {
-                'marker': '1',
-                'content': 'First footnote.',
-                'is_complete': True
-            },
-            {
-                'marker': '2',
-                'content': 'Second footnote.',
-                'is_complete': True
-            },
-            {
-                'marker': '3',
-                'content': 'Third footnote.',
-                'is_complete': True
-            }
+            {"marker": "1", "content": "First footnote.", "is_complete": True},
+            {"marker": "2", "content": "Second footnote.", "is_complete": True},
+            {"marker": "3", "content": "Third footnote.", "is_complete": True},
         ]
 
         completed = parser.process_page(page1_notes, page_num=1)
 
         assert len(completed) == 3
-        assert completed[0].marker == '1'
-        assert completed[1].marker == '2'
-        assert completed[2].marker == '3'
+        assert completed[0].marker == "1"
+        assert completed[1].marker == "2"
+        assert completed[2].marker == "3"
 
     def test_mixed_complete_and_incomplete(self):
         """Test page with both complete and incomplete footnotes."""
         parser = CrossPageFootnoteParser()
 
         page1_notes = [
+            {"marker": "1", "content": "Complete footnote.", "is_complete": True},
             {
-                'marker': '1',
-                'content': 'Complete footnote.',
-                'is_complete': True
+                "marker": "2",
+                "content": "Incomplete footnote continues",
+                "is_complete": False,
             },
-            {
-                'marker': '2',
-                'content': 'Incomplete footnote continues',
-                'is_complete': False
-            }
         ]
 
         completed = parser.process_page(page1_notes, page_num=1)
 
         assert len(completed) == 1  # Only first completed
-        assert completed[0].marker == '1'
+        assert completed[0].marker == "1"
         assert len(parser.incomplete_footnotes) == 1
-        assert parser.incomplete_footnotes[0].marker == '2'
+        assert parser.incomplete_footnotes[0].marker == "2"
 
 
 class TestEdgeCases:
@@ -583,18 +577,16 @@ class TestEdgeCases:
         """Test continuation dict with empty content."""
         parser = CrossPageFootnoteParser()
 
-        page1_notes = [{
-            'marker': '1',
-            'content': 'Incomplete',
-            'is_complete': False
-        }]
+        page1_notes = [{"marker": "1", "content": "Incomplete", "is_complete": False}]
         parser.process_page(page1_notes, page_num=1)
 
         # Empty continuation content
-        page2_notes = [{
-            'marker': None,
-            'content': '',  # Empty
-        }]
+        page2_notes = [
+            {
+                "marker": None,
+                "content": "",  # Empty
+            }
+        ]
         completed = parser.process_page(page2_notes, page_num=2)
 
         # Should not detect empty content as continuation
@@ -605,69 +597,71 @@ class TestEdgeCases:
         parser = CrossPageFootnoteParser()
 
         # Page 1
-        page1_notes = [{
-            'marker': '†',
-            'content': 'Very long editorial note starts',
-            'is_complete': False,
-            'font_name': 'TimesNewRoman',
-            'font_size': 9.0
-        }]
+        page1_notes = [
+            {
+                "marker": "†",
+                "content": "Very long editorial note starts",
+                "is_complete": False,
+                "font_name": "TimesNewRoman",
+                "font_size": 9.0,
+            }
+        ]
         parser.process_page(page1_notes, page_num=1)
 
         # Pages 2-3: Continuations
         for page_num in [2, 3]:
-            page_notes = [{
-                'marker': None,
-                'content': f'continuation on page {page_num}',
-                'is_complete': False,
-                'font_name': 'TimesNewRoman',
-                'font_size': 9.0
-            }]
+            page_notes = [
+                {
+                    "marker": None,
+                    "content": f"continuation on page {page_num}",
+                    "is_complete": False,
+                    "font_name": "TimesNewRoman",
+                    "font_size": 9.0,
+                }
+            ]
             completed = parser.process_page(page_notes, page_num=page_num)
             assert len(completed) == 0  # Still incomplete
 
         # Page 4: Final continuation
-        page4_notes = [{
-            'marker': None,
-            'content': 'and finally ends on page 4.',
-            'is_complete': True,
-            'font_name': 'TimesNewRoman',
-            'font_size': 9.0
-        }]
+        page4_notes = [
+            {
+                "marker": None,
+                "content": "and finally ends on page 4.",
+                "is_complete": True,
+                "font_name": "TimesNewRoman",
+                "font_size": 9.0,
+            }
+        ]
         completed = parser.process_page(page4_notes, page_num=4)
 
         assert len(completed) == 1
         assert completed[0].pages == [1, 2, 3, 4]
-        assert 'page 2' in completed[0].content
-        assert 'page 3' in completed[0].content
-        assert 'page 4' in completed[0].content
+        assert "page 2" in completed[0].content
+        assert "page 3" in completed[0].content
+        assert "page 4" in completed[0].content
 
     def test_hyphen_at_page_break(self):
         """Test word hyphenation across page boundary."""
         parser = CrossPageFootnoteParser()
 
-        page1_notes = [{
-            'marker': 'a',
-            'content': 'This is a hyphen-',
-            'is_complete': False
-        }]
+        page1_notes = [
+            {"marker": "a", "content": "This is a hyphen-", "is_complete": False}
+        ]
         parser.process_page(page1_notes, page_num=1)
 
-        page2_notes = [{
-            'marker': None,
-            'content': 'ated word across pages.'
-        }]
+        page2_notes = [{"marker": None, "content": "ated word across pages."}]
         completed = parser.process_page(page2_notes, page_num=2)
 
         assert len(completed) == 1
         # Hyphen should be removed
-        assert 'hyphenated word' in completed[0].content
-        assert 'hyphen- ated' not in completed[0].content
+        assert "hyphenated word" in completed[0].content
+        assert "hyphen- ated" not in completed[0].content
 
 
 # =============================================================================
 # NLTK-based Incomplete Detection Tests
 # =============================================================================
+
 
 class TestIsFootnoteIncomplete:
     """Test NLTK-based is_footnote_incomplete() function."""
@@ -677,21 +671,21 @@ class TestIsFootnoteIncomplete:
         incomplete, confidence, reason = is_footnote_incomplete("")
         assert incomplete is False
         assert confidence == 0.0
-        assert reason == 'empty_text'
+        assert reason == "empty_text"
 
     def test_very_short_text(self):
         """Test handling of very short text (< 5 chars)."""
         incomplete, confidence, reason = is_footnote_incomplete("to")
         assert incomplete is False
         assert confidence == 0.5
-        assert reason == 'text_too_short'
+        assert reason == "text_too_short"
 
     def test_hyphenation_incomplete(self):
         """Test detection of hyphenated word at end (very strong signal)."""
         incomplete, confidence, reason = is_footnote_incomplete("concept-")
         assert incomplete is True
         assert confidence == 0.95
-        assert reason == 'hyphenation'
+        assert reason == "hyphenation"
 
         # Test with context
         incomplete, confidence, reason = is_footnote_incomplete(
@@ -699,7 +693,7 @@ class TestIsFootnoteIncomplete:
         )
         assert incomplete is True
         assert confidence == 0.95
-        assert reason == 'hyphenation'
+        assert reason == "hyphenation"
 
     def test_incomplete_phrase_strong_signal(self):
         """Test incomplete phrases (refers to, according to, etc.)."""
@@ -713,27 +707,27 @@ class TestIsFootnoteIncomplete:
             "Due to",
             "In terms of",
             "With respect to",
-            "By means of"
+            "By means of",
         ]
 
         for text in high_confidence_cases:
             incomplete, confidence, reason = is_footnote_incomplete(text)
             assert incomplete is True, f"Failed for: {text}"
             assert confidence >= 0.85, f"Low confidence for: {text} (got {confidence})"
-            assert reason == 'incomplete_phrase', f"Wrong reason for: {text}"
+            assert reason == "incomplete_phrase", f"Wrong reason for: {text}"
 
         # These contain incomplete phrases but not at the end (still incomplete via NLTK)
         nltk_cases = [
             "According to the principle",
             "In order to understand",
-            "Due to the complexity"
+            "Due to the complexity",
         ]
 
         for text in nltk_cases:
             incomplete, confidence, reason = is_footnote_incomplete(text)
             assert incomplete is True, f"Failed for: {text}"
             assert confidence >= 0.75, f"Low confidence for: {text} (got {confidence})"
-            assert 'nltk_incomplete' in reason, f"Wrong reason for: {text}"
+            assert "nltk_incomplete" in reason, f"Wrong reason for: {text}"
 
     def test_nltk_incomplete_no_punctuation(self):
         """Test NLTK detection of sentences without terminal punctuation."""
@@ -741,14 +735,14 @@ class TestIsFootnoteIncomplete:
             "This is an incomplete thought",
             "The argument continues",
             "See the discussion below",
-            "Compare with Heidegger's analysis"
+            "Compare with Heidegger's analysis",
         ]
 
         for text in test_cases:
             incomplete, confidence, reason = is_footnote_incomplete(text)
             assert incomplete is True, f"Failed for: {text}"
             assert confidence >= 0.75, f"Low confidence for: {text}"
-            assert 'nltk_incomplete' in reason, f"Wrong reason for: {text}"
+            assert "nltk_incomplete" in reason, f"Wrong reason for: {text}"
 
     def test_nltk_incomplete_with_continuation_word(self):
         """Test NLTK + continuation word for stronger signal."""
@@ -757,7 +751,7 @@ class TestIsFootnoteIncomplete:
             "Refers to",
             "According to",
             "In the context of",
-            "With regard to"
+            "With regard to",
         ]
 
         for text in test_cases:
@@ -765,8 +759,9 @@ class TestIsFootnoteIncomplete:
             assert incomplete is True, f"Failed for: {text}"
             assert confidence >= 0.85, f"Low confidence for: {text}"
             # Should detect both NLTK and continuation word
-            assert 'continuation' in reason or 'incomplete_phrase' in reason, \
+            assert "continuation" in reason or "incomplete_phrase" in reason, (
                 f"Wrong reason for: {text}"
+            )
 
     def test_complete_with_period(self):
         """Test detection of complete sentences with terminal punctuation."""
@@ -774,14 +769,14 @@ class TestIsFootnoteIncomplete:
             "See Martin Heidegger, Being and Time, p. 123.",
             "This is a complete sentence.",
             "Compare with Kant's First Critique!",
-            "What is the meaning of Being?"
+            "What is the meaning of Being?",
         ]
 
         for text in test_cases:
             incomplete, confidence, reason = is_footnote_incomplete(text)
             assert incomplete is False, f"Failed for: {text}"
             assert confidence >= 0.85, f"Low confidence for: {text}"
-            assert 'complete' in reason, f"Wrong reason for: {text}"
+            assert "complete" in reason, f"Wrong reason for: {text}"
 
     def test_complete_despite_continuation_word(self):
         """Test cases with continuation words but complete sentences."""
@@ -789,7 +784,7 @@ class TestIsFootnoteIncomplete:
         test_cases = [
             "According to Martin Heidegger's fundamental ontology, Dasein is characterized.",
             "With respect to the Kantian critique, we must examine the categories.",
-            "In terms of phenomenological reduction, the epoché is essential."
+            "In terms of phenomenological reduction, the epoché is essential.",
         ]
 
         for text in test_cases:
@@ -809,8 +804,9 @@ class TestIsFootnoteIncomplete:
 
         for text, expected_incomplete in test_cases:
             incomplete, confidence, reason = is_footnote_incomplete(text)
-            assert incomplete == expected_incomplete, \
+            assert incomplete == expected_incomplete, (
                 f"Wrong detection for: {text} (expected {expected_incomplete})"
+            )
 
     def test_multiple_sentences_complete(self):
         """Test footnotes with multiple complete sentences."""
@@ -822,7 +818,7 @@ class TestIsFootnoteIncomplete:
         incomplete, confidence, reason = is_footnote_incomplete(text)
         assert incomplete is False
         assert confidence >= 0.90
-        assert 'complete' in reason
+        assert "complete" in reason
 
     def test_multiple_sentences_incomplete_last(self):
         """Test footnotes with complete sentences but incomplete last sentence."""
@@ -852,14 +848,16 @@ class TestIsFootnoteIncomplete:
         """Test handling of Greek/Latin terms and special characters."""
         test_cases = [
             ("The Greek term λόγος refers to", True),  # Incomplete
-            ("The Latin phrase 'cogito ergo sum' means 'I think, therefore I am'.", False),
+            (
+                "The Latin phrase 'cogito ergo sum' means 'I think, therefore I am'.",
+                False,
+            ),
             ("Dasein (Da-sein) is", True),  # Incomplete
         ]
 
         for text, expected_incomplete in test_cases:
             incomplete, confidence, reason = is_footnote_incomplete(text)
-            assert incomplete == expected_incomplete, \
-                f"Wrong detection for: {text}"
+            assert incomplete == expected_incomplete, f"Wrong detection for: {text}"
 
     def test_parenthetical_content(self):
         """Test handling of parenthetical content."""
@@ -871,8 +869,7 @@ class TestIsFootnoteIncomplete:
 
         for text, expected_incomplete in test_cases:
             incomplete, confidence, reason = is_footnote_incomplete(text)
-            assert incomplete == expected_incomplete, \
-                f"Wrong detection for: {text}"
+            assert incomplete == expected_incomplete, f"Wrong detection for: {text}"
 
     def test_whitespace_normalization(self):
         """Test that whitespace is properly normalized."""
@@ -880,12 +877,14 @@ class TestIsFootnoteIncomplete:
             "  The concept refers to  ",
             "The concept refers to",
             "\nThe concept refers to\n",
-            "The\nconcept\nrefers\nto"
+            "The\nconcept\nrefers\nto",
         ]
 
         # All should produce same result
         results = [is_footnote_incomplete(text) for text in test_cases]
-        assert all(r[0] == results[0][0] for r in results), "Inconsistent whitespace handling"
+        assert all(r[0] == results[0][0] for r in results), (
+            "Inconsistent whitespace handling"
+        )
 
     def test_performance_simple_text(self):
         """Test performance for simple cases (should be <1ms)."""
@@ -944,7 +943,7 @@ class TestAnalyzeFootnoteBatch:
             "Complete sentence.",
             "Incomplete refers to",
             "word-",
-            "Another complete citation (p. 42)."
+            "Another complete citation (p. 42).",
         ]
 
         results = analyze_footnote_batch(footnotes)
@@ -952,17 +951,13 @@ class TestAnalyzeFootnoteBatch:
 
         # Check expected results
         assert results[0][0] is False  # Complete
-        assert results[1][0] is True   # Incomplete (refers to)
-        assert results[2][0] is True   # Incomplete (hyphen)
+        assert results[1][0] is True  # Incomplete (refers to)
+        assert results[2][0] is True  # Incomplete (hyphen)
         assert results[3][0] is False  # Complete
 
     def test_batch_consistency_with_individual(self):
         """Test batch results match individual calls."""
-        footnotes = [
-            "Test footnote one.",
-            "Test footnote refers to",
-            "hyphen-"
-        ]
+        footnotes = ["Test footnote one.", "Test footnote refers to", "hyphen-"]
 
         batch_results = analyze_footnote_batch(footnotes)
         individual_results = [is_footnote_incomplete(fn) for fn in footnotes]
@@ -975,8 +970,7 @@ class TestAnalyzeFootnoteBatch:
 
         # Create 100 diverse footnotes
         footnotes = [
-            f"Footnote {i} with content." if i % 2 == 0
-            else f"Footnote {i} refers to"
+            f"Footnote {i} with content." if i % 2 == 0 else f"Footnote {i} refers to"
             for i in range(100)
         ]
 
@@ -1014,8 +1008,9 @@ class TestGetIncompleteConfidenceThreshold:
             is_high_confidence = confidence >= threshold
 
             if expected_incomplete and expected_conf >= threshold:
-                assert incomplete and is_high_confidence, \
+                assert incomplete and is_high_confidence, (
                     f"Should be high-confidence incomplete: {text}"
+                )
             elif not expected_incomplete:
                 # Complete cases should have high confidence
                 assert not incomplete or confidence < threshold
@@ -1108,4 +1103,4 @@ class TestRealWorldScenarios:
                 correct += 1
 
         accuracy = correct / total
-        assert accuracy >= 0.95, f"Accuracy too low: {accuracy*100:.1f}%"
+        assert accuracy >= 0.95, f"Accuracy too low: {accuracy * 100:.1f}%"

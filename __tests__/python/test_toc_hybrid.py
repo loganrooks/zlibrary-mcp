@@ -10,13 +10,14 @@ Tests:
 import pytest
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 # Add lib directory to path
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / 'lib'))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / "lib"))
 
 try:
-    import fitz
+    import fitz  # noqa: F401
+
     PYMUPDF_AVAILABLE = True
 except ImportError:
     PYMUPDF_AVAILABLE = False
@@ -25,8 +26,10 @@ except ImportError:
 from rag_processing import (
     _analyze_font_distribution,
     _detect_headings_from_fonts,
-    _extract_toc_from_pdf
+    _extract_toc_from_pdf,
 )
+
+pytestmark = pytest.mark.slow
 
 
 @pytest.mark.skipif(not PYMUPDF_AVAILABLE, reason="PyMuPDF not available")
@@ -56,8 +59,8 @@ class TestAnalyzeFontDistribution:
                             {"size": 10.5, "text": "Another paragraph"},
                             {"size": 16.0, "text": "Heading"},  # Outlier
                         ]
-                    }
-                ]
+                    },
+                ],
             }
         ]
         mock_page.get_text.return_value = {"blocks": mock_blocks}
@@ -89,10 +92,7 @@ class TestAnalyzeFontDistribution:
 
         mock_page = MagicMock()
         mock_blocks = [
-            {
-                "type": 0,
-                "lines": [{"spans": [{"size": 12.0, "text": "Sample text"}]}]
-            }
+            {"type": 0, "lines": [{"spans": [{"size": 12.0, "text": "Sample text"}]}]}
         ]
         mock_page.get_text.return_value = {"blocks": mock_blocks}
         mock_doc.__getitem__.return_value = mock_page
@@ -122,15 +122,19 @@ class TestDetectHeadingsFromFonts:
                 "lines": [
                     {
                         "spans": [
-                            {"size": 20.0, "text": "Chapter Title", "flags": 2},  # Large + bold
+                            {
+                                "size": 20.0,
+                                "text": "Chapter Title",
+                                "flags": 2,
+                            },  # Large + bold
                         ]
                     },
                     {
                         "spans": [
                             {"size": 10.0, "text": "Body text here", "flags": 0},
                         ]
-                    }
-                ]
+                    },
+                ],
             }
         ]
         mock_page1.get_text.return_value = {"blocks": mock_blocks1}
@@ -143,10 +147,14 @@ class TestDetectHeadingsFromFonts:
                 "lines": [
                     {
                         "spans": [
-                            {"size": 15.0, "text": "Section Heading", "flags": 2},  # Medium + bold
+                            {
+                                "size": 15.0,
+                                "text": "Section Heading",
+                                "flags": 2,
+                            },  # Medium + bold
                         ]
                     }
-                ]
+                ],
             }
         ]
         mock_page2.get_text.return_value = {"blocks": mock_blocks2}
@@ -174,12 +182,20 @@ class TestDetectHeadingsFromFonts:
             {
                 "type": 0,
                 "lines": [
-                    {"spans": [{"size": 15.0, "text": "42", "flags": 0}]},  # Pure number
-                    {"spans": [{"size": 15.0, "text": "xii", "flags": 0}]},  # Roman numeral
+                    {
+                        "spans": [{"size": 15.0, "text": "42", "flags": 0}]
+                    },  # Pure number
+                    {
+                        "spans": [{"size": 15.0, "text": "xii", "flags": 0}]
+                    },  # Roman numeral
                     {"spans": [{"size": 15.0, "text": "A", "flags": 0}]},  # Single char
-                    {"spans": [{"size": 15.0, "text": "1.2.3", "flags": 0}]},  # Mostly punctuation
-                    {"spans": [{"size": 15.0, "text": "Valid Heading", "flags": 2}]},  # Should pass
-                ]
+                    {
+                        "spans": [{"size": 15.0, "text": "1.2.3", "flags": 0}]
+                    },  # Mostly punctuation
+                    {
+                        "spans": [{"size": 15.0, "text": "Valid Heading", "flags": 2}]
+                    },  # Should pass
+                ],
             }
         ]
         mock_page.get_text.return_value = {"blocks": mock_blocks}
@@ -203,11 +219,19 @@ class TestDetectHeadingsFromFonts:
             {
                 "type": 0,
                 "lines": [
-                    {"spans": [{"size": 20.0, "text": "Level 1", "flags": 2}]},  # 2.0x = H1
-                    {"spans": [{"size": 16.0, "text": "Level 2", "flags": 2}]},  # 1.6x = H2
-                    {"spans": [{"size": 13.0, "text": "Level 3", "flags": 2}]},  # 1.3x = H2 (bold)
-                    {"spans": [{"size": 12.0, "text": "Level 4", "flags": 0}]},  # 1.2x = H4 (not bold)
-                ]
+                    {
+                        "spans": [{"size": 20.0, "text": "Level 1", "flags": 2}]
+                    },  # 2.0x = H1
+                    {
+                        "spans": [{"size": 16.0, "text": "Level 2", "flags": 2}]
+                    },  # 1.6x = H2
+                    {
+                        "spans": [{"size": 13.0, "text": "Level 3", "flags": 2}]
+                    },  # 1.3x = H2 (bold)
+                    {
+                        "spans": [{"size": 12.0, "text": "Level 4", "flags": 0}]
+                    },  # 1.2x = H4 (not bold)
+                ],
             }
         ]
         mock_page.get_text.return_value = {"blocks": mock_blocks}
@@ -264,7 +288,7 @@ class TestExtractTocFromPdf:
                             {"size": 10.0, "text": "Body text for analysis", "flags": 0}
                         ]
                     }
-                ]
+                ],
             }
         ]
 
@@ -275,17 +299,17 @@ class TestExtractTocFromPdf:
                     {
                         "spans": [
                             {"size": 10.0, "text": "Body text", "flags": 0},
-                            {"size": 16.0, "text": "Font-Based Heading", "flags": 2}
+                            {"size": 16.0, "text": "Font-Based Heading", "flags": 2},
                         ]
                     }
-                ]
+                ],
             }
         ]
 
         # Return different blocks for analysis vs detection phases
         mock_page.get_text.side_effect = [
             {"blocks": mock_blocks_analysis},  # Font distribution analysis
-            {"blocks": mock_blocks_headings}    # Heading detection
+            {"blocks": mock_blocks_headings},  # Heading detection
         ]
         mock_doc.__getitem__.return_value = mock_page
 
@@ -306,7 +330,9 @@ class TestExtractTocFromPdf:
         mock_blocks = [
             {
                 "type": 0,
-                "lines": [{"spans": [{"size": 10.0, "text": "Only body text", "flags": 0}]}]
+                "lines": [
+                    {"spans": [{"size": 10.0, "text": "Only body text", "flags": 0}]}
+                ],
             }
         ]
         mock_page.get_text.return_value = {"blocks": mock_blocks}
@@ -330,7 +356,9 @@ class TestExtractTocFromPdf:
         mock_blocks_analysis = [
             {
                 "type": 0,
-                "lines": [{"spans": [{"size": 10.0, "text": "Body text sample", "flags": 0}]}]
+                "lines": [
+                    {"spans": [{"size": 10.0, "text": "Body text sample", "flags": 0}]}
+                ],
             }
         ]
 
@@ -339,14 +367,14 @@ class TestExtractTocFromPdf:
                 "type": 0,
                 "lines": [
                     {"spans": [{"size": 10.0, "text": "Body text", "flags": 0}]},
-                    {"spans": [{"size": 15.0, "text": "Fallback Heading", "flags": 2}]}
-                ]
+                    {"spans": [{"size": 15.0, "text": "Fallback Heading", "flags": 2}]},
+                ],
             }
         ]
 
         mock_page.get_text.side_effect = [
             {"blocks": mock_blocks_analysis},  # Font distribution analysis
-            {"blocks": mock_blocks_headings}    # Heading detection
+            {"blocks": mock_blocks_headings},  # Heading detection
         ]
         mock_doc.__getitem__.return_value = mock_page
 

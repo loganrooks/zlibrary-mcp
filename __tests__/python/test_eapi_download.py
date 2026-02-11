@@ -14,6 +14,8 @@ sys.path.insert(0, os.path.join(project_root, "zlibrary", "src"))
 
 from zlibrary.eapi import EAPIClient  # noqa: E402
 
+pytestmark = pytest.mark.unit
+
 
 @pytest.fixture
 def eapi_client():

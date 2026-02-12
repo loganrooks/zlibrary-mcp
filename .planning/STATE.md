@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 2026-02-11)
 
 ## Current Position
 
-Phase: 14 of 19 (Test Infrastructure)
-Plan: 02 complete
-Status: Plan 14-02 complete
-Last activity: 2026-02-11 — Phase 14 Plan 02 complete (ground truth v3 schema consolidation)
+Phase: 14 of 19 (Test Infrastructure) -- COMPLETE
+Plan: 03 complete (3/3 plans done)
+Status: Phase 14 complete
+Last activity: 2026-02-11 — Phase 14 Plan 03 complete (repo cleanup + CI split)
 
-Progress: [████░░░░░░░░░░░░░░░░] 18% of v1.2
+Progress: [████░░░░░░░░░░░░░░░░] 21% of v1.2
 
 ## Milestones Shipped
 
@@ -23,7 +23,7 @@ Progress: [████░░░░░░░░░░░░░░░░] 18% of 
 | v1.0 | Audit Cleanup & Modernization | 1-7 | 22 | 2026-02-01 |
 | v1.1 | Quality & Expansion | 8-12 | 21 | 2026-02-04 |
 
-**Total:** 12 phases, 43 plans executed (+ 2 plans in phase 13, 2 plans in phase 14)
+**Total:** 12 phases, 43 plans executed (+ 2 plans in phase 13, 3 plans in phase 14)
 
 ## Accumulated Context
 
@@ -36,6 +36,9 @@ All decisions logged in PROJECT.md Key Decisions table.
 - Kept existing class-level @pytest.mark decorators alongside module-level pytestmark (safe redundancy)
 - Converted test_real_zlibrary.py pytestmark from skipif-only to list with integration + skipif
 - Removed null corrupted_extraction from heidegger xmark data (invalid per v3 schema, field is optional)
+- Used git mv for all script relocations to preserve file history
+- test-fast runs on both push and PR; test-full only on push-to-master and manual dispatch
+- Added --benchmark-disable to fast CI job to skip pytest-benchmark overhead
 
 **Phase 13:**
 - Used Extension (not AsyncZlib) as the canonical zlibrary import check
@@ -72,8 +75,8 @@ From v1.1 audit (addressed by v1.2 scope):
 ## Session Continuity
 
 Last session: 2026-02-11
-Stopped at: Completed 14-02-PLAN.md (ground truth v3 schema consolidation)
-Resume with: Execute 14-03-PLAN.md or `/gsd:plan-phase 15`
+Stopped at: Completed 14-03-PLAN.md (repo cleanup + CI split) -- Phase 14 complete
+Resume with: `/gsd:plan-phase 15` or `/gsd:research-phase 15`
 
 ### Performance Metrics
 
@@ -84,7 +87,8 @@ Resume with: Execute 14-03-PLAN.md or `/gsd:plan-phase 15`
 | quick-003  | 1min     | 2     | 2     |
 | 14-01      | 21min    | 2     | 40    |
 | 14-02      | 26min    | 2     | 4     |
+| 14-03      | 22min    | 2     | 11    |
 
 ---
 
-_Last updated: 2026-02-11 after 14-02 complete_
+_Last updated: 2026-02-11 after 14-03 complete (Phase 14 done)_

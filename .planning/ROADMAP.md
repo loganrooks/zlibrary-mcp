@@ -41,7 +41,7 @@ Full details: `.planning/milestones/v1.1-ROADMAP.md`
 **Milestone Goal:** Transform the functional MCP server into a professionally publishable npm package with clean CI, structured RAG output, automated quality scoring, and comprehensive documentation. No new end-user features — this is infrastructure, quality, and developer experience.
 
 - [x] **Phase 13: Bug Fixes & Test Hygiene** - Green CI as foundation for everything else — completed 2026-02-11
-- [ ] **Phase 14: Test Infrastructure** - Unified marker taxonomy, ground truth v3, fast/slow CI split
+- [x] **Phase 14: Test Infrastructure** - Unified marker taxonomy, ground truth v3, fast/slow CI split — completed 2026-02-11
 - [ ] **Phase 15: Repo Cleanup** - Remove dead files, fix entry points, clean repo root
 - [ ] **Phase 16: Structured RAG Output** - Multi-file output with unified metadata
 - [ ] **Phase 17: Quality Scoring** - Automated precision/recall against ground truth in CI
@@ -77,9 +77,9 @@ Plans:
   5. CI configuration distinguishes fast tests (every PR) from full suite (available separately)
 **Plans:** 3 plans
 Plans:
-- [ ] 14-01-PLAN.md -- Register complete marker taxonomy and apply pytestmark to all test files (TEST-01, TEST-02)
-- [ ] 14-02-PLAN.md -- Consolidate ground truth to v3 schema with validation test (TEST-03, TEST-04)
-- [ ] 14-03-PLAN.md -- Relocate root Python files and split CI into fast/full jobs (TEST-05, TEST-06)
+- [x] 14-01-PLAN.md -- Register complete marker taxonomy and apply pytestmark to all test files (TEST-01, TEST-02)
+- [x] 14-02-PLAN.md -- Consolidate ground truth to v3 schema with validation test (TEST-03, TEST-04)
+- [x] 14-03-PLAN.md -- Relocate root Python files and split CI into fast/full jobs (TEST-05, TEST-06)
 
 ### Phase 15: Repo Cleanup
 **Goal**: Repository root contains only essential files, with no dead scripts, stale artifacts, or conflicting entry points
@@ -157,7 +157,7 @@ Plans:
 | 11. Body Text Purity Integration | v1.1 | 7/7 | Complete | 2026-02-03 |
 | 12. Anna's Archive Integration | v1.1 | 4/4 | Complete | 2026-02-04 |
 | 13. Bug Fixes & Test Hygiene | v1.2 | 2/2 | Complete | 2026-02-11 |
-| 14. Test Infrastructure | v1.2 | 0/3 | Planned | - |
+| 14. Test Infrastructure | v1.2 | 3/3 | Complete | 2026-02-11 |
 | 15. Repo Cleanup | v1.2 | 0/TBD | Not started | - |
 | 16. Structured RAG Output | v1.2 | 0/TBD | Not started | - |
 | 17. Quality Scoring | v1.2 | 0/TBD | Not started | - |
@@ -166,4 +166,4 @@ Plans:
 
 ---
 
-_Last updated: 2026-02-11 after Phase 13 execution complete_
+_Last updated: 2026-02-11 after Phase 14 execution complete_

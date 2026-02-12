@@ -5,9 +5,32 @@ on:
     branches: [master]
   pull_request:
     branches: [master]
+  workflow_dispatch:
+    inputs:
+      full_suite:
+        description: 'Run full test suite including slow tests'
+        type: boolean
+        default: false
 
 jobs:
-  test:
+  test-fast:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: astral-sh/setup-uv@v4
+      - run: npm ci
+      - run: uv sync
+      - run: npm run build
+      - run: node --experimental-vm-modules node_modules/jest/bin/jest.js
+      - run: uv run pytest -m "not slow and not integration" --benchmark-disable
+
+  test-full:
+    if: >
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.full_suite == 'true')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

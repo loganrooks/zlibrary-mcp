@@ -19,8 +19,8 @@ Quick reference for adding Z-Library MCP server to your projects.
       "command": "node",
       "args": ["/home/rookslog/mcp-servers/zlibrary-mcp/dist/index.js"],
       "env": {
-        "ZLIBRARY_EMAIL": "logansrooks@gmail.com",
-        "ZLIBRARY_PASSWORD": "REDACTED"
+        "ZLIBRARY_EMAIL": "your@email.com",
+        "ZLIBRARY_PASSWORD": "your_password"
       }
     }
   }
@@ -101,8 +101,8 @@ cat > .mcp.json << 'EOF'
       "command": "node",
       "args": ["/home/rookslog/mcp-servers/zlibrary-mcp/dist/index.js"],
       "env": {
-        "ZLIBRARY_EMAIL": "logansrooks@gmail.com",
-        "ZLIBRARY_PASSWORD": "REDACTED"
+        "ZLIBRARY_EMAIL": "your@email.com",
+        "ZLIBRARY_PASSWORD": "your_password"
       }
     }
   }
@@ -132,8 +132,8 @@ You can combine multiple MCP servers:
       "command": "node",
       "args": ["/home/rookslog/mcp-servers/zlibrary-mcp/dist/index.js"],
       "env": {
-        "ZLIBRARY_EMAIL": "logansrooks@gmail.com",
-        "ZLIBRARY_PASSWORD": "REDACTED"
+        "ZLIBRARY_EMAIL": "your@email.com",
+        "ZLIBRARY_PASSWORD": "your_password"
       }
     },
     "sqlite": {

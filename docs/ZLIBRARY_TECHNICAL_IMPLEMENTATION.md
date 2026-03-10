@@ -699,8 +699,8 @@ content_area = soup.find("div", {"id": "searchFormResultsList"})
 
 1. **Authentication Test**:
    ```bash
-   export ZLIBRARY_EMAIL="logansrooks@gmail.com"
-   export ZLIBRARY_PASSWORD="REDACTED"
+   export ZLIBRARY_EMAIL="your@email.com"
+   export ZLIBRARY_PASSWORD="your_password"
    export ZLIBRARY_MIRROR="https://active-domain.com"  # Need to find
 
    # Test login

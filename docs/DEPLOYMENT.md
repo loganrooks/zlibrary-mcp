@@ -373,8 +373,8 @@ This usually indicates a build or installation issue.
   "files": [
     "dist/",
     "lib/",
-    "requirements.txt",
-    "setup_venv.sh"
+    "pyproject.toml",
+    "setup-uv.sh"
   ]
 }
 ```

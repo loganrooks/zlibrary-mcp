@@ -3,7 +3,7 @@
 **Date**: January 30, 2025
 **Method**: Live testing with authenticated credentials
 **Domain Tested**: `https://z-library.sk`
-**Credentials**: `logansrooks@gmail.com`
+**Credentials**: `your@email.com`
 
 ## Executive Summary
 
@@ -21,8 +21,8 @@
 ```json
 {
   "isModal": true,
-  "email": "logansrooks@gmail.com",
-  "password": "REDACTED",
+  "email": "your@email.com",
+  "password": "your_password",
   "site_mode": "books",
   "action": "login",
   "isSingleLogin": 1,

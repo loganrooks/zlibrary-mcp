@@ -2,6 +2,17 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Destructive Operations Policy
+
+**MANDATORY before any destructive git operation** (`git filter-repo`, `git rm`, `git reset --hard`, force-push, history rewriting, bulk file deletion/archival):
+
+1. **Dependency audit**: Search the entire codebase for references to affected files/paths (`grep -r`, check imports, configs, test fixtures, scripts)
+2. **Present findings**: Show the user what depends on the targets and what will break
+3. **Get explicit approval**: Do NOT proceed until the user confirms after seeing the dependency analysis
+4. **One step at a time**: Never chain destructive operations — commit and verify between each
+
+This applies equally to "cleanup" tasks. A file that looks stale may be a test fixture, a script input, or referenced by documentation that matters. Always check before removing.
+
 ## GSD Model Profile
 
 **IMPORTANT:** Before spawning any GSD subagent, read `.planning/config.json` and use the `model_profile` value to select the correct model. Never hardcode or assume the profile.
@@ -263,18 +274,24 @@ The project maintains its own Python venv (`.venv/`) with these key dependencies
 
 - `search_books`: Primary method for finding books
 - `full_text_search`: Search within book content
+- `search_by_term`: Conceptual navigation via terms
+- `search_by_author`: Advanced author search
+- `search_advanced`: Fuzzy match with separate exact/fuzzy results
+- `search_multi_source`: Parallel search across multiple sources
+- `get_book_metadata`: Complete metadata extraction (terms, descriptions, ratings)
+- `fetch_booklist`: Expert-curated collection contents
+- `get_recent_books`: Get recently added books
 - `get_download_history`: View user's download history
 - `get_download_limits`: Check download limits
-- `get_recent_books`: Get recently added books
 - `download_book_to_file`: Download book with optional RAG processing
 - `process_document_for_rag`: Process existing file for RAG
 
 ## Common Issues & Solutions
 
 ### Python Environment
-- If Python bridge fails, check venv activation: `source venv/bin/activate`
-- Ensure Python 3.9+ is installed
-- Verify requirements: `pip install -r requirements.txt`
+- If Python bridge fails, verify UV environment: `uv sync`
+- Ensure Python 3.10+ is installed
+- The project uses UV (not pip) for dependency management
 
 ### Jest ESM Issues
 - Tests use `.js` extensions but import TypeScript compiled to `dist/`
@@ -285,11 +302,10 @@ The project maintains its own Python venv (`.venv/`) with these key dependencies
 - Verify network access to Z-Library (may be blocked in some regions)
 - Review `docs/adr/ADR-002-Download-Workflow-Redesign.md` for download flow
 
-## Current Development Branch
+## Current Development
 
-Working on: `feature/rag-robustness-enhancement`
-- Focus: PDF quality analysis and extraction improvements
-- Key files: `lib/rag_processing.py`, related tests
+Working on: `master` branch
+- Focus: Repo cleanup, CI/CD improvements, documentation updates
 - Branching Strategy: See `.claude/VERSION_CONTROL.md` for feature branch conventions and workflow
 
 ## Development Ecosystem

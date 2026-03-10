@@ -7,6 +7,7 @@ Prerequisites:
 
 Run: uv run python scripts/experiments/test_annas_fast_download.py
 """
+
 import json
 import os
 from pathlib import Path
@@ -35,17 +36,21 @@ def test_fast_download(md5: str):
         if response.status_code == 200:
             try:
                 data = response.json()
-                print(f"\nResponse JSON:")
+                print("\nResponse JSON:")
                 print(json.dumps(data, indent=2))
                 return data
             except json.JSONDecodeError:
-                print(f"\nResponse is not JSON:")
+                print("\nResponse is not JSON:")
                 print(response.text[:1000])
                 return {"status": "not_json", "body": response.text[:1000]}
         else:
             print(f"\nError response ({response.status_code}):")
             print(response.text[:1000])
-            return {"status": "http_error", "code": response.status_code, "body": response.text[:500]}
+            return {
+                "status": "http_error",
+                "code": response.status_code,
+                "body": response.text[:500],
+            }
 
     except httpx.TimeoutException:
         print("ERROR: Request timed out")
@@ -97,7 +102,7 @@ if __name__ == "__main__":
 
     result = test_fast_download(TEST_MD5)
 
-    print(f"\n{'='*50}")
+    print(f"\n{'=' * 50}")
 
     if result.get("download_url"):
         print("SUCCESS: Got download URL from API")

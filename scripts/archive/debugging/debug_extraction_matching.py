@@ -5,6 +5,7 @@ import json
 import fitz
 from pathlib import Path
 
+
 def extract_with_pymupdf_native(pdf_path: Path):
     """Extract formatting using PyMuPDF's native capabilities."""
     doc = fitz.open(pdf_path)
@@ -31,9 +32,15 @@ def extract_with_pymupdf_native(pdf_path: Path):
                         # Font-based detection
                         if "bold" in font_name or (flags & 16):  # Bold flag (bit 4)
                             formats.append("bold")
-                        if "italic" in font_name or "oblique" in font_name or (flags & 2):  # Italic flag (bit 1)
+                        if (
+                            "italic" in font_name
+                            or "oblique" in font_name
+                            or (flags & 2)
+                        ):  # Italic flag (bit 1)
                             formats.append("italic")
-                        if "courier" in font_name or "mono" in font_name or (flags & 8):  # Monospaced flag (bit 3)
+                        if (
+                            "courier" in font_name or "mono" in font_name or (flags & 8)
+                        ):  # Monospaced flag (bit 3)
                             formats.append("monospaced")
 
                         # Superscript detection (flag bit 0)
@@ -44,14 +51,16 @@ def extract_with_pymupdf_native(pdf_path: Path):
                         if span["size"] < 10 and len(text) <= 3 and not (flags & 1):
                             formats.append("subscript")
 
-                        page_results.append({
-                            "text": text,
-                            "formatting": formats,
-                            "bbox": span["bbox"],
-                            "y_position": span["origin"][1],
-                            "font": span["font"],
-                            "flags": flags
-                        })
+                        page_results.append(
+                            {
+                                "text": text,
+                                "formatting": formats,
+                                "bbox": span["bbox"],
+                                "y_position": span["origin"][1],
+                                "font": span["font"],
+                                "flags": flags,
+                            }
+                        )
 
         results[f"page_{page_num}"] = page_results
 
@@ -68,7 +77,9 @@ if pdf_path.exists():
     for page, items in extracted.items():
         print(f"\n{page}:")
         for item in items:
-            print(f"  '{item['text']}' - formats: {item['formatting']}, y: {item['y_position']:.1f}, font: {item['font']}, flags: {item['flags']}")
+            print(
+                f"  '{item['text']}' - formats: {item['formatting']}, y: {item['y_position']:.1f}, font: {item['font']}, flags: {item['flags']}"
+            )
 
     # Now show ground truth
     print("\n\nGround truth:")
@@ -80,4 +91,6 @@ if pdf_path.exists():
             for page, items in pdf_data.items():
                 print(f"\n{page}:")
                 for item in items:
-                    print(f"  '{item['text']}' - formats: {item['formatting']}, y_approx: {item.get('y_approx', 'N/A')}")
+                    print(
+                        f"  '{item['text']}' - formats: {item['formatting']}, y_approx: {item.get('y_approx', 'N/A')}"
+                    )

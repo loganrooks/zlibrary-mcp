@@ -6,6 +6,7 @@ Prerequisites:
 
 Run: uv run python scripts/experiments/test_annas_slow_download.py
 """
+
 import os
 from pathlib import Path
 
@@ -55,7 +56,7 @@ def test_slow_download(md5: str):
             disabled = download_btn.get("disabled")
             classes = download_btn.get("class", [])
 
-            print(f"\nDownload button found:")
+            print("\nDownload button found:")
             print(f"  href: {href}")
             print(f"  disabled: {disabled}")
             print(f"  classes: {classes}")
@@ -77,7 +78,9 @@ def test_slow_download(md5: str):
             href = link.get("href", "")
             text = link.get_text(strip=True).lower()
             if "partner" in text or "server" in text or "download" in text:
-                partner_links.append({"href": href, "text": link.get_text(strip=True)[:50]})
+                partner_links.append(
+                    {"href": href, "text": link.get_text(strip=True)[:50]}
+                )
 
         if partner_links:
             print(f"\nFound {len(partner_links)} potential download links:")
@@ -101,7 +104,11 @@ def test_slow_download(md5: str):
         print(f"Scripts on page: {len(scripts)}")
 
         # Dump relevant sections
-        main_content = soup.select_one("main") or soup.select_one("#content") or soup.select_one("body")
+        main_content = (
+            soup.select_one("main")
+            or soup.select_one("#content")
+            or soup.select_one("body")
+        )
         if main_content:
             text = main_content.get_text(" ", strip=True)[:1000]
             print(f"\nMain content preview:\n{text}")
@@ -142,9 +149,9 @@ if __name__ == "__main__":
 
     result = test_slow_download(TEST_MD5)
 
-    print(f"\n{'='*50}")
-    print(f"RESULT SUMMARY")
-    print(f"{'='*50}")
+    print(f"\n{'=' * 50}")
+    print("RESULT SUMMARY")
+    print(f"{'=' * 50}")
     print(f"Status: {result.get('status')}")
     print(f"Automatable: {result.get('automatable')}")
 

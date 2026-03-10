@@ -3,6 +3,7 @@
 
 Run: uv run python scripts/experiments/test_annas_search.py
 """
+
 import os
 from pathlib import Path
 
@@ -31,7 +32,10 @@ def search_annas(query: str, limit: int = 5):
             return []
 
         # Check for Cloudflare or verification
-        if "challenge" in response.text.lower() or "cf-" in response.text.lower()[:1000]:
+        if (
+            "challenge" in response.text.lower()
+            or "cf-" in response.text.lower()[:1000]
+        ):
             print("\nWARNING: Possible Cloudflare challenge detected")
 
         soup = BeautifulSoup(response.text, "html.parser")
@@ -99,9 +103,9 @@ if __name__ == "__main__":
 
     results = search_annas(query)
 
-    print(f"\n{'='*50}")
+    print(f"\n{'=' * 50}")
     print(f"Found {len(results)} results:")
-    print(f"{'='*50}")
+    print(f"{'=' * 50}")
 
     for i, r in enumerate(results, 1):
         print(f"\n{i}. {r['title'][:60]}...")
@@ -111,11 +115,11 @@ if __name__ == "__main__":
             print(f"   Meta: {r['meta']['raw_text'][:100]}...")
 
     if results:
-        print(f"\n{'='*50}")
-        print(f"SUCCESS: Search scraping works")
-        print(f"\nUse this MD5 for fast download test:")
+        print(f"\n{'=' * 50}")
+        print("SUCCESS: Search scraping works")
+        print("\nUse this MD5 for fast download test:")
         print(f"  export TEST_MD5='{results[0]['md5']}'")
     else:
-        print(f"\n{'='*50}")
-        print(f"FAILED: Search scraping failed or returned no results")
-        print(f"This may indicate Cloudflare blocking or HTML structure change")
+        print(f"\n{'=' * 50}")
+        print("FAILED: Search scraping failed or returned no results")
+        print("This may indicate Cloudflare blocking or HTML structure change")

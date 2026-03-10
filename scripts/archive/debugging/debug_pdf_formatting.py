@@ -6,6 +6,7 @@ Debug script to inspect raw PyMuPDF formatting data.
 import fitz
 from pathlib import Path
 
+
 def debug_pdf_formatting(pdf_path: Path):
     """Print detailed formatting information from PDF."""
     print(f"\n{'=' * 80}")

@@ -28,7 +28,7 @@ def test_libgen_sync():
 
         if results:
             book = results[0]
-            print(f"\nFirst result:")
+            print("\nFirst result:")
 
             # Handle both object and dict formats
             def get_field(obj, *names):
@@ -56,16 +56,20 @@ def test_libgen_sync():
                 print(f"\n  Type: {type(book)}")
 
             # Try to get download link
-            print(f"\n=== Testing Download Resolution ===")
+            print("\n=== Testing Download Resolution ===")
             try:
                 if hasattr(book, "resolve_direct_download_link"):
                     link = book.resolve_direct_download_link()
-                    print(f"  resolve_direct_download_link(): {link[:80] if link else 'None'}...")
+                    print(
+                        f"  resolve_direct_download_link(): {link[:80] if link else 'None'}..."
+                    )
                 elif hasattr(s, "resolve_download_links"):
                     links = s.resolve_download_links(book)
                     print(f"  resolve_download_links(): {links}")
                 else:
-                    print("  No download resolution method found on book or search object")
+                    print(
+                        "  No download resolution method found on book or search object"
+                    )
 
                 # Check for pre-existing download URLs
                 for attr in [
@@ -99,9 +103,9 @@ if __name__ == "__main__":
     results = test_libgen_sync()
 
     if results:
-        print(f"\n{'='*50}")
-        print(f"SUCCESS: LibGen search works")
-        print(f"Results can be used for comparison with Anna's Archive")
+        print(f"\n{'=' * 50}")
+        print("SUCCESS: LibGen search works")
+        print("Results can be used for comparison with Anna's Archive")
     else:
-        print(f"\n{'='*50}")
-        print(f"FAILED: LibGen search failed or returned no results")
+        print(f"\n{'=' * 50}")
+        print("FAILED: LibGen search failed or returned no results")

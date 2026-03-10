@@ -67,6 +67,7 @@ processed_rag_output/
 
 # Ignore temporary test/download outputs
 test_dl/
+test_downloads/
 test_out/
 test_output/
 

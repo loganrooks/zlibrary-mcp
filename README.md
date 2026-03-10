@@ -6,7 +6,7 @@ This Model Context Protocol (MCP) server provides access to Z-Library for AI cod
 
 ## Current Status
 
-- **Version:** 2.1.0 (Post-cleanup, EAPI migration)
+- **Version:** 2.0.0 (Post-cleanup, EAPI migration)
 - **MCP SDK:** 1.25+ (McpServer API with `server.tool()` registration)
 - **Transport:** EAPI JSON endpoints (bypasses Cloudflare browser challenges)
 - **Python:** UV-based dependency management, decomposed lib/rag/ modules
@@ -18,11 +18,11 @@ This Model Context Protocol (MCP) server provides access to Z-Library for AI cod
 - **MCP SDK 1.25+**: Upgraded from 1.8, using McpServer API with `server.tool()` registration
 - **Python Decomposition**: Monolithic `rag_processing.py` (4,968 lines) split into lib/rag/ domain modules (all <500 lines)
 - **Health Check**: Cloudflare detection for upstream monitoring
-- **12 MCP Tools**: Complete search, metadata, download, and RAG capabilities
+- **13 MCP Tools**: Complete search, metadata, download, and RAG capabilities
 
 ## Architecture Overview
 
-- **Node.js/TypeScript MCP Server**: 12 tools registered via McpServer `server.tool()` API
+- **Node.js/TypeScript MCP Server**: 13 tools registered via McpServer `server.tool()` API
 - **Python Bridge**: Z-Library EAPI client (httpx) + document processing (lib/rag/ modules)
 - **EAPI Transport**: JSON API endpoints at `/eapi/` bypass Cloudflare browser challenges
 - **UV-Based Python Environment**: Project-local `.venv/` with `uv.lock` for reproducible builds
@@ -31,7 +31,7 @@ This Model Context Protocol (MCP) server provides access to Z-Library for AI cod
 
 ## Prerequisites
 
-- Node.js 18 or newer
+- Node.js 22 or newer
 - Python 3.10 or newer
 - [UV](https://docs.astral.sh/uv/) - Modern Python package manager
 - Z-Library account (for authentication)
@@ -138,9 +138,9 @@ Edit `mcp_settings.json`:
 }
 ```
 
-## Available MCP Tools (12 Total)
+## Available MCP Tools (13 Total)
 
-### Search Tools (6)
+### Search Tools (7)
 
 | Tool | Description |
 |------|-------------|
@@ -149,6 +149,7 @@ Edit `mcp_settings.json`:
 | `search_by_term` | Conceptual navigation via terms |
 | `search_by_author` | Advanced author search |
 | `search_advanced` | Fuzzy match detection with separate exact/fuzzy results |
+| `search_multi_source` | Parallel search across multiple sources |
 | `get_recent_books` | Recently added books |
 
 ### Metadata Tools (1)

@@ -484,8 +484,8 @@ COMPLEX (6+ operations, 5-30 min)
 ### High Priority
 1. **Run integration tests** with real credentials
    ```bash
-   export ZLIBRARY_EMAIL='logansrooks@gmail.com'
-   export ZLIBRARY_PASSWORD='190297@Lsr'
+   export ZLIBRARY_EMAIL='your@email.com'
+   export ZLIBRARY_PASSWORD='your_password'
    pytest -m integration
    ```
 

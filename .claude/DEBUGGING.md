@@ -107,14 +107,10 @@ echo $VIRTUAL_ENV
 
 **Solution:**
 ```bash
-# Recreate venv
-rm -rf venv/
-./setup_venv.sh
-
-# Reinstall dependencies
-source venv/bin/activate
-pip install -r requirements.txt
-pip install -e ./zlibrary
+# Recreate venv with UV
+rm -rf .venv/
+bash setup-uv.sh
+# Or: uv sync
 ```
 
 ### Issue: Z-Library Authentication Fails
@@ -514,7 +510,7 @@ if [ "$response" = "y" ]; then
     # Reinstall everything
     npm install
     npm run build
-    ./setup_venv.sh
+    bash setup-uv.sh
 
     echo "✅ Reset complete"
 else

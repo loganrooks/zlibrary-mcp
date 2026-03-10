@@ -6,8 +6,9 @@
 
 ## Prerequisites
 
-- **Node.js** 18+ and npm
-- **Python** 3.9+
+- **Node.js** 22+ and npm
+- **Python** 3.10+
+- **UV** (Python package manager): `curl -LsSf https://astral.sh/uv/install.sh | sh`
 - **Z-Library Account** (free account at z-library.sk)
 
 ---
@@ -40,7 +41,7 @@ cd zlibrary-mcp
 # 3. Install and build
 npm install
 npm run build
-./setup_venv.sh
+bash setup-uv.sh
 ```
 
 **Configure credentials globally**:
@@ -98,7 +99,7 @@ npm run build
 cd /path/to/your-project
 git clone https://github.com/loganrooks/zlibrary-mcp.git
 cd zlibrary-mcp
-npm install && npm run build && ./setup_venv.sh
+npm install && npm run build && bash setup-uv.sh
 ```
 
 **In project's `.mcp.json`** (relative path):
@@ -170,7 +171,7 @@ npm install
 npm run build
 
 # Set up Python virtual environment and dependencies
-./setup_venv.sh
+bash setup-uv.sh
 ```
 
 **Expected output**:
@@ -322,14 +323,16 @@ In Claude, ask:
 "What zlibrary tools are available?"
 ```
 
-**Expected response**: Should list 11 tools:
+**Expected response**: Should list 13 tools:
 - search_books
 - full_text_search
 - search_by_term ✨
 - search_by_author ✨
 - search_advanced ✨
+- search_multi_source ✨
 - get_book_metadata ✨
 - fetch_booklist ✨
+- get_recent_books
 - download_book_to_file
 - process_document_for_rag
 - get_download_limits
@@ -385,7 +388,7 @@ Show me the conceptual terms and booklists."
 
 **Solution**: Python venv not set up correctly
 ```bash
-./setup_venv.sh
+bash setup-uv.sh
 ```
 
 ---

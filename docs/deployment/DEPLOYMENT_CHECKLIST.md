@@ -101,8 +101,8 @@ cd zlibrary-mcp
 # Node.js dependencies
 npm install
 
-# Python virtual environment
-./setup_venv.sh
+# Python virtual environment (UV-based)
+bash setup-uv.sh
 ```
 
 ---

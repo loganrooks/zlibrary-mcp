@@ -12,7 +12,7 @@ This Z-Library MCP server is installed **system-wide** and can be used by any pr
 **Location**: `/home/rookslog/mcp-servers/zlibrary-mcp/`
 
 **Credentials**: Configured in environment variables
-- `ZLIBRARY_EMAIL`: logansrooks@gmail.com
+- `ZLIBRARY_EMAIL`: your@email.com
 - `ZLIBRARY_PASSWORD`: (set in environment)
 
 ---
@@ -38,8 +38,8 @@ Create or edit `.mcp.json` in your project root:
       "command": "node",
       "args": ["/home/rookslog/mcp-servers/zlibrary-mcp/dist/index.js"],
       "env": {
-        "ZLIBRARY_EMAIL": "logansrooks@gmail.com",
-        "ZLIBRARY_PASSWORD": "190297@Lsr"
+        "ZLIBRARY_EMAIL": "your@email.com",
+        "ZLIBRARY_PASSWORD": "your_password"
       }
     }
   }
@@ -148,8 +148,8 @@ When a project configures this server, it gets access to:
       "command": "node",
       "args": ["/home/rookslog/mcp-servers/zlibrary-mcp/dist/index.js"],
       "env": {
-        "ZLIBRARY_EMAIL": "logansrooks@gmail.com",
-        "ZLIBRARY_PASSWORD": "190297@Lsr"
+        "ZLIBRARY_EMAIL": "your@email.com",
+        "ZLIBRARY_PASSWORD": "your_password"
       }
     }
   }
@@ -166,8 +166,8 @@ When a project configures this server, it gets access to:
       "command": "node",
       "args": ["/home/rookslog/mcp-servers/zlibrary-mcp/dist/index.js"],
       "env": {
-        "ZLIBRARY_EMAIL": "logansrooks@gmail.com",
-        "ZLIBRARY_PASSWORD": "190297@Lsr"
+        "ZLIBRARY_EMAIL": "your@email.com",
+        "ZLIBRARY_PASSWORD": "your_password"
       }
     },
     "sqlite": {
@@ -246,7 +246,7 @@ cd ~/projects/some-project
 ```bash
 cd ~/mcp-servers/zlibrary-mcp
 npm install
-./setup_venv.sh
+bash setup-uv.sh
 ```
 
 ### "Path not found" in .mcp.json

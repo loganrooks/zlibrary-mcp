@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node .claude/hooks/gsd-check-update.js"
+            "command": "node .claude/hooks/gsd-check-update.cjs"
           }
         ]
       },
@@ -13,7 +13,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node .claude/hooks/gsd-version-check.js"
+            "command": "node .claude/hooks/gsd-version-check.cjs"
           }
         ]
       }
@@ -21,6 +21,6 @@
   },
   "statusLine": {
     "type": "command",
-    "command": "node .claude/hooks/gsd-statusline.js"
+    "command": "node .claude/hooks/gsd-statusline.cjs"
   }
 }

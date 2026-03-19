@@ -1,28 +1,68 @@
 # Requirements: Z-Library MCP v1.2
 
 **Defined:** 2026-02-11
+**Revised:** 2026-03-19 (scope narrowed per [deliberation](.planning/deliberations/v12-scope-and-priorities.md))
 **Core Value:** Reliable, maintainable MCP server for book access — production-ready infrastructure with high-quality scholarly text extraction
 
 ## v1.2 Requirements
 
-Requirements for Production Readiness milestone. Each maps to roadmap phases.
+Requirements for Production Readiness milestone. Focused on deployment, developer experience, and quality gates. RAG pipeline refinements deferred to v1.3.
 
-### Bug Fixes & Test Hygiene
+### Bug Fixes & Test Hygiene (Phase 13 — COMPLETE)
 
-- [ ] **BUG-01**: All Jest tests pass without failures (fix paths.test.js assertions for UV migration)
-- [ ] **BUG-02**: All pytest tests collect and pass without collection errors (fix scripts/ being collected by pytest)
-- [ ] **BUG-03**: All pytest markers are registered in pytest.ini (real_world, slow, and any others used but undeclared)
-- [ ] **BUG-04**: Deprecated AsyncZlib references are removed from codebase
-- [ ] **BUG-05**: `npm test` and `uv run pytest` both exit green on master
+- [x] **BUG-01**: All Jest tests pass without failures (fix paths.test.js assertions for UV migration)
+- [x] **BUG-02**: All pytest tests collect and pass without collection errors (fix scripts/ being collected by pytest)
+- [x] **BUG-03**: All pytest markers are registered in pytest.ini (real_world, slow, and any others used but undeclared)
+- [x] **BUG-04**: Deprecated AsyncZlib references are removed from codebase
+- [x] **BUG-05**: `npm test` and `uv run pytest` both exit green on master
 
-### Test Infrastructure
+### Test Infrastructure (Phase 14 — COMPLETE)
 
-- [ ] **TEST-01**: Complete pytest marker taxonomy defined and registered (unit, integration, slow, ground_truth, real_world, performance, e2e)
-- [ ] **TEST-02**: Markers applied consistently across all Python test files
-- [ ] **TEST-03**: Ground truth schemas consolidated to single v3 schema (v1 and v2 schemas deleted, all ground truth files migrated)
-- [ ] **TEST-04**: Schema validation test verifies all ground truth JSON files conform to v3 schema
-- [ ] **TEST-05**: CI runs fast test path (`pytest -m "not slow and not integration"`) on every PR, full suite available separately
-- [ ] **TEST-06**: Scattered test files at repo root moved to proper locations (`__tests__/python/` or `scripts/`)
+- [x] **TEST-01**: Complete pytest marker taxonomy defined and registered (unit, integration, slow, ground_truth, real_world, performance, e2e)
+- [x] **TEST-02**: Markers applied consistently across all Python test files
+- [x] **TEST-03**: Ground truth schemas consolidated to single v3 schema (v1 and v2 schemas deleted, all ground truth files migrated)
+- [x] **TEST-04**: Schema validation test verifies all ground truth JSON files conform to v3 schema
+- [x] **TEST-05**: CI runs fast test path (`pytest -m "not slow and not integration"`) on every PR, full suite available separately
+- [x] **TEST-06**: Scattered test files at repo root moved to proper locations (`__tests__/python/` or `scripts/`)
+
+### Cleanup & DX Foundation (Phase 15)
+
+- [ ] **CLEAN-01**: Dead files removed from repo root (debug scripts, stale markdown, old validation artifacts)
+- [ ] **CLEAN-02**: Compiled .js files removed from src/ directory (only dist/ has compiled output)
+- [ ] **CLEAN-03**: `.gitignore` updated to exclude `src/**/*.js`, `src/**/*.js.map`, and `src/**/*.egg-info/`
+- [ ] **CLEAN-04**: `setup_venv.sh` removed (superseded by setup-uv.sh)
+- [ ] **CLEAN-05**: Large binary blobs (test_downloads/ PDFs) purged from git history via filter-repo + LFS
+- [ ] **DX-01**: ESLint configured for TypeScript with sensible defaults (no-unused-vars, consistent-type-imports, etc.)
+- [ ] **DX-02**: Prettier configured for consistent formatting; both ESLint and Prettier enforced via lint-staged
+- [ ] **DX-03**: Server startup validates ZLIBRARY_EMAIL/ZLIBRARY_PASSWORD presence and emits clear error within 2 seconds
+- [ ] **DX-04**: Coverage reporting added to CI; threshold configured so coverage regressions fail the build
+- [ ] **DX-05**: Failing Jest test fixed (Node 22 JSON.parse error message format change in zlibrary-api.test.js)
+
+### Documentation & Distribution (Phase 16)
+
+- [ ] **DOCS-01**: README refreshed with badges (CI status, npm version, license), npx usage, and output format description
+- [ ] **DOCS-02**: API documentation created for each MCP tool with parameters, types, example usage, and error cases
+- [ ] **DOCS-03**: CONTRIBUTING.md created at repo root (setup, test, PR flow, code patterns, architecture overview)
+- [ ] **DOCS-04**: Architecture diagram added (Mermaid) showing MCP client → Node.js → Python bridge → EAPI flow
+- [ ] **DOCS-05**: CHANGELOG.md created with entries for v1.0, v1.1, and v1.2
+- [ ] **DIST-01**: `package.json` `files` field configured as whitelist; `npm pack --dry-run` shows tarball under 5MB
+- [ ] **DIST-02**: Docker build verified working; `docker compose -f docker/docker-compose.yaml up` starts server with health check passing
+- [ ] **DIST-03**: npm install path documented and verified (clone → setup-uv.sh → npm install → npm run build → configure MCP client)
+- [ ] **DIST-04**: Docker install path documented and verified (clone → docker compose up → configure MCP client with HTTP transport)
+
+### Quality Gates & Release Pipeline (Phase 17)
+
+- [ ] **GATE-01**: CI runs ESLint + Prettier check on every PR (fails on violations)
+- [ ] **GATE-02**: CI runs `npm pack --dry-run` and fails if tarball exceeds 10MB or contains test/dev files
+- [ ] **GATE-03**: CI startup smoke test: server boots, responds to MCP initialize, exits cleanly
+- [ ] **GATE-04**: CI Docker build + health check on push to master
+- [ ] **GATE-05**: README tool list validated against registered MCP tools in CI (fails if they diverge)
+- [ ] **GATE-06**: GitHub Actions publish workflow for npm on version tags
+- [ ] **GATE-07**: GitHub Issue #11 resolved — reporter's setup path works with updated documentation
+
+## v1.3 Requirements (Deferred)
+
+Deferred from v1.2 per [scope deliberation](.planning/deliberations/v12-scope-and-priorities.md). The RAG pipeline works (799 tests, 34/34 recall passing) — these refine internals rather than fix deployment blockers.
 
 ### Structured RAG Output
 
@@ -39,33 +79,7 @@ Requirements for Production Readiness milestone. Each maps to roadmap phases.
 - [ ] **QUAL-03**: Regression detection fails CI if any metric drops >5% below stored baseline
 - [ ] **QUAL-04**: Quality scoring is informational-only initially (non-blocking), with option to gate later
 
-### Repo Cleanup
-
-- [ ] **CLEAN-01**: Dead files removed from repo root (debug scripts, stale markdown, old validation artifacts)
-- [ ] **CLEAN-02**: Compiled .js files removed from src/ directory (only dist/ has compiled output)
-- [ ] **CLEAN-03**: Stale entry point index.js at root removed, package.json `main` corrected to dist/index.js
-- [ ] **CLEAN-04**: setup_venv.sh removed (superseded by setup-uv.sh)
-- [ ] **CLEAN-05**: MagicMock/, dummy_output/, and other test artifacts removed from repo root
-
-### Documentation
-
-- [ ] **DOCS-01**: README refreshed with badges (CI status, npm version, license), npx usage, and output format description
-- [ ] **DOCS-02**: API documentation created for each MCP tool with parameters, types, example usage, and error cases
-- [ ] **DOCS-03**: CONTRIBUTING.md created at repo root (setup, test, PR flow, code patterns, architecture overview)
-- [ ] **DOCS-04**: Architecture diagram added (Mermaid) showing MCP client → Node.js → Python bridge → EAPI flow
-- [ ] **DOCS-05**: CHANGELOG.md created with entries for v1.0, v1.1, v1.2
-
-### Packaging & Publishing
-
-- [ ] **PKG-01**: package.json `files` field configured as whitelist (dist/, lib/, zlibrary/, pyproject.toml, uv.lock, setup-uv.sh, README, LICENSE)
-- [ ] **PKG-02**: `npm pack --dry-run` output verified to include only needed files, tarball under 10 MB
-- [ ] **PKG-03**: `npx zlibrary-mcp` verified working (bin field + shebang correct)
-- [ ] **PKG-04**: CI pipeline covers: lint, type-check, fast tests, npm audit, tarball size check
-- [ ] **PKG-05**: Startup health check verifies Python venv exists, emits clear error if missing
-
-## Future Requirements
-
-Deferred to v1.3+. Tracked but not in current roadmap.
+## Future Requirements (v1.4+)
 
 ### Quality Enhancements
 - **QUAL-F01**: Quality scoring gates PRs (block merge if quality drops)
@@ -74,8 +88,8 @@ Deferred to v1.3+. Tracked but not in current roadmap.
 
 ### Distribution
 - **PKG-F01**: Smithery manifest for MCP registry integration
-- **PKG-F02**: Docker-based distribution as alternative to npm
-- **PKG-F03**: postinstall script that bootstraps Python environment automatically
+- **PKG-F02**: postinstall script that bootstraps Python environment automatically
+- **PKG-F03**: Multi-platform CI testing (macOS, Windows via WSL)
 
 ### Test Expansion
 - **TEST-F01**: Automated ground truth generation from annotated PDFs
@@ -90,54 +104,56 @@ Deferred to v1.3+. Tracked but not in current roadmap.
 | Auto-generated TypeDoc HTML | Generic output misses MCP context — hand-written API docs with examples preferred |
 | 100% test coverage | 78-82% is healthy — chasing 100% leads to brittle tests |
 | Full Zod 4 migration | MCP SDK 1.25.3 depends on Zod 3.25.x — defer until SDK updates |
-| Docker-first distribution | MCP servers run as local processes — Docker adds latency |
-| semantic-release | Over-engineered for manual release cadence |
+| semantic-release | Over-engineered for manual release cadence — simple tag-triggered publish workflow |
 
 ## Traceability
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| BUG-01 | Phase 13 | Pending |
-| BUG-02 | Phase 13 | Pending |
-| BUG-03 | Phase 13 | Pending |
-| BUG-04 | Phase 13 | Pending |
-| BUG-05 | Phase 13 | Pending |
-| TEST-01 | Phase 14 | Pending |
-| TEST-02 | Phase 14 | Pending |
-| TEST-03 | Phase 14 | Pending |
-| TEST-04 | Phase 14 | Pending |
-| TEST-05 | Phase 14 | Pending |
-| TEST-06 | Phase 14 | Pending |
-| RAG-01 | Phase 16 | Pending |
-| RAG-02 | Phase 16 | Pending |
-| RAG-03 | Phase 16 | Pending |
-| RAG-04 | Phase 16 | Pending |
-| RAG-05 | Phase 16 | Pending |
-| QUAL-01 | Phase 17 | Pending |
-| QUAL-02 | Phase 17 | Pending |
-| QUAL-03 | Phase 17 | Pending |
-| QUAL-04 | Phase 17 | Pending |
+| BUG-01 | Phase 13 | Complete |
+| BUG-02 | Phase 13 | Complete |
+| BUG-03 | Phase 13 | Complete |
+| BUG-04 | Phase 13 | Complete |
+| BUG-05 | Phase 13 | Complete |
+| TEST-01 | Phase 14 | Complete |
+| TEST-02 | Phase 14 | Complete |
+| TEST-03 | Phase 14 | Complete |
+| TEST-04 | Phase 14 | Complete |
+| TEST-05 | Phase 14 | Complete |
+| TEST-06 | Phase 14 | Complete |
 | CLEAN-01 | Phase 15 | Pending |
 | CLEAN-02 | Phase 15 | Pending |
 | CLEAN-03 | Phase 15 | Pending |
 | CLEAN-04 | Phase 15 | Pending |
 | CLEAN-05 | Phase 15 | Pending |
-| DOCS-01 | Phase 18 | Pending |
-| DOCS-02 | Phase 18 | Pending |
-| DOCS-03 | Phase 18 | Pending |
-| DOCS-04 | Phase 18 | Pending |
-| DOCS-05 | Phase 18 | Pending |
-| PKG-01 | Phase 19 | Pending |
-| PKG-02 | Phase 19 | Pending |
-| PKG-03 | Phase 19 | Pending |
-| PKG-04 | Phase 19 | Pending |
-| PKG-05 | Phase 19 | Pending |
+| DX-01 | Phase 15 | Pending |
+| DX-02 | Phase 15 | Pending |
+| DX-03 | Phase 15 | Pending |
+| DX-04 | Phase 15 | Pending |
+| DX-05 | Phase 15 | Pending |
+| DOCS-01 | Phase 16 | Pending |
+| DOCS-02 | Phase 16 | Pending |
+| DOCS-03 | Phase 16 | Pending |
+| DOCS-04 | Phase 16 | Pending |
+| DOCS-05 | Phase 16 | Pending |
+| DIST-01 | Phase 16 | Pending |
+| DIST-02 | Phase 16 | Pending |
+| DIST-03 | Phase 16 | Pending |
+| DIST-04 | Phase 16 | Pending |
+| GATE-01 | Phase 17 | Pending |
+| GATE-02 | Phase 17 | Pending |
+| GATE-03 | Phase 17 | Pending |
+| GATE-04 | Phase 17 | Pending |
+| GATE-05 | Phase 17 | Pending |
+| GATE-06 | Phase 17 | Pending |
+| GATE-07 | Phase 17 | Pending |
 
 **Coverage:**
-- v1.2 requirements: 35 total
-- Mapped to phases: 35
+- v1.2 requirements: 33 total (11 complete + 22 pending)
+- Mapped to phases: 33
 - Unmapped: 0
+- v1.3 deferred: 9 (RAG-01–05, QUAL-01–04)
 
 ---
 *Requirements defined: 2026-02-11*
-*Last updated: 2026-02-11 after roadmap creation (traceability filled)*
+*Last updated: 2026-03-19 (v1.2 scope narrowed, RAG/QUAL deferred to v1.3, DX/DIST/GATE requirements added)*

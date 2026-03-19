@@ -4,7 +4,8 @@
 
 - v1.0 Audit Cleanup & Modernization — Phases 1-7 (shipped 2026-02-01)
 - v1.1 Quality & Expansion — Phases 8-12 (shipped 2026-02-04)
-- v1.2 Production Readiness — Phases 13-19 (in progress)
+- v1.2 Production Readiness — Phases 13-17 (in progress)
+- v1.3 RAG Pipeline Refinement — TBD (planned)
 
 ## Phases
 
@@ -38,15 +39,22 @@ Full details: `.planning/milestones/v1.1-ROADMAP.md`
 
 ### v1.2 Production Readiness (In Progress)
 
-**Milestone Goal:** Transform the functional MCP server into a professionally publishable npm package with clean CI, structured RAG output, automated quality scoring, and comprehensive documentation. No new end-user features — this is infrastructure, quality, and developer experience.
+**Milestone Goal:** Build a solid, deployable, contributable MCP server. Clean CI, comprehensive documentation, both npm and Docker distribution paths, and quality gates that prevent degradation over time. No new end-user features — this is infrastructure, developer experience, and deployment readiness.
+
+**Deliberation:** [v1.2 scope deliberation](.planning/deliberations/v12-scope-and-priorities.md) (2026-03-19)
 
 - [x] **Phase 13: Bug Fixes & Test Hygiene** - Green CI as foundation for everything else — completed 2026-02-11
 - [x] **Phase 14: Test Infrastructure** - Unified marker taxonomy, ground truth v3, fast/slow CI split — completed 2026-02-11
-- [ ] **Phase 15: Repo Cleanup** - Remove dead files, fix entry points, clean repo root
-- [ ] **Phase 16: Structured RAG Output** - Multi-file output with unified metadata
-- [ ] **Phase 17: Quality Scoring** - Automated precision/recall against ground truth in CI
-- [ ] **Phase 18: Documentation** - README refresh, API docs, contributor guide, architecture diagram
-- [ ] **Phase 19: Packaging & Publishing** - Files whitelist, tarball verification, npx, CI pipeline
+- [ ] **Phase 15: Cleanup & DX Foundation** - Dead files, gitignore, ESLint + Prettier, startup validation, coverage CI
+- [ ] **Phase 16: Documentation & Distribution** - README, API docs, CONTRIBUTING.md, CHANGELOG, npm packaging, Docker verification
+- [ ] **Phase 17: Quality Gates & Release Pipeline** - 3-layer CI gates, release automation, npm publish workflow
+
+### v1.3 RAG Pipeline Refinement (Planned)
+
+**Milestone Goal:** Refine the RAG pipeline output format and add automated quality scoring. Deferred from v1.2 per [deliberation](.planning/deliberations/v12-scope-and-priorities.md) — the pipeline works (799 tests, 34/34 recall passing) but output format and scoring are internal refinements that aren't blocking deployment.
+
+- [ ] **Structured RAG Output** - Multi-file output (body.md, footnotes.md, metadata.json) with unified metadata
+- [ ] **Quality Scoring** - Automated precision/recall against ground truth in CI
 
 ## Phase Details
 
@@ -81,63 +89,49 @@ Plans:
 - [x] 14-02-PLAN.md -- Consolidate ground truth to v3 schema with validation test (TEST-03, TEST-04)
 - [x] 14-03-PLAN.md -- Relocate root Python files and split CI into fast/full jobs (TEST-05, TEST-06)
 
-### Phase 15: Repo Cleanup
-**Goal**: Repository root contains only essential files, with no dead scripts, stale artifacts, or conflicting entry points
-**Depends on**: Phase 14 (test file moves in phase 14 should complete before further file reorganization)
-**Requirements**: CLEAN-01, CLEAN-02, CLEAN-03, CLEAN-04, CLEAN-05
+### Phase 15: Cleanup & DX Foundation
+**Goal**: Clean repository with no dead files or build artifacts in source, plus developer experience tooling (linting, formatting, startup validation, coverage) that keeps quality high as the project evolves
+**Depends on**: Phase 14 (test file moves should complete before further file reorganization)
+**Requirements**: CLEAN-01, CLEAN-02, CLEAN-03, CLEAN-04, CLEAN-05, DX-01, DX-02, DX-03, DX-04, DX-05
 **Success Criteria** (what must be TRUE):
   1. No debug scripts, stale markdown summaries, or old validation artifacts exist at the repo root
   2. The `src/` directory contains zero `.js` files (only TypeScript source; compiled output lives in `dist/` only)
-  3. `node -e "require('./package.json').main"` returns `dist/index.js` and `node dist/index.js --help` works (no stale root index.js)
+  3. `.gitignore` excludes `src/**/*.js` and `src/**/*.egg-info/` — build artifacts never appear as untracked
   4. `setup_venv.sh` does not exist (only `setup-uv.sh` remains)
-  5. No `MagicMock/`, `dummy_output/`, or similar test artifact directories exist at repo root
+  5. ESLint and Prettier are configured and enforced via lint-staged pre-commit hook for TypeScript files
+  6. Starting the server without `ZLIBRARY_EMAIL`/`ZLIBRARY_PASSWORD` emits a clear, actionable error within 2 seconds (not a deferred Python crash)
+  7. `uv run pytest` and Jest both report coverage; CI fails if coverage drops below configured threshold
+  8. No large binary blobs (>1MB) exist in git history outside of LFS tracking
+  9. The 1 failing Jest test (Node 22 JSON.parse message format) is fixed
 **Plans**: TBD
 
-### Phase 16: Structured RAG Output
-**Goal**: RAG pipeline produces separated, linked output files (body, footnotes, metadata) with a single unified metadata system
-**Depends on**: Phase 14 (test infrastructure needed to validate new output format)
-**Requirements**: RAG-01, RAG-02, RAG-03, RAG-04, RAG-05
-**Success Criteria** (what must be TRUE):
-  1. Processing a document produces a directory containing `body.md`, `footnotes.md`, and `metadata.json` as separate files
-  2. `footnotes.md` contains all detected footnotes in reading order with markers and page references
-  3. `metadata.json` is the single source of truth for document metadata (no separate competing metadata sidecar)
-  4. `metadata.json` contains relative paths linking to `body.md` and `footnotes.md` in its `output_files` section
-  5. Existing MCP tool callers continue working without changes — new fields are additive, `format_version` field present
-**Plans**: TBD
-
-### Phase 17: Quality Scoring
-**Goal**: CI automatically computes and reports precision/recall quality scores per feature against ground truth, with regression detection
-**Depends on**: Phase 14 (ground truth v3 consolidation), Phase 16 (structured output format)
-**Requirements**: QUAL-01, QUAL-02, QUAL-03, QUAL-04
-**Success Criteria** (what must be TRUE):
-  1. Running the quality harness against ground truth produces per-feature scores (footnotes precision/recall, formatting accuracy, body text completeness)
-  2. CI pipeline produces a downloadable JSON artifact containing quality scores after each run
-  3. If any metric drops more than 5% below stored baseline, CI marks the quality check as failed
-  4. Quality scoring failures are informational (non-blocking) by default, with a documented toggle to make them blocking
-**Plans**: TBD
-
-### Phase 18: Documentation
-**Goal**: The project has professional documentation — README with badges, per-tool API docs, contributor guide, architecture diagram, and changelog
-**Depends on**: Phase 15 (cleanup determines final file layout), Phase 16 (structured output must be documented)
-**Requirements**: DOCS-01, DOCS-02, DOCS-03, DOCS-04, DOCS-05
+### Phase 16: Documentation & Distribution
+**Goal**: Professional public-facing documentation and working distribution via both npm and Docker, so external users can install and use the server successfully
+**Depends on**: Phase 15 (cleanup determines final file layout)
+**Requirements**: DOCS-01, DOCS-02, DOCS-03, DOCS-04, DOCS-05, DIST-01, DIST-02, DIST-03, DIST-04
 **Success Criteria** (what must be TRUE):
   1. README.md includes CI status badge, npm version badge, license badge, `npx` usage instructions, and output format description
   2. API documentation exists for each MCP tool with parameters, types, example usage, and error cases
   3. CONTRIBUTING.md at repo root describes setup, test, PR flow, code patterns, and architecture overview
   4. A Mermaid architecture diagram shows the MCP client to Node.js to Python bridge to EAPI data flow
   5. CHANGELOG.md exists with entries for v1.0, v1.1, and v1.2
+  6. `package.json` `files` field is a whitelist — `npm pack --dry-run` shows tarball under 5MB with no test files or dev artifacts
+  7. Docker build (`docker compose -f docker/docker-compose.yaml build`) succeeds and health check passes
+  8. Both install paths (npm + Docker) are documented with step-by-step instructions and verified working
 **Plans**: TBD
 
-### Phase 19: Packaging & Publishing
-**Goal**: The project is ready to publish to npm — clean tarball, working npx, comprehensive CI, and startup health check
-**Depends on**: All previous phases (this is the final gate)
-**Requirements**: PKG-01, PKG-02, PKG-03, PKG-04, PKG-05
+### Phase 17: Quality Gates & Release Pipeline
+**Goal**: CI quality gates that catch regressions, validate package integrity, and check doc freshness — plus a release workflow for npm publishing. After this phase, the project is shippable.
+**Depends on**: Phase 16 (docs and packaging must exist before gates validate them)
+**Requirements**: GATE-01, GATE-02, GATE-03, GATE-04, GATE-05, GATE-06, GATE-07
 **Success Criteria** (what must be TRUE):
-  1. `package.json` `files` field is a whitelist containing only dist/, lib/, zlibrary/, pyproject.toml, uv.lock, setup-uv.sh, README, and LICENSE
-  2. `npm pack --dry-run` shows a tarball under 10 MB with no test files, planning docs, or dev artifacts
-  3. `npx zlibrary-mcp` starts the server successfully (bin field and shebang are correct)
-  4. CI pipeline runs lint, type-check, fast tests, npm audit, and tarball size check on every PR
-  5. Starting the server without a Python venv emits a clear, actionable error message (not a stack trace)
+  1. CI runs ESLint + Prettier check on every PR (fails on violations)
+  2. CI runs `npm pack --dry-run` and fails if tarball exceeds 10MB or contains excluded patterns
+  3. CI includes a startup smoke test: server boots, responds to MCP initialize handshake, exits cleanly
+  4. CI Docker build + health check passes on every push to master
+  5. README tool list is validated against registered MCP tools (CI fails if they diverge)
+  6. GitHub Actions workflow exists for npm publish on version tags (manual trigger)
+  7. GitHub Issue #11 is resolved — the reporter's setup path works with updated docs
 **Plans**: TBD
 
 ## Progress
@@ -158,12 +152,10 @@ Plans:
 | 12. Anna's Archive Integration | v1.1 | 4/4 | Complete | 2026-02-04 |
 | 13. Bug Fixes & Test Hygiene | v1.2 | 2/2 | Complete | 2026-02-11 |
 | 14. Test Infrastructure | v1.2 | 3/3 | Complete | 2026-02-11 |
-| 15. Repo Cleanup | v1.2 | 0/TBD | Not started | - |
-| 16. Structured RAG Output | v1.2 | 0/TBD | Not started | - |
-| 17. Quality Scoring | v1.2 | 0/TBD | Not started | - |
-| 18. Documentation | v1.2 | 0/TBD | Not started | - |
-| 19. Packaging & Publishing | v1.2 | 0/TBD | Not started | - |
+| 15. Cleanup & DX Foundation | v1.2 | 0/TBD | Not started | - |
+| 16. Documentation & Distribution | v1.2 | 0/TBD | Not started | - |
+| 17. Quality Gates & Release Pipeline | v1.2 | 0/TBD | Not started | - |
 
 ---
 
-_Last updated: 2026-02-11 after Phase 14 execution complete_
+_Last updated: 2026-03-19 after v1.2 scope deliberation (phases 15-17 redefined, RAG phases deferred to v1.3)_

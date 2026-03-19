@@ -103,7 +103,12 @@ Plans:
   7. `uv run pytest` and Jest both report coverage; CI fails if coverage drops below configured threshold
   8. No large binary blobs (>1MB) exist in git history outside of LFS tracking
   9. The 1 failing Jest test (Node 22 JSON.parse message format) is fixed
-**Plans**: TBD
+**Plans:** 4 plans
+Plans:
+- [ ] 15-01-PLAN.md -- Purge large blobs from git history and migrate sample.pdf to LFS (CLEAN-05)
+- [ ] 15-02-PLAN.md -- Remove stale build artifacts, update .gitignore, fix failing test (CLEAN-01, CLEAN-02, CLEAN-03, DX-05)
+- [ ] 15-03-PLAN.md -- Configure ESLint + Prettier with lint-staged integration (DX-01, DX-02)
+- [ ] 15-04-PLAN.md -- Add startup credential validation and coverage thresholds (DX-03, DX-04)
 
 ### Phase 16: Documentation & Distribution
 **Goal**: Professional public-facing documentation and working distribution via both npm and Docker, so external users can install and use the server successfully
@@ -152,10 +157,10 @@ Plans:
 | 12. Anna's Archive Integration | v1.1 | 4/4 | Complete | 2026-02-04 |
 | 13. Bug Fixes & Test Hygiene | v1.2 | 2/2 | Complete | 2026-02-11 |
 | 14. Test Infrastructure | v1.2 | 3/3 | Complete | 2026-02-11 |
-| 15. Cleanup & DX Foundation | v1.2 | 0/TBD | Not started | - |
+| 15. Cleanup & DX Foundation | v1.2 | 0/4 | Not started | - |
 | 16. Documentation & Distribution | v1.2 | 0/TBD | Not started | - |
 | 17. Quality Gates & Release Pipeline | v1.2 | 0/TBD | Not started | - |
 
 ---
 
-_Last updated: 2026-03-19 after v1.2 scope deliberation (phases 15-17 redefined, RAG phases deferred to v1.3)_
+_Last updated: 2026-03-19 after Phase 15 planning (4 plans created)_

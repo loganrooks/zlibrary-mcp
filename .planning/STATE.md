@@ -10,9 +10,9 @@ See: .planning/PROJECT.md (updated 2026-02-11)
 ## Current Position
 
 Phase: 16 of 17 (Documentation & Distribution) -- IN PROGRESS
-Plan: 2 of 3 complete
-Status: 16-02 complete (API reference + CHANGELOG), 16-03 next
-Last activity: 2026-03-20 — 16-02 complete (API reference docs + CHANGELOG.md)
+Plan: 2 of 3 complete (16-01, 16-02)
+Status: 16-01 and 16-02 complete, 16-03 next
+Last activity: 2026-03-20 — 16-01 complete (npm packaging + Docker verification)
 
 Progress: [████████████████░░░░] 80% of v1.2 (phases 13-15 complete, 16 in progress, 17 remaining)
 
@@ -30,6 +30,11 @@ Progress: [████████████████░░░░] 80% of 
 ### Decisions
 
 All decisions logged in PROJECT.md Key Decisions table.
+
+**Phase 16 (16-01):**
+- Added __pycache__/.pyc negation patterns to files array since files field overrides .npmignore
+- Excluded opencv-python-headless and numpy from Docker build via --no-install-package (musl incompatible, runtime uses conditional imports)
+- Did not exclude src/ or scripts/ from .dockerignore since Dockerfile COPY depends on them for build stage
 
 **Phase 16 (16-02):**
 - Parameter tables extracted directly from Zod schemas in src/index.ts for accuracy
@@ -112,8 +117,8 @@ From v1.1 audit (addressed by v1.2 scope):
 ## Session Continuity
 
 Last session: 2026-03-20
-Stopped at: Completed 16-02-PLAN.md
-Resume with: Continue Phase 16 (16-03 next: npm packaging & Docker verification)
+Stopped at: Completed 16-01-PLAN.md
+Resume with: Continue Phase 16 (16-03 next: quality gates)
 
 ### Performance Metrics
 
@@ -129,8 +134,9 @@ Resume with: Continue Phase 16 (16-03 next: npm packaging & Docker verification)
 | 15-02      | 3min     | 2     | 2     |
 | 15-03      | 6min     | 2     | 9     |
 | 15-04      | 5min     | 2     | 6     |
+| 16-01      | 5min     | 2     | 3     |
 | 16-02      | 2min     | 2     | 2     |
 
 ---
 
-_Last updated: 2026-03-20 after 16-02 execution (API reference docs + CHANGELOG.md)_
+_Last updated: 2026-03-20 after 16-01 execution (npm packaging + Docker verification)_

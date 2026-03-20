@@ -44,6 +44,16 @@
   ],
   "author": "loganrooks",
   "license": "MIT",
+  "files": [
+    "dist/",
+    "lib/",
+    "zlibrary/",
+    "pyproject.toml",
+    "uv.lock",
+    "setup-uv.sh",
+    "!**/__pycache__/",
+    "!**/*.pyc"
+  ],
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.25.3",
     "env-paths": "^4.0.0",

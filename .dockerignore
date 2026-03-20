@@ -29,15 +29,17 @@ logs
 .DS_Store
 Thumbs.db
 
-# Test fixtures (large files not needed in any image)
+# Test fixtures and test suites (not needed in runtime)
 test_files
+__tests__
 
 # Planning and documentation (not needed in runtime)
 .planning
 
-# Documentation (not needed in runtime)
+# Documentation and dev config (not needed in runtime)
 docs
 claudedocs
+.claude
 *.md
 !docker/README.md
 

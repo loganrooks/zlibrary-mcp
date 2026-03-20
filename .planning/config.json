@@ -20,5 +20,14 @@
     "commit_convention": "freeform",
     "environments": []
   },
-  "gsd_reflect_version": "1.13.0"
+  "gsd_reflect_version": "1.13.0",
+  "automation": {
+    "reflection": {
+      "auto_reflect": false,
+      "threshold_phases": 3,
+      "min_signals": 5,
+      "phases_since_last_reflect": 1,
+      "last_reflect_at": null
+    }
+  }
 }

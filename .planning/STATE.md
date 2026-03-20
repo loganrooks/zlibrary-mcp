@@ -5,7 +5,7 @@
 See: .planning/PROJECT.md (updated 2026-02-11)
 
 **Core value:** Reliable, maintainable MCP server for book access — production-ready infrastructure with high-quality scholarly text extraction
-**Current focus:** v1.2 Production Readiness — Phase 16: CI/CD Pipeline
+**Current focus:** v1.2 Production Readiness — Phase 16: Documentation & Distribution
 
 ## Current Position
 

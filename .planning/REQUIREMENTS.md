@@ -27,16 +27,16 @@ Requirements for Production Readiness milestone. Focused on deployment, develope
 
 ### Cleanup & DX Foundation (Phase 15)
 
-- [ ] **CLEAN-01**: Dead files removed from repo root (debug scripts, stale markdown, old validation artifacts)
-- [ ] **CLEAN-02**: Compiled .js files removed from src/ directory (only dist/ has compiled output)
-- [ ] **CLEAN-03**: `.gitignore` updated to exclude `src/**/*.js`, `src/**/*.js.map`, and `src/**/*.egg-info/`
-- [ ] **CLEAN-04**: `setup_venv.sh` removed (superseded by setup-uv.sh)
-- [ ] **CLEAN-05**: Large binary blobs (test_downloads/ PDFs) purged from git history via filter-repo + LFS
-- [ ] **DX-01**: ESLint configured for TypeScript with sensible defaults (no-unused-vars, consistent-type-imports, etc.)
-- [ ] **DX-02**: Prettier configured for consistent formatting; both ESLint and Prettier enforced via lint-staged
-- [ ] **DX-03**: Server startup validates ZLIBRARY_EMAIL/ZLIBRARY_PASSWORD presence and emits clear error within 2 seconds
-- [ ] **DX-04**: Coverage reporting added to CI; threshold configured so coverage regressions fail the build
-- [ ] **DX-05**: Failing Jest test fixed (Node 22 JSON.parse error message format change in zlibrary-api.test.js)
+- [x] **CLEAN-01**: Dead files removed from repo root (debug scripts, stale markdown, old validation artifacts)
+- [x] **CLEAN-02**: Compiled .js files removed from src/ directory (only dist/ has compiled output)
+- [x] **CLEAN-03**: `.gitignore` updated to exclude `src/**/*.js`, `src/**/*.js.map`, and `src/**/*.egg-info/`
+- [x] **CLEAN-04**: `setup_venv.sh` removed (superseded by setup-uv.sh)
+- [x] **CLEAN-05**: Large binary blobs (test_downloads/ PDFs) purged from git history via filter-repo + LFS
+- [x] **DX-01**: ESLint configured for TypeScript with sensible defaults (no-unused-vars, consistent-type-imports, etc.)
+- [x] **DX-02**: Prettier configured for consistent formatting; both ESLint and Prettier enforced via lint-staged
+- [x] **DX-03**: Server startup validates ZLIBRARY_EMAIL/ZLIBRARY_PASSWORD presence and emits clear error within 2 seconds
+- [x] **DX-04**: Coverage reporting added to CI; threshold configured so coverage regressions fail the build
+- [x] **DX-05**: Failing Jest test fixed (Node 22 JSON.parse error message format change in zlibrary-api.test.js)
 
 ### Documentation & Distribution (Phase 16)
 
@@ -121,16 +121,16 @@ Deferred from v1.2 per [scope deliberation](.planning/deliberations/v12-scope-an
 | TEST-04 | Phase 14 | Complete |
 | TEST-05 | Phase 14 | Complete |
 | TEST-06 | Phase 14 | Complete |
-| CLEAN-01 | Phase 15 | Pending |
-| CLEAN-02 | Phase 15 | Pending |
-| CLEAN-03 | Phase 15 | Pending |
-| CLEAN-04 | Phase 15 | Pending |
-| CLEAN-05 | Phase 15 | Pending |
-| DX-01 | Phase 15 | Pending |
-| DX-02 | Phase 15 | Pending |
-| DX-03 | Phase 15 | Pending |
-| DX-04 | Phase 15 | Pending |
-| DX-05 | Phase 15 | Pending |
+| CLEAN-01 | Phase 15 | Complete |
+| CLEAN-02 | Phase 15 | Complete |
+| CLEAN-03 | Phase 15 | Complete |
+| CLEAN-04 | Phase 15 | Complete |
+| CLEAN-05 | Phase 15 | Complete |
+| DX-01 | Phase 15 | Complete |
+| DX-02 | Phase 15 | Complete |
+| DX-03 | Phase 15 | Complete |
+| DX-04 | Phase 15 | Complete |
+| DX-05 | Phase 15 | Complete |
 | DOCS-01 | Phase 16 | Pending |
 | DOCS-02 | Phase 16 | Pending |
 | DOCS-03 | Phase 16 | Pending |
@@ -149,7 +149,7 @@ Deferred from v1.2 per [scope deliberation](.planning/deliberations/v12-scope-an
 | GATE-07 | Phase 17 | Pending |
 
 **Coverage:**
-- v1.2 requirements: 33 total (11 complete + 22 pending)
+- v1.2 requirements: 33 total (21 complete + 12 pending)
 - Mapped to phases: 33
 - Unmapped: 0
 - v1.3 deferred: 9 (RAG-01–05, QUAL-01–04)

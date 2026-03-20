@@ -45,7 +45,7 @@ Full details: `.planning/milestones/v1.1-ROADMAP.md`
 
 - [x] **Phase 13: Bug Fixes & Test Hygiene** - Green CI as foundation for everything else — completed 2026-02-11
 - [x] **Phase 14: Test Infrastructure** - Unified marker taxonomy, ground truth v3, fast/slow CI split — completed 2026-02-11
-- [ ] **Phase 15: Cleanup & DX Foundation** - Dead files, gitignore, ESLint + Prettier, startup validation, coverage CI
+- [x] **Phase 15: Cleanup & DX Foundation** - Dead files, gitignore, ESLint + Prettier, startup validation, coverage CI — completed 2026-03-19
 - [ ] **Phase 16: Documentation & Distribution** - README, API docs, CONTRIBUTING.md, CHANGELOG, npm packaging, Docker verification
 - [ ] **Phase 17: Quality Gates & Release Pipeline** - 3-layer CI gates, release automation, npm publish workflow
 
@@ -105,10 +105,10 @@ Plans:
   9. The 1 failing Jest test (Node 22 JSON.parse message format) is fixed
 **Plans:** 4 plans
 Plans:
-- [ ] 15-01-PLAN.md -- Purge large blobs from git history and migrate sample.pdf to LFS (CLEAN-05)
-- [ ] 15-02-PLAN.md -- Remove stale build artifacts, update .gitignore, fix failing test (CLEAN-01, CLEAN-02, CLEAN-03, DX-05)
-- [ ] 15-03-PLAN.md -- Configure ESLint + Prettier with lint-staged integration (DX-01, DX-02)
-- [ ] 15-04-PLAN.md -- Add startup credential validation and coverage thresholds (DX-03, DX-04)
+- [x] 15-01-PLAN.md -- Purge large blobs from git history and migrate sample.pdf to LFS (CLEAN-05)
+- [x] 15-02-PLAN.md -- Remove stale build artifacts, update .gitignore, fix failing test (CLEAN-01, CLEAN-02, CLEAN-03, DX-05)
+- [x] 15-03-PLAN.md -- Configure ESLint + Prettier with lint-staged integration (DX-01, DX-02)
+- [x] 15-04-PLAN.md -- Add startup credential validation and coverage thresholds (DX-03, DX-04)
 
 ### Phase 16: Documentation & Distribution
 **Goal**: Professional public-facing documentation and working distribution via both npm and Docker, so external users can install and use the server successfully
@@ -157,10 +157,10 @@ Plans:
 | 12. Anna's Archive Integration | v1.1 | 4/4 | Complete | 2026-02-04 |
 | 13. Bug Fixes & Test Hygiene | v1.2 | 2/2 | Complete | 2026-02-11 |
 | 14. Test Infrastructure | v1.2 | 3/3 | Complete | 2026-02-11 |
-| 15. Cleanup & DX Foundation | v1.2 | 0/4 | Not started | - |
+| 15. Cleanup & DX Foundation | v1.2 | 4/4 | Complete | 2026-03-19 |
 | 16. Documentation & Distribution | v1.2 | 0/TBD | Not started | - |
 | 17. Quality Gates & Release Pipeline | v1.2 | 0/TBD | Not started | - |
 
 ---
 
-_Last updated: 2026-03-19 after Phase 15 planning (4 plans created)_
+_Last updated: 2026-03-19 after Phase 15 execution (4/4 plans complete, verified 9/9)_

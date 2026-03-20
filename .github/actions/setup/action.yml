@@ -1,0 +1,26 @@
+name: 'Project Setup'
+description: 'Checkout, install Node.js 22, UV, and all dependencies'
+
+inputs:
+  node-version:
+    description: 'Node.js version'
+    default: '22'
+  build:
+    description: 'Run npm build after install'
+    default: 'true'
+
+runs:
+  using: 'composite'
+  steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+    - uses: astral-sh/setup-uv@v4
+    - run: npm ci
+      shell: bash
+    - run: uv sync
+      shell: bash
+    - run: npm run build
+      shell: bash
+      if: inputs.build == 'true'

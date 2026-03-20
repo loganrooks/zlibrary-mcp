@@ -1,11 +1,11 @@
 # Z-Library MCP - Issues & Technical Debt
 
-<!-- Last Verified: 2026-02-01 -->
+<!-- Last Verified: 2026-03-20 -->
 
 ## Executive Summary
 
-**Last Updated**: 2026-02-01
-**Status**: Post-cleanup (7 phases complete). Critical issues resolved. Remaining items are enhancements.
+**Last Updated**: 2026-03-20
+**Status**: v1.2 Production Readiness (17 phases complete). CI gates active. 7 test-full failures tracked (ISSUE-GT-001, ISSUE-PERF-001). test-fast (PR gate) is green.
 
 ---
 
@@ -31,6 +31,7 @@
 
 ### ISSUE-FN-001 through ISSUE-FN-004: Footnote Detection Bugs [RESOLVED]
 **Resolution**: All 4 footnote critical bugs fixed (Oct-Nov 2025). Marker detection, data contract, corruption recovery, and pairing all working.
+**Note**: Footnote *detection* is fixed, but 4 footnote *tests* are broken — see ISSUE-GT-001 below.
 
 ---
 
@@ -65,6 +66,36 @@
 - Limited development fixtures/mocks
 **Resolved items**:
 - Debug mode with verbose logging (`ZLIBRARY_DEBUG=1`)
+
+### ISSUE-GT-001: Footnote Tests Broken by Ground Truth v3 Migration
+**Severity**: Medium
+**Component**: `__tests__/python/test_real_footnotes.py`, `__tests__/python/test_inline_footnotes.py`
+**Status**: Open — discovered 2026-03-20 during Phase 17 CI setup
+**Impact**: 4 tests fail in test-full CI. test-fast is unaffected (these are marked `slow`/`ground_truth`).
+**Root Cause**: Phase 14 migrated ground truth files from v1/v2 to v3 schema, but 4 footnote tests still reference v1/v2 keys that no longer exist:
+
+| Test | Missing Key | v3 Equivalent |
+|------|-------------|---------------|
+| `test_footnote_detection_with_real_pdf` | `footnote["expected_output"]` | No direct equivalent — test needs rewrite to check `definition.content` |
+| `test_footnote_marker_in_body_text` | `footnote["marker_context"]` | `footnote["marker"]` is now `{"symbol": "*", "location_type": "..."}` |
+| `test_footnote_content_extraction` | `footnote["content"]` | `footnote["definition"]["content"]` |
+| `test_derrida_traditional_footnotes_regression` | `footnote["expected_output"]` | Same as above |
+
+**Ground truth file**: `test_files/ground_truth/derrida_footnotes.json`
+**Schema change**: v3 restructured footnotes — `marker` became an object (was string), `content` moved under `definition`, `expected_output` removed entirely.
+**Fix**: Update tests to use v3 schema accessors. Estimated: 30min. Natural fit for v1.3 (RAG pipeline refinement) or a standalone quick fix.
+
+### ISSUE-PERF-001: Performance Tests Flaky on CI Runners
+**Severity**: Low
+**Component**: `__tests__/python/test_garbled_performance.py`, `__tests__/python/test_superscript_detection.py`
+**Status**: Open — discovered 2026-03-20
+**Impact**: 3 tests fail on GitHub Actions runners (slower than dev hardware). Pass locally.
+**Tests**:
+- `test_detection_long_text_scales_linearly` — expects <5ms, gets ~9ms on CI
+- `test_typical_region_fast` — expects <1ms, gets ~1.4ms on CI
+- `test_superscript_check_performance` — expects <10ms, gets ~12ms on CI
+**Mitigation**: test-fast CI excludes `performance`-marked tests. test_garbled_performance.py was already marked; test_superscript_detection.py::TestPerformance was marked during Phase 17.
+**Fix**: Either loosen thresholds (2x for CI) or permanently exclude from CI via marker. These tests validate developer-machine performance, not CI performance.
 
 ### ISSUE-DOCKER-001: Docker numpy/Alpine Compilation
 **Severity**: Low

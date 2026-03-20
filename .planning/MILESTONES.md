@@ -1,5 +1,34 @@
 # Project Milestones: Z-Library MCP
 
+## v1.2 Production Readiness (Shipped: 2026-03-20)
+
+**Delivered:** Made the repo deployment-ready with clean CI pipeline (8 quality gate jobs), comprehensive documentation (README, API docs, CONTRIBUTING, CHANGELOG), dual distribution paths (npm + Docker), and automated release workflow. Closed all tech debt from milestone audit.
+
+**Phases completed:** 13-18 (16 plans total)
+
+**Key accomplishments:**
+
+- Green CI with 8 quality gate jobs: lint, pack-check, smoke-test, docker, docs-check, test-fast, test-full, audit
+- npm tarball reduced 99.6% (117MB → 416KB) with working Docker distribution path
+- ESLint + Prettier with lint-staged enforcement, startup credential validation, coverage thresholds
+- Complete documentation: README with badges + Mermaid diagram, API docs for 13 tools, CONTRIBUTING.md, CHANGELOG
+- npm publish workflow with provenance support, triggered by version tags
+- Test infrastructure: 7-marker taxonomy, v3 ground truth schema, fast (6s) / full (19min) CI split
+- Gap closure: fixed 7 broken tests, corrected CHANGELOG links, cleaned stale docs
+
+**Stats:**
+
+- 456 files changed (+39,316 / -21,275 lines)
+- ~19,157 lines of TypeScript/Python
+- 6 phases, 16 plans, 99 commits
+- 38 days from start to ship (2026-02-11 → 2026-03-20)
+
+**Git range:** `v1.1..v1.2`
+
+**What's next:** v1.3 — RAG pipeline refinement (structured output, quality scoring), plus tech debt patch (coverage enforcement, flaky test fix)
+
+---
+
 ## v1.1 Quality & Expansion (Shipped: 2026-02-04)
 
 **Delivered:** Stabilized infrastructure (Node 22, EAPI gaps, Docker fixes), improved scholarly text extraction quality (margin detection, adaptive resolution, body text purity pipeline), and integrated Anna's Archive as alternative book source with LibGen fallback.
@@ -22,8 +51,6 @@
 - 3 days from start to ship (2026-02-01 → 2026-02-04)
 
 **Git range:** `v1.0..v1.1`
-
-**What's next:** v1.2 — MCP tool wiring for search_multi_source, full Zod 4 migration, download queue management
 
 ---
 
@@ -50,7 +77,5 @@
 - 4 days from start to ship (2026-01-29 → 2026-02-01)
 
 **Git range:** `docs(01)` → `docs(07)`
-
-**What's next:** v1.1 — feature development on clean foundation
 
 ---

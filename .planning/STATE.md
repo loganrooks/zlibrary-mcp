@@ -2,19 +2,18 @@
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-02-11)
+See: .planning/PROJECT.md (updated 2026-03-20)
 
 **Core value:** Reliable, maintainable MCP server for book access — production-ready infrastructure with high-quality scholarly text extraction
-**Current focus:** v1.2 COMPLETE — v1.3 planning next
+**Current focus:** v1.2 SHIPPED — release then tech debt patch then v1.3
 
 ## Current Position
 
-Phase: 18 of 18 (v1.2 Gap Closure) -- COMPLETE
-Plan: 2 of 2 complete (18-02)
-Status: ALL PHASES COMPLETE — v1.2 gap closure done
-Last activity: 2026-03-20 — 18-02 complete (CHANGELOG links, ISSUES resolved, QUICKSTART deleted, CONTRIBUTING Docker note)
+Phase: 18 of 18 -- ALL COMPLETE
+Status: v1.2 MILESTONE SHIPPED
+Last activity: 2026-03-20 — milestone archived and tagged
 
-Progress: [████████████████████] 100% of v1.2 (all phases 13-17 complete)
+Progress: [████████████████████] 100% (3 milestones shipped)
 
 ## Milestones Shipped
 
@@ -22,109 +21,34 @@ Progress: [████████████████████] 100% of
 |---------|------|--------|-------|---------|
 | v1.0 | Audit Cleanup & Modernization | 1-7 | 22 | 2026-02-01 |
 | v1.1 | Quality & Expansion | 8-12 | 21 | 2026-02-04 |
-| v1.2 | Production Readiness | 13-17 | 17 | 2026-03-20 |
+| v1.2 | Production Readiness | 13-18 | 16 | 2026-03-20 |
 
-**Total:** 17 phases, 60 plans executed
+**Total:** 18 phases, 59 plans executed across 3 milestones
 
 ## Accumulated Context
 
 ### Decisions
 
-All decisions logged in PROJECT.md Key Decisions table.
-
-**Phase 16 (16-01):**
-- Added __pycache__/.pyc negation patterns to files array since files field overrides .npmignore
-- Excluded opencv-python-headless and numpy from Docker build via --no-install-package (musl incompatible, runtime uses conditional imports)
-- Did not exclude src/ or scripts/ from .dockerignore since Dockerfile COPY depends on them for build stage
-
-**Phase 16 (16-03):**
-- Included npm version badge since package is published (1.0.0 on npm registry)
-- Preserved existing FAQ section (addresses real user confusion about EAPI, Node vs UV, project portability)
-- Removed 'Current Status' and 'Recent Changes' sections (replaced by badges and CHANGELOG.md)
-
-**Phase 16 (16-02):**
-- Parameter tables extracted directly from Zod schemas in src/index.ts for accuracy
-- CHANGELOG entries at user-facing summary level, not per-phase internal detail
-- v2.0.0 date left as placeholder (2026-03-XX) since Phase 17 finalizes release
-
-**Phase 15 (15-01):**
-- Migrated sample.pdf to LFS before running filter-repo to avoid pointer corruption
-- Purged 7 specific blob SHAs identified by research phase rather than blanket size filter
-- Batched all remaining large-blob cleanup into one force-push to minimize history disruption
-
-**Phase 15 (15-02):**
-- Shortened JSON.parse error regex to match stable prefix across Node versions
-- Used git rm for tracked src/index.js, plain rm for untracked src/lib/*.js files
-
-**Phase 15 (15-03):**
-- no-explicit-any set to off -- codebase uses any extensively in Python bridge layer
-- Prettier config matches existing conventions (2-space, single quotes, semicolons, printWidth 100) to minimize diff churn
-- lint-staged order: eslint --fix first (logic), prettier --write second (formatting), tsc --noEmit last (type-check)
-
-**Phase 15 (15-04):**
-- Used measured coverage baselines (74.54% stmts Jest, 58% pytest) rather than research-phase values for threshold accuracy
-- Set thresholds at baseline minus 5% to prevent regressions without blocking new feature work
-- Credential validation skips in test mode (opts.testing) to avoid breaking Jest mocked tests
-
-**2026-03-19 (Deliberation):**
-- v1.2 scope narrowed to 3 infrastructure phases (15-17), deferring RAG refinements to v1.3
-- Both npm and Docker are first-class distribution channels
-- All three quality gate layers required: CI regression, package integrity, doc freshness
-- Credential scrub completed — password removed from all git history via filter-repo + force-push
-- Commit message sanitized (removed "scrub credentials" language)
-- GitHub Issue #11 identified as key validation target for Phase 17
-
-**Phase 14:**
-- Used addopts = --strict-markers instead of strict_markers = true (pytest 8.x compatibility)
-- Kept existing class-level @pytest.mark decorators alongside module-level pytestmark (safe redundancy)
-- Converted test_real_zlibrary.py pytestmark from skipif-only to list with integration + skipif
-- Removed null corrupted_extraction from heidegger xmark data (invalid per v3 schema, field is optional)
-- Used git mv for all script relocations to preserve file history
-- test-fast runs on both push and PR; test-full only on push-to-master and manual dispatch
-- Added --benchmark-disable to fast CI job to skip pytest-benchmark overhead
-
-**Phase 13:**
-- Used Extension (not AsyncZlib) as the canonical zlibrary import check
-- Rewrote TestRealAuthentication with EAPIClient domain-based constructor
-- Replaced getRequirementsTxtPath with getPyprojectTomlPath to match UV migration
-- Wrapped lint-staged tsc in bash -c to prevent file argument pass-through
-
-**Phase 17 (17-01):**
-- Composite action includes checkout step — callers use 'uses: ./.github/actions/setup' directly without separate checkout
-- docker CI job restricted to push-to-master only to avoid slow builds on every PR
-- smoke-test uses dummy credentials (ci@test.com) to pass startup validation without real Z-Library access
-- docs-check scopes README extraction to 'Available MCP Tools' section via sed range to avoid spurious matches from config-var tables
-
-**Phase 17 (17-02):**
-- Cited commits 7c887e8 and d64ed2e in Issue #11 response so reporter can trace the exact fixes
-- Issue #11 left open for reporter to confirm fix works
-- publish.yml uses npm install -g npm@latest before publish to get npm 11.x provenance support (Node 22 ships npm 10.x)
-- publish.yml runs fast tests (not slow/integration) matching CI convention
-
-**Phase 18 (18-01):**
-- Fixed test code (not ground truth data) — 16/16 schema validation tests confirmed v3 JSON was correct; test accessors were stale
-- Static 3x multiplier for performance thresholds — no CI env detection; thresholds were too tight even locally
+All v1.2 decisions archived in `.planning/milestones/v1.2-ROADMAP.md`.
 
 ### Pending Todos
 
-None.
+- Release v1.2 tag
+- Quick patch: fix jest.teardown.js coverage masking, recalibrate thresholds, exclude vendored test.py, document npm install path, fix flaky test, remove audit || true
 
-### Blockers/Concerns
+### Tech Debt Inventory
 
-None — all known blockers resolved.
+From v1.2 audit (to address in quick patch):
+- jest.teardown.js process.exit(0) masks coverage threshold enforcement
+- Coverage thresholds calibrated against 139-test suite but CI runs 93-test suite
+- Vendored test.py (40KB) in npm tarball
+- npm registry install path not documented
+- CI audit job informational-only (|| true)
+- Pre-existing flaky test (test_markerless_continuation_detected)
 
-**Resolved:**
-- ~~Large blob (74MB Kant PDF) in git history under test_downloads/ — CLEAN-05, will purge in Phase 15~~ RESOLVED by 15-01
-- ~~1 Jest test failing (Node 22 JSON.parse error message format change) — DX-05~~ RESOLVED by 15-02
-- ~~5 compiled .js files in src/lib/ appearing as untracked — CLEAN-02/CLEAN-03~~ RESOLVED by 15-02
-
-**Pre-existing (from v1.1, all resolved by phase 13):**
-- ~~paths.test.js has 1 failing test (BUG-01)~~ RESOLVED by 13-01
-- ~~2 pytest collection errors in scripts/ (BUG-02)~~ RESOLVED by 13-01
-- ~~Unregistered pytest markers (BUG-03)~~ RESOLVED by 13-01
-- ~~Deprecated AsyncZlib code still present (BUG-04)~~ RESOLVED by 13-02
-- ~~zlib_client fixture missing from integration tests~~ RESOLVED by quick-003
-- ~~booklist_tools.py discover_eapi_domain() missing argument~~ RESOLVED by quick-003
+Carried from v1.1:
+- Quality pipeline doesn't receive page_analysis_map (acceptable)
+- search_multi_source not yet wired as MCP tool
 
 ### Quick Tasks Completed
 
@@ -132,21 +56,11 @@ None — all known blockers resolved.
 |---|-------------|------|--------|-----------|
 | 003 | Fix zlib_client fixture + booklist_tools discover_eapi_domain bug | 2026-02-11 | 69c7d5b | [003-fix-zlib-client-fixture](./quick/003-fix-zlib-client-fixture/) |
 
-### Tech Debt Inventory
-
-From v1.1 audit:
-- Quality pipeline doesn't receive page_analysis_map (acceptable — only OCRs small regions)
-- search_multi_source not yet wired as MCP tool (Python bridge ready, TypeScript pending — out of v1.2 scope)
-
-From v1.2 Phase 17 CI (discovered 2026-03-20):
-- ~~4 footnote ground truth tests broken~~ RESOLVED by 18-01 (v3 schema accessor fixes)
-- ~~3 performance tests flaky on CI~~ RESOLVED by 18-01 (3x threshold loosening)
-
 ## Session Continuity
 
 Last session: 2026-03-20
-Stopped at: Completed 18-01-PLAN.md
-Resume with: 18-02 (mark ISSUES.md resolved, update CHANGELOG)
+Stopped at: v1.2 milestone completed
+Resume with: `/gsd:release v1.2` then quick patch for tech debt, then `/gsd:new-milestone` for v1.3
 
 ### Performance Metrics
 
@@ -168,8 +82,8 @@ Resume with: 18-02 (mark ISSUES.md resolved, update CHANGELOG)
 | 17-01      | 3min     | 3     | 3     |
 | 17-02      | 8min     | 3     | 2     |
 | 18-01      | 18min    | 2     | 4     |
+| 18-02      | 3min     | 2     | 4     |
 
 ---
 
-_Last updated: 2026-03-20 after 18-01 execution (fix 7 broken test-full CI tests: v3 schema accessors + performance thresholds)_
-
+_Last updated: 2026-03-20 after v1.2 milestone completion_

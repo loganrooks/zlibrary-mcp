@@ -26,7 +26,7 @@
       "auto_reflect": false,
       "threshold_phases": 3,
       "min_signals": 5,
-      "phases_since_last_reflect": 1,
+      "phases_since_last_reflect": 3,
       "last_reflect_at": null
     }
   }

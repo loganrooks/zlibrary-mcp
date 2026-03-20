@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 2026-02-11)
 
 ## Current Position
 
-Phase: 15 of 17 (Cleanup & DX Foundation) -- COMPLETE
-Plan: 4 of 4 complete
-Status: Phase 15 complete, ready for Phase 16
-Last activity: 2026-03-20 — 15-04 complete (credential validation + coverage thresholds)
+Phase: 16 of 17 (Documentation & Distribution) -- IN PROGRESS
+Plan: 2 of 3 complete
+Status: 16-02 complete (API reference + CHANGELOG), 16-03 next
+Last activity: 2026-03-20 — 16-02 complete (API reference docs + CHANGELOG.md)
 
-Progress: [██████████████░░░░░░] 70% of v1.2 (phases 13-15 complete, 16-17 remaining)
+Progress: [████████████████░░░░] 80% of v1.2 (phases 13-15 complete, 16 in progress, 17 remaining)
 
 ## Milestones Shipped
 
@@ -30,6 +30,11 @@ Progress: [██████████████░░░░░░] 70% of 
 ### Decisions
 
 All decisions logged in PROJECT.md Key Decisions table.
+
+**Phase 16 (16-02):**
+- Parameter tables extracted directly from Zod schemas in src/index.ts for accuracy
+- CHANGELOG entries at user-facing summary level, not per-phase internal detail
+- v2.0.0 date left as placeholder (2026-03-XX) since Phase 17 finalizes release
 
 **Phase 15 (15-01):**
 - Migrated sample.pdf to LFS before running filter-repo to avoid pointer corruption
@@ -107,8 +112,8 @@ From v1.1 audit (addressed by v1.2 scope):
 ## Session Continuity
 
 Last session: 2026-03-20
-Stopped at: Completed 15-04-PLAN.md
-Resume with: `/gsdr:execute-phase 16` (Phase 15 complete, Phase 16 next)
+Stopped at: Completed 16-02-PLAN.md
+Resume with: Continue Phase 16 (16-03 next: npm packaging & Docker verification)
 
 ### Performance Metrics
 
@@ -124,7 +129,8 @@ Resume with: `/gsdr:execute-phase 16` (Phase 15 complete, Phase 16 next)
 | 15-02      | 3min     | 2     | 2     |
 | 15-03      | 6min     | 2     | 9     |
 | 15-04      | 5min     | 2     | 6     |
+| 16-02      | 2min     | 2     | 2     |
 
 ---
 
-_Last updated: 2026-03-20 after 15-04 execution (credential validation + coverage thresholds)_
+_Last updated: 2026-03-20 after 16-02 execution (API reference docs + CHANGELOG.md)_

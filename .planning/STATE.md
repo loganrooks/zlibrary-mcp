@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 2026-02-11)
 
 ## Current Position
 
-Phase: 15 of 17 (Cleanup & DX Foundation) -- NOT STARTED
-Plan: none yet
-Status: Roadmap updated, ready to plan Phase 15
-Last activity: 2026-03-19 — v1.2 scope deliberation + credential scrub from git history
+Phase: 15 of 17 (Cleanup & DX Foundation) -- IN PROGRESS
+Plan: 2 of 4 complete
+Status: Executing Phase 15 plans
+Last activity: 2026-03-19 — 15-02 complete (file hygiene + test fix)
 
-Progress: [████████░░░░░░░░░░░░] 40% of v1.2 (phases 13-14 complete, 15-17 remaining)
+Progress: [██████████░░░░░░░░░░] 50% of v1.2 (phases 13-14 complete, 15 in progress, 16-17 remaining)
 
 ## Milestones Shipped
 
@@ -30,6 +30,10 @@ Progress: [████████░░░░░░░░░░░░] 40% of 
 ### Decisions
 
 All decisions logged in PROJECT.md Key Decisions table.
+
+**Phase 15 (15-02):**
+- Shortened JSON.parse error regex to match stable prefix across Node versions
+- Used git rm for tracked src/index.js, plain rm for untracked src/lib/*.js files
 
 **2026-03-19 (Deliberation):**
 - v1.2 scope narrowed to 3 infrastructure phases (15-17), deferring RAG refinements to v1.3
@@ -61,9 +65,9 @@ None.
 ### Blockers/Concerns
 
 **Current:**
-- 1 Jest test failing (Node 22 JSON.parse error message format change) — DX-05, will fix in Phase 15
 - Large blob (74MB Kant PDF) in git history under test_downloads/ — CLEAN-05, will purge in Phase 15
-- 5 compiled .js files in src/lib/ appearing as untracked — CLEAN-02/CLEAN-03, will fix in Phase 15
+- ~~1 Jest test failing (Node 22 JSON.parse error message format change) — DX-05~~ RESOLVED by 15-02
+- ~~5 compiled .js files in src/lib/ appearing as untracked — CLEAN-02/CLEAN-03~~ RESOLVED by 15-02
 
 **Pre-existing (from v1.1, all resolved by phase 13):**
 - ~~paths.test.js has 1 failing test (BUG-01)~~ RESOLVED by 13-01
@@ -88,8 +92,8 @@ From v1.1 audit (addressed by v1.2 scope):
 ## Session Continuity
 
 Last session: 2026-03-19
-Stopped at: Roadmap + requirements updated for new v1.2 scope. Ready to plan Phase 15.
-Resume with: `/gsdr:plan-phase 15`
+Stopped at: Completed 15-02-PLAN.md
+Resume with: `/gsdr:execute-phase 15` (plans 03-04 remaining)
 
 ### Performance Metrics
 
@@ -101,7 +105,8 @@ Resume with: `/gsdr:plan-phase 15`
 | 14-01      | 21min    | 2     | 40    |
 | 14-02      | 26min    | 2     | 4     |
 | 14-03      | 22min    | 2     | 11    |
+| 15-02      | 3min     | 2     | 2     |
 
 ---
 
-_Last updated: 2026-03-19 after v1.2 scope deliberation (roadmap + requirements revised)_
+_Last updated: 2026-03-19 after 15-02 execution (file hygiene + test fix)_

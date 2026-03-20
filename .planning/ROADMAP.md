@@ -141,7 +141,10 @@ Plans:
   5. README tool list is validated against registered MCP tools (CI fails if they diverge)
   6. GitHub Actions workflow exists for npm publish on version tags (manual trigger)
   7. GitHub Issue #11 is resolved — the reporter's setup path works with updated docs
-**Plans**: TBD
+**Plans:** 2 plans
+Plans:
+- [ ] 17-01-PLAN.md — Add CI quality gate jobs: lint, pack-check, smoke-test, docker, docs-check (GATE-01, GATE-02, GATE-03, GATE-04, GATE-05)
+- [ ] 17-02-PLAN.md — Create npm publish workflow and resolve Issue #11 (GATE-06, GATE-07)
 
 ## Progress
 
@@ -163,8 +166,8 @@ Plans:
 | 14. Test Infrastructure | v1.2 | 3/3 | Complete | 2026-02-11 |
 | 15. Cleanup & DX Foundation | v1.2 | 4/4 | Complete | 2026-03-19 |
 | 16. Documentation & Distribution | v1.2 | 3/3 | Complete | 2026-03-20 |
-| 17. Quality Gates & Release Pipeline | v1.2 | 0/TBD | Not started | - |
+| 17. Quality Gates & Release Pipeline | v1.2 | 0/2 | Not started | - |
 
 ---
 
-_Last updated: 2026-03-20 after Phase 16 execution (3/3 plans complete, verified 8/8)_
+_Last updated: 2026-03-20 after Phase 17 planning (2 plans created)_

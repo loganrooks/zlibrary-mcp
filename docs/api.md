@@ -1,0 +1,514 @@
+# API Reference
+
+This is the API reference for the **zlibrary-mcp** MCP (Model Context Protocol) server. Tools are invoked via MCP protocol -- not HTTP REST. All tools require valid Z-Library credentials (`ZLIBRARY_EMAIL` and `ZLIBRARY_PASSWORD`) configured in the MCP client's environment.
+
+All tools return MCP content arrays in the format:
+
+```json
+{
+  "content": [{ "type": "text", "text": "<JSON string or error message>" }]
+}
+```
+
+On error, responses include `isError: true` and a descriptive error message.
+
+## Table of Contents
+
+- [Search Tools](#search-tools)
+  - [search_books](#search_books)
+  - [full_text_search](#full_text_search)
+  - [search_by_term](#search_by_term)
+  - [search_by_author](#search_by_author)
+  - [search_advanced](#search_advanced)
+  - [search_multi_source](#search_multi_source)
+  - [get_recent_books](#get_recent_books)
+- [Metadata Tools](#metadata-tools)
+  - [get_book_metadata](#get_book_metadata)
+- [Collection Tools](#collection-tools)
+  - [fetch_booklist](#fetch_booklist)
+- [Download and Processing Tools](#download-and-processing-tools)
+  - [download_book_to_file](#download_book_to_file)
+  - [process_document_for_rag](#process_document_for_rag)
+- [Utility Tools](#utility-tools)
+  - [get_download_limits](#get_download_limits)
+  - [get_download_history](#get_download_history)
+
+---
+
+## Search Tools
+
+### search_books
+
+**Description:** Search for books in Z-Library by title, author, or keywords. Returns matching books with metadata including title, author, year, format, and file size. Use `exact=true` for precise title matching. Filter results by year range, language, or file format.
+
+**Parameters:**
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| query | string | Yes | -- | Search query |
+| exact | boolean | No | `false` | Whether to perform an exact match search |
+| fromYear | integer | No | -- | Filter by minimum publication year |
+| toYear | integer | No | -- | Filter by maximum publication year |
+| languages | string[] | No | `[]` | Filter by languages (e.g., `["english", "russian"]`) |
+| extensions | string[] | No | `[]` | Filter by file extensions (e.g., `["pdf", "epub"]`) |
+| content_types | string[] | No | `[]` | Filter by content types (e.g., `["book", "article"]`) |
+| count | integer | No | `10` | Number of results to return per page |
+
+**Returns:** JSON array of book objects, each containing fields such as `title`, `author`, `name`, `authors`, `year`, `extension`, `filesize`, and additional metadata.
+
+**Example Usage:**
+
+```json
+{
+  "tool": "search_books",
+  "arguments": {
+    "query": "Being and Time Heidegger",
+    "languages": ["english"],
+    "extensions": ["pdf", "epub"],
+    "count": 5
+  }
+}
+```
+
+**Error Cases:**
+- Invalid or missing `query` parameter
+- Authentication failure (invalid or expired Z-Library credentials)
+- Network errors (Z-Library unreachable, Cloudflare block)
+- Rate limiting by Z-Library
+
+---
+
+### full_text_search
+
+**Description:** Search for books containing specific text within their content. Useful for finding books that discuss particular topics, quotes, or concepts.
+
+**Parameters:**
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| query | string | Yes | -- | Text to search for in book content |
+| exact | boolean | No | `false` | Whether to perform an exact match search |
+| phrase | boolean | No | `true` | Whether to search for the exact phrase (requires at least 2 words) |
+| words | boolean | No | `false` | Whether to search for individual words |
+| languages | string[] | No | `[]` | Filter by languages (e.g., `["english", "russian"]`) |
+| extensions | string[] | No | `[]` | Filter by file extensions (e.g., `["pdf", "epub"]`) |
+| content_types | string[] | No | `[]` | Filter by content types (e.g., `["book", "article"]`) |
+| count | integer | No | `10` | Number of results to return per page |
+
+**Returns:** JSON array of book objects containing the searched text, with the same metadata fields as `search_books`.
+
+**Example Usage:**
+
+```json
+{
+  "tool": "full_text_search",
+  "arguments": {
+    "query": "transcendental unity of apperception",
+    "phrase": true,
+    "languages": ["english"]
+  }
+}
+```
+
+**Error Cases:**
+- Invalid or missing `query` parameter
+- Single-word query with `phrase=true` (requires at least 2 words)
+- Authentication failure
+- Network errors or rate limiting
+
+---
+
+### search_by_term
+
+**Description:** Search for books by conceptual term. Books in Z-Library are tagged with 60+ conceptual terms (e.g., "phenomenology", "dialectic", "epistemology"). This enables conceptual navigation beyond keyword matching.
+
+**Parameters:**
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| term | string | Yes | -- | Conceptual term to search for (e.g., "dialectic", "phenomenology") |
+| yearFrom | integer | No | -- | Filter by minimum publication year |
+| yearTo | integer | No | -- | Filter by maximum publication year |
+| languages | string[] | No | `[]` | Filter by languages |
+| extensions | string[] | No | `[]` | Filter by file extensions |
+| count | integer | No | `25` | Number of results to return |
+
+**Returns:** JSON array of book objects tagged with the specified conceptual term.
+
+**Example Usage:**
+
+```json
+{
+  "tool": "search_by_term",
+  "arguments": {
+    "term": "phenomenology",
+    "yearFrom": 1900,
+    "yearTo": 2020,
+    "languages": ["english"],
+    "count": 15
+  }
+}
+```
+
+**Error Cases:**
+- Invalid or missing `term` parameter
+- Term not recognized by Z-Library (returns empty results, not an error)
+- Authentication failure
+- Network errors or rate limiting
+
+---
+
+### search_by_author
+
+**Description:** Advanced author search with support for various name formats. Use `exact=true` for precise matching. Filter by publication year, language, or file format. Supports "Lastname, Firstname" format.
+
+**Parameters:**
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| author | string | Yes | -- | Author name (supports "Lastname, Firstname" format) |
+| exact | boolean | No | `false` | Use exact author name matching |
+| yearFrom | integer | No | -- | Filter by minimum publication year |
+| yearTo | integer | No | -- | Filter by maximum publication year |
+| languages | string[] | No | `[]` | Filter by languages |
+| extensions | string[] | No | `[]` | Filter by file extensions |
+| count | integer | No | `25` | Number of results to return |
+
+**Returns:** JSON array of book objects by the specified author.
+
+**Example Usage:**
+
+```json
+{
+  "tool": "search_by_author",
+  "arguments": {
+    "author": "Hegel, Georg Wilhelm Friedrich",
+    "exact": true,
+    "extensions": ["pdf"],
+    "count": 20
+  }
+}
+```
+
+**Error Cases:**
+- Invalid or missing `author` parameter
+- Authentication failure
+- Network errors or rate limiting
+
+---
+
+### search_advanced
+
+**Description:** Advanced search with automatic separation of exact matches from fuzzy/approximate matches. Returns two arrays: `exact_matches` and `fuzzy_matches`, making it easier to distinguish precise hits from related results.
+
+**Parameters:**
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| query | string | Yes | -- | Search query |
+| exact | boolean | No | `false` | Whether to perform exact match search |
+| yearFrom | integer | No | -- | Filter by minimum publication year |
+| yearTo | integer | No | -- | Filter by maximum publication year |
+| count | integer | No | `10` | Number of results to return |
+
+**Returns:** JSON object with two arrays:
+- `exact_matches`: Books that precisely match the query
+- `fuzzy_matches`: Books that approximately match the query
+
+Each entry contains standard book metadata fields.
+
+**Example Usage:**
+
+```json
+{
+  "tool": "search_advanced",
+  "arguments": {
+    "query": "Critique of Pure Reason",
+    "yearFrom": 1990,
+    "count": 10
+  }
+}
+```
+
+**Error Cases:**
+- Invalid or missing `query` parameter
+- Authentication failure
+- Network errors or rate limiting
+
+---
+
+### search_multi_source
+
+**Description:** Search for books across Anna's Archive and LibGen. An alternative to Z-Library's EAPI. Use `source=auto` to prefer Anna's Archive with LibGen fallback, or force a specific source.
+
+**Parameters:**
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| query | string | Yes | -- | Search query |
+| source | enum | No | `"auto"` | Source selection: `"auto"` (Anna's Archive if key available, else LibGen), `"annas"` (force Anna's Archive), or `"libgen"` (force LibGen) |
+| count | integer | No | `10` | Maximum number of results to return |
+
+**Returns:** JSON array of book objects with source-specific fields: `md5`, `title`, `author`, `year`, `extension`, `size`, `source`, `download_url`.
+
+**Example Usage:**
+
+```json
+{
+  "tool": "search_multi_source",
+  "arguments": {
+    "query": "Phenomenology of Spirit",
+    "source": "auto",
+    "count": 5
+  }
+}
+```
+
+**Error Cases:**
+- Invalid or missing `query` parameter
+- Anna's Archive API key not configured (when `source="annas"`)
+- Both sources unavailable (network errors, rate limiting)
+- Invalid `source` value (must be `"auto"`, `"annas"`, or `"libgen"`)
+
+---
+
+### get_recent_books
+
+**Description:** Get recently added books to Z-Library. Optionally filter by file format.
+
+**Parameters:**
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| count | integer | No | `10` | Number of books to return |
+| format | string | No | -- | Filter by file format (e.g., `"pdf"`, `"epub"`) |
+
+**Returns:** JSON array of recently added book objects with standard metadata fields.
+
+**Example Usage:**
+
+```json
+{
+  "tool": "get_recent_books",
+  "arguments": {
+    "count": 20,
+    "format": "epub"
+  }
+}
+```
+
+**Error Cases:**
+- Authentication failure
+- Network errors or rate limiting
+
+---
+
+## Metadata Tools
+
+### get_book_metadata
+
+**Description:** Get comprehensive metadata for a book. By default returns core fields: title, author, year, publisher, language, pages, isbn, rating, cover, categories, extension, filesize. Use the `include` parameter to add optional field groups: terms (60+ conceptual keywords), booklists (11+ curated collections), ipfs (IPFS CIDs), ratings (quality score), description (full text description).
+
+**Parameters:**
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| bookId | string | Yes | -- | Z-Library book ID |
+| bookHash | string | Yes | -- | Book hash (can be extracted from book URL) |
+| include | string[] | No | -- | Optional field groups to include beyond core defaults. Allowed values: `"terms"`, `"booklists"`, `"ipfs"`, `"ratings"`, `"description"` |
+
+**Returns:** JSON object with core metadata fields, plus any requested optional field groups.
+
+**Example Usage:**
+
+```json
+{
+  "tool": "get_book_metadata",
+  "arguments": {
+    "bookId": "12345678",
+    "bookHash": "abc123def456",
+    "include": ["terms", "description", "ratings"]
+  }
+}
+```
+
+**Error Cases:**
+- Invalid or missing `bookId` or `bookHash`
+- Book not found (invalid ID/hash combination)
+- Authentication failure
+- Network errors or rate limiting
+
+---
+
+## Collection Tools
+
+### fetch_booklist
+
+**Description:** Fetch books from an expert-curated booklist. Z-Library books belong to 11+ booklists with up to 954 books per list. Get booklist IDs and hashes from the `get_book_metadata` tool (using `include: ["booklists"]`).
+
+**Parameters:**
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| booklistId | string | Yes | -- | Booklist ID from book metadata |
+| booklistHash | string | Yes | -- | Booklist hash from book metadata |
+| topic | string | Yes | -- | Booklist topic name |
+| page | integer | No | `1` | Page number for pagination |
+
+**Returns:** JSON object with the booklist title, topic, and an array of book objects in the collection.
+
+**Example Usage:**
+
+```json
+{
+  "tool": "fetch_booklist",
+  "arguments": {
+    "booklistId": "42",
+    "booklistHash": "abc123",
+    "topic": "Continental Philosophy",
+    "page": 1
+  }
+}
+```
+
+**Error Cases:**
+- Invalid or missing `booklistId`, `booklistHash`, or `topic`
+- Booklist not found
+- Authentication failure
+- Network errors or rate limiting
+
+---
+
+## Download and Processing Tools
+
+### download_book_to_file
+
+**Description:** Download a book to a local file. Pass the full `bookDetails` object from `search_books` results. Optionally process the document for RAG (text extraction) after download. Returns file paths for both the original book and processed text.
+
+**Parameters:**
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| bookDetails | object | Yes | -- | The full book details object obtained from `search_books` |
+| outputDir | string | No | `"./downloads"` | Directory to save the file to |
+| process_for_rag | boolean | No | -- | Whether to process the document content for RAG after download |
+| processed_output_format | string | No | -- | Desired output format for RAG processing (e.g., `"text"`, `"markdown"`) |
+
+**Returns:** JSON object with `file_path` (path to downloaded file) and optionally `processed_file_path` (path to extracted text) if RAG processing was requested.
+
+**Example Usage:**
+
+```json
+{
+  "tool": "download_book_to_file",
+  "arguments": {
+    "bookDetails": {
+      "id": "12345678",
+      "hash": "abc123",
+      "title": "Being and Time",
+      "author": "Martin Heidegger",
+      "extension": "pdf"
+    },
+    "outputDir": "./downloads",
+    "process_for_rag": true,
+    "processed_output_format": "text"
+  }
+}
+```
+
+**Error Cases:**
+- Invalid or missing `bookDetails` object
+- Download failed (book unavailable, credentials invalid)
+- Output directory not writable
+- Daily download limit exceeded (check with `get_download_limits`)
+- RAG processing failure (unsupported format, corrupted file)
+
+---
+
+### process_document_for_rag
+
+**Description:** Process a downloaded document (EPUB, TXT, PDF) to extract clean text content for RAG (Retrieval-Augmented Generation). Extracts text, preserves structure, detects footnotes, and outputs a text file. Use this to process a previously downloaded file without re-downloading.
+
+**Parameters:**
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| file_path | string | Yes | -- | Path to the downloaded file to process |
+| output_format | string | No | -- | Desired output format (e.g., `"text"`, `"markdown"`) |
+
+**Returns:** JSON object with `processed_file_path` (path to the extracted text output file).
+
+**Example Usage:**
+
+```json
+{
+  "tool": "process_document_for_rag",
+  "arguments": {
+    "file_path": "./downloads/Being_and_Time_Heidegger.pdf",
+    "output_format": "text"
+  }
+}
+```
+
+**Error Cases:**
+- Invalid or missing `file_path`
+- File not found at specified path
+- Unsupported file format (only EPUB, TXT, and PDF are supported)
+- Corrupted or encrypted file
+- Insufficient disk space for output
+
+---
+
+## Utility Tools
+
+### get_download_limits
+
+**Description:** Get the user's current Z-Library download limits. Shows daily download quota, downloads used today, and remaining downloads.
+
+**Parameters:**
+
+None. This tool takes no parameters.
+
+**Returns:** JSON object with download limit information: `daily_limit`, `downloads_today`, `remaining`.
+
+**Example Usage:**
+
+```json
+{
+  "tool": "get_download_limits",
+  "arguments": {}
+}
+```
+
+**Error Cases:**
+- Authentication failure
+- Network errors or rate limiting
+
+---
+
+### get_download_history
+
+**Description:** Get the user's Z-Library download history. Returns a list of previously downloaded books with their metadata.
+
+**Parameters:**
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| count | integer | No | `10` | Number of results to return |
+
+**Returns:** JSON array of previously downloaded book objects with metadata.
+
+**Example Usage:**
+
+```json
+{
+  "tool": "get_download_history",
+  "arguments": {
+    "count": 20
+  }
+}
+```
+
+**Error Cases:**
+- Authentication failure
+- Network errors or rate limiting

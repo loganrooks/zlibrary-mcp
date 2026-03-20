@@ -123,7 +123,11 @@ Plans:
   6. `package.json` `files` field is a whitelist — `npm pack --dry-run` shows tarball under 5MB with no test files or dev artifacts
   7. Docker build (`docker compose -f docker/docker-compose.yaml build`) succeeds and health check passes
   8. Both install paths (npm + Docker) are documented with step-by-step instructions and verified working
-**Plans**: TBD
+**Plans:** 3 plans
+Plans:
+- [ ] 16-01-PLAN.md — Configure npm files whitelist and verify Docker build (DIST-01, DIST-02)
+- [ ] 16-02-PLAN.md — Create API reference docs and CHANGELOG (DOCS-02, DOCS-05)
+- [ ] 16-03-PLAN.md — Refresh README and create CONTRIBUTING.md (DOCS-01, DOCS-03, DOCS-04, DIST-03, DIST-04)
 
 ### Phase 17: Quality Gates & Release Pipeline
 **Goal**: CI quality gates that catch regressions, validate package integrity, and check doc freshness — plus a release workflow for npm publishing. After this phase, the project is shippable.
@@ -158,9 +162,9 @@ Plans:
 | 13. Bug Fixes & Test Hygiene | v1.2 | 2/2 | Complete | 2026-02-11 |
 | 14. Test Infrastructure | v1.2 | 3/3 | Complete | 2026-02-11 |
 | 15. Cleanup & DX Foundation | v1.2 | 4/4 | Complete | 2026-03-19 |
-| 16. Documentation & Distribution | v1.2 | 0/TBD | Not started | - |
+| 16. Documentation & Distribution | v1.2 | 0/3 | Not started | - |
 | 17. Quality Gates & Release Pipeline | v1.2 | 0/TBD | Not started | - |
 
 ---
 
-_Last updated: 2026-03-19 after Phase 15 execution (4/4 plans complete, verified 9/9)_
+_Last updated: 2026-03-19 after Phase 16 planning (3 plans created in 2 waves)_

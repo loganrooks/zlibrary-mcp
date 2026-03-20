@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
-import { z, ZodObject, ZodRawShape } from 'zod';
+import type { ZodObject, ZodRawShape } from 'zod';
+import { z } from 'zod';
 // UV Migration Note: ensureVenvReady removed - user runs `uv sync` before build
 import * as fs from 'fs';
 import { appendFile as appendFileAsync, mkdir as mkdirAsync } from 'fs/promises';
@@ -24,20 +25,48 @@ const SearchBooksParamsSchema = z.object({
   exact: z.boolean().optional().default(false).describe('Whether to perform an exact match search'),
   fromYear: z.number().int().optional().describe('Filter by minimum publication year'),
   toYear: z.number().int().optional().describe('Filter by maximum publication year'),
-  languages: z.array(z.string()).optional().default([]).describe('Filter by languages (e.g., ["english", "russian"])'),
-  extensions: z.array(z.string()).optional().default([]).describe('Filter by file extensions (e.g., ["pdf", "epub"])'),
-  content_types: z.array(z.string()).optional().default([]).describe('Filter by content types (e.g., ["book", "article"])'),
+  languages: z
+    .array(z.string())
+    .optional()
+    .default([])
+    .describe('Filter by languages (e.g., ["english", "russian"])'),
+  extensions: z
+    .array(z.string())
+    .optional()
+    .default([])
+    .describe('Filter by file extensions (e.g., ["pdf", "epub"])'),
+  content_types: z
+    .array(z.string())
+    .optional()
+    .default([])
+    .describe('Filter by content types (e.g., ["book", "article"])'),
   count: z.number().int().optional().default(10).describe('Number of results to return per page'),
 });
 
 const FullTextSearchParamsSchema = z.object({
   query: z.string().describe('Text to search for in book content'),
   exact: z.boolean().optional().default(false).describe('Whether to perform an exact match search'),
-  phrase: z.boolean().optional().default(true).describe('Whether to search for the exact phrase (requires at least 2 words)'),
+  phrase: z
+    .boolean()
+    .optional()
+    .default(true)
+    .describe('Whether to search for the exact phrase (requires at least 2 words)'),
   words: z.boolean().optional().default(false).describe('Whether to search for individual words'),
-  languages: z.array(z.string()).optional().default([]).describe('Filter by languages (e.g., ["english", "russian"])'),
-  extensions: z.array(z.string()).optional().default([]).describe('Filter by file extensions (e.g., ["pdf", "epub"])'),
-  content_types: z.array(z.string()).optional().default([]).describe('Filter by content types (e.g., ["book", "article"])'),
+  languages: z
+    .array(z.string())
+    .optional()
+    .default([])
+    .describe('Filter by languages (e.g., ["english", "russian"])'),
+  extensions: z
+    .array(z.string())
+    .optional()
+    .default([])
+    .describe('Filter by file extensions (e.g., ["pdf", "epub"])'),
+  content_types: z
+    .array(z.string())
+    .optional()
+    .default([])
+    .describe('Filter by content types (e.g., ["book", "article"])'),
   count: z.number().int().optional().default(10).describe('Number of results to return per page'),
 });
 
@@ -53,22 +82,39 @@ const GetRecentBooksParamsSchema = z.object({
 });
 
 const DownloadBookToFileParamsSchema = z.object({
-  bookDetails: z.object({}).passthrough().describe('The full book details object obtained from search_books'),
-  outputDir: z.string().optional().default('./downloads').describe('Directory to save the file to (default: "./downloads")'),
-  process_for_rag: z.boolean().optional().describe('Whether to process the document content for RAG after download'),
-  processed_output_format: z.string().optional().describe('Desired output format for RAG processing (e.g., "text", "markdown")'),
+  bookDetails: z
+    .object({})
+    .passthrough()
+    .describe('The full book details object obtained from search_books'),
+  outputDir: z
+    .string()
+    .optional()
+    .default('./downloads')
+    .describe('Directory to save the file to (default: "./downloads")'),
+  process_for_rag: z
+    .boolean()
+    .optional()
+    .describe('Whether to process the document content for RAG after download'),
+  processed_output_format: z
+    .string()
+    .optional()
+    .describe('Desired output format for RAG processing (e.g., "text", "markdown")'),
 });
 
 const ProcessDocumentForRagParamsSchema = z.object({
   file_path: z.string().describe('Path to the downloaded file to process'),
-  output_format: z.string().optional().describe('Desired output format (e.g., "text", "markdown")')
+  output_format: z.string().optional().describe('Desired output format (e.g., "text", "markdown")'),
 });
 
 const GetBookMetadataParamsSchema = z.object({
   bookId: z.string().describe('Z-Library book ID'),
   bookHash: z.string().describe('Book hash (can be extracted from book URL)'),
-  include: z.array(z.enum(['terms', 'booklists', 'ipfs', 'ratings', 'description'])).optional()
-    .describe('Optional field groups to include beyond core defaults. Core always includes: title, author, year, publisher, language, pages, isbn, rating, cover, categories, extension, filesize. Use include to add: terms (conceptual keywords), booklists (curated collections), ipfs (IPFS CIDs), ratings (quality_score), description (full text description).'),
+  include: z
+    .array(z.enum(['terms', 'booklists', 'ipfs', 'ratings', 'description']))
+    .optional()
+    .describe(
+      'Optional field groups to include beyond core defaults. Core always includes: title, author, year, publisher, language, pages, isbn, rating, cover, categories, extension, filesize. Use include to add: terms (conceptual keywords), booklists (curated collections), ipfs (IPFS CIDs), ratings (quality_score), description (full text description).',
+    ),
 });
 
 const SearchByTermParamsSchema = z.object({
@@ -107,7 +153,13 @@ const SearchAdvancedParamsSchema = z.object({
 
 const SearchMultiSourceParamsSchema = z.object({
   query: z.string().describe('Search query'),
-  source: z.enum(['auto', 'annas', 'libgen']).optional().default('auto').describe('Source selection: auto (Anna\'s Archive if key available, else LibGen), annas (force Anna\'s Archive), or libgen (force LibGen)'),
+  source: z
+    .enum(['auto', 'annas', 'libgen'])
+    .optional()
+    .default('auto')
+    .describe(
+      "Source selection: auto (Anna's Archive if key available, else LibGen), annas (force Anna's Archive), or libgen (force LibGen)",
+    ),
   count: z.number().int().optional().default(10).describe('Maximum number of results to return'),
 });
 
@@ -205,19 +257,19 @@ const toolAnnotations: Record<string, ToolAnnotations> = {
 // ============================================================================
 
 interface HandlerMap {
-    [key: string]: (args: any) => Promise<any>;
-    searchBooks: (args: any) => Promise<any>;
-    fullTextSearch: (args: any) => Promise<any>;
-    getDownloadHistory: (args: any) => Promise<any>;
-    getDownloadLimits: (args: any) => Promise<any>;
-    downloadBookToFile: (args: any) => Promise<any>;
-    processDocumentForRag: (args: any) => Promise<any>;
-    getBookMetadata: (args: any) => Promise<any>;
-    searchByTerm: (args: any) => Promise<any>;
-    searchByAuthor: (args: any) => Promise<any>;
-    fetchBooklist: (args: any) => Promise<any>;
-    searchAdvanced: (args: any) => Promise<any>;
-    searchMultiSource: (args: any) => Promise<any>;
+  [key: string]: (args: any) => Promise<any>;
+  searchBooks: (args: any) => Promise<any>;
+  fullTextSearch: (args: any) => Promise<any>;
+  getDownloadHistory: (args: any) => Promise<any>;
+  getDownloadLimits: (args: any) => Promise<any>;
+  downloadBookToFile: (args: any) => Promise<any>;
+  processDocumentForRag: (args: any) => Promise<any>;
+  getBookMetadata: (args: any) => Promise<any>;
+  searchByTerm: (args: any) => Promise<any>;
+  searchByAuthor: (args: any) => Promise<any>;
+  fetchBooklist: (args: any) => Promise<any>;
+  searchAdvanced: (args: any) => Promise<any>;
+  searchMultiSource: (args: any) => Promise<any>;
 }
 
 const handlers: HandlerMap = {
@@ -229,7 +281,9 @@ const handlers: HandlerMap = {
         const logFilePath = path.resolve(__dirname, '..', 'logs', 'nodejs_debug.log');
         await mkdirAsync(path.dirname(logFilePath), { recursive: true });
         await appendFileAsync(logFilePath, searchBooksReceivedArgsLog);
-      } catch (e) { console.error('Failed to write to logs/nodejs_debug.log', e); }
+      } catch (e) {
+        console.error('Failed to write to logs/nodejs_debug.log', e);
+      }
       const apiArgs = {
         query: args.query,
         exact: args.exact,
@@ -245,9 +299,13 @@ const handlers: HandlerMap = {
       try {
         const logFilePath = path.resolve(__dirname, '..', 'logs', 'nodejs_debug.log');
         await appendFileAsync(logFilePath, searchBooksSendingLog);
-      } catch (e) { console.error('Failed to write to logs/nodejs_debug.log', e); }
+      } catch (e) {
+        console.error('Failed to write to logs/nodejs_debug.log', e);
+      }
       return await zlibraryApi.searchBooks(apiArgs);
-    } catch (error: any) { return { error: { message: error.message || 'Failed to search books' } }; }
+    } catch (error: any) {
+      return { error: { message: error.message || 'Failed to search books' } };
+    }
   },
 
   fullTextSearch: async (args: z.infer<typeof FullTextSearchParamsSchema>) => {
@@ -258,7 +316,9 @@ const handlers: HandlerMap = {
         const logFilePath = path.resolve(__dirname, '..', 'logs', 'nodejs_debug.log');
         await mkdirAsync(path.dirname(logFilePath), { recursive: true });
         await appendFileAsync(logFilePath, ftsReceivedArgsLog);
-      } catch (e) { console.error('Failed to write to logs/nodejs_debug.log', e); }
+      } catch (e) {
+        console.error('Failed to write to logs/nodejs_debug.log', e);
+      }
       const apiArgsFTS = {
         query: args.query,
         exact: args.exact,
@@ -274,23 +334,29 @@ const handlers: HandlerMap = {
       try {
         const logFilePath = path.resolve(__dirname, '..', 'logs', 'nodejs_debug.log');
         await appendFileAsync(logFilePath, ftsSendingLog);
-      } catch (e) { console.error('Failed to write to logs/nodejs_debug.log', e); }
+      } catch (e) {
+        console.error('Failed to write to logs/nodejs_debug.log', e);
+      }
       return await zlibraryApi.fullTextSearch(apiArgsFTS);
-    } catch (error: any) { return { error: { message: error.message || 'Failed to perform full text search' } }; }
+    } catch (error: any) {
+      return { error: { message: error.message || 'Failed to perform full text search' } };
+    }
   },
 
   getDownloadHistory: async (args: z.infer<typeof GetDownloadHistoryParamsSchema>) => {
     try {
-        return await zlibraryApi.getDownloadHistory(args);
+      return await zlibraryApi.getDownloadHistory(args);
+    } catch (error: any) {
+      return { error: { message: error.message || 'Failed to get download history' } };
     }
-    catch (error: any) { return { error: { message: error.message || 'Failed to get download history' } }; }
   },
 
   getDownloadLimits: async () => {
     try {
-        return await zlibraryApi.getDownloadLimits();
+      return await zlibraryApi.getDownloadLimits();
+    } catch (error: any) {
+      return { error: { message: error.message || 'Failed to get download limits' } };
     }
-    catch (error: any) { return { error: { message: error.message || 'Failed to get download limits' } }; }
   },
 
   downloadBookToFile: async (args: z.infer<typeof DownloadBookToFileParamsSchema>) => {
@@ -303,7 +369,10 @@ const handlers: HandlerMap = {
 
   processDocumentForRag: async (args: z.infer<typeof ProcessDocumentForRagParamsSchema>) => {
     try {
-      return await zlibraryApi.processDocumentForRag({ filePath: args.file_path, outputFormat: args.output_format });
+      return await zlibraryApi.processDocumentForRag({
+        filePath: args.file_path,
+        outputFormat: args.output_format,
+      });
     } catch (error: any) {
       return { error: { message: error.message || 'Failed to process document for RAG' } };
     }
@@ -325,7 +394,7 @@ const handlers: HandlerMap = {
         yearTo: args.yearTo,
         languages: args.languages,
         extensions: args.extensions,
-        limit: args.count
+        limit: args.count,
       });
     } catch (error: any) {
       return { error: { message: error.message || 'Failed to search by term' } };
@@ -341,7 +410,7 @@ const handlers: HandlerMap = {
         yearTo: args.yearTo,
         languages: args.languages,
         extensions: args.extensions,
-        limit: args.count
+        limit: args.count,
       });
     } catch (error: any) {
       return { error: { message: error.message || 'Failed to search by author' } };
@@ -354,7 +423,7 @@ const handlers: HandlerMap = {
         booklistId: args.booklistId,
         booklistHash: args.booklistHash,
         topic: args.topic,
-        page: args.page
+        page: args.page,
       });
     } catch (error: any) {
       return { error: { message: error.message || 'Failed to fetch booklist' } };
@@ -368,7 +437,7 @@ const handlers: HandlerMap = {
         exact: args.exact,
         yearFrom: args.yearFrom,
         yearTo: args.yearTo,
-        count: args.count
+        count: args.count,
       });
     } catch (error: any) {
       return { error: { message: error.message || 'Failed to perform advanced search' } };
@@ -380,12 +449,12 @@ const handlers: HandlerMap = {
       return await zlibraryApi.searchMultiSource({
         query: args.query,
         source: args.source,
-        count: args.count
+        count: args.count,
       });
     } catch (error: any) {
       return { error: { message: error.message || 'Failed to search multi-source' } };
     }
-  }
+  },
 };
 
 // ============================================================================
@@ -393,25 +462,73 @@ const handlers: HandlerMap = {
 // ============================================================================
 
 interface ToolRegistryEntry {
-    description: string;
-    schema: ZodObject<ZodRawShape>;
-    handler?: (args: any) => Promise<any>;
+  description: string;
+  schema: ZodObject<ZodRawShape>;
+  handler?: (args: any) => Promise<any>;
 }
 
 const toolRegistry: Record<string, ToolRegistryEntry> = {
-  search_books: { description: 'Search for books in Z-Library', schema: SearchBooksParamsSchema, handler: handlers.searchBooks },
-  full_text_search: { description: 'Full text search in book content', schema: FullTextSearchParamsSchema, handler: handlers.fullTextSearch },
-  get_download_history: { description: 'Get download history', schema: GetDownloadHistoryParamsSchema, handler: handlers.getDownloadHistory },
-  get_download_limits: { description: 'Get download limits', schema: GetDownloadLimitsParamsSchema, handler: handlers.getDownloadLimits },
+  search_books: {
+    description: 'Search for books in Z-Library',
+    schema: SearchBooksParamsSchema,
+    handler: handlers.searchBooks,
+  },
+  full_text_search: {
+    description: 'Full text search in book content',
+    schema: FullTextSearchParamsSchema,
+    handler: handlers.fullTextSearch,
+  },
+  get_download_history: {
+    description: 'Get download history',
+    schema: GetDownloadHistoryParamsSchema,
+    handler: handlers.getDownloadHistory,
+  },
+  get_download_limits: {
+    description: 'Get download limits',
+    schema: GetDownloadLimitsParamsSchema,
+    handler: handlers.getDownloadLimits,
+  },
   get_recent_books: { description: 'Get recently added books', schema: GetRecentBooksParamsSchema },
-  download_book_to_file: { description: 'Download a book to file', schema: DownloadBookToFileParamsSchema, handler: handlers.downloadBookToFile },
-  process_document_for_rag: { description: 'Process document for RAG', schema: ProcessDocumentForRagParamsSchema, handler: handlers.processDocumentForRag },
-  get_book_metadata: { description: 'Get book metadata', schema: GetBookMetadataParamsSchema, handler: handlers.getBookMetadata },
-  search_by_term: { description: 'Search by conceptual term', schema: SearchByTermParamsSchema, handler: handlers.searchByTerm },
-  search_by_author: { description: 'Search by author', schema: SearchByAuthorParamsSchema, handler: handlers.searchByAuthor },
-  fetch_booklist: { description: 'Fetch booklist', schema: FetchBooklistParamsSchema, handler: handlers.fetchBooklist },
-  search_advanced: { description: 'Advanced search', schema: SearchAdvancedParamsSchema, handler: handlers.searchAdvanced },
-  search_multi_source: { description: 'Multi-source search', schema: SearchMultiSourceParamsSchema, handler: handlers.searchMultiSource },
+  download_book_to_file: {
+    description: 'Download a book to file',
+    schema: DownloadBookToFileParamsSchema,
+    handler: handlers.downloadBookToFile,
+  },
+  process_document_for_rag: {
+    description: 'Process document for RAG',
+    schema: ProcessDocumentForRagParamsSchema,
+    handler: handlers.processDocumentForRag,
+  },
+  get_book_metadata: {
+    description: 'Get book metadata',
+    schema: GetBookMetadataParamsSchema,
+    handler: handlers.getBookMetadata,
+  },
+  search_by_term: {
+    description: 'Search by conceptual term',
+    schema: SearchByTermParamsSchema,
+    handler: handlers.searchByTerm,
+  },
+  search_by_author: {
+    description: 'Search by author',
+    schema: SearchByAuthorParamsSchema,
+    handler: handlers.searchByAuthor,
+  },
+  fetch_booklist: {
+    description: 'Fetch booklist',
+    schema: FetchBooklistParamsSchema,
+    handler: handlers.fetchBooklist,
+  },
+  search_advanced: {
+    description: 'Advanced search',
+    schema: SearchAdvancedParamsSchema,
+    handler: handlers.searchAdvanced,
+  },
+  search_multi_source: {
+    description: 'Multi-source search',
+    schema: SearchMultiSourceParamsSchema,
+    handler: handlers.searchMultiSource,
+  },
 };
 
 // ============================================================================
@@ -433,7 +550,12 @@ function getPackageVersion(): string {
 function wrapResult(result: any, toolName: string) {
   if (result && typeof result === 'object' && 'error' in result && result.error) {
     return {
-      content: [{ type: 'text' as const, text: `Error from tool "${toolName}": ${result.error.message || result.error}` }],
+      content: [
+        {
+          type: 'text' as const,
+          text: `Error from tool "${toolName}": ${result.error.message || result.error}`,
+        },
+      ],
       isError: true as const,
     };
   }
@@ -447,12 +569,48 @@ function wrapResult(result: any, toolName: string) {
 // Server setup
 // ============================================================================
 
-interface StartOptions {
-    testing?: boolean;
+/**
+ * Validate required environment variables before server startup.
+ * Exits with a clear, actionable error if credentials are missing.
+ */
+function validateCredentials(): void {
+  const email = process.env.ZLIBRARY_EMAIL;
+  const password = process.env.ZLIBRARY_PASSWORD;
+
+  if (!email || !password) {
+    const missing: string[] = [];
+    if (!email) missing.push('ZLIBRARY_EMAIL');
+    if (!password) missing.push('ZLIBRARY_PASSWORD');
+
+    console.error(
+      `\nError: Missing required environment variable(s): ${missing.join(', ')}\n\n` +
+        `Z-Library credentials are required for the MCP server to function.\n\n` +
+        `To fix this, set the following in your MCP client configuration:\n` +
+        `  "env": {\n` +
+        `    "ZLIBRARY_EMAIL": "your-email@example.com",\n` +
+        `    "ZLIBRARY_PASSWORD": "your-password"\n` +
+        `  }\n\n` +
+        `For Claude Desktop, add this to your claude_desktop_config.json.\n` +
+        `For other MCP clients, consult your client's documentation.\n` +
+        `See README.md for detailed setup instructions.\n`,
+    );
+    process.exit(1);
+  }
 }
 
-async function start(opts: StartOptions = {}): Promise<{ server: McpServer; transport: StdioServerTransport } | null> {
+interface StartOptions {
+  testing?: boolean;
+}
+
+async function start(
+  opts: StartOptions = {},
+): Promise<{ server: McpServer; transport: StdioServerTransport } | null> {
   try {
+    // Validate credentials before anything else (skip in test mode)
+    if (!opts.testing) {
+      validateCredentials();
+    }
+
     // Ensure the logs directory exists
     try {
       await mkdirAsync(path.resolve(__dirname, '..', 'logs'), { recursive: true });
@@ -475,89 +633,135 @@ async function start(opts: StartOptions = {}): Promise<{ server: McpServer; tran
     const ann = (name: string) => toolAnnotations[name] as ToolAnnotations;
 
     // 1. search_books
-    server.tool('search_books',
+    server.tool(
+      'search_books',
       'Search for books in Z-Library by title, author, or keywords. Returns matching books with metadata including title (string), author (string), name, authors (array), year, format, and file size. Use exact=true for precise title matching. Filter results by year range, language, or file format.',
-      SearchBooksParamsSchema.shape, ann('search_books'),
-      async (args) => wrapResult(await handlers.searchBooks(args as any), 'search_books'));
+      SearchBooksParamsSchema.shape,
+      ann('search_books'),
+      async (args) => wrapResult(await handlers.searchBooks(args as any), 'search_books'),
+    );
 
     // 2. full_text_search
-    server.tool('full_text_search',
+    server.tool(
+      'full_text_search',
       'Search for books containing specific text within their content. Returns books with title (string), author (string), name, authors (array), and other metadata. Useful for finding books that discuss particular topics, quotes, or concepts.',
-      FullTextSearchParamsSchema.shape, ann('full_text_search'),
-      async (args) => wrapResult(await handlers.fullTextSearch(args as any), 'full_text_search'));
+      FullTextSearchParamsSchema.shape,
+      ann('full_text_search'),
+      async (args) => wrapResult(await handlers.fullTextSearch(args as any), 'full_text_search'),
+    );
 
     // 3. get_download_history
-    server.tool('get_download_history',
+    server.tool(
+      'get_download_history',
       "Get the user's Z-Library download history. Returns a list of previously downloaded books with their metadata.",
-      GetDownloadHistoryParamsSchema.shape, ann('get_download_history'),
-      async (args) => wrapResult(await handlers.getDownloadHistory(args as any), 'get_download_history'));
+      GetDownloadHistoryParamsSchema.shape,
+      ann('get_download_history'),
+      async (args) =>
+        wrapResult(await handlers.getDownloadHistory(args as any), 'get_download_history'),
+    );
 
     // 4. get_download_limits
-    server.tool('get_download_limits',
+    server.tool(
+      'get_download_limits',
       "Get the user's current Z-Library download limits. Shows daily download quota, downloads used today, and remaining downloads.",
-      GetDownloadLimitsParamsSchema.shape, ann('get_download_limits'),
-      async (_args) => wrapResult(await handlers.getDownloadLimits(_args), 'get_download_limits'));
+      GetDownloadLimitsParamsSchema.shape,
+      ann('get_download_limits'),
+      async (_args) => wrapResult(await handlers.getDownloadLimits(_args), 'get_download_limits'),
+    );
 
     // 5. get_recent_books
-    server.tool('get_recent_books',
+    server.tool(
+      'get_recent_books',
       'Get recently added books to Z-Library. Optionally filter by file format.',
-      GetRecentBooksParamsSchema.shape, ann('search_books'),
+      GetRecentBooksParamsSchema.shape,
+      ann('search_books'),
       async (args) => {
         try {
           const result = await (zlibraryApi as any).getRecentBooks(args);
           return wrapResult(result, 'get_recent_books');
         } catch (error: any) {
-          return { content: [{ type: 'text' as const, text: `Error: ${error.message}` }], isError: true };
+          return {
+            content: [{ type: 'text' as const, text: `Error: ${error.message}` }],
+            isError: true,
+          };
         }
-      });
+      },
+    );
 
     // 6. download_book_to_file
-    server.tool('download_book_to_file',
+    server.tool(
+      'download_book_to_file',
       'Download a book to a local file. Pass the full bookDetails object from search_books results. Optionally process the document for RAG (text extraction) after download. Returns file paths for both the original book and processed text.',
-      DownloadBookToFileParamsSchema.shape, ann('download_book_to_file'),
-      async (args) => wrapResult(await handlers.downloadBookToFile(args as any), 'download_book_to_file'));
+      DownloadBookToFileParamsSchema.shape,
+      ann('download_book_to_file'),
+      async (args) =>
+        wrapResult(await handlers.downloadBookToFile(args as any), 'download_book_to_file'),
+    );
 
     // 7. process_document_for_rag
-    server.tool('process_document_for_rag',
+    server.tool(
+      'process_document_for_rag',
       'Process a downloaded document (EPUB, TXT, PDF) to extract clean text content for RAG (Retrieval-Augmented Generation). Extracts text, preserves structure, detects footnotes, and outputs a text file.',
-      ProcessDocumentForRagParamsSchema.shape, ann('process_document_for_rag'),
-      async (args) => wrapResult(await handlers.processDocumentForRag(args as any), 'process_document_for_rag'));
+      ProcessDocumentForRagParamsSchema.shape,
+      ann('process_document_for_rag'),
+      async (args) =>
+        wrapResult(await handlers.processDocumentForRag(args as any), 'process_document_for_rag'),
+    );
 
     // 8. get_book_metadata
-    server.tool('get_book_metadata',
+    server.tool(
+      'get_book_metadata',
       'Get metadata for a book. By default returns core fields (title, author, year, publisher, language, pages, isbn, rating, cover, categories). Use the include parameter to add optional field groups: terms (60+ conceptual keywords), booklists (11+ curated collections), ipfs (IPFS CIDs), ratings (quality score), description (full text). Requires bookId and bookHash from search results.',
-      GetBookMetadataParamsSchema.shape, ann('get_book_metadata'),
-      async (args) => wrapResult(await handlers.getBookMetadata(args as any), 'get_book_metadata'));
+      GetBookMetadataParamsSchema.shape,
+      ann('get_book_metadata'),
+      async (args) => wrapResult(await handlers.getBookMetadata(args as any), 'get_book_metadata'),
+    );
 
     // 9. search_by_term
-    server.tool('search_by_term',
+    server.tool(
+      'search_by_term',
       'Search for books by conceptual term (e.g., "phenomenology", "dialectic", "epistemology"). Returns books with title (string), author (string), and other metadata. Books in Z-Library are tagged with 60+ conceptual terms.',
-      SearchByTermParamsSchema.shape, ann('search_by_term'),
-      async (args) => wrapResult(await handlers.searchByTerm(args as any), 'search_by_term'));
+      SearchByTermParamsSchema.shape,
+      ann('search_by_term'),
+      async (args) => wrapResult(await handlers.searchByTerm(args as any), 'search_by_term'),
+    );
 
     // 10. search_by_author
-    server.tool('search_by_author',
+    server.tool(
+      'search_by_author',
       'Advanced author search with support for various name formats. Returns books with title (string), author (string), and other metadata. Use exact=true for precise matching. Filter by publication year, language, or file format.',
-      SearchByAuthorParamsSchema.shape, ann('search_by_author'),
-      async (args) => wrapResult(await handlers.searchByAuthor(args as any), 'search_by_author'));
+      SearchByAuthorParamsSchema.shape,
+      ann('search_by_author'),
+      async (args) => wrapResult(await handlers.searchByAuthor(args as any), 'search_by_author'),
+    );
 
     // 11. fetch_booklist
-    server.tool('fetch_booklist',
+    server.tool(
+      'fetch_booklist',
       'Fetch books from an expert-curated booklist. Z-Library books belong to 11+ booklists with up to 954 books per list. Get booklist IDs from get_book_metadata.',
-      FetchBooklistParamsSchema.shape, ann('fetch_booklist'),
-      async (args) => wrapResult(await handlers.fetchBooklist(args as any), 'fetch_booklist'));
+      FetchBooklistParamsSchema.shape,
+      ann('fetch_booklist'),
+      async (args) => wrapResult(await handlers.fetchBooklist(args as any), 'fetch_booklist'),
+    );
 
     // 12. search_advanced
-    server.tool('search_advanced',
+    server.tool(
+      'search_advanced',
       'Advanced search with automatic separation of exact matches from fuzzy/approximate matches. Returns two arrays: exact_matches and fuzzy_matches, each containing books with title (string), author (string), and other metadata.',
-      SearchAdvancedParamsSchema.shape, ann('search_advanced'),
-      async (args) => wrapResult(await handlers.searchAdvanced(args as any), 'search_advanced'));
+      SearchAdvancedParamsSchema.shape,
+      ann('search_advanced'),
+      async (args) => wrapResult(await handlers.searchAdvanced(args as any), 'search_advanced'),
+    );
 
     // 13. search_multi_source
-    server.tool('search_multi_source',
-      'Search for books across Anna\'s Archive and LibGen. Alternative to Z-Library EAPI. Returns books with md5, title, author, year, extension, size, source, download_url. Use source=auto to prefer Anna\'s Archive with LibGen fallback, or force a specific source.',
-      SearchMultiSourceParamsSchema.shape, ann('search_multi_source'),
-      async (args) => wrapResult(await handlers.searchMultiSource(args as any), 'search_multi_source'));
+    server.tool(
+      'search_multi_source',
+      "Search for books across Anna's Archive and LibGen. Alternative to Z-Library EAPI. Returns books with md5, title, author, year, extension, size, source, download_url. Use source=auto to prefer Anna's Archive with LibGen fallback, or force a specific source.",
+      SearchMultiSourceParamsSchema.shape,
+      ann('search_multi_source'),
+      async (args) =>
+        wrapResult(await handlers.searchMultiSource(args as any), 'search_multi_source'),
+    );
 
     // Create and connect the Stdio transport
     const transport = new StdioServerTransport();
@@ -577,8 +781,8 @@ async function start(opts: StartOptions = {}): Promise<{ server: McpServer; tran
 
 // Auto-start logic
 if (import.meta.url === `file://${process.argv[1]}`) {
-  start().catch(err => {
-    console.error("Fatal error starting server:", err);
+  start().catch((err) => {
+    console.error('Fatal error starting server:', err);
     process.exit(1);
   });
 }

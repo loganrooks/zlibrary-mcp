@@ -48,6 +48,7 @@ Full details: `.planning/milestones/v1.1-ROADMAP.md`
 - [x] **Phase 15: Cleanup & DX Foundation** - Dead files, gitignore, ESLint + Prettier, startup validation, coverage CI — completed 2026-03-19
 - [x] **Phase 16: Documentation & Distribution** - README, API docs, CONTRIBUTING.md, CHANGELOG, npm packaging, Docker verification — completed 2026-03-20
 - [x] **Phase 17: Quality Gates & Release Pipeline** - 3-layer CI gates, release automation, npm publish workflow — completed 2026-03-20
+- [ ] **Phase 18: v1.2 Gap Closure** - Fix broken footnote tests, loosen perf thresholds, fix CHANGELOG links, clean stale docs
 
 ### v1.3 RAG Pipeline Refinement (Planned)
 
@@ -146,6 +147,19 @@ Plans:
 - [x] 17-01-PLAN.md — Add CI quality gate jobs: lint, pack-check, smoke-test, docker, docs-check (GATE-01, GATE-02, GATE-03, GATE-04, GATE-05)
 - [x] 17-02-PLAN.md — Create npm publish workflow and resolve Issue #11 (GATE-06, GATE-07)
 
+### Phase 18: v1.2 Gap Closure
+**Goal**: Close tech debt items from milestone audit so test-full CI is green and documentation is accurate
+**Depends on**: Phase 17 (audit identified these gaps)
+**Gap Closure**: Closes gaps from v1.2-MILESTONE-AUDIT.md
+**Success Criteria** (what must be TRUE):
+  1. All 4 footnote tests in test_real_footnotes.py and test_inline_footnotes.py pass (v3 schema accessors)
+  2. No performance tests fail in test-full CI (thresholds loosened or tests excluded)
+  3. CHANGELOG.md footer links resolve to valid GitHub URLs (matching actual tag names)
+  4. ISSUES.md ISSUE-DOCKER-001 marked resolved
+  5. QUICKSTART.md removed (superseded by README Quick Start)
+  6. CONTRIBUTING.md E2E section notes Docker prerequisite
+**Plans**: TBD
+
 ## Progress
 
 | Phase | Milestone | Plans Complete | Status | Completed |
@@ -167,7 +181,8 @@ Plans:
 | 15. Cleanup & DX Foundation | v1.2 | 4/4 | Complete | 2026-03-19 |
 | 16. Documentation & Distribution | v1.2 | 3/3 | Complete | 2026-03-20 |
 | 17. Quality Gates & Release Pipeline | v1.2 | 2/2 | Complete | 2026-03-20 |
+| 18. v1.2 Gap Closure | v1.2 | 0/TBD | Not started | - |
 
 ---
 
-_Last updated: 2026-03-20 after Phase 17 execution (2/2 plans complete, verified 7/7) — v1.2 MILESTONE COMPLETE_
+_Last updated: 2026-03-20 after milestone audit — Phase 18 added for gap closure_

@@ -109,7 +109,23 @@ For complete parameter documentation, types, and examples, see [API Reference](d
 
 ## Installation
 
-### Option A: Local Installation (stdio transport)
+### Option A: npm (recommended)
+
+**Prerequisites:** Node.js 22+, Python 3.10+, [UV](https://docs.astral.sh/uv/)
+
+```bash
+npm install -g zlibrary-mcp
+```
+
+Then set up the Python environment:
+
+```bash
+cd $(npm root -g)/zlibrary-mcp
+curl -LsSf https://astral.sh/uv/install.sh | sh  # Install UV if needed
+bash setup-uv.sh
+```
+
+### Option B: From Source (stdio transport)
 
 **Prerequisites:** Node.js 22+, Python 3.10+, [UV](https://docs.astral.sh/uv/)
 

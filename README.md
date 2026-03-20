@@ -1,106 +1,20 @@
 # Z-Library MCP Server
 
-<!-- Last Verified: 2026-02-01 -->
+[![CI](https://github.com/loganrooks/zlibrary-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/loganrooks/zlibrary-mcp/actions/workflows/ci.yml)
+[![npm version](https://img.shields.io/npm/v/zlibrary-mcp)](https://www.npmjs.com/package/zlibrary-mcp)
+[![License: MIT](https://img.shields.io/github/license/loganrooks/zlibrary-mcp)](https://github.com/loganrooks/zlibrary-mcp/blob/master/LICENSE)
 
-This Model Context Protocol (MCP) server provides access to Z-Library for AI coding assistants like Claude Code, RooCode, and Cline. It allows AI assistants to search for books, retrieve metadata, download files, and process document content for Retrieval-Augmented Generation (RAG) workflows.
+A Model Context Protocol (MCP) server that gives AI assistants -- Claude Code, Claude Desktop, RooCode, Cline -- the ability to search Z-Library, download books, and extract document content for Retrieval-Augmented Generation (RAG) workflows. Built with a Node.js/TypeScript MCP frontend and a Python bridge backend for document processing.
 
-## Current Status
-
-- **Version:** 2.0.0 (Post-cleanup, EAPI migration)
-- **MCP SDK:** 1.25+ (McpServer API with `server.tool()` registration)
-- **Transport:** EAPI JSON endpoints (bypasses Cloudflare browser challenges)
-- **Python:** UV-based dependency management, decomposed lib/rag/ modules
-- **Stability:** All test suites passing
-- **Branch:** `master`
-
-### Recent Changes (Jan-Feb 2026)
-- **EAPI Migration**: All API calls use Z-Library EAPI JSON endpoints (no more HTML scraping)
-- **MCP SDK 1.25+**: Upgraded from 1.8, using McpServer API with `server.tool()` registration
-- **Python Decomposition**: Monolithic `rag_processing.py` (4,968 lines) split into lib/rag/ domain modules (all <500 lines)
-- **Health Check**: Cloudflare detection for upstream monitoring
-- **13 MCP Tools**: Complete search, metadata, download, and RAG capabilities
-
-## Architecture Overview
-
-- **Node.js/TypeScript MCP Server**: 13 tools registered via McpServer `server.tool()` API
-- **Python Bridge**: Z-Library EAPI client (httpx) + document processing (lib/rag/ modules)
-- **EAPI Transport**: JSON API endpoints at `/eapi/` bypass Cloudflare browser challenges
-- **UV-Based Python Environment**: Project-local `.venv/` with `uv.lock` for reproducible builds
-- **Vendored Z-Library Fork**: Custom EAPI client for search and file downloads
-- **RAG Pipeline**: EPUB/PDF/TXT extraction with quality detection, output to files (not memory)
-
-## Prerequisites
-
-- Node.js 22 or newer
-- Python 3.10 or newer
-- [UV](https://docs.astral.sh/uv/) - Modern Python package manager
-- Z-Library account (for authentication)
-
-## Installation
-
-### 1. Install UV (one-time)
+## Quick Start
 
 ```bash
-# macOS/Linux:
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# Or via pip:
-pip install uv
-
-# Or via homebrew (macOS):
-brew install uv
-```
-
-### 2. Setup Project
-
-```bash
-# Clone this repository
 git clone https://github.com/loganrooks/zlibrary-mcp.git
 cd zlibrary-mcp
-
-# Setup Python environment with UV
-bash setup-uv.sh
-# Or manually: uv sync
-
-# Install Node.js dependencies
-npm install
-
-# Build TypeScript
-npm run build
+bash setup-uv.sh && npm install && npm run build
 ```
 
-## Configuration
-
-The server requires Z-Library credentials:
-
-```bash
-export ZLIBRARY_EMAIL="your-email@example.com"
-export ZLIBRARY_PASSWORD="your-password"
-# Optional: Specify the Z-Library mirror domain
-# export ZLIBRARY_MIRROR="https://your-mirror.example"
-```
-
-## Usage
-
-### Starting the Server
-
-```bash
-node dist/index.js
-```
-
-### Integration with MCP Clients
-
-**Important**: The MCP server is a **Node.js application**. UV is only used for setup.
-
-```
-Setup:  uv sync --> creates .venv/
-Build:  npm run build --> compiles TypeScript to dist/
-Runtime: node dist/index.js --> runs MCP server --> calls .venv/bin/python internally
-```
-
-#### Claude Code
-
-Create or edit `.mcp.json` in your project:
+Then add to your MCP client config (Claude Code `.mcp.json`, Claude Desktop `claude_desktop_config.json`):
 
 ```json
 {
@@ -117,26 +31,39 @@ Create or edit `.mcp.json` in your project:
 }
 ```
 
-#### RooCode / Cline
+## Architecture Overview
 
-Edit `mcp_settings.json`:
-
-```json
-{
-  "mcpServers": {
-    "zlibrary-local": {
-      "command": "node",
-      "args": ["/full/path/to/zlibrary-mcp/dist/index.js"],
-      "env": {
-        "ZLIBRARY_EMAIL": "your-email@example.com",
-        "ZLIBRARY_PASSWORD": "your-password"
-      },
-      "transport": "stdio",
-      "enabled": true
-    }
-  }
-}
+```mermaid
+flowchart LR
+    subgraph "MCP Client"
+        A[Claude Desktop / Claude Code / RooCode]
+    end
+    subgraph "stdio Transport"
+        B[Node.js MCP Server<br/>src/index.ts]
+    end
+    subgraph "HTTP Transport"
+        SG[SuperGateway :8000]
+    end
+    subgraph "Python Bridge"
+        C[python_bridge.py]
+        D[lib/rag/ modules]
+    end
+    subgraph "External"
+        E[Z-Library EAPI]
+    end
+    A -->|stdio| B
+    A -->|SSE/HTTP| SG -->|stdio| B
+    B -->|PythonShell| C
+    C --> D
+    C -->|httpx| E
 ```
+
+- **Node.js/TypeScript MCP Server**: 13 tools registered via McpServer `server.tool()` API (MCP SDK 1.25+)
+- **Python Bridge**: Z-Library EAPI client (httpx) + document processing (lib/rag/ modules)
+- **EAPI Transport**: JSON API endpoints at `/eapi/` bypass Cloudflare browser challenges
+- **UV-Based Python Environment**: Project-local `.venv/` with `uv.lock` for reproducible builds
+- **Vendored Z-Library Fork**: Custom EAPI client for search and file downloads
+- **RAG Pipeline**: EPUB/PDF/TXT extraction with quality detection, output to files (not memory)
 
 ## Available MCP Tools (13 Total)
 
@@ -145,7 +72,7 @@ Edit `mcp_settings.json`:
 | Tool | Description |
 |------|-------------|
 | `search_books` | Basic search by keyword with filters |
-| `full_text_search` | Search within book contents (routes through EAPI search) |
+| `full_text_search` | Search within book contents |
 | `search_by_term` | Conceptual navigation via terms |
 | `search_by_author` | Advanced author search |
 | `search_advanced` | Fuzzy match detection with separate exact/fuzzy results |
@@ -162,7 +89,7 @@ Edit `mcp_settings.json`:
 
 | Tool | Description |
 |------|-------------|
-| `fetch_booklist` | Expert-curated collection contents (graceful degradation via EAPI) |
+| `fetch_booklist` | Expert-curated collection contents |
 
 ### Download & Processing Tools (2)
 
@@ -177,6 +104,139 @@ Edit `mcp_settings.json`:
 |------|-------------|
 | `get_download_limits` | Check daily download quota |
 | `get_download_history` | View recent downloads |
+
+For complete parameter documentation, types, and examples, see [API Reference](docs/api.md).
+
+## Installation
+
+### Option A: Local Installation (stdio transport)
+
+**Prerequisites:** Node.js 22+, Python 3.10+, [UV](https://docs.astral.sh/uv/)
+
+```bash
+# 1. Install UV (one-time, if not already installed)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# 2. Clone and build
+git clone https://github.com/loganrooks/zlibrary-mcp.git
+cd zlibrary-mcp
+bash setup-uv.sh    # Creates .venv/ and installs Python dependencies
+npm install          # Installs Node.js dependencies
+npm run build        # Compiles TypeScript to dist/
+```
+
+**MCP client configuration (stdio transport):**
+
+Claude Code (`.mcp.json` in your project root):
+
+```json
+{
+  "mcpServers": {
+    "zlibrary": {
+      "command": "node",
+      "args": ["/absolute/path/to/zlibrary-mcp/dist/index.js"],
+      "env": {
+        "ZLIBRARY_EMAIL": "your-email@example.com",
+        "ZLIBRARY_PASSWORD": "your-password"
+      }
+    }
+  }
+}
+```
+
+RooCode / Cline (`mcp_settings.json`):
+
+```json
+{
+  "mcpServers": {
+    "zlibrary-local": {
+      "command": "node",
+      "args": ["/absolute/path/to/zlibrary-mcp/dist/index.js"],
+      "env": {
+        "ZLIBRARY_EMAIL": "your-email@example.com",
+        "ZLIBRARY_PASSWORD": "your-password"
+      },
+      "transport": "stdio",
+      "enabled": true
+    }
+  }
+}
+```
+
+### Option B: Docker (HTTP transport)
+
+**Prerequisites:** Docker and Docker Compose
+
+```bash
+# 1. Clone the repository
+git clone https://github.com/loganrooks/zlibrary-mcp.git
+cd zlibrary-mcp
+
+# 2. Configure credentials
+cp docker/env.example docker/.env
+# Edit docker/.env with your Z-Library email and password
+
+# 3. Build and start the container
+docker compose -f docker/docker-compose.yaml up -d
+```
+
+The server will be available at `http://localhost:8000`. Verify with:
+
+```bash
+curl http://localhost:8000/health
+```
+
+**MCP client configuration (SSE/HTTP transport):**
+
+```json
+{
+  "mcpServers": {
+    "zlibrary": {
+      "command": "npx",
+      "args": ["-y", "supergateway", "--sse", "http://localhost:8000/sse"]
+    }
+  }
+}
+```
+
+## Output Format (RAG Processing)
+
+The RAG pipeline processes downloaded documents (EPUB, PDF, TXT) into clean text files for use in retrieval-augmented generation workflows.
+
+- **Output location:** Processed text files are saved to `./processed_rag_output/`
+- **File-based output:** Tools return file paths rather than raw text content, avoiding context overflow in AI assistants
+- **Supported formats:** EPUB, PDF, and TXT
+- **Quality detection:** The pipeline automatically detects document quality (OCR vs. digital text) and applies appropriate extraction strategies
+- **Scholarly formatting:** Preserves footnotes, chapter structure, and academic formatting where possible
+
+Use `download_book_to_file` with `process_for_rag: true` for combined download and processing, or `process_document_for_rag` to process an existing file.
+
+## Configuration
+
+The server requires Z-Library credentials, set as environment variables:
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `ZLIBRARY_EMAIL` | Yes | Z-Library account email |
+| `ZLIBRARY_PASSWORD` | Yes | Z-Library account password |
+| `ZLIBRARY_MIRROR` | No | Custom Z-Library mirror URL |
+
+The server validates credentials at startup and emits a clear error if they are missing.
+
+### Retry and Circuit Breaker
+
+All API operations include automatic retry with exponential backoff and circuit breaker protection. These are configurable via environment variables:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `RETRY_MAX_RETRIES` | `3` | Maximum retry attempts |
+| `RETRY_INITIAL_DELAY` | `1000` | Initial retry delay (ms) |
+| `RETRY_MAX_DELAY` | `30000` | Maximum retry delay (ms) |
+| `RETRY_FACTOR` | `2` | Exponential backoff multiplier |
+| `CIRCUIT_BREAKER_THRESHOLD` | `5` | Failures before opening circuit |
+| `CIRCUIT_BREAKER_TIMEOUT` | `60000` | Time (ms) before retry after circuit opens |
+
+See [docs/RETRY_CONFIGURATION.md](docs/RETRY_CONFIGURATION.md) for details.
 
 ## Development
 
@@ -209,13 +269,19 @@ Z-Library deployed Cloudflare browser challenges (Jan 2026) that block all HTML 
 
 The MCP server is a Node.js application. UV is only used during setup (`uv sync`) to create `.venv/` and install Python dependencies. At runtime, Node.js runs the MCP server which calls `.venv/bin/python` internally.
 
+```
+Setup:  uv sync --> creates .venv/
+Build:  npm run build --> compiles TypeScript to dist/
+Runtime: node dist/index.js --> runs MCP server --> calls .venv/bin/python internally
+```
+
 ### What if I move the project directory?
 
 No problem. `.venv/` moves with the project (UV creates project-local environments).
 
 ## Contributing
 
-Contributions are welcome. Please review the architecture documents (`docs/`) and ADRs (`docs/adr/`) before submitting a Pull Request. See `.claude/VERSION_CONTROL.md` for Git workflow and commit conventions.
+Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for setup instructions, code style, testing, and PR workflow.
 
 ## License
 

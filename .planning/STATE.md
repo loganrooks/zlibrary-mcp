@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-02-11)
 
 **Core value:** Reliable, maintainable MCP server for book access — production-ready infrastructure with high-quality scholarly text extraction
-**Current focus:** v1.2 Production Readiness — Phase 15: Cleanup & DX Foundation
+**Current focus:** v1.2 Production Readiness — Phase 16: CI/CD Pipeline
 
 ## Current Position
 
-Phase: 15 of 17 (Cleanup & DX Foundation) -- IN PROGRESS
-Plan: 3 of 4 complete
-Status: Executing Phase 15 plans
-Last activity: 2026-03-19 — 15-01 complete (git history blob purge + LFS migration)
+Phase: 15 of 17 (Cleanup & DX Foundation) -- COMPLETE
+Plan: 4 of 4 complete
+Status: Phase 15 complete, ready for Phase 16
+Last activity: 2026-03-20 — 15-04 complete (credential validation + coverage thresholds)
 
-Progress: [████████████░░░░░░░░] 60% of v1.2 (phases 13-14 complete, 15 in progress [3/4], 16-17 remaining)
+Progress: [██████████████░░░░░░] 70% of v1.2 (phases 13-15 complete, 16-17 remaining)
 
 ## Milestones Shipped
 
@@ -39,6 +39,11 @@ All decisions logged in PROJECT.md Key Decisions table.
 **Phase 15 (15-02):**
 - Shortened JSON.parse error regex to match stable prefix across Node versions
 - Used git rm for tracked src/index.js, plain rm for untracked src/lib/*.js files
+
+**Phase 15 (15-04):**
+- Used measured coverage baselines (74.54% stmts Jest, 58% pytest) rather than research-phase values for threshold accuracy
+- Set thresholds at baseline minus 5% to prevent regressions without blocking new feature work
+- Credential validation skips in test mode (opts.testing) to avoid breaking Jest mocked tests
 
 **2026-03-19 (Deliberation):**
 - v1.2 scope narrowed to 3 infrastructure phases (15-17), deferring RAG refinements to v1.3
@@ -96,9 +101,9 @@ From v1.1 audit (addressed by v1.2 scope):
 
 ## Session Continuity
 
-Last session: 2026-03-19
-Stopped at: Completed 15-01-PLAN.md
-Resume with: `/gsdr:execute-phase 15` (plans 03-04 remaining)
+Last session: 2026-03-20
+Stopped at: Completed 15-04-PLAN.md
+Resume with: `/gsdr:execute-phase 16` (Phase 15 complete, Phase 16 next)
 
 ### Performance Metrics
 
@@ -112,7 +117,8 @@ Resume with: `/gsdr:execute-phase 15` (plans 03-04 remaining)
 | 14-03      | 22min    | 2     | 11    |
 | 15-01      | 12min    | 2     | 1     |
 | 15-02      | 3min     | 2     | 2     |
+| 15-04      | 5min     | 2     | 6     |
 
 ---
 
-_Last updated: 2026-03-19 after 15-01 execution (git history blob purge + LFS migration)_
+_Last updated: 2026-03-20 after 15-04 execution (credential validation + coverage thresholds)_

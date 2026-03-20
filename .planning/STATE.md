@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-02-11)
 
 **Core value:** Reliable, maintainable MCP server for book access — production-ready infrastructure with high-quality scholarly text extraction
-**Current focus:** v1.2 Production Readiness — Phase 16: Documentation & Distribution
+**Current focus:** v1.2 Production Readiness — Phase 17: Quality Gates & Release Pipeline
 
 ## Current Position
 
-Phase: 16 of 17 (Documentation & Distribution) -- COMPLETE
-Plan: 3 of 3 complete (16-01, 16-02, 16-03)
-Status: Phase 16 complete, Phase 17 next
-Last activity: 2026-03-20 — 16-03 complete (README refresh + CONTRIBUTING.md)
+Phase: 17 of 17 (Quality Gates & Release Pipeline) -- IN PROGRESS
+Plan: 1 of 2 complete (17-01)
+Status: 17-01 complete, 17-02 next
+Last activity: 2026-03-20 — 17-01 complete (CI quality gates: lint, pack-check, smoke-test, docker, docs-check)
 
-Progress: [█████████████████░░░] 85% of v1.2 (phases 13-16 complete, 17 remaining)
+Progress: [██████████████████░░] 92% of v1.2 (phases 13-17 in progress, 17-01 of 2 complete)
 
 ## Milestones Shipped
 
@@ -88,6 +88,12 @@ All decisions logged in PROJECT.md Key Decisions table.
 - Replaced getRequirementsTxtPath with getPyprojectTomlPath to match UV migration
 - Wrapped lint-staged tsc in bash -c to prevent file argument pass-through
 
+**Phase 17 (17-01):**
+- Composite action includes checkout step — callers use 'uses: ./.github/actions/setup' directly without separate checkout
+- docker CI job restricted to push-to-master only to avoid slow builds on every PR
+- smoke-test uses dummy credentials (ci@test.com) to pass startup validation without real Z-Library access
+- docs-check scopes README extraction to 'Available MCP Tools' section via sed range to avoid spurious matches from config-var tables
+
 ### Pending Todos
 
 None.
@@ -122,8 +128,8 @@ From v1.1 audit (addressed by v1.2 scope):
 ## Session Continuity
 
 Last session: 2026-03-20
-Stopped at: Completed 16-03-PLAN.md
-Resume with: Phase 17 (Release & Publish)
+Stopped at: Completed 17-01-PLAN.md
+Resume with: Phase 17 Plan 02 (release tagging and publish)
 
 ### Performance Metrics
 
@@ -142,7 +148,9 @@ Resume with: Phase 17 (Release & Publish)
 | 16-01      | 5min     | 2     | 3     |
 | 16-02      | 2min     | 2     | 2     |
 | 16-03      | 2min     | 2     | 2     |
+| 17-01      | 3min     | 3     | 3     |
 
 ---
 
-_Last updated: 2026-03-20 after 16-03 execution (README refresh + CONTRIBUTING.md)_
+_Last updated: 2026-03-20 after 17-01 execution (CI quality gates: lint, pack-check, smoke-test, docker, docs-check)_
+

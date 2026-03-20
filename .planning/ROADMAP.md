@@ -47,7 +47,7 @@ Full details: `.planning/milestones/v1.1-ROADMAP.md`
 - [x] **Phase 14: Test Infrastructure** - Unified marker taxonomy, ground truth v3, fast/slow CI split — completed 2026-02-11
 - [x] **Phase 15: Cleanup & DX Foundation** - Dead files, gitignore, ESLint + Prettier, startup validation, coverage CI — completed 2026-03-19
 - [x] **Phase 16: Documentation & Distribution** - README, API docs, CONTRIBUTING.md, CHANGELOG, npm packaging, Docker verification — completed 2026-03-20
-- [ ] **Phase 17: Quality Gates & Release Pipeline** - 3-layer CI gates, release automation, npm publish workflow
+- [x] **Phase 17: Quality Gates & Release Pipeline** - 3-layer CI gates, release automation, npm publish workflow — completed 2026-03-20
 
 ### v1.3 RAG Pipeline Refinement (Planned)
 
@@ -143,8 +143,8 @@ Plans:
   7. GitHub Issue #11 is resolved — the reporter's setup path works with updated docs
 **Plans:** 2 plans
 Plans:
-- [ ] 17-01-PLAN.md — Add CI quality gate jobs: lint, pack-check, smoke-test, docker, docs-check (GATE-01, GATE-02, GATE-03, GATE-04, GATE-05)
-- [ ] 17-02-PLAN.md — Create npm publish workflow and resolve Issue #11 (GATE-06, GATE-07)
+- [x] 17-01-PLAN.md — Add CI quality gate jobs: lint, pack-check, smoke-test, docker, docs-check (GATE-01, GATE-02, GATE-03, GATE-04, GATE-05)
+- [x] 17-02-PLAN.md — Create npm publish workflow and resolve Issue #11 (GATE-06, GATE-07)
 
 ## Progress
 
@@ -166,8 +166,8 @@ Plans:
 | 14. Test Infrastructure | v1.2 | 3/3 | Complete | 2026-02-11 |
 | 15. Cleanup & DX Foundation | v1.2 | 4/4 | Complete | 2026-03-19 |
 | 16. Documentation & Distribution | v1.2 | 3/3 | Complete | 2026-03-20 |
-| 17. Quality Gates & Release Pipeline | v1.2 | 0/2 | Not started | - |
+| 17. Quality Gates & Release Pipeline | v1.2 | 2/2 | Complete | 2026-03-20 |
 
 ---
 
-_Last updated: 2026-03-20 after Phase 17 planning (2 plans created)_
+_Last updated: 2026-03-20 after Phase 17 execution (2/2 plans complete, verified 7/7) — v1.2 MILESTONE COMPLETE_

@@ -52,13 +52,13 @@ Requirements for Production Readiness milestone. Focused on deployment, develope
 
 ### Quality Gates & Release Pipeline (Phase 17)
 
-- [ ] **GATE-01**: CI runs ESLint + Prettier check on every PR (fails on violations)
-- [ ] **GATE-02**: CI runs `npm pack --dry-run` and fails if tarball exceeds 10MB or contains test/dev files
-- [ ] **GATE-03**: CI startup smoke test: server boots, responds to MCP initialize, exits cleanly
-- [ ] **GATE-04**: CI Docker build + health check on push to master
-- [ ] **GATE-05**: README tool list validated against registered MCP tools in CI (fails if they diverge)
-- [ ] **GATE-06**: GitHub Actions publish workflow for npm on version tags
-- [ ] **GATE-07**: GitHub Issue #11 resolved — reporter's setup path works with updated documentation
+- [x] **GATE-01**: CI runs ESLint + Prettier check on every PR (fails on violations)
+- [x] **GATE-02**: CI runs `npm pack --dry-run` and fails if tarball exceeds 10MB or contains test/dev files
+- [x] **GATE-03**: CI startup smoke test: server boots, responds to MCP initialize, exits cleanly
+- [x] **GATE-04**: CI Docker build + health check on push to master
+- [x] **GATE-05**: README tool list validated against registered MCP tools in CI (fails if they diverge)
+- [x] **GATE-06**: GitHub Actions publish workflow for npm on version tags
+- [x] **GATE-07**: GitHub Issue #11 resolved — reporter's setup path works with updated documentation
 
 ## v1.3 Requirements (Deferred)
 
@@ -140,16 +140,16 @@ Deferred from v1.2 per [scope deliberation](.planning/deliberations/v12-scope-an
 | DIST-02 | Phase 16 | Complete |
 | DIST-03 | Phase 16 | Complete |
 | DIST-04 | Phase 16 | Complete |
-| GATE-01 | Phase 17 | Pending |
-| GATE-02 | Phase 17 | Pending |
-| GATE-03 | Phase 17 | Pending |
-| GATE-04 | Phase 17 | Pending |
-| GATE-05 | Phase 17 | Pending |
-| GATE-06 | Phase 17 | Pending |
-| GATE-07 | Phase 17 | Pending |
+| GATE-01 | Phase 17 | Complete |
+| GATE-02 | Phase 17 | Complete |
+| GATE-03 | Phase 17 | Complete |
+| GATE-04 | Phase 17 | Complete |
+| GATE-05 | Phase 17 | Complete |
+| GATE-06 | Phase 17 | Complete |
+| GATE-07 | Phase 17 | Complete |
 
 **Coverage:**
-- v1.2 requirements: 33 total (30 complete + 3 pending)
+- v1.2 requirements: 33 total (33 complete + 0 pending) — MILESTONE COMPLETE
 - Mapped to phases: 33
 - Unmapped: 0
 - v1.3 deferred: 9 (RAG-01–05, QUAL-01–04)

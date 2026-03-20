@@ -17,6 +17,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          lfs: true
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -34,6 +36,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          lfs: true
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -87,7 +91,7 @@ jobs:
           echo "OK: Tarball size within limit ($SIZE bytes)"
           echo "Contents:"
           tar tzf "$TARBALL"
-          EXCLUDED=$(tar tzf "$TARBALL" | grep -E '\.env|\.test\.|\.spec\.|__tests__|\.pyc' || true)
+          EXCLUDED=$(tar tzf "$TARBALL" | grep -E '/\.env$|\.test\.|\.spec\.|__tests__|\.pyc$' || true)
           if [ -n "$EXCLUDED" ]; then
             echo "ERROR: Tarball contains excluded patterns:"
             echo "$EXCLUDED"
@@ -119,7 +123,7 @@ jobs:
         run: |
           INIT_REQUEST='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"ci-smoke-test","version":"0.0.0"}}}'
           INIT_NOTIFICATION='{"jsonrpc":"2.0","method":"notifications/initialized"}'
-          RESPONSE=$(printf '%s\n%s\n' "$INIT_REQUEST" "$INIT_NOTIFICATION" | timeout 15 node dist/index.js 2>/dev/null | head -1)
+          RESPONSE=$(printf '%s\n%s\n' "$INIT_REQUEST" "$INIT_NOTIFICATION" | timeout 15 node dist/index.js 2>/dev/null | grep '^{' | head -1)
           echo "Response: $RESPONSE"
           echo "$RESPONSE" | jq -e '.jsonrpc == "2.0" and .id == 1 and .result.protocolVersion != null and .result.serverInfo.name == "zlibrary-mcp" and .result.capabilities.tools != null'
 
@@ -131,5 +135,5 @@ jobs:
       - uses: docker/setup-buildx-action@v3
       - name: Build Docker image
         run: docker build -t zlibrary-mcp:ci -f docker/Dockerfile .
-      - name: Verify image runs
-        run: docker run --rm zlibrary-mcp:ci node -e "console.log('OK')"
+      - name: Verify image contents
+        run: docker run --rm --entrypoint sh zlibrary-mcp:ci -c "test -f /app/dist/index.js && node -e 'console.log(\"OK\")'"

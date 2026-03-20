@@ -1,0 +1,14 @@
+dist/
+node_modules/
+coverage/
+.venv/
+zlibrary/
+lib/
+__tests__/
+__mocks__/
+*.md
+*.json
+*.yaml
+*.yml
+*.lock
+*.log

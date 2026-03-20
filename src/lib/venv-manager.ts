@@ -62,12 +62,13 @@ export async function getManagedPythonPath(): Promise<string> {
 
     // Log Python version for debugging (optional, can be removed)
     console.log(`[venv-manager] Using Python: ${version} from .venv`);
-  } catch (error: any) {
+  } catch (error) {
     throw new Error(
       `Python at ${uvVenvPython} is not executable.\n` +
       `This usually means .venv is corrupted. Try:\n` +
       `  rm -rf .venv\n` +
-      `  uv sync`
+      `  uv sync`,
+      { cause: error }
     );
   }
 

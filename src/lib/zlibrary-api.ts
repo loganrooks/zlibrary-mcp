@@ -1,4 +1,5 @@
-import { PythonShell, Options as PythonShellOptions } from 'python-shell';
+import type { Options as PythonShellOptions } from 'python-shell';
+import { PythonShell } from 'python-shell';
 import * as path from 'path';
 import { getManagedPythonPath } from './venv-manager.js'; // Import ESM style
 import { appendFile as appendFileAsyncFS, mkdir as mkdirAsyncFS } from 'fs/promises'; // Import fs/promises for async file operations, aliased
@@ -165,11 +166,6 @@ interface FullTextSearchArgs extends SearchBooksArgs {
     words?: boolean;
 }
 
-interface GetDownloadInfoArgs {
-    id: string;
-    format?: string | null;
-}
-
 interface GetDownloadHistoryArgs {
     count?: number;
 }
@@ -320,8 +316,6 @@ export async function downloadBookToFile({
     processed_output_format = 'txt'
 }: DownloadBookToFileArgs): Promise<{ file_path: string; processed_file_path?: string | null; processing_error?: string }> {
   try {
-    const logId = (bookDetails && bookDetails.id) ? bookDetails.id : 'unknown_id'; // Use ID from details for logging (compat check)
-    // console.log(`[downloadBookToFile - ${logId}] Calling Python bridge... process_for_rag=${process_for_rag}`); // Removed debug log
     // Call the Python function, passing the bookDetails object
     const result = await callPythonFunction('download_book', {
         book_details: bookDetails, // Pass the whole object
@@ -357,7 +351,7 @@ export async function downloadBookToFile({
 
   } catch (error: any) {
     // Re-throw errors from callPythonFunction or validation checks
-    throw new Error(`Failed to download book: ${error.message || 'Unknown error'}`);
+    throw new Error(`Failed to download book: ${error.message || 'Unknown error'}`, { cause: error });
   }
 }
 

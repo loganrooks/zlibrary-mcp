@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-02-11)
 
 **Core value:** Reliable, maintainable MCP server for book access — production-ready infrastructure with high-quality scholarly text extraction
-**Current focus:** v1.2 Production Readiness — Phase 17: Quality Gates & Release Pipeline
+**Current focus:** v1.2 COMPLETE — v1.3 planning next
 
 ## Current Position
 
-Phase: 17 of 17 (Quality Gates & Release Pipeline) -- IN PROGRESS
-Plan: 1 of 2 complete (17-01)
-Status: 17-01 complete, 17-02 next
-Last activity: 2026-03-20 — 17-01 complete (CI quality gates: lint, pack-check, smoke-test, docker, docs-check)
+Phase: 17 of 17 (Quality Gates & Release Pipeline) -- COMPLETE
+Plan: 2 of 2 complete (17-02)
+Status: ALL PHASES COMPLETE — v1.2 shipped
+Last activity: 2026-03-20 — 17-02 complete (npm publish workflow, Issue #11 response, CHANGELOG finalized)
 
-Progress: [██████████████████░░] 92% of v1.2 (phases 13-17 in progress, 17-01 of 2 complete)
+Progress: [████████████████████] 100% of v1.2 (all phases 13-17 complete)
 
 ## Milestones Shipped
 
@@ -22,8 +22,9 @@ Progress: [██████████████████░░] 92% of 
 |---------|------|--------|-------|---------|
 | v1.0 | Audit Cleanup & Modernization | 1-7 | 22 | 2026-02-01 |
 | v1.1 | Quality & Expansion | 8-12 | 21 | 2026-02-04 |
+| v1.2 | Production Readiness | 13-17 | 17 | 2026-03-20 |
 
-**Total:** 12 phases, 43 plans executed (+ 2 plans in phase 13, 3 plans in phase 14)
+**Total:** 17 phases, 60 plans executed
 
 ## Accumulated Context
 
@@ -94,6 +95,12 @@ All decisions logged in PROJECT.md Key Decisions table.
 - smoke-test uses dummy credentials (ci@test.com) to pass startup validation without real Z-Library access
 - docs-check scopes README extraction to 'Available MCP Tools' section via sed range to avoid spurious matches from config-var tables
 
+**Phase 17 (17-02):**
+- Cited commits 7c887e8 and d64ed2e in Issue #11 response so reporter can trace the exact fixes
+- Issue #11 left open for reporter to confirm fix works
+- publish.yml uses npm install -g npm@latest before publish to get npm 11.x provenance support (Node 22 ships npm 10.x)
+- publish.yml runs fast tests (not slow/integration) matching CI convention
+
 ### Pending Todos
 
 None.
@@ -128,8 +135,8 @@ From v1.1 audit (addressed by v1.2 scope):
 ## Session Continuity
 
 Last session: 2026-03-20
-Stopped at: Completed 17-01-PLAN.md
-Resume with: Phase 17 Plan 02 (release tagging and publish)
+Stopped at: Completed 17-02-PLAN.md (ALL PLANS COMPLETE)
+Resume with: v1.3 planning — RAG refinements and next capability phase
 
 ### Performance Metrics
 
@@ -149,8 +156,9 @@ Resume with: Phase 17 Plan 02 (release tagging and publish)
 | 16-02      | 2min     | 2     | 2     |
 | 16-03      | 2min     | 2     | 2     |
 | 17-01      | 3min     | 3     | 3     |
+| 17-02      | 8min     | 3     | 2     |
 
 ---
 
-_Last updated: 2026-03-20 after 17-01 execution (CI quality gates: lint, pack-check, smoke-test, docker, docs-check)_
+_Last updated: 2026-03-20 after 17-02 execution (npm publish workflow, Issue #11 response, v1.2 COMPLETE)_
 

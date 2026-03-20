@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-02-11)
 ## Current Position
 
 Phase: 15 of 17 (Cleanup & DX Foundation) -- IN PROGRESS
-Plan: 2 of 4 complete
+Plan: 3 of 4 complete
 Status: Executing Phase 15 plans
-Last activity: 2026-03-19 — 15-02 complete (file hygiene + test fix)
+Last activity: 2026-03-19 — 15-01 complete (git history blob purge + LFS migration)
 
-Progress: [██████████░░░░░░░░░░] 50% of v1.2 (phases 13-14 complete, 15 in progress, 16-17 remaining)
+Progress: [████████████░░░░░░░░] 60% of v1.2 (phases 13-14 complete, 15 in progress [3/4], 16-17 remaining)
 
 ## Milestones Shipped
 
@@ -30,6 +30,11 @@ Progress: [██████████░░░░░░░░░░] 50% of 
 ### Decisions
 
 All decisions logged in PROJECT.md Key Decisions table.
+
+**Phase 15 (15-01):**
+- Migrated sample.pdf to LFS before running filter-repo to avoid pointer corruption
+- Purged 7 specific blob SHAs identified by research phase rather than blanket size filter
+- Batched all remaining large-blob cleanup into one force-push to minimize history disruption
 
 **Phase 15 (15-02):**
 - Shortened JSON.parse error regex to match stable prefix across Node versions
@@ -65,7 +70,7 @@ None.
 ### Blockers/Concerns
 
 **Current:**
-- Large blob (74MB Kant PDF) in git history under test_downloads/ — CLEAN-05, will purge in Phase 15
+- ~~Large blob (74MB Kant PDF) in git history under test_downloads/ — CLEAN-05, will purge in Phase 15~~ RESOLVED by 15-01
 - ~~1 Jest test failing (Node 22 JSON.parse error message format change) — DX-05~~ RESOLVED by 15-02
 - ~~5 compiled .js files in src/lib/ appearing as untracked — CLEAN-02/CLEAN-03~~ RESOLVED by 15-02
 
@@ -92,7 +97,7 @@ From v1.1 audit (addressed by v1.2 scope):
 ## Session Continuity
 
 Last session: 2026-03-19
-Stopped at: Completed 15-02-PLAN.md
+Stopped at: Completed 15-01-PLAN.md
 Resume with: `/gsdr:execute-phase 15` (plans 03-04 remaining)
 
 ### Performance Metrics
@@ -105,8 +110,9 @@ Resume with: `/gsdr:execute-phase 15` (plans 03-04 remaining)
 | 14-01      | 21min    | 2     | 40    |
 | 14-02      | 26min    | 2     | 4     |
 | 14-03      | 22min    | 2     | 11    |
+| 15-01      | 12min    | 2     | 1     |
 | 15-02      | 3min     | 2     | 2     |
 
 ---
 
-_Last updated: 2026-03-19 after 15-02 execution (file hygiene + test fix)_
+_Last updated: 2026-03-19 after 15-01 execution (git history blob purge + LFS migration)_

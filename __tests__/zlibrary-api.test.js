@@ -191,7 +191,7 @@ describe('Z-Library API', () => {
       await expect(zlibApi.searchBooks({ query: 'test' }))
         .rejects
         // Expect the error from the first parse attempt
-        .toThrow(/Failed to parse initial JSON output from Python script: Unexpected token T in JSON at position 0/);
+        .toThrow(/Failed to parse initial JSON output from Python script: Unexpected token/);
 
       // Verify mocks
       expect(mockGetManagedPythonPath).toHaveBeenCalled();

@@ -101,17 +101,17 @@ All decisions logged in PROJECT.md Key Decisions table.
 - publish.yml uses npm install -g npm@latest before publish to get npm 11.x provenance support (Node 22 ships npm 10.x)
 - publish.yml runs fast tests (not slow/integration) matching CI convention
 
+**Phase 18 (18-01):**
+- Fixed test code (not ground truth data) — 16/16 schema validation tests confirmed v3 JSON was correct; test accessors were stale
+- Static 3x multiplier for performance thresholds — no CI env detection; thresholds were too tight even locally
+
 ### Pending Todos
 
 None.
 
 ### Blockers/Concerns
 
-**Current (test-full CI failures — 7 tests, discovered 2026-03-20):**
-- 4 footnote tests failing with `KeyError: 'expected_output'` / `'marker_context'` / `'content'` — ground truth data likely doesn't match test expectations after v3 schema migration (test_real_footnotes.py, test_inline_footnotes.py). ISSUES.md says footnote bugs "RESOLVED" but tests disagree.
-- 3 performance tests with timing thresholds too tight for CI runners (test_garbled_performance.py, test_superscript_detection.py::TestPerformance) — pass locally but fail on slower GitHub runners. These need either looser thresholds or `@pytest.mark.slow` to exclude from CI.
-- **Impact:** test-fast passes (PR gate works). test-full fails on push-to-master (informational gate broken).
-- **Deferred to:** v1.3 (RAG pipeline refinement will address footnote tests; performance thresholds are a separate fix)
+None — all known blockers resolved.
 
 **Resolved:**
 - ~~Large blob (74MB Kant PDF) in git history under test_downloads/ — CLEAN-05, will purge in Phase 15~~ RESOLVED by 15-01
@@ -139,14 +139,14 @@ From v1.1 audit:
 - search_multi_source not yet wired as MCP tool (Python bridge ready, TypeScript pending — out of v1.2 scope)
 
 From v1.2 Phase 17 CI (discovered 2026-03-20):
-- 4 footnote ground truth tests broken — `KeyError` in test_real_footnotes.py and test_inline_footnotes.py (likely v3 schema migration gap — ground truth JSON keys don't match test expectations)
-- 3 performance tests flaky on CI — timing assertions fail on slower runners (test_garbled_performance.py: 2 tests, test_superscript_detection.py: 1 test). Need either CI-appropriate thresholds or exclusion via marker.
+- ~~4 footnote ground truth tests broken~~ RESOLVED by 18-01 (v3 schema accessor fixes)
+- ~~3 performance tests flaky on CI~~ RESOLVED by 18-01 (3x threshold loosening)
 
 ## Session Continuity
 
 Last session: 2026-03-20
-Stopped at: Completed 17-02-PLAN.md (ALL PLANS COMPLETE)
-Resume with: v1.3 planning — RAG refinements and next capability phase
+Stopped at: Completed 18-01-PLAN.md
+Resume with: 18-02 (mark ISSUES.md resolved, update CHANGELOG)
 
 ### Performance Metrics
 
@@ -167,8 +167,9 @@ Resume with: v1.3 planning — RAG refinements and next capability phase
 | 16-03      | 2min     | 2     | 2     |
 | 17-01      | 3min     | 3     | 3     |
 | 17-02      | 8min     | 3     | 2     |
+| 18-01      | 18min    | 2     | 4     |
 
 ---
 
-_Last updated: 2026-03-20 after 17-02 execution (npm publish workflow, Issue #11 response, v1.2 COMPLETE)_
+_Last updated: 2026-03-20 after 18-01 execution (fix 7 broken test-full CI tests: v3 schema accessors + performance thresholds)_
 

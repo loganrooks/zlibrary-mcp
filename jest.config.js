@@ -40,9 +40,21 @@ export default {
   // Explicitly disable transformations to prevent Jest from interfering with ESM
   transform: {},
 
-  // Removed for simplification:
-  // collectCoverage, collectCoverageFrom, coverageDirectory, coverageReporters
-  // transformIgnorePatterns (was already commented out)
-  // testTimeout
-  // clearMocks (handled inside tests now)
+  // Coverage configuration
+  collectCoverage: true,
+  coverageDirectory: 'coverage',
+  coverageReporters: ['text', 'lcov', 'json-summary'],
+  collectCoverageFrom: [
+    'dist/**/*.js',
+    '!dist/**/*.test.js',
+    '!dist/**/*.d.ts',
+  ],
+  coverageThreshold: {
+    global: {
+      statements: 69,   // Baseline 74.74% minus ~5%
+      branches: 63,     // Baseline 68.57% minus ~5%
+      functions: 55,    // Baseline 60.49% minus ~5%
+      lines: 71,        // Baseline 76.88% minus ~5%
+    },
+  },
 };

@@ -117,8 +117,8 @@ describe('Python Bridge', () => {
 
     // --- Act & Assert ---
     await expect(pythonBridge.callPythonFunction('test_function', []))
-      // Expect the error propagated from the failed getManagedPythonPath mock
-      .rejects.toThrow('Error setting up or running Python process: Failed to get venv path');
+      // getManagedPythonPath rejection propagates directly (no wrapper)
+      .rejects.toThrow('Failed to get venv path');
     // spawn is NOT called when getManagedPythonPath rejects, so no assertion needed here.
   });
 });

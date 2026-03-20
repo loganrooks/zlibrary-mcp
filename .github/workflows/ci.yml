@@ -56,3 +56,49 @@ jobs:
       - run: uv sync
       - run: npm audit --omit=dev --audit-level=high
       - run: uv run pip-audit || true
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: ./.github/actions/setup
+        with:
+          build: 'false'
+      - run: npx eslint src/
+      - run: npx prettier --check src/
+
+  pack-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: ./.github/actions/setup
+      - name: Pack and check tarball
+        shell: bash
+        run: |
+          npm pack
+          TARBALL=$(ls zlibrary-mcp-*.tgz | head -1)
+          SIZE=$(stat --format="%s" "$TARBALL")
+          echo "Tarball: $TARBALL, size: $SIZE bytes"
+          if [ "$SIZE" -gt 10485760 ]; then
+            echo "ERROR: Tarball exceeds 10MB ($SIZE bytes)"
+            rm -f "$TARBALL"
+            exit 1
+          fi
+          echo "OK: Tarball size within limit ($SIZE bytes)"
+          echo "Contents:"
+          tar tzf "$TARBALL"
+          EXCLUDED=$(tar tzf "$TARBALL" | grep -E '\.env|\.test\.|\.spec\.|__tests__|\.pyc' || true)
+          if [ -n "$EXCLUDED" ]; then
+            echo "ERROR: Tarball contains excluded patterns:"
+            echo "$EXCLUDED"
+            rm -f "$TARBALL"
+            exit 1
+          fi
+          echo "OK: No excluded patterns found in tarball"
+          rm -f "$TARBALL"
+
+  docs-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: ./.github/actions/setup
+        with:
+          build: 'false'
+      - run: bash scripts/validate-readme-tools.sh

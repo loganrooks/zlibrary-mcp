@@ -107,7 +107,13 @@ None.
 
 ### Blockers/Concerns
 
-**Current:**
+**Current (test-full CI failures — 7 tests, discovered 2026-03-20):**
+- 4 footnote tests failing with `KeyError: 'expected_output'` / `'marker_context'` / `'content'` — ground truth data likely doesn't match test expectations after v3 schema migration (test_real_footnotes.py, test_inline_footnotes.py). ISSUES.md says footnote bugs "RESOLVED" but tests disagree.
+- 3 performance tests with timing thresholds too tight for CI runners (test_garbled_performance.py, test_superscript_detection.py::TestPerformance) — pass locally but fail on slower GitHub runners. These need either looser thresholds or `@pytest.mark.slow` to exclude from CI.
+- **Impact:** test-fast passes (PR gate works). test-full fails on push-to-master (informational gate broken).
+- **Deferred to:** v1.3 (RAG pipeline refinement will address footnote tests; performance thresholds are a separate fix)
+
+**Resolved:**
 - ~~Large blob (74MB Kant PDF) in git history under test_downloads/ — CLEAN-05, will purge in Phase 15~~ RESOLVED by 15-01
 - ~~1 Jest test failing (Node 22 JSON.parse error message format change) — DX-05~~ RESOLVED by 15-02
 - ~~5 compiled .js files in src/lib/ appearing as untracked — CLEAN-02/CLEAN-03~~ RESOLVED by 15-02
@@ -128,9 +134,13 @@ None.
 
 ### Tech Debt Inventory
 
-From v1.1 audit (addressed by v1.2 scope):
+From v1.1 audit:
 - Quality pipeline doesn't receive page_analysis_map (acceptable — only OCRs small regions)
 - search_multi_source not yet wired as MCP tool (Python bridge ready, TypeScript pending — out of v1.2 scope)
+
+From v1.2 Phase 17 CI (discovered 2026-03-20):
+- 4 footnote ground truth tests broken — `KeyError` in test_real_footnotes.py and test_inline_footnotes.py (likely v3 schema migration gap — ground truth JSON keys don't match test expectations)
+- 3 performance tests flaky on CI — timing assertions fail on slower runners (test_garbled_performance.py: 2 tests, test_superscript_detection.py: 1 test). Need either CI-appropriate thresholds or exclusion via marker.
 
 ## Session Continuity
 

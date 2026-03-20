@@ -11,7 +11,7 @@ See: .planning/PROJECT.md (updated 2026-03-20)
 
 Phase: 18 of 18 -- ALL COMPLETE
 Status: v1.2 MILESTONE SHIPPED
-Last activity: 2026-03-20 — milestone archived and tagged
+Last activity: 2026-03-20 — quick-004 tech debt patch (6 fixes)
 
 Progress: [████████████████████] 100% (3 milestones shipped)
 
@@ -38,13 +38,13 @@ All v1.2 decisions archived in `.planning/milestones/v1.2-ROADMAP.md`.
 
 ### Tech Debt Inventory
 
-From v1.2 audit (to address in quick patch):
-- jest.teardown.js process.exit(0) masks coverage threshold enforcement
-- Coverage thresholds calibrated against 139-test suite but CI runs 93-test suite
-- Vendored test.py (40KB) in npm tarball
-- npm registry install path not documented
-- CI audit job informational-only (|| true)
-- Pre-existing flaky test (test_markerless_continuation_detected)
+From v1.2 audit — all resolved by quick-004:
+- ~~jest.teardown.js process.exit(0) masks coverage~~ RESOLVED (deleted, use --forceExit)
+- ~~Coverage thresholds stale~~ RESOLVED (recalibrated for 93-test suite)
+- ~~Vendored test.py in tarball~~ RESOLVED (excluded in package.json)
+- ~~npm install path not documented~~ RESOLVED (added to README)
+- ~~CI audit job informational-only~~ RESOLVED (removed || true)
+- ~~Flaky test~~ RESOLVED (clear _TEXTPAGE_CACHE in setup_method)
 
 Carried from v1.1:
 - Quality pipeline doesn't receive page_analysis_map (acceptable)
@@ -55,6 +55,7 @@ Carried from v1.1:
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
 | 003 | Fix zlib_client fixture + booklist_tools discover_eapi_domain bug | 2026-02-11 | 69c7d5b | [003-fix-zlib-client-fixture](./quick/003-fix-zlib-client-fixture/) |
+| 004 | Fix 6 tech debt items from v1.2 audit | 2026-03-20 | 7e20480 | [004-v12-tech-debt-patch](./quick/004-v12-tech-debt-patch/) |
 
 ## Session Continuity
 

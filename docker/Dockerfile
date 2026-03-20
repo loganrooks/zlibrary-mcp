@@ -34,7 +34,12 @@ COPY tsconfig.json ./
 COPY scripts/ ./scripts/
 
 # Install Python dependencies with UV
-RUN uv sync --frozen
+# Skip opencv-python-headless and its transitive dep numpy: no musl-compatible
+# wheels exist for Alpine. Runtime code imports cv2 conditionally with graceful
+# fallback, so X-mark detection is simply unavailable in the Docker image.
+RUN uv sync --frozen --no-dev \
+    --no-install-package opencv-python-headless \
+    --no-install-package numpy
 
 # Install Node dependencies and build TypeScript
 RUN npm ci && npm run build

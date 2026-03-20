@@ -18,7 +18,9 @@ export default {
   // Ignore node_modules and dist (except for moduleNameMapper resolution)
   testPathIgnorePatterns: [
     '/node_modules/',
-    '/dist/' // Ignore compiled output for test discovery
+    '/dist/', // Ignore compiled output for test discovery
+    '/__tests__/e2e/', // E2E tests require running Docker container
+    '/__tests__/integration/' // Integration tests require live services
   ],
 
   // Crucial: Map imports from __tests__ to compiled dist/ files

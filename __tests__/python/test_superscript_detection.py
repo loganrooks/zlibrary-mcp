@@ -320,6 +320,7 @@ class TestSuperscriptIntegration:
         doc.close()
 
 
+@pytest.mark.performance
 class TestPerformance:
     """Test performance characteristics."""
 

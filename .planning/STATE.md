@@ -40,6 +40,11 @@ All decisions logged in PROJECT.md Key Decisions table.
 - Shortened JSON.parse error regex to match stable prefix across Node versions
 - Used git rm for tracked src/index.js, plain rm for untracked src/lib/*.js files
 
+**Phase 15 (15-03):**
+- no-explicit-any set to off -- codebase uses any extensively in Python bridge layer
+- Prettier config matches existing conventions (2-space, single quotes, semicolons, printWidth 100) to minimize diff churn
+- lint-staged order: eslint --fix first (logic), prettier --write second (formatting), tsc --noEmit last (type-check)
+
 **Phase 15 (15-04):**
 - Used measured coverage baselines (74.54% stmts Jest, 58% pytest) rather than research-phase values for threshold accuracy
 - Set thresholds at baseline minus 5% to prevent regressions without blocking new feature work
@@ -117,6 +122,7 @@ Resume with: `/gsdr:execute-phase 16` (Phase 15 complete, Phase 16 next)
 | 14-03      | 22min    | 2     | 11    |
 | 15-01      | 12min    | 2     | 1     |
 | 15-02      | 3min     | 2     | 2     |
+| 15-03      | 6min     | 2     | 9     |
 | 15-04      | 5min     | 2     | 6     |
 
 ---

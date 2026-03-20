@@ -1,5 +1,5 @@
 name: 'Project Setup'
-description: 'Checkout, install Node.js 22, UV, and all dependencies'
+description: 'Install Node.js 22, UV, and all dependencies. Caller must run actions/checkout@v4 first.'
 
 inputs:
   node-version:
@@ -12,7 +12,6 @@ inputs:
 runs:
   using: 'composite'
   steps:
-    - uses: actions/checkout@v4
     - uses: actions/setup-node@v4
       with:
         node-version: ${{ inputs.node-version }}

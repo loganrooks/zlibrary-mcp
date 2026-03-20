@@ -9,10 +9,10 @@ See: .planning/PROJECT.md (updated 2026-02-11)
 
 ## Current Position
 
-Phase: 17 of 17 (Quality Gates & Release Pipeline) -- COMPLETE
-Plan: 2 of 2 complete (17-02)
-Status: ALL PHASES COMPLETE — v1.2 shipped
-Last activity: 2026-03-20 — 17-02 complete (npm publish workflow, Issue #11 response, CHANGELOG finalized)
+Phase: 18 of 18 (v1.2 Gap Closure) -- COMPLETE
+Plan: 2 of 2 complete (18-02)
+Status: ALL PHASES COMPLETE — v1.2 gap closure done
+Last activity: 2026-03-20 — 18-02 complete (CHANGELOG links, ISSUES resolved, QUICKSTART deleted, CONTRIBUTING Docker note)
 
 Progress: [████████████████████] 100% of v1.2 (all phases 13-17 complete)
 

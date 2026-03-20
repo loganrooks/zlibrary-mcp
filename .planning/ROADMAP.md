@@ -46,7 +46,7 @@ Full details: `.planning/milestones/v1.1-ROADMAP.md`
 - [x] **Phase 13: Bug Fixes & Test Hygiene** - Green CI as foundation for everything else — completed 2026-02-11
 - [x] **Phase 14: Test Infrastructure** - Unified marker taxonomy, ground truth v3, fast/slow CI split — completed 2026-02-11
 - [x] **Phase 15: Cleanup & DX Foundation** - Dead files, gitignore, ESLint + Prettier, startup validation, coverage CI — completed 2026-03-19
-- [ ] **Phase 16: Documentation & Distribution** - README, API docs, CONTRIBUTING.md, CHANGELOG, npm packaging, Docker verification
+- [x] **Phase 16: Documentation & Distribution** - README, API docs, CONTRIBUTING.md, CHANGELOG, npm packaging, Docker verification — completed 2026-03-20
 - [ ] **Phase 17: Quality Gates & Release Pipeline** - 3-layer CI gates, release automation, npm publish workflow
 
 ### v1.3 RAG Pipeline Refinement (Planned)
@@ -125,9 +125,9 @@ Plans:
   8. Both install paths (npm + Docker) are documented with step-by-step instructions and verified working
 **Plans:** 3 plans
 Plans:
-- [ ] 16-01-PLAN.md — Configure npm files whitelist and verify Docker build (DIST-01, DIST-02)
-- [ ] 16-02-PLAN.md — Create API reference docs and CHANGELOG (DOCS-02, DOCS-05)
-- [ ] 16-03-PLAN.md — Refresh README and create CONTRIBUTING.md (DOCS-01, DOCS-03, DOCS-04, DIST-03, DIST-04)
+- [x] 16-01-PLAN.md — Configure npm files whitelist and verify Docker build (DIST-01, DIST-02)
+- [x] 16-02-PLAN.md — Create API reference docs and CHANGELOG (DOCS-02, DOCS-05)
+- [x] 16-03-PLAN.md — Refresh README and create CONTRIBUTING.md (DOCS-01, DOCS-03, DOCS-04, DIST-03, DIST-04)
 
 ### Phase 17: Quality Gates & Release Pipeline
 **Goal**: CI quality gates that catch regressions, validate package integrity, and check doc freshness — plus a release workflow for npm publishing. After this phase, the project is shippable.
@@ -162,9 +162,9 @@ Plans:
 | 13. Bug Fixes & Test Hygiene | v1.2 | 2/2 | Complete | 2026-02-11 |
 | 14. Test Infrastructure | v1.2 | 3/3 | Complete | 2026-02-11 |
 | 15. Cleanup & DX Foundation | v1.2 | 4/4 | Complete | 2026-03-19 |
-| 16. Documentation & Distribution | v1.2 | 0/3 | Not started | - |
+| 16. Documentation & Distribution | v1.2 | 3/3 | Complete | 2026-03-20 |
 | 17. Quality Gates & Release Pipeline | v1.2 | 0/TBD | Not started | - |
 
 ---
 
-_Last updated: 2026-03-19 after Phase 16 planning (3 plans created in 2 waves)_
+_Last updated: 2026-03-20 after Phase 16 execution (3/3 plans complete, verified 8/8)_

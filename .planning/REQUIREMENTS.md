@@ -40,15 +40,15 @@ Requirements for Production Readiness milestone. Focused on deployment, develope
 
 ### Documentation & Distribution (Phase 16)
 
-- [ ] **DOCS-01**: README refreshed with badges (CI status, npm version, license), npx usage, and output format description
-- [ ] **DOCS-02**: API documentation created for each MCP tool with parameters, types, example usage, and error cases
-- [ ] **DOCS-03**: CONTRIBUTING.md created at repo root (setup, test, PR flow, code patterns, architecture overview)
-- [ ] **DOCS-04**: Architecture diagram added (Mermaid) showing MCP client → Node.js → Python bridge → EAPI flow
-- [ ] **DOCS-05**: CHANGELOG.md created with entries for v1.0, v1.1, and v1.2
-- [ ] **DIST-01**: `package.json` `files` field configured as whitelist; `npm pack --dry-run` shows tarball under 5MB
-- [ ] **DIST-02**: Docker build verified working; `docker compose -f docker/docker-compose.yaml up` starts server with health check passing
-- [ ] **DIST-03**: npm install path documented and verified (clone → setup-uv.sh → npm install → npm run build → configure MCP client)
-- [ ] **DIST-04**: Docker install path documented and verified (clone → docker compose up → configure MCP client with HTTP transport)
+- [x] **DOCS-01**: README refreshed with badges (CI status, npm version, license), npx usage, and output format description
+- [x] **DOCS-02**: API documentation created for each MCP tool with parameters, types, example usage, and error cases
+- [x] **DOCS-03**: CONTRIBUTING.md created at repo root (setup, test, PR flow, code patterns, architecture overview)
+- [x] **DOCS-04**: Architecture diagram added (Mermaid) showing MCP client → Node.js → Python bridge → EAPI flow
+- [x] **DOCS-05**: CHANGELOG.md created with entries for v1.0, v1.1, and v1.2
+- [x] **DIST-01**: `package.json` `files` field configured as whitelist; `npm pack --dry-run` shows tarball under 5MB
+- [x] **DIST-02**: Docker build verified working; `docker compose -f docker/docker-compose.yaml up` starts server with health check passing
+- [x] **DIST-03**: npm install path documented and verified (clone → setup-uv.sh → npm install → npm run build → configure MCP client)
+- [x] **DIST-04**: Docker install path documented and verified (clone → docker compose up → configure MCP client with HTTP transport)
 
 ### Quality Gates & Release Pipeline (Phase 17)
 
@@ -131,15 +131,15 @@ Deferred from v1.2 per [scope deliberation](.planning/deliberations/v12-scope-an
 | DX-03 | Phase 15 | Complete |
 | DX-04 | Phase 15 | Complete |
 | DX-05 | Phase 15 | Complete |
-| DOCS-01 | Phase 16 | Pending |
-| DOCS-02 | Phase 16 | Pending |
-| DOCS-03 | Phase 16 | Pending |
-| DOCS-04 | Phase 16 | Pending |
-| DOCS-05 | Phase 16 | Pending |
-| DIST-01 | Phase 16 | Pending |
-| DIST-02 | Phase 16 | Pending |
-| DIST-03 | Phase 16 | Pending |
-| DIST-04 | Phase 16 | Pending |
+| DOCS-01 | Phase 16 | Complete |
+| DOCS-02 | Phase 16 | Complete |
+| DOCS-03 | Phase 16 | Complete |
+| DOCS-04 | Phase 16 | Complete |
+| DOCS-05 | Phase 16 | Complete |
+| DIST-01 | Phase 16 | Complete |
+| DIST-02 | Phase 16 | Complete |
+| DIST-03 | Phase 16 | Complete |
+| DIST-04 | Phase 16 | Complete |
 | GATE-01 | Phase 17 | Pending |
 | GATE-02 | Phase 17 | Pending |
 | GATE-03 | Phase 17 | Pending |
@@ -149,7 +149,7 @@ Deferred from v1.2 per [scope deliberation](.planning/deliberations/v12-scope-an
 | GATE-07 | Phase 17 | Pending |
 
 **Coverage:**
-- v1.2 requirements: 33 total (21 complete + 12 pending)
+- v1.2 requirements: 33 total (30 complete + 3 pending)
 - Mapped to phases: 33
 - Unmapped: 0
 - v1.3 deferred: 9 (RAG-01–05, QUAL-01–04)

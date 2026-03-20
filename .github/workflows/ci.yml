@@ -102,3 +102,30 @@ jobs:
         with:
           build: 'false'
       - run: bash scripts/validate-readme-tools.sh
+
+  smoke-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: ./.github/actions/setup
+      - name: MCP initialize handshake
+        env:
+          ZLIBRARY_EMAIL: "ci@test.com"
+          ZLIBRARY_PASSWORD: "ci-test-password"
+        shell: bash
+        run: |
+          INIT_REQUEST='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"ci-smoke-test","version":"0.0.0"}}}'
+          INIT_NOTIFICATION='{"jsonrpc":"2.0","method":"notifications/initialized"}'
+          RESPONSE=$(printf '%s\n%s\n' "$INIT_REQUEST" "$INIT_NOTIFICATION" | timeout 15 node dist/index.js 2>/dev/null | head -1)
+          echo "Response: $RESPONSE"
+          echo "$RESPONSE" | jq -e '.jsonrpc == "2.0" and .id == 1 and .result.protocolVersion != null and .result.serverInfo.name == "zlibrary-mcp" and .result.capabilities.tools != null'
+
+  docker:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build Docker image
+        run: docker build -t zlibrary-mcp:ci -f docker/Dockerfile .
+      - name: Verify image runs
+        run: docker run --rm zlibrary-mcp:ci node -e "console.log('OK')"

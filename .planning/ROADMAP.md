@@ -158,7 +158,10 @@ Plans:
   4. ISSUES.md ISSUE-DOCKER-001 marked resolved
   5. QUICKSTART.md removed (superseded by README Quick Start)
   6. CONTRIBUTING.md E2E section notes Docker prerequisite
-**Plans**: TBD
+**Plans:** 2 plans
+Plans:
+- [ ] 18-01-PLAN.md — Fix footnote test v3 accessors and loosen performance thresholds (ISSUE-GT-001, ISSUE-PERF-001)
+- [ ] 18-02-PLAN.md — Fix CHANGELOG links, resolve ISSUE-DOCKER-001, delete QUICKSTART.md, add Docker note to CONTRIBUTING.md
 
 ## Progress
 
@@ -181,8 +184,8 @@ Plans:
 | 15. Cleanup & DX Foundation | v1.2 | 4/4 | Complete | 2026-03-19 |
 | 16. Documentation & Distribution | v1.2 | 3/3 | Complete | 2026-03-20 |
 | 17. Quality Gates & Release Pipeline | v1.2 | 2/2 | Complete | 2026-03-20 |
-| 18. v1.2 Gap Closure | v1.2 | 0/TBD | Not started | - |
+| 18. v1.2 Gap Closure | v1.2 | 0/2 | Not started | - |
 
 ---
 
-_Last updated: 2026-03-20 after milestone audit — Phase 18 added for gap closure_
+_Last updated: 2026-03-20 after Phase 18 planning — 2 plans in 1 wave_

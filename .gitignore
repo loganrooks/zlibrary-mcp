@@ -3,6 +3,11 @@ node_modules/
 coverage/
 dist/
 build/
+
+# Build artifacts in source (tsc outputs to dist/, not src/)
+src/**/*.js
+src/**/*.js.map
+src/**/*.egg-info/
 *.tsbuildinfo
 *.js.map
 *.d.ts.map

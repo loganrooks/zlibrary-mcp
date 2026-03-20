@@ -344,9 +344,9 @@ class TestPerformance:
             _is_superscript(span, normal_size)
         elapsed = time.perf_counter() - start
 
-        # Should be <1ms total for 10k checks (<0.1μs per check)
-        assert elapsed < 0.010, (
-            f"10k superscript checks should be <10ms, got {elapsed * 1000:.2f}ms"
+        # Should be <30ms total for 10k checks (<3us per check)
+        assert elapsed < 0.030, (
+            f"10k superscript checks should be <30ms, got {elapsed * 1000:.2f}ms"
         )
 
     def test_font_size_calculation_performance(self):

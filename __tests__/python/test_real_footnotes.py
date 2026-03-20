@@ -75,20 +75,18 @@ class TestFootnoteRealWorld:
         footnotes = ground_truth["features"]["footnotes"]
 
         for footnote in footnotes:
-            marker = footnote["marker"]
-            expected_output = footnote["expected_output"]
+            marker_symbol = footnote["marker"]["symbol"]
 
             # Check that footnote appears in markdown format
-            assert expected_output in result or f"[^{marker}]:" in result, (
-                f"Footnote marker '{marker}' not found in output.\n"
-                f"Expected: {expected_output[:100]}...\n"
+            assert f"[^{marker_symbol}]:" in result, (
+                f"Footnote marker '{marker_symbol}' not found in output.\n"
                 f"Got output length: {len(result)} chars"
             )
 
             # Check that content is present
-            content_snippet = footnote["content"][:50]  # First 50 chars
+            content_snippet = footnote["definition"]["content"][:50]  # First 50 chars
             assert content_snippet in result, (
-                f"Footnote content not found for marker '{marker}'.\n"
+                f"Footnote content not found for marker '{marker_symbol}'.\n"
                 f"Expected snippet: {content_snippet}"
             )
 
@@ -97,7 +95,7 @@ class TestFootnoteRealWorld:
         import re
 
         found_markers = re.findall(r"\[\^(.+?)\]:", result)
-        expected_markers = [fn["marker"] for fn in footnotes]
+        expected_markers = [fn["marker"]["symbol"] for fn in footnotes]
 
         assert len(found_markers) == len(expected_markers), (
             f"False positive footnotes detected.\n"
@@ -123,13 +121,12 @@ class TestFootnoteRealWorld:
         footnotes = ground_truth["features"]["footnotes"]
 
         for footnote in footnotes:
-            marker = footnote["marker"]
-            _context = footnote["marker_context"]
+            marker_symbol = footnote["marker"]["symbol"]
 
             # Check that marker appears near its context
             # The marker should be inline: context[^marker]
-            assert f"[^{marker}]" in result, (
-                f"Footnote marker reference [^{marker}] not found in body text"
+            assert f"[^{marker_symbol}]" in result, (
+                f"Footnote marker reference [^{marker_symbol}] not found in body text"
             )
 
     def test_footnote_content_extraction(self, ground_truth):
@@ -145,20 +142,20 @@ class TestFootnoteRealWorld:
         footnotes = ground_truth["features"]["footnotes"]
 
         for footnote in footnotes:
-            marker = footnote["marker"]
-            content = footnote["content"]
+            marker_symbol = footnote["marker"]["symbol"]
+            content = footnote["definition"]["content"]
 
             # Check that footnote definition exists
-            definition_start = f"[^{marker}]:"
+            definition_start = f"[^{marker_symbol}]:"
             assert definition_start in result, (
-                f"Footnote definition for '{marker}' not found"
+                f"Footnote definition for '{marker_symbol}' not found"
             )
 
             # Check that actual content is present
             # Use first 30 chars as signature
             content_signature = content[:30].strip()
             assert content_signature in result, (
-                f"Footnote content for '{marker}' not found.\n"
+                f"Footnote content for '{marker_symbol}' not found.\n"
                 f"Expected to find: {content_signature}"
             )
 

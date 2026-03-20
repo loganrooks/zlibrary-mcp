@@ -1213,12 +1213,12 @@ class TestRealWorldInlineFootnotes:
 
         # Verify expected footnotes present
         for footnote in ground_truth["features"]["footnotes"]:
-            marker = footnote["marker"]
-            expected_output = footnote["expected_output"]
+            marker_symbol = footnote["marker"]["symbol"]
 
-            assert expected_output in result or f"[^{marker}]:" in result, (
-                f"Derrida footnote '{marker}' not found (REGRESSION)"
-            )
+            assert (
+                f"[^{marker_symbol}]:" in result
+                or footnote["definition"]["content"][:50] in result
+            ), f"Derrida footnote '{marker_symbol}' not found (REGRESSION)"
 
         print("\n✅ Derrida traditional footnotes still working (no regression)")
 

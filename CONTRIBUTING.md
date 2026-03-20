@@ -89,6 +89,8 @@ uv run pytest __tests__/python/test_rag_processing.py
 
 ### End-to-End (Docker)
 
+**Prerequisites:** Docker must be installed and running. The E2E tests build and verify the Docker image.
+
 ```bash
 npm run test:e2e
 ```

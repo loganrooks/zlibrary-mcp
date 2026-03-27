@@ -11,7 +11,7 @@ See: .planning/PROJECT.md (updated 2026-03-20)
 
 Phase: 18 of 18 -- ALL COMPLETE
 Status: v1.2 MILESTONE SHIPPED
-Last activity: 2026-03-20 — quick-004 tech debt patch (6 fixes)
+Last activity: 2026-03-27 — quick-005 fix CI failures (pip-audit, coverage, dep CVEs)
 
 Progress: [████████████████████] 100% (3 milestones shipped)
 
@@ -56,6 +56,7 @@ Carried from v1.1:
 |---|-------------|------|--------|-----------|
 | 003 | Fix zlib_client fixture + booklist_tools discover_eapi_domain bug | 2026-02-11 | 69c7d5b | [003-fix-zlib-client-fixture](./quick/003-fix-zlib-client-fixture/) |
 | 004 | Fix 6 tech debt items from v1.2 audit | 2026-03-20 | 7e20480 | [004-v12-tech-debt-patch](./quick/004-v12-tech-debt-patch/) |
+| 005 | Fix CI failures (pip-audit, coverage, dep CVEs) | 2026-03-27 | 185f4fd | [005-fix-ci-failures](./quick/005-fix-ci-failures/) |
 
 ## Session Continuity
 

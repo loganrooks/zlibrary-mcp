@@ -7,6 +7,8 @@ Targets uncovered lines: 119-153, 171-197, 217-247, 267, 283, 286-289,
 Uses synthetic data — no real PDFs.
 """
 
+from pathlib import Path
+
 from lib.footnote_corruption_model import (
     SymbolCorruptionModel,
     SymbolInference,
@@ -541,11 +543,12 @@ class TestMainBlock:
         import subprocess
         import sys
 
+        project_root = str(Path(__file__).parent.parent.parent)
         result = subprocess.run(
             [sys.executable, "-m", "lib.footnote_corruption_model"],
             capture_output=True,
             text=True,
-            cwd="/home/rookslog/workspace/projects/zlibrary-mcp",
+            cwd=project_root,
             timeout=10,
         )
         assert result.returncode == 0

@@ -83,6 +83,7 @@ dev-dependencies = [
     "ruff>=0.14.14",
     "jsonschema>=4.26.0",
     "pytest-cov>=7.0.0",
+    "pip-audit>=2.7.0",
 ]
 
 # Constraints to fix security vulnerabilities in transitive deps
@@ -90,6 +91,12 @@ constraint-dependencies = [
     "aiohttp>=3.13.3",       # CVE-2025-69223 through CVE-2025-69230
     "brotli>=1.2.0",         # CVE-2025-6176
     "pdfminer.six>=20251230", # CVE-2025-64512, GHSA-f83h-ghpp-7wcc
+    "cryptography>=46.0.5",  # CVE-2026-26007
+    "nltk>=3.9.4",           # CVE-2025-14009, CVE-2026-33230
+    "pillow>=12.1.1",        # CVE-2026-25990
+    "pymupdf>=1.26.7,<1.27", # CVE-2026-3029 (stay on 1.26.x for compat)
+    "requests>=2.33.0",      # CVE-2026-25645
+    "ujson>=5.12.0",         # CVE-2026-32874, CVE-2026-32875
 ]
 
 # Ruff configuration

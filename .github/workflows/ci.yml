@@ -59,7 +59,7 @@ jobs:
       - run: npm ci
       - run: uv sync
       - run: npm audit --omit=dev --audit-level=critical
-      - run: uv run pip-audit
+      - run: uv run pip-audit --ignore-vuln CVE-2026-4539  # pygments - no fix available
 
   lint:
     runs-on: ubuntu-latest

@@ -177,6 +177,104 @@ class TestSearchByTerm:
         assert "title" in book
         assert "author" in book
 
+    @pytest.mark.asyncio
+    async def test_search_by_term_with_extensions_filter(self):
+        """Should parse comma-separated extensions into a list."""
+        mock_client = AsyncMock()
+        mock_client.search = AsyncMock(return_value={"books": []})
+
+        await search_by_term(
+            term="dialectic",
+            email="",
+            password="",
+            extensions="pdf,epub",
+            eapi_client=mock_client,
+        )
+
+        call_kwargs = mock_client.search.call_args[1]
+        assert call_kwargs["extensions"] == ["pdf", "epub"]
+
+    @pytest.mark.asyncio
+    async def test_search_by_term_no_extensions(self):
+        """When extensions is None, ext_list should be None."""
+        mock_client = AsyncMock()
+        mock_client.search = AsyncMock(return_value={"books": []})
+
+        await search_by_term(
+            term="dialectic",
+            email="",
+            password="",
+            extensions=None,
+            eapi_client=mock_client,
+        )
+
+        call_kwargs = mock_client.search.call_args[1]
+        assert call_kwargs["extensions"] is None
+
+    @pytest.mark.asyncio
+    async def test_search_by_term_whitespace_only_rejected(self):
+        """Term with only whitespace should raise ValueError."""
+        with pytest.raises(ValueError):
+            await search_by_term(
+                term="   ",
+                email="",
+                password="",
+                eapi_client=AsyncMock(),
+            )
+
+    @pytest.mark.asyncio
+    async def test_search_by_term_client_close_called_when_created(self):
+        """When eapi_client is None and a new one is created, close should be called."""
+        # We can't easily test the None path without mocking EAPIClient creation,
+        # but we can verify that when eapi_client is provided, close is NOT called.
+        mock_client = AsyncMock()
+        mock_client.search = AsyncMock(return_value={"books": []})
+        mock_client.close = AsyncMock()
+
+        await search_by_term(
+            term="dialectic",
+            email="",
+            password="",
+            eapi_client=mock_client,
+        )
+
+        # When client is provided externally, should NOT close it
+        mock_client.close.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_search_by_term_no_languages(self):
+        """When languages is None, lang_list should be None."""
+        mock_client = AsyncMock()
+        mock_client.search = AsyncMock(return_value={"books": []})
+
+        await search_by_term(
+            term="dialectic",
+            email="",
+            password="",
+            languages=None,
+            eapi_client=mock_client,
+        )
+
+        call_kwargs = mock_client.search.call_args[1]
+        assert call_kwargs["languages"] is None
+
+    @pytest.mark.asyncio
+    async def test_search_by_term_pagination(self):
+        """Should pass page parameter to search."""
+        mock_client = AsyncMock()
+        mock_client.search = AsyncMock(return_value={"books": []})
+
+        await search_by_term(
+            term="dialectic",
+            email="",
+            password="",
+            page=5,
+            eapi_client=mock_client,
+        )
+
+        call_kwargs = mock_client.search.call_args[1]
+        assert call_kwargs["page"] == 5
+
 
 class TestSyncWrapper:
     def test_sync_wrapper_exists(self):

@@ -15,16 +15,12 @@ import time
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "lib"))
 
 from rag_processing import process_pdf
-from rag.utils.cache import _clear_textpage_cache
 
 pytestmark = [pytest.mark.slow, pytest.mark.ground_truth]
 
 
 class TestFootnoteRealWorld:
     """Real-world validation with ground truth for footnote detection."""
-
-    def setup_method(self):
-        _clear_textpage_cache()
 
     @pytest.fixture
     def ground_truth(self):

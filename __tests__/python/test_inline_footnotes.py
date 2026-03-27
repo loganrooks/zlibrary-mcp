@@ -564,12 +564,6 @@ class TestMarkerlessContinuation:
     Example: Kant page 3 "which everything must submit..." (no asterisk marker)
     """
 
-    def setup_method(self):
-        """Clear textpage cache between tests to prevent stale object ID reuse."""
-        from lib.rag.utils.cache import _clear_textpage_cache
-
-        _clear_textpage_cache()
-
     def test_markerless_continuation_detected(self):
         """
         Test that markerless continuation is flagged correctly.

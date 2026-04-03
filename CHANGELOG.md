@@ -7,31 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [2.0.0] - 2026-03-20
+## [1.2.0] - 2026-04-02
 
 ### Added
 
-- Startup credential validation with actionable error messages for missing `ZLIBRARY_EMAIL` or `ZLIBRARY_PASSWORD`
-- Jest and pytest coverage thresholds to prevent test coverage regressions
-- ESLint with TypeScript-aware rules for static analysis
-- Prettier for consistent code formatting across the codebase
+- 326 new tests across 15 files (Jest: 93→163, Pytest: 719→979)
+- pip-audit in CI for Python dependency vulnerability scanning
+- Global pytest textpage cache clearing via conftest autouse fixture
+- Startup credential validation with actionable error messages
+- Jest and pytest coverage thresholds to prevent regressions
+- ESLint with TypeScript-aware rules and Prettier formatting
 - lint-staged pre-commit hooks (ESLint, Prettier, TypeScript type-check)
-- `.git-blame-ignore-revs` to exclude bulk formatting commits from blame
 - CI pipeline split into fast (push/PR) and full (push-to-master) workflows
 - API reference documentation for all 13 MCP tools
 
 ### Changed
 
-- Python environment management migrated from pip/venv to UV (77% code reduction in venv-manager)
+- Python environment management migrated from pip/venv to UV (77% code reduction)
 - Test infrastructure modernized: strict pytest markers, benchmark integration
+- Jest coverage: 71% → 86% statements, 61% → 83% branches
+- Python coverage: 58% → 67% total
+- Dependency security patches: cryptography, nltk, pillow, requests, ujson
+- PyMuPDF pinned to 1.26.5 for cross-platform footnote extraction stability
+- Package version synced with milestone versioning
 
 ### Fixed
 
-- Jest test compatibility with Node 22 (JSON.parse error message format change)
+- CI audit job: pip-audit added as dev dependency (was missing)
+- Pytest coverage threshold adjusted (publish was failing at 52.96% < 53%)
+- Flaky footnote tests: non-deterministic detection from stale textpage cache
+- 6 tech debt items from v1.2 audit
+- Jest test compatibility with Node 22
 - Pytest collection errors from scripts in test discovery path
-- Removed deprecated AsyncZlib references and rewrote tests with EAPIClient
 - Cleaned compiled `.js` artifacts from source tree
-- Purged large blobs (74MB+) from git history via filter-repo
+- Purged large blobs (74MB+) from git history
 
 ### Removed
 
@@ -98,7 +107,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - BUG-X/FIX comments cleaned from production code
 - Debug print statements converted to proper logging
 
-[Unreleased]: https://github.com/loganrooks/zlibrary-mcp/compare/v2.0.0...HEAD
-[2.0.0]: https://github.com/loganrooks/zlibrary-mcp/compare/v1.1...v2.0.0
+[Unreleased]: https://github.com/loganrooks/zlibrary-mcp/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/loganrooks/zlibrary-mcp/compare/v1.1...v1.2.0
 [1.1.0]: https://github.com/loganrooks/zlibrary-mcp/compare/v1.0...v1.1
 [1.0.0]: https://github.com/loganrooks/zlibrary-mcp/releases/tag/v1.0

@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-04-16
+
+### Added
+
+- Canonical `.metadata.json` sidecar for structured RAG output bundles, with relative links to sibling bundle files
+- Structured output fixtures and API documentation covering the new file-based bundle contract
+
+### Changed
+
+- `process_document_for_rag` and `download_book_to_file` now expose additive sibling bundle paths while preserving `processed_file_path` for compatibility
+- Node and Python bridge layers now describe the same structured output contract end to end
+
 ## [1.2.0] - 2026-04-02
 
 ### Added
@@ -107,7 +119,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - BUG-X/FIX comments cleaned from production code
 - Debug print statements converted to proper logging
 
-[Unreleased]: https://github.com/loganrooks/zlibrary-mcp/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/loganrooks/zlibrary-mcp/compare/v1.2.1...HEAD
+[1.2.1]: https://github.com/loganrooks/zlibrary-mcp/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/loganrooks/zlibrary-mcp/compare/v1.1...v1.2.0
 [1.1.0]: https://github.com/loganrooks/zlibrary-mcp/compare/v1.0...v1.1
 [1.0.0]: https://github.com/loganrooks/zlibrary-mcp/releases/tag/v1.0

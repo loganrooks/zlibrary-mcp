@@ -1,18 +1,30 @@
 {
   "mode": "yolo",
-  "depth": "comprehensive",
   "parallelization": true,
   "commit_docs": true,
   "model_profile": "quality",
   "workflow": {
     "research": true,
     "plan_check": true,
-    "verifier": true
+    "verifier": true,
+    "nyquist_validation": true,
+    "auto_advance": false,
+    "text_mode": false,
+    "research_before_questions": false,
+    "discuss_mode": "exploratory",
+    "skip_discuss": false
   },
   "health_check": {
     "frequency": "milestone-only",
     "stale_threshold_days": 7,
-    "blocking_checks": false
+    "blocking_checks": false,
+    "workflow_thresholds": {
+      "low": 2,
+      "high": 5
+    },
+    "resolution_ratio_threshold": 5,
+    "reactive_threshold": "RED",
+    "cache_staleness_hours": 24
   },
   "devops": {
     "ci_provider": "none",
@@ -20,7 +32,7 @@
     "commit_convention": "freeform",
     "environments": []
   },
-  "gsd_reflect_version": "1.13.0",
+  "gsd_reflect_version": "1.19.4",
   "automation": {
     "reflection": {
       "auto_reflect": false,
@@ -28,6 +40,40 @@
       "min_signals": 5,
       "phases_since_last_reflect": 3,
       "last_reflect_at": null
-    }
-  }
+    },
+    "level": 1,
+    "overrides": {},
+    "context_threshold_pct": 60,
+    "stats": {}
+  },
+  "granularity": "fine",
+  "release": {
+    "version_file": "none",
+    "changelog": "CHANGELOG.md",
+    "changelog_format": "keepachangelog",
+    "ci_trigger": "none",
+    "registry": "none",
+    "branch": "main"
+  },
+  "signal_lifecycle": {
+    "lifecycle_strictness": "flexible",
+    "manual_signal_trust": "standard",
+    "rigor_enforcement": "warn",
+    "severity_conflict_handling": "record-both",
+    "recurrence_escalation": true,
+    "verification_window": 3
+  },
+  "signal_collection": {
+    "sensors": {},
+    "synthesizer_model": "auto",
+    "per_phase_cap": 10,
+    "auto_collect": false,
+    "reentrancy": {}
+  },
+  "spike": {
+    "enabled": true,
+    "sensitivity": "balanced",
+    "auto_trigger": false
+  },
+  "manifest_version": 2
 }

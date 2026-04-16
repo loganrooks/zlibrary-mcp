@@ -47,20 +47,24 @@ Reliable, maintainable MCP server for book access — production-ready infrastru
 - ✓ Anna's Archive adapter (HTML scraping search + fast download API) — v1.1
 - ✓ LibGen fallback adapter with rate limiting — v1.1
 - ✓ Source router with auto selection and quota-based fallback — v1.1
+- ✓ Test taxonomy, v3 ground truth schema, and fast/full CI split — v1.2
+- ✓ ESLint + Prettier + lint-staged enforcement — v1.2
+- ✓ Startup credential validation and baseline coverage gates — v1.2
+- ✓ Public docs refresh (README, API docs, CONTRIBUTING, CHANGELOG) — v1.2
+- ✓ npm packaging, Docker distribution, and tag-triggered release workflow — v1.2
+- ✓ Post-release CI stabilization and dependency pinning — quick-004 / quick-005
 
 ### Active
 
-#### Current Milestone: v1.2 Production Readiness
+#### Current Milestone: v1.3 RAG Pipeline Refinement
 
-**Goal:** Make the repo deployment-ready with clean structure, proper test infrastructure, structured RAG output, and comprehensive documentation.
+**Goal:** Normalize the structured RAG output contract and add automated quality scoring now that the production-readiness milestone is shipped and `v1.2.0` is tagged.
 
-- [ ] Fix known bugs (paths.test.js, pytest collection errors, deprecated code cleanup)
-- [ ] Reorganize test infrastructure with unified ground truth schema and proper labeling
-- [ ] Structured RAG output (body + footnotes + metadata as separate linked files)
-- [ ] Automated RAG quality scoring (precision/recall against ground truth, CI-integrated)
-- [ ] Repo cleanup (remove dead files, consolidate scattered docs, clean top-level)
-- [ ] Documentation overhaul (API docs, usage examples, contributor guide, architecture diagrams)
-- [ ] Packaging & publishing readiness (README refresh, npm publish, working CI pipeline)
+- [ ] Structured RAG output contract for `process_document_for_rag` and `download_book_to_file`
+- [ ] Dedicated `body`, `footnotes`, and metadata outputs with unified linking
+- [ ] Automated quality scoring against ground truth with machine-readable reports
+- [ ] CI regression reporting for quality metrics with non-breaking rollout
+- [ ] Revisit whether `page_analysis_map` should feed the quality reporting pipeline
 
 ### Out of Scope
 
@@ -72,7 +76,7 @@ Reliable, maintainable MCP server for book access — production-ready infrastru
 
 ## Current State
 
-Shipped v1.1 Quality & Expansion with ~43,790 LOC (TypeScript + Python).
+Shipped v1.2 Production Readiness across phases 13-18 and released `v1.2.0` on 2026-04-02. Post-release quick tasks on 2026-03-20 and 2026-03-27 closed the remaining audit debt and restored green CI before the release tag.
 
 **Tech stack:**
 - Node 22 LTS with TypeScript MCP server
@@ -82,13 +86,17 @@ Shipped v1.1 Quality & Expansion with ~43,790 LOC (TypeScript + Python).
 - Multi-source support (Z-Library + Anna's Archive + LibGen fallback)
 
 **Key capabilities:**
-- 11 MCP tools for search, download, and RAG processing
+- 13 documented MCP tools for search, download, metadata, and RAG processing
 - Scholarly text extraction (Stephanus, Bekker, line numbers, marginal notes)
 - Automatic DPI selection (150-400) with region re-rendering
 - Body text purity with 6 detectors, confidence scoring, multi-file output
 - Anna's Archive integration with quota-based LibGen fallback
 
-**v1.1 delivery:** 5 phases, 21 plans, 103 commits in 3 days.
+**Planning state:** v1.3 is initialized with phases 19-21. Archived v1.2 phase artifacts live in `.planning/milestones/v1.2-phases/`, and the next workflow step is `$gsdr-plan-phase 19`.
+
+**Scope cleanup:** `search_multi_source` is already an exposed MCP tool in the server, tests, and public docs, so v1.3 does not spend milestone scope on promoting it.
+
+**v1.2 delivery:** 6 phases, 16 plans, 99 milestone commits, plus quick-004, quick-005, and the `v1.2.0` release tag.
 
 ## Key Decisions
 
@@ -109,6 +117,8 @@ Shipped v1.1 Quality & Expansion with ~43,790 LOC (TypeScript + Python).
 | Compositor recall bias to BODY | Unclaimed/low-confidence defaults safe | ✓ Good — no body text loss |
 | Anna's domain_index=1 | domain_index=0 has SSL errors | ✓ Good — fast downloads work |
 | LibGen as fallback only | Anna's has API key with quota | ✓ Good — quota-based fallback |
+| Keep v1.3 response changes additive | `process_document_for_rag` and `download_book_to_file` already have tests and consumers expecting current path fields | — Pending |
+| Treat `search_multi_source` as shipped scope | Tool is already registered, tested, and documented, so milestone time should go to RAG quality internals instead | ✓ Good — resolved during v1.3 initialization |
 
 ## Constraints
 
@@ -116,6 +126,7 @@ Shipped v1.1 Quality & Expansion with ~43,790 LOC (TypeScript + Python).
 - **Incremental commits**: Each logical change committed separately
 - **Test-first for refactoring**: Tests pass before and after each change
 - **Recall preservation**: No body text lost by unified pipeline
+- **Compatibility**: `process_document_for_rag` and `download_book_to_file` response shapes must remain additive for existing MCP clients
 
 ---
-*Last updated: 2026-02-11 after v1.2 milestone start*
+*Last updated: 2026-04-16 after starting milestone v1.3*

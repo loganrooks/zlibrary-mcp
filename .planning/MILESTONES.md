@@ -25,7 +25,9 @@
 
 **Git range:** `v1.1..v1.2`
 
-**What's next:** v1.3 — RAG pipeline refinement (structured output, quality scoring), plus tech debt patch (coverage enforcement, flaky test fix)
+**Post-release follow-through:** quick-004 on 2026-03-20 closed the v1.2 audit debt, quick-005 on 2026-03-27 restored green 8/8 CI, and `v1.2.0` was tagged on 2026-04-02.
+
+**What's next:** v1.3 — RAG pipeline refinement (structured output, quality scoring)
 
 ---
 

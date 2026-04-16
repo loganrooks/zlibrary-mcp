@@ -2,18 +2,19 @@
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-03-20)
+See: .planning/PROJECT.md (updated 2026-04-16)
 
 **Core value:** Reliable, maintainable MCP server for book access — production-ready infrastructure with high-quality scholarly text extraction
-**Current focus:** v1.2 SHIPPED — release then tech debt patch then v1.3
+**Current focus:** v1.3 RAG Pipeline Refinement — milestone initialized, Phase 19 ready for planning
 
 ## Current Position
 
-Phase: 18 of 18 -- ALL COMPLETE
-Status: v1.2 MILESTONE SHIPPED
-Last activity: 2026-03-27 — quick-005 fix CI failures (pip-audit, coverage, dep CVEs)
+Phase: 19. Structured RAG Output Contract
+Plan: —
+Status: Milestone initialized; requirements and roadmap defined
+Last activity: 2026-04-16 — started milestone v1.3 and defined requirements/roadmap
 
-Progress: [████████████████████] 100% (3 milestones shipped)
+Progress: [████████████████----] v1.3 initialized (3 milestones shipped, 3 new phases queued)
 
 ## Milestones Shipped
 
@@ -29,26 +30,19 @@ Progress: [████████████████████] 100% (3
 
 ### Decisions
 
-All v1.2 decisions archived in `.planning/milestones/v1.2-ROADMAP.md`.
+All v1.2 decisions are archived in `.planning/milestones/v1.2-ROADMAP.md`.
+All v1.2 phase artifacts now live under `.planning/milestones/v1.2-phases/`.
+v1.3 is now defined in `.planning/REQUIREMENTS.md` and `.planning/ROADMAP.md`, with Phase 19 next.
 
 ### Pending Todos
 
-- Release v1.2 tag
-- Quick patch: fix jest.teardown.js coverage masking, recalibrate thresholds, exclude vendored test.py, document npm install path, fix flaky test, remove audit || true
+- None in GSD.
+- Next workflow step: `$gsdr-plan-phase 19`.
 
-### Tech Debt Inventory
+### Deferred Items
 
-From v1.2 audit — all resolved by quick-004:
-- ~~jest.teardown.js process.exit(0) masks coverage~~ RESOLVED (deleted, use --forceExit)
-- ~~Coverage thresholds stale~~ RESOLVED (recalibrated for 93-test suite)
-- ~~Vendored test.py in tarball~~ RESOLVED (excluded in package.json)
-- ~~npm install path not documented~~ RESOLVED (added to README)
-- ~~CI audit job informational-only~~ RESOLVED (removed || true)
-- ~~Flaky test~~ RESOLVED (clear _TEXTPAGE_CACHE in setup_method)
-
-Carried from v1.1:
-- Quality pipeline doesn't receive page_analysis_map (acceptable)
-- search_multi_source not yet wired as MCP tool
+- Quality scoring still needs an explicit decision on whether `page_analysis_map` becomes reportable scoring context in Phase 21
+- `search_multi_source` milestone question is resolved: the tool is already public and documented, so it is not part of v1.3 scope
 
 ### Quick Tasks Completed
 
@@ -60,9 +54,9 @@ Carried from v1.1:
 
 ## Session Continuity
 
-Last session: 2026-03-20
-Stopped at: v1.2 milestone completed
-Resume with: `/gsd:release v1.2` then quick patch for tech debt, then `/gsd:new-milestone` for v1.3
+Last session: 2026-04-16
+Stopped at: v1.3 milestone initialization after defining requirements and roadmap
+Resume with: `$gsdr-plan-phase 19`
 
 ### Performance Metrics
 
@@ -88,4 +82,4 @@ Resume with: `/gsd:release v1.2` then quick patch for tech debt, then `/gsd:new-
 
 ---
 
-_Last updated: 2026-03-20 after v1.2 milestone completion_
+_Last updated: 2026-04-16 after starting milestone v1.3_

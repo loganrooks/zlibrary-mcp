@@ -92,7 +92,7 @@ Shipped v1.2 Production Readiness across phases 13-18 and released `v1.2.0` on 2
 - Body text purity with 6 detectors, confidence scoring, multi-file output
 - Anna's Archive integration with quota-based LibGen fallback
 
-**Planning state:** v1.3 is initialized with phases 19-21. Archived v1.2 phase artifacts live in `.planning/milestones/v1.2-phases/`, and the next workflow step is `$gsdr-plan-phase 19`.
+**Planning state:** v1.3 is initialized with phases 19-21. Phase 19 now has research plus 2 execution plans under `.planning/phases/19-structured-rag-output-contract/`, and the next workflow step is `$gsdr-execute-phase 19`.
 
 **Scope cleanup:** `search_multi_source` is already an exposed MCP tool in the server, tests, and public docs, so v1.3 does not spend milestone scope on promoting it.
 

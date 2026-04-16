@@ -9,7 +9,6 @@ project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 import asyncio
-import aiofiles
 
 from pathlib import Path
 from filename_utils import create_unified_filename
@@ -523,65 +522,24 @@ async def process_document(
     title: str = None,
 ) -> dict:
     """
-    Detects file type, calls the appropriate processing function, saves the result
-    with appropriate filename (slug or original), and returns a dictionary
-    containing the processed file path (or null).
+    Process a local document and return the path-first structured-output bundle.
     """
     file_path = Path(file_path_str)
     if not file_path.exists():
         raise FileNotFoundError(f"File not found: {file_path_str}")
 
-    _, ext = os.path.splitext(file_path.name)  # Use os.path.splitext for reliability
-    ext = ext.lower()
-    processed_text = None
-    processed_file_path = None  # Initialize
-    content_lines = []  # Initialize content list
-
     try:
         logger.info(f"Starting processing for: {file_path} with format {output_format}")
-        if ext == ".epub":
-            processed_text = rag_processing.process_epub(file_path, output_format)
-        elif ext == ".txt":
-            # TXT processing doesn't have a separate markdown path in spec
-            processed_text = await rag_processing.process_txt(file_path)
-        elif ext == ".pdf":
-            processed_text = rag_processing.process_pdf(file_path, output_format)
-        else:
-            raise ValueError(f"Unsupported file format: {ext}")
-
-        # Save the processed text if any was extracted
-        if processed_text is not None and processed_text != "":
-            # Pass metadata to save_processed_text
-            # Construct book_details dictionary
-            book_details_dict = {"id": book_id, "author": author, "title": title}
-            processed_file_path = await rag_processing.save_processed_text(
-                original_file_path=file_path,
-                processed_content=processed_text,  # Corrected argument name
-                output_format=output_format,
-                book_details=book_details_dict,  # Pass as dictionary
-            )
-        else:
-            logging.warning(
-                f"No text extracted from {file_path}, processed file not saved."
-            )
-            logger.warning(
-                f"No text extracted from {file_path}, processed file not saved."
-            )
-            processed_file_path = None  # Explicitly set to None
-
-        # Read content if file was created
-        if processed_file_path and Path(processed_file_path).exists():
-            async with aiofiles.open(
-                processed_file_path, mode="r", encoding="utf-8"
-            ) as f:
-                content_lines = await f.readlines()  # Read all lines into a list
-
-        return {
-            "processed_file_path": str(processed_file_path)
-            if processed_file_path
-            else None,
-            "content": content_lines,
+        book_details_dict = {
+            key: value
+            for key, value in {"id": book_id, "author": author, "title": title}.items()
+            if value is not None
         }
+        return await rag_processing.process_document(
+            file_path_str=str(file_path),
+            output_format=output_format,
+            book_details=book_details_dict or None,
+        )
 
     except Exception as e:
         logger.exception(
@@ -636,6 +594,7 @@ async def download_book(
     downloaded_file_path_str = None
     final_file_path_str = None  # Path with enhanced filename
     processed_file_path_str = None  # Path for RAG processed file
+    process_result = None
 
     try:
         # Step 1: Download the book using EAPIClient.
@@ -689,10 +648,14 @@ async def download_book(
             )
             processed_file_path_str = process_result.get("processed_file_path")
 
-        return {
+        result = {
             "file_path": downloaded_file_path_str,
             "processed_file_path": processed_file_path_str,
         }
+        if process_for_rag and process_result:
+            result.update(process_result)
+            result["file_path"] = downloaded_file_path_str
+        return result
 
     except Exception as e:
         logger.exception(f"Error in download_book for book ID {book_details.get('id')}")

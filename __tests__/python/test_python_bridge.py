@@ -109,12 +109,9 @@ def mock_eapi_download(mocker, mock_eapi_client):
 
 
 @pytest.fixture
-def mock_save_text(mocker):
-    """Mocks the _save_processed_text function."""
-    return mocker.patch(
-        "lib.rag_processing.save_processed_text",
-        AsyncMock(return_value=Path("/path/to/saved.txt")),
-    )
+def mock_rag_process_document(mocker):
+    """Mock the shared RAG orchestrator entry point used by the bridge."""
+    return mocker.patch("lib.rag_processing.process_document", AsyncMock())
 
 
 # --- Tests for normalize_book_details (EAPI format) ---
@@ -402,7 +399,15 @@ class TestDownloadBook:
         mocker.patch(
             "python_bridge.process_document",
             AsyncMock(
-                return_value={"processed_file_path": processed_path, "content": []}
+                return_value={
+                    "processed_file_path": processed_path,
+                    "metadata_file_path": processed_path + ".metadata.json",
+                    "content_types_produced": ["body", "metadata"],
+                    "output_files": {
+                        "body": processed_path,
+                        "metadata": processed_path + ".metadata.json",
+                    },
+                }
             ),
         )
 
@@ -415,6 +420,8 @@ class TestDownloadBook:
 
         assert result["file_path"] == expected_final_path
         assert result["processed_file_path"] == processed_path
+        assert result["metadata_file_path"] == processed_path + ".metadata.json"
+        assert result["output_files"]["body"] == processed_path
 
     @pytest.mark.asyncio
     async def test_download_book_error(
@@ -442,109 +449,126 @@ class TestDownloadBook:
 
 
 @pytest.mark.asyncio
-async def test_process_document_epub_success(tmp_path, mocker, mock_save_text):
+async def test_process_document_epub_success(
+    tmp_path, mocker, mock_rag_process_document
+):
     epub_path = tmp_path / "test.epub"
     epub_path.touch()
-    expected_content = "Chapter 1 content.\nChapter 2 content."
-    mock_internal_epub = mocker.patch(
-        "lib.rag_processing.process_epub", return_value=expected_content
-    )
+    expected_result = {
+        "processed_file_path": "/tmp/test.epub.processed.txt",
+        "metadata_file_path": "/tmp/test.epub.metadata.json",
+        "stats": {"word_count": 5, "char_count": 34, "format": "txt"},
+        "content_types_produced": ["body"],
+        "output_files": {
+            "body": "/tmp/test.epub.processed.txt",
+            "metadata": "/tmp/test.epub.metadata.json",
+        },
+    }
+    mock_rag_process_document.return_value = expected_result
 
     result = await process_document(
         str(epub_path), book_id=None, author=None, title=None
     )
 
-    mock_internal_epub.assert_called_once_with(Path(epub_path), "txt")
-    mock_save_text.assert_called_once_with(
-        original_file_path=Path(epub_path),
-        processed_content=expected_content,
+    mock_rag_process_document.assert_called_once_with(
+        file_path_str=str(epub_path),
         output_format="txt",
-        book_details={"id": None, "author": None, "title": None},
+        book_details=None,
     )
-    assert result == {
-        "processed_file_path": str(mock_save_text.return_value),
-        "content": [],
-    }
+    assert result == expected_result
 
 
 @pytest.mark.asyncio
-async def test_process_document_epub_read_error(tmp_path, mocker, mock_save_text):
+async def test_process_document_epub_read_error(
+    tmp_path, mocker, mock_rag_process_document
+):
     epub_path = tmp_path / "test.epub"
     epub_path.touch()
-    mocker.patch(
-        "lib.rag_processing.process_epub", side_effect=Exception("EPUB read failed")
-    )
+    mock_rag_process_document.side_effect = Exception("EPUB read failed")
 
     with pytest.raises(
         RuntimeError, match=r"Error processing document .*test\.epub: EPUB read failed"
     ):
         await process_document(str(epub_path), book_id=None, author=None, title=None)
-    mock_save_text.assert_not_called()
+    mock_rag_process_document.assert_called_once()
 
 
 @pytest.mark.asyncio
-async def test_process_document_txt_utf8(tmp_path, mocker, mock_save_text):
+async def test_process_document_txt_utf8(tmp_path, mocker, mock_rag_process_document):
     txt_path = tmp_path / "test_utf8.txt"
     content = "This is a UTF-8 file.\nWith multiple lines.\nAnd special chars."
     txt_path.write_text(content, encoding="utf-8")
-    mock_internal_txt = mocker.patch(
-        "lib.rag_processing.process_txt", return_value=content
-    )
+    expected_result = {
+        "processed_file_path": "/tmp/test_utf8.txt.processed.txt",
+        "metadata_file_path": "/tmp/test_utf8.txt.metadata.json",
+        "stats": {"word_count": 12, "char_count": len(content), "format": "txt"},
+        "content_types_produced": ["body"],
+        "output_files": {
+            "body": "/tmp/test_utf8.txt.processed.txt",
+            "metadata": "/tmp/test_utf8.txt.metadata.json",
+        },
+    }
+    mock_rag_process_document.return_value = expected_result
 
     result = await process_document(
         str(txt_path), book_id=None, author=None, title=None
     )
 
-    mock_internal_txt.assert_called_once_with(Path(txt_path))
-    mock_save_text.assert_called_once_with(
-        original_file_path=Path(txt_path),
-        processed_content=content,
+    mock_rag_process_document.assert_called_once_with(
+        file_path_str=str(txt_path),
         output_format="txt",
-        book_details={"id": None, "author": None, "title": None},
+        book_details=None,
     )
-    assert result == {
-        "processed_file_path": str(mock_save_text.return_value),
-        "content": [],
-    }
+    assert result == expected_result
 
 
 @pytest.mark.asyncio
-async def test_process_document_pdf_success(tmp_path, mocker, mock_save_text):
+async def test_process_document_pdf_success(
+    tmp_path, mocker, mock_rag_process_document
+):
     pdf_path = tmp_path / "sample.pdf"
     pdf_path.touch()
-    expected_content = "Sample PDF text content."
-    mock_internal_pdf = mocker.patch(
-        "lib.rag_processing.process_pdf", return_value=expected_content
-    )
+    expected_result = {
+        "processed_file_path": "/tmp/sample.pdf.processed.markdown",
+        "metadata_file_path": "/tmp/sample.pdf.metadata.json",
+        "footnotes_file_path": "/tmp/sample.pdf.processed_footnotes.markdown",
+        "stats": {"word_count": 4, "char_count": 24, "format": "markdown"},
+        "content_types_produced": ["body", "footnotes"],
+        "output_files": {
+            "body": "/tmp/sample.pdf.processed.markdown",
+            "metadata": "/tmp/sample.pdf.metadata.json",
+            "footnotes": "/tmp/sample.pdf.processed_footnotes.markdown",
+        },
+    }
+    mock_rag_process_document.return_value = expected_result
 
     result = await process_document(
-        str(pdf_path), book_id=None, author=None, title=None
+        str(pdf_path),
+        output_format="markdown",
+        book_id="123",
+        author="Test Author",
+        title="Test Title",
     )
 
-    mock_internal_pdf.assert_called_once_with(Path(pdf_path), "txt")
-    mock_save_text.assert_called_once_with(
-        original_file_path=Path(pdf_path),
-        processed_content=expected_content,
-        output_format="txt",
-        book_details={"id": None, "author": None, "title": None},
+    mock_rag_process_document.assert_called_once_with(
+        file_path_str=str(pdf_path),
+        output_format="markdown",
+        book_details={"id": "123", "author": "Test Author", "title": "Test Title"},
     )
-    assert result == {
-        "processed_file_path": str(mock_save_text.return_value),
-        "content": [],
-    }
+    assert result == expected_result
 
 
 @pytest.mark.asyncio
-async def test_process_document_pdf_encrypted(tmp_path, mocker, mock_save_text):
+async def test_process_document_pdf_encrypted(
+    tmp_path, mocker, mock_rag_process_document
+):
     pdf_path = tmp_path / "encrypted.pdf"
     pdf_path.touch()
-    mocker.patch(
-        "lib.rag_processing.process_pdf", side_effect=ValueError("PDF is encrypted")
-    )
+    mock_rag_process_document.side_effect = ValueError("PDF is encrypted")
 
     with pytest.raises(
         RuntimeError,
         match=r"Error processing document .*encrypted\.pdf: PDF is encrypted",
     ):
         await process_document(str(pdf_path), book_id=None, author=None, title=None)
-    mock_save_text.assert_not_called()
+    mock_rag_process_document.assert_called_once()

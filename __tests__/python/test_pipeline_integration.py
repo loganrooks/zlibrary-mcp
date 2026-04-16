@@ -17,6 +17,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from lib.rag.orchestrator_pdf import process_pdf, process_pdf_structured
 from lib.rag.pipeline.models import DocumentOutput
+from lib.filename_utils import create_metadata_filename
 
 pytestmark = pytest.mark.integration
 
@@ -63,8 +64,23 @@ class TestPipelineIntegration:
             import json
 
             meta_content = json.loads(written["metadata"].read_text(encoding="utf-8"))
+            assert written["metadata"].name == create_metadata_filename(
+                written["body"].name
+            )
             assert "document_metadata" in meta_content
             assert "processing_metadata" in meta_content
+            assert (
+                meta_content["outputs"]["body"]["relative_path"] == written["body"].name
+            )
+            assert (
+                meta_content["outputs"]["metadata"]["relative_path"]
+                == written["metadata"].name
+            )
+            if "footnotes" in written:
+                assert (
+                    meta_content["outputs"]["footnotes"]["relative_path"]
+                    == written["footnotes"].name
+                )
 
     def test_confidence_scores_in_metadata(self):
         """Process with include_metadata=True, verify confidence floats."""

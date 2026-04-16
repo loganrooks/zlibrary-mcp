@@ -16,9 +16,7 @@ import aiofiles
 
 from lib.rag.utils.constants import SUPPORTED_FORMATS, PROCESSED_OUTPUT_DIR  # noqa: F401
 from lib.rag.utils.exceptions import (
-    TesseractNotFoundError,
     FileSaveError,
-    OCRDependencyError,
 )  # noqa: F401
 from lib.rag.utils.text import _slugify
 from lib.rag.utils.cache import _clear_textpage_cache  # noqa: F401
@@ -172,8 +170,13 @@ async def process_document(
 
         if processed_text is None or not processed_text.strip():
             logging.warning(f"No text extracted from {file_path}")
-            # Return None for path if no content, but keep content list for consistency
-            return {"processed_file_path": None, "content": []}
+            return {
+                "processed_file_path": None,
+                "metadata_file_path": None,
+                "stats": None,
+                "content_types_produced": [],
+                "output_files": {},
+            }
 
         # Save the processed text with metadata
         # Determine corrections applied (for metadata)
@@ -194,41 +197,40 @@ async def process_document(
             corrections_applied=corrections,
         )
 
+        saved_path_obj = Path(saved_path)
+        metadata_path = PROCESSED_OUTPUT_DIR / create_metadata_filename(
+            saved_path_obj.name
+        )
+        written = {"body": saved_path_obj}
+
         # Write multi-file output (footnotes, metadata) for structured pipeline
         if doc_output is not None:
             try:
-                saved_base = Path(saved_path)
                 written = doc_output.write_files(
-                    saved_base, output_format=output_format
+                    saved_path_obj, output_format=output_format
                 )
-                for key, path in written.items():
-                    if key != "body":  # body already saved above
-                        extra_paths[f"{key}_file_path"] = str(path)
                 logging.info(f"Multi-file output written: {list(written.keys())}")
             except Exception as mf_err:
                 logging.warning(f"Multi-file output write failed (non-fatal): {mf_err}")
+        if metadata_path.exists():
+            written["metadata"] = metadata_path
 
-        # Determine metadata file path
-        from filename_utils import create_metadata_filename
-
-        processed_filename = Path(saved_path).name
-        metadata_filename = create_metadata_filename(processed_filename)
-        metadata_path = PROCESSED_OUTPUT_DIR / metadata_filename
+        output_files = {key: str(path) for key, path in written.items()}
+        for key, path in written.items():
+            if key not in ("body", "metadata"):
+                extra_paths[f"{key}_file_path"] = str(path)
 
         # Build content types produced list
-        content_types = ["body"]
-        if doc_output is not None:
-            if doc_output.footnotes:
-                content_types.append("footnotes")
-            if doc_output.endnotes:
-                content_types.append("endnotes")
-            if doc_output.citations:
-                content_types.append("citations")
+        content_types = [
+            key
+            for key in ("body", "footnotes", "endnotes", "citations")
+            if key in written
+        ]
 
         # Return ONLY paths, not content (prevents MCP token overflow)
         # User can selectively read portions of the processed file
         result = {
-            "processed_file_path": str(saved_path),
+            "processed_file_path": str(saved_path_obj),
             "metadata_file_path": str(metadata_path)
             if metadata_path.exists()
             else None,
@@ -238,6 +240,7 @@ async def process_document(
                 "format": output_format,
             },
             "content_types_produced": content_types,
+            "output_files": output_files,
         }
         # Merge extra file paths (footnotes_file_path, metadata_file_path from pipeline, etc.)
         result.update(extra_paths)
@@ -259,6 +262,7 @@ async def save_processed_text(
 ) -> str:
     """Saves the processed text content to a file in the output directory."""
     try:
+        book_details = book_details or {}
         original_path = Path(original_file_path)
         original_filename = original_path.stem
         original_extension = original_path.suffix.lower()
@@ -293,117 +297,112 @@ async def save_processed_text(
         logging.info(f"Successfully saved processed content to: {output_path}")
 
         # --- Generate and Save Metadata Sidecar ---
-        if book_details:
+        try:
+            format_type = original_path.suffix.lower().lstrip(".")
+
+            # --- Metadata Verification Step (NEW) ---
+            # Extract metadata from document for verification
+            extracted_metadata = {}
             try:
-                format_type = original_path.suffix.lower().lstrip(".")
+                if format_type == "pdf":
+                    extracted_metadata = extract_pdf_metadata(original_path)
+                elif format_type == "epub":
+                    extracted_metadata = extract_epub_metadata(original_path)
+                elif format_type == "txt":
+                    extracted_metadata = extract_txt_metadata(original_path)
 
-                # --- Metadata Verification Step (NEW) ---
-                # Extract metadata from document for verification
-                extracted_metadata = {}
-                try:
-                    if format_type == "pdf":
-                        extracted_metadata = extract_pdf_metadata(original_path)
-                    elif format_type == "epub":
-                        extracted_metadata = extract_epub_metadata(original_path)
-                    elif format_type == "txt":
-                        extracted_metadata = extract_txt_metadata(original_path)
-
-                    logging.info(
-                        f"Extracted document metadata for verification: {list(extracted_metadata.keys())}"
-                    )
-                except Exception as extract_err:
-                    logging.warning(
-                        f"Could not extract document metadata for verification: {extract_err}"
-                    )
-                    extracted_metadata = {}
-
-                # Verify API metadata against extracted metadata
-                verification_report = None
-                if extracted_metadata:
-                    try:
-                        # Prepare API metadata in consistent format
-                        api_metadata = {
-                            "title": book_details.get("title"),
-                            "author": book_details.get("author"),
-                            "publisher": book_details.get("publisher"),
-                            "year": book_details.get("year"),
-                            "isbn": book_details.get("isbn"),
-                        }
-
-                        verification_report = verify_metadata(
-                            api_metadata, extracted_metadata
-                        )
-                        logging.info(
-                            f"Metadata verification: {verification_report['summary']}"
-                        )
-
-                        # Log any discrepancies for review
-                        if verification_report["discrepancies"]:
-                            logging.warning(
-                                f"Metadata discrepancies found: {verification_report['discrepancies']}"
-                            )
-                    except Exception as verify_err:
-                        logging.warning(f"Could not verify metadata: {verify_err}")
-                        verification_report = None
-
-                # Extract PDF ToC and metadata for verification
-                pdf_toc = None
-                extracted_metadata = None
-
-                if format_type == "pdf" and _get_facade().PYMUPDF_AVAILABLE:
-                    try:
-                        doc = _get_facade().fitz.open(str(original_path))
-                        pdf_toc = doc.get_toc()  # Returns list of [level, title, page]
-                        doc.close()
-                        logging.info(
-                            f"Extracted {len(pdf_toc)} ToC entries from PDF for metadata"
-                        )
-                    except Exception as toc_err:
-                        logging.warning(
-                            f"Could not extract PDF ToC for metadata: {toc_err}"
-                        )
-
-                    # Extract and verify metadata (using module-level imports)
-                    try:
-                        extracted_metadata = extract_pdf_metadata(str(original_path))
-                        verification_report = verify_metadata(
-                            book_details, extracted_metadata
-                        )
-                        logging.info(
-                            f"Metadata verification: {verification_report.get('summary', 'N/A')}"
-                        )
-                    except Exception as verify_err:
-                        logging.warning(f"Metadata verification failed: {verify_err}")
-
-                # Generate metadata with verification report
-                metadata = generate_metadata_sidecar(
-                    original_filename=str(original_path),
-                    processed_content=processed_content,  # Use processed_content, not final_content
-                    book_details=book_details,
-                    ocr_quality_score=ocr_quality_score,
-                    corrections_applied=corrections_applied or [],
-                    format_type=format_type,
-                    output_format=output_format,
-                    pdf_toc=pdf_toc,
+                logging.info(
+                    f"Extracted document metadata for verification: {list(extracted_metadata.keys())}"
                 )
+            except Exception as extract_err:
+                logging.warning(
+                    f"Could not extract document metadata for verification: {extract_err}"
+                )
+                extracted_metadata = {}
 
-                # Add verification report to metadata if available
-                if "verification_report" in locals() and verification_report:
-                    metadata["verification"] = verification_report
+            # Verify API metadata against extracted metadata
+            verification_report = None
+            if extracted_metadata:
+                try:
+                    # Prepare API metadata in consistent format
+                    api_metadata = {
+                        "title": book_details.get("title"),
+                        "author": book_details.get("author"),
+                        "publisher": book_details.get("publisher"),
+                        "year": book_details.get("year"),
+                        "isbn": book_details.get("isbn"),
+                    }
 
-                # Add verification report to metadata if available
-                if verification_report:
-                    metadata["verification"] = verification_report
+                    verification_report = verify_metadata(
+                        api_metadata, extracted_metadata
+                    )
+                    logging.info(
+                        f"Metadata verification: {verification_report['summary']}"
+                    )
 
-                # Save metadata sidecar
-                metadata_filename = create_metadata_filename(processed_filename)
-                metadata_path = PROCESSED_OUTPUT_DIR / metadata_filename
-                save_metadata_sidecar(metadata, metadata_path)
+                    # Log any discrepancies for review
+                    if verification_report["discrepancies"]:
+                        logging.warning(
+                            f"Metadata discrepancies found: {verification_report['discrepancies']}"
+                        )
+                except Exception as verify_err:
+                    logging.warning(f"Could not verify metadata: {verify_err}")
+                    verification_report = None
 
-                logging.info(f"Successfully saved metadata sidecar to: {metadata_path}")
-            except Exception as meta_err:
-                logging.warning(f"Failed to generate metadata sidecar: {meta_err}")
-                # Don't fail the whole operation if metadata generation fails
+            # Extract PDF ToC and metadata for verification
+            pdf_toc = None
+            extracted_metadata = None
+
+            if format_type == "pdf" and _get_facade().PYMUPDF_AVAILABLE:
+                try:
+                    doc = _get_facade().fitz.open(str(original_path))
+                    pdf_toc = doc.get_toc()  # Returns list of [level, title, page]
+                    doc.close()
+                    logging.info(
+                        f"Extracted {len(pdf_toc)} ToC entries from PDF for metadata"
+                    )
+                except Exception as toc_err:
+                    logging.warning(
+                        f"Could not extract PDF ToC for metadata: {toc_err}"
+                    )
+
+                # Extract and verify metadata (using module-level imports)
+                try:
+                    extracted_metadata = extract_pdf_metadata(str(original_path))
+                    verification_report = verify_metadata(
+                        book_details, extracted_metadata
+                    )
+                    logging.info(
+                        f"Metadata verification: {verification_report.get('summary', 'N/A')}"
+                    )
+                except Exception as verify_err:
+                    logging.warning(f"Metadata verification failed: {verify_err}")
+
+            # Generate metadata with verification report
+            metadata = generate_metadata_sidecar(
+                original_filename=str(original_path),
+                processed_content=processed_content,  # Use processed_content, not final_content
+                book_details=book_details,
+                ocr_quality_score=ocr_quality_score,
+                corrections_applied=corrections_applied or [],
+                format_type=format_type,
+                output_format=output_format,
+                pdf_toc=pdf_toc,
+            )
+
+            # Add verification report to metadata if available
+            if verification_report:
+                metadata["verification"] = verification_report
+
+            # Save metadata sidecar
+            metadata_filename = create_metadata_filename(processed_filename)
+            metadata_path = PROCESSED_OUTPUT_DIR / metadata_filename
+            save_metadata_sidecar(metadata, metadata_path)
+
+            logging.info(f"Successfully saved metadata sidecar to: {metadata_path}")
+        except Exception as meta_err:
+            logging.warning(f"Failed to generate metadata sidecar: {meta_err}")
+            # Don't fail the whole operation if metadata generation fails
 
         return str(output_path)  # Return the string representation of the path
 

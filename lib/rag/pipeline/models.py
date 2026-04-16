@@ -12,6 +12,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from lib.filename_utils import create_metadata_filename
+
 
 class ContentType(Enum):
     """Classification of text block content."""
@@ -86,13 +88,17 @@ class DocumentOutput:
             Dict mapping content type name to written file path.
         """
         base_path = Path(base_path)
-        stem = base_path.stem
         out_dir = base_path.parent
-        ext = ".md" if output_format == "markdown" else ".txt"
+        if ".processed." in base_path.name:
+            body_path = base_path
+        else:
+            body_path = out_dir / f"{base_path.name}.processed.{output_format}"
+
+        stem = body_path.stem
+        ext = body_path.suffix
         written: Dict[str, Path] = {}
 
         # Body text (always written)
-        body_path = out_dir / f"{stem}{ext}"
         body_path.write_text(self.body_text, encoding="utf-8")
         written["body"] = body_path
 
@@ -108,11 +114,25 @@ class DocumentOutput:
                 written[name] = p
 
         # Metadata (always written)
-        meta = {
-            "document_metadata": self.document_metadata,
-            "processing_metadata": self.processing_metadata,
-        }
-        meta_path = out_dir / f"{stem}_meta.json"
+        meta_path = out_dir / create_metadata_filename(body_path.name)
+        meta: Dict[str, Any] = {}
+        if meta_path.exists():
+            try:
+                existing = json.loads(meta_path.read_text(encoding="utf-8"))
+                if isinstance(existing, dict):
+                    meta.update(existing)
+            except (json.JSONDecodeError, OSError):
+                pass
+
+        outputs = {name: {"relative_path": path.name} for name, path in written.items()}
+        outputs["metadata"] = {"relative_path": meta_path.name}
+        meta.update(
+            {
+                "document_metadata": self.document_metadata,
+                "processing_metadata": self.processing_metadata,
+                "outputs": outputs,
+            }
+        )
         meta_path.write_text(json.dumps(meta, indent=2, default=str), encoding="utf-8")
         written["metadata"] = meta_path
 

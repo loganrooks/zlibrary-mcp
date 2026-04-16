@@ -95,8 +95,8 @@ flowchart LR
 
 | Tool | Description |
 |------|-------------|
-| `download_book_to_file` | Download with optional RAG processing |
-| `process_document_for_rag` | Extract text from EPUB/PDF/TXT |
+| `download_book_to_file` | Download with optional file-based RAG bundle output |
+| `process_document_for_rag` | Extract a file-based RAG bundle from EPUB/PDF/TXT |
 
 ### Utility Tools (2)
 
@@ -221,6 +221,7 @@ The RAG pipeline processes downloaded documents (EPUB, PDF, TXT) into clean text
 
 - **Output location:** Processed text files are saved to `./processed_rag_output/`
 - **File-based output:** Tools return file paths rather than raw text content, avoiding context overflow in AI assistants
+- **Bundle contract:** `processed_file_path` remains the body-text anchor, with additive sibling fields like `metadata_file_path`, optional `footnotes_file_path`, and an `output_files` map when available
 - **Supported formats:** EPUB, PDF, and TXT
 - **Quality detection:** The pipeline automatically detects document quality (OCR vs. digital text) and applies appropriate extraction strategies
 - **Scholarly formatting:** Preserves footnotes, chapter structure, and academic formatting where possible

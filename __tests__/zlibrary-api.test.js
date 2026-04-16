@@ -382,11 +382,19 @@ describe('Z-Library API', () => {
         });
     });
 
-    // Updated for Spec v2.1: Uses bookDetails, expects absolute paths for both
+    // Updated for Phase 19: with RAG, callers receive the additive bundle fields too
     test('should call Python bridge with correct args (with RAG)', async () => {
         const pythonResult_dl2 = { // Unique result var
             file_path: '/abs/path/to/rag_out/RAG Book.pdf',
-            processed_file_path: '/abs/path/to/processed_rag_output/RAG Book.pdf.processed.md'
+            processed_file_path: '/abs/path/to/processed_rag_output/RAG Book.pdf.processed.md',
+            metadata_file_path: '/abs/path/to/processed_rag_output/RAG Book.pdf.metadata.json',
+            footnotes_file_path: '/abs/path/to/processed_rag_output/RAG Book.pdf.processed_footnotes.md',
+            content_types_produced: ['body', 'footnotes'],
+            output_files: {
+                body: '/abs/path/to/processed_rag_output/RAG Book.pdf.processed.md',
+                metadata: '/abs/path/to/processed_rag_output/RAG Book.pdf.metadata.json',
+                footnotes: '/abs/path/to/processed_rag_output/RAG Book.pdf.processed_footnotes.md'
+            }
         };
         mockGetManagedPythonPath.mockResolvedValue('/fake/python');
         // Corrected Mock: Simulate python printing the JSON string of the MCP response structure
@@ -411,15 +419,27 @@ describe('Z-Library API', () => {
         }));
         expect(result).toEqual({
             file_path: '/abs/path/to/rag_out/RAG Book.pdf',
-            processed_file_path: '/abs/path/to/processed_rag_output/RAG Book.pdf.processed.md'
+            processed_file_path: '/abs/path/to/processed_rag_output/RAG Book.pdf.processed.md',
+            metadata_file_path: '/abs/path/to/processed_rag_output/RAG Book.pdf.metadata.json',
+            footnotes_file_path: '/abs/path/to/processed_rag_output/RAG Book.pdf.processed_footnotes.md',
+            content_types_produced: ['body', 'footnotes'],
+            output_files: {
+                body: '/abs/path/to/processed_rag_output/RAG Book.pdf.processed.md',
+                metadata: '/abs/path/to/processed_rag_output/RAG Book.pdf.metadata.json',
+                footnotes: '/abs/path/to/processed_rag_output/RAG Book.pdf.processed_footnotes.md'
+            }
         });
     });
 
-    // Updated for Spec v2.1: Uses bookDetails, expects processed_file_path to be null
+    // Updated for Phase 19: no-text processing still returns the additive bundle shape
     test('should handle Python response when processing requested but path is null', async () => {
         const pythonResult_dl3 = { // Unique result var
             file_path: '/abs/path/to/image.pdf',
-            processed_file_path: null // Simulate image PDF case
+            processed_file_path: null,
+            metadata_file_path: null,
+            stats: null,
+            content_types_produced: [],
+            output_files: {}
         };
         mockGetManagedPythonPath.mockResolvedValue('/fake/python');
         // Corrected Mock: Simulate python printing the JSON string of the MCP response structure
@@ -443,7 +463,11 @@ describe('Z-Library API', () => {
         }));
         expect(result).toEqual({
             file_path: '/abs/path/to/image.pdf',
-            processed_file_path: null // Expect null as returned by Python
+            processed_file_path: null,
+            metadata_file_path: null,
+            stats: null,
+            content_types_produced: [],
+            output_files: {}
         });
     });
 
@@ -558,9 +582,17 @@ describe('Z-Library API', () => {
 
   describe('processDocumentForRag', () => {
     // test.todo('[FAILING] should call Python bridge with correct args and return processed_file_path'); // Remove todo
-    test('should call Python bridge with correct args and return processed_file_path', async () => { // Uncomment test
+    test('should call Python bridge with correct args and return the additive bundle contract', async () => { // Uncomment test
         // Arrange: Mock python bridge success
-        const pythonResult_rag1 = { processed_file_path: '/abs/path/to/processed_rag_output/doc.txt.processed.txt' }; // Unique result var
+        const pythonResult_rag1 = {
+            processed_file_path: '/abs/path/to/processed_rag_output/doc.txt.processed.txt',
+            metadata_file_path: '/abs/path/to/processed_rag_output/doc.txt.metadata.json',
+            content_types_produced: ['body'],
+            output_files: {
+                body: '/abs/path/to/processed_rag_output/doc.txt.processed.txt',
+                metadata: '/abs/path/to/processed_rag_output/doc.txt.metadata.json'
+            }
+        };
         mockGetManagedPythonPath.mockResolvedValue('/fake/python');
         // Corrected: Ensure mock provides the stringified MCP response in an array (Unique Vars)
         const mockPythonResultString_rag1 = JSON.stringify(pythonResult_rag1);
@@ -584,13 +616,25 @@ describe('Z-Library API', () => {
         }));
         // Assert final result structure (based on spec v2.1)
         expect(result).toEqual({
-            processed_file_path: '/abs/path/to/processed_rag_output/doc.txt.processed.txt'
+            processed_file_path: '/abs/path/to/processed_rag_output/doc.txt.processed.txt',
+            metadata_file_path: '/abs/path/to/processed_rag_output/doc.txt.metadata.json',
+            content_types_produced: ['body'],
+            output_files: {
+                body: '/abs/path/to/processed_rag_output/doc.txt.processed.txt',
+                metadata: '/abs/path/to/processed_rag_output/doc.txt.metadata.json'
+            }
         });
     });
 
      test('should handle null processed_file_path from Python', async () => { // Add test for null path
         // Arrange: Mock python bridge success with null path
-        const pythonResult_rag2 = { processed_file_path: null }; // Unique result var
+        const pythonResult_rag2 = {
+            processed_file_path: null,
+            metadata_file_path: null,
+            stats: null,
+            content_types_produced: [],
+            output_files: {}
+        };
         mockGetManagedPythonPath.mockResolvedValue('/fake/python');
         // Corrected: Ensure mock provides the stringified MCP response in an array (Unique Vars)
         const mockPythonResultString_rag2 = JSON.stringify(pythonResult_rag2);
@@ -613,7 +657,11 @@ describe('Z-Library API', () => {
         }));
         // Assert final result structure (based on spec v2.1)
         expect(result).toEqual({
-            processed_file_path: null // Expect null
+            processed_file_path: null,
+            metadata_file_path: null,
+            stats: null,
+            content_types_produced: [],
+            output_files: {}
         });
     });
 

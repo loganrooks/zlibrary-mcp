@@ -48,6 +48,12 @@ describe('Tool Handlers - Extended Coverage', () => {
     test('should call zlibApi.processDocumentForRag with mapped args on success', async () => {
       const mockProcessDoc = jest.fn().mockResolvedValue({
         processed_file_path: '/output/doc.txt',
+        metadata_file_path: '/output/doc.metadata.json',
+        content_types_produced: ['body'],
+        output_files: {
+          body: '/output/doc.txt',
+          metadata: '/output/doc.metadata.json',
+        },
       });
       const { toolRegistry } = await setupWithMocks({ processDocumentForRag: mockProcessDoc });
 
@@ -60,7 +66,15 @@ describe('Tool Handlers - Extended Coverage', () => {
         filePath: '/input/doc.epub',
         outputFormat: 'markdown',
       });
-      expect(response).toEqual({ processed_file_path: '/output/doc.txt' });
+      expect(response).toEqual({
+        processed_file_path: '/output/doc.txt',
+        metadata_file_path: '/output/doc.metadata.json',
+        content_types_produced: ['body'],
+        output_files: {
+          body: '/output/doc.txt',
+          metadata: '/output/doc.metadata.json',
+        },
+      });
     });
 
     test('should return error object on failure', async () => {
@@ -331,6 +345,7 @@ describe('Tool Handlers - Extended Coverage', () => {
       const { toolRegistry } = await setupWithMocks();
       const entry = toolRegistry.process_document_for_rag;
       expect(entry.description).toBeDefined();
+      expect(entry.description).toContain('metadata');
       expect(entry.schema).toBeDefined();
       expect(typeof entry.handler).toBe('function');
     });

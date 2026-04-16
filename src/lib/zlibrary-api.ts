@@ -184,6 +184,84 @@ interface ProcessDocumentForRagArgs {
     outputFormat?: string;
 }
 
+interface ProcessedDocumentStats {
+  word_count: number;
+  char_count: number;
+  format: string;
+}
+
+interface ProcessedDocumentBundle {
+  processed_file_path: string | null;
+  metadata_file_path?: string | null;
+  footnotes_file_path?: string | null;
+  endnotes_file_path?: string | null;
+  citations_file_path?: string | null;
+  stats?: ProcessedDocumentStats | null;
+  content_types_produced?: string[];
+  output_files?: Record<string, string>;
+}
+
+interface DownloadBookResult extends ProcessedDocumentBundle {
+  file_path: string;
+  processing_error?: string;
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === 'string');
+}
+
+function isStringRecord(value: unknown): value is Record<string, string> {
+  return Boolean(value)
+    && typeof value === 'object'
+    && !Array.isArray(value)
+    && Object.values(value as Record<string, unknown>).every((item) => typeof item === 'string');
+}
+
+function isProcessedDocumentStats(value: unknown): value is ProcessedDocumentStats {
+  return Boolean(value)
+    && typeof value === 'object'
+    && typeof (value as ProcessedDocumentStats).word_count === 'number'
+    && typeof (value as ProcessedDocumentStats).char_count === 'number'
+    && typeof (value as ProcessedDocumentStats).format === 'string';
+}
+
+function validateNullablePathField(result: Record<string, any>, fieldName: string): void {
+  if (!(fieldName in result)) {
+    return;
+  }
+  const value = result[fieldName];
+  if (value !== null && typeof value !== 'string') {
+    throw new Error(`Invalid response from Python bridge: ${fieldName} must be a string or null.`);
+  }
+}
+
+function validateStructuredDocumentBundle(
+  result: Record<string, any>,
+  { requireProcessedFilePath = true }: { requireProcessedFilePath?: boolean } = {},
+): asserts result is ProcessedDocumentBundle {
+  if (!result || typeof result !== 'object') {
+    throw new Error('Invalid response from Python bridge: Expected an object.');
+  }
+  if (requireProcessedFilePath && !('processed_file_path' in result)) {
+    throw new Error('Invalid response from Python bridge during processing. Missing processed_file_path key.');
+  }
+  validateNullablePathField(result, 'processed_file_path');
+  validateNullablePathField(result, 'metadata_file_path');
+  validateNullablePathField(result, 'footnotes_file_path');
+  validateNullablePathField(result, 'endnotes_file_path');
+  validateNullablePathField(result, 'citations_file_path');
+
+  if ('content_types_produced' in result && !isStringArray(result.content_types_produced)) {
+    throw new Error('Invalid response from Python bridge: content_types_produced must be an array of strings.');
+  }
+  if ('output_files' in result && !isStringRecord(result.output_files)) {
+    throw new Error('Invalid response from Python bridge: output_files must be an object of string paths.');
+  }
+  if ('stats' in result && result.stats !== null && !isProcessedDocumentStats(result.stats)) {
+    throw new Error('Invalid response from Python bridge: stats must include word_count, char_count, and format.');
+  }
+}
+
 
 /**
  * Search for books in Z-Library
@@ -276,7 +354,10 @@ export async function getDownloadLimits(): Promise<any> {
 /**
  * Process a downloaded document for RAG
  */
-export async function processDocumentForRag({ filePath, outputFormat = 'txt' }: ProcessDocumentForRagArgs): Promise<{ processed_file_path: string | null; content?: string[] }> { // Updated return type
+export async function processDocumentForRag({
+  filePath,
+  outputFormat = 'txt',
+}: ProcessDocumentForRagArgs): Promise<ProcessedDocumentBundle> {
   if (!filePath) {
     throw new Error("Missing required argument: filePath");
   }
@@ -291,15 +372,8 @@ export async function processDocumentForRag({ filePath, outputFormat = 'txt' }: 
       throw new Error(`Python processing failed: ${result.error}`);
   }
 
-  // Check for the expected processed_file_path key's presence.
-  // Allow null value as valid (e.g., for image PDFs).
-  // Throw error only if the key is completely missing.
-  if (!result || !('processed_file_path' in result)) {
-       throw new Error(`Invalid response from Python bridge during processing. Missing processed_file_path key.`);
-   }
-  // No error thrown if key exists, even if value is null.
-  // Return the full result object from Python
-  return result; // Return the whole object { processed_file_path: ..., content: ... }
+  validateStructuredDocumentBundle(result, { requireProcessedFilePath: true });
+  return result;
 }
 
 // Removed unused generateSafeFilename function
@@ -314,7 +388,7 @@ export async function downloadBookToFile({
     outputDir = './downloads',
     process_for_rag = false,
     processed_output_format = 'txt'
-}: DownloadBookToFileArgs): Promise<{ file_path: string; processed_file_path?: string | null; processing_error?: string }> {
+}: DownloadBookToFileArgs): Promise<DownloadBookResult> {
   try {
     // Call the Python function, passing the bookDetails object
     const result = await callPythonFunction('download_book', {
@@ -336,18 +410,23 @@ export async function downloadBookToFile({
         throw new Error("Invalid response from Python bridge: Missing original file_path.");
     }
 
-    // If processing was requested but the processed path is missing (and not explicitly null), it's an error
-    // Note: Python bridge now returns null if processing fails or yields no text, which is handled correctly here.
-    if (process_for_rag && !('processed_file_path' in result)) {
-         throw new Error("Invalid response from Python bridge: Processing requested but processed_file_path key is missing.");
+    if (typeof result.file_path !== 'string') {
+        throw new Error("Invalid response from Python bridge: file_path must be a string.");
     }
 
-    // Return the result object containing file_path and optional processed_file_path/processing_error
-    return {
-        file_path: result.file_path,
-        processed_file_path: result.processed_file_path, // Will be string path or null
-        processing_error: result.processing_error // Will be string or undefined
-    };
+    if (process_for_rag && !('processed_file_path' in result)) {
+        throw new Error("Invalid response from Python bridge: Processing requested but processed_file_path key is missing.");
+    }
+
+    if (process_for_rag || 'processed_file_path' in result) {
+        validateStructuredDocumentBundle(result, { requireProcessedFilePath: false });
+    }
+
+    if ('processing_error' in result && typeof result.processing_error !== 'string' && typeof result.processing_error !== 'undefined') {
+        throw new Error('Invalid response from Python bridge: processing_error must be a string when present.');
+    }
+
+    return result as DownloadBookResult;
 
   } catch (error: any) {
     // Re-throw errors from callPythonFunction or validation checks

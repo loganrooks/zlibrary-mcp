@@ -383,7 +383,7 @@ Each entry contains standard book metadata fields.
 
 ### download_book_to_file
 
-**Description:** Download a book to a local file. Pass the full `bookDetails` object from `search_books` results. Optionally process the document for RAG (text extraction) after download. Returns file paths for both the original book and processed text.
+**Description:** Download a book to a local file. Pass the full `bookDetails` object from `search_books` results. Optionally process the document for RAG after download. When processing is enabled, the response stays additive: `processed_file_path` remains the body-text anchor and sibling bundle paths are returned when available.
 
 **Parameters:**
 
@@ -394,7 +394,7 @@ Each entry contains standard book metadata fields.
 | process_for_rag | boolean | No | -- | Whether to process the document content for RAG after download |
 | processed_output_format | string | No | -- | Desired output format for RAG processing (e.g., `"text"`, `"markdown"`) |
 
-**Returns:** JSON object with `file_path` (path to downloaded file) and optionally `processed_file_path` (path to extracted text) if RAG processing was requested.
+**Returns:** JSON object with `file_path` (downloaded file path). If RAG processing was requested, the response also includes `processed_file_path` (body text), `metadata_file_path`, optional `footnotes_file_path` / `endnotes_file_path` / `citations_file_path`, `content_types_produced`, `stats`, and `output_files`.
 
 **Example Usage:**
 
@@ -416,6 +416,28 @@ Each entry contains standard book metadata fields.
 }
 ```
 
+**Example Processed Response:**
+
+```json
+{
+  "file_path": "./downloads/HeideggerMartin_BeingAndTime_12345678.pdf",
+  "processed_file_path": "./processed_rag_output/HeideggerMartin_BeingAndTime_12345678.pdf.processed.markdown",
+  "metadata_file_path": "./processed_rag_output/HeideggerMartin_BeingAndTime_12345678.pdf.metadata.json",
+  "footnotes_file_path": "./processed_rag_output/HeideggerMartin_BeingAndTime_12345678.pdf.processed_footnotes.markdown",
+  "content_types_produced": ["body", "footnotes"],
+  "stats": {
+    "word_count": 102345,
+    "char_count": 654321,
+    "format": "markdown"
+  },
+  "output_files": {
+    "body": "./processed_rag_output/HeideggerMartin_BeingAndTime_12345678.pdf.processed.markdown",
+    "metadata": "./processed_rag_output/HeideggerMartin_BeingAndTime_12345678.pdf.metadata.json",
+    "footnotes": "./processed_rag_output/HeideggerMartin_BeingAndTime_12345678.pdf.processed_footnotes.markdown"
+  }
+}
+```
+
 **Error Cases:**
 - Invalid or missing `bookDetails` object
 - Download failed (book unavailable, credentials invalid)
@@ -427,7 +449,7 @@ Each entry contains standard book metadata fields.
 
 ### process_document_for_rag
 
-**Description:** Process a downloaded document (EPUB, TXT, PDF) to extract clean text content for RAG (Retrieval-Augmented Generation). Extracts text, preserves structure, detects footnotes, and outputs a text file. Use this to process a previously downloaded file without re-downloading.
+**Description:** Process a downloaded document (EPUB, TXT, PDF) into a file-based RAG bundle. The body-text output remains available at `processed_file_path`, and the tool additively reports metadata and optional sibling outputs so callers do not need to guess filenames.
 
 **Parameters:**
 
@@ -436,7 +458,7 @@ Each entry contains standard book metadata fields.
 | file_path | string | Yes | -- | Path to the downloaded file to process |
 | output_format | string | No | -- | Desired output format (e.g., `"text"`, `"markdown"`) |
 
-**Returns:** JSON object with `processed_file_path` (path to the extracted text output file).
+**Returns:** JSON object with `processed_file_path` (body-text output path), `metadata_file_path`, optional `footnotes_file_path` / `endnotes_file_path` / `citations_file_path`, `content_types_produced`, `stats`, and `output_files`.
 
 **Example Usage:**
 
@@ -446,6 +468,27 @@ Each entry contains standard book metadata fields.
   "arguments": {
     "file_path": "./downloads/Being_and_Time_Heidegger.pdf",
     "output_format": "text"
+  }
+}
+```
+
+**Example Response:**
+
+```json
+{
+  "processed_file_path": "./processed_rag_output/test-book.pdf.processed.markdown",
+  "metadata_file_path": "./processed_rag_output/test-book.pdf.metadata.json",
+  "footnotes_file_path": "./processed_rag_output/test-book.pdf.processed_footnotes.markdown",
+  "content_types_produced": ["body", "footnotes"],
+  "stats": {
+    "word_count": 12345,
+    "char_count": 67890,
+    "format": "markdown"
+  },
+  "output_files": {
+    "body": "./processed_rag_output/test-book.pdf.processed.markdown",
+    "metadata": "./processed_rag_output/test-book.pdf.metadata.json",
+    "footnotes": "./processed_rag_output/test-book.pdf.processed_footnotes.markdown"
   }
 }
 ```

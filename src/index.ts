@@ -490,12 +490,14 @@ const toolRegistry: Record<string, ToolRegistryEntry> = {
   },
   get_recent_books: { description: 'Get recently added books', schema: GetRecentBooksParamsSchema },
   download_book_to_file: {
-    description: 'Download a book to file',
+    description:
+      'Download a book to file and optionally return a processed RAG bundle with body text, metadata, and optional sibling outputs.',
     schema: DownloadBookToFileParamsSchema,
     handler: handlers.downloadBookToFile,
   },
   process_document_for_rag: {
-    description: 'Process document for RAG',
+    description:
+      'Process EPUB, PDF, or TXT into a file-based RAG bundle with processed body text, metadata, and optional footnotes/endnotes/citations.',
     schema: ProcessDocumentForRagParamsSchema,
     handler: handlers.processDocumentForRag,
   },

@@ -9,15 +9,15 @@ Requirements for the v1.3 RAG Pipeline Refinement milestone. This scope picks up
 
 ### Structured Output
 
-- [ ] **RAG-01**: User can process a document into a predictable multi-file bundle that includes body text, footnotes when present, and metadata outputs.
+- [x] **RAG-01**: User can process a document into a predictable multi-file bundle that includes body text, footnotes when present, and metadata outputs.
   - *Motivation:* `deliberation: .planning/deliberations/v12-scope-and-priorities.md`
-- [ ] **RAG-02**: User can read detected footnotes from a dedicated output file ordered by page and marker so footnotes are independently consumable.
+- [x] **RAG-02**: User can read detected footnotes from a dedicated output file ordered by page and marker so footnotes are independently consumable.
   - *Motivation:* `deliberation: .planning/deliberations/v12-scope-and-priorities.md`
-- [ ] **RAG-03**: User can rely on a single metadata authority that describes document metadata, processing metadata, and produced output files.
+- [x] **RAG-03**: User can rely on a single metadata authority that describes document metadata, processing metadata, and produced output files.
   - *Motivation:* `user: continue with next steps after v1.2 shipped`
-- [ ] **RAG-04**: User can discover related output files through relative links in metadata rather than guessing filename conventions.
+- [x] **RAG-04**: User can discover related output files through relative links in metadata rather than guessing filename conventions.
   - *Motivation:* `deliberation: .planning/deliberations/v12-scope-and-priorities.md`
-- [ ] **RAG-05**: Existing `process_document_for_rag` and `download_book_to_file` consumers continue working through additive response changes only.
+- [x] **RAG-05**: Existing `process_document_for_rag` and `download_book_to_file` consumers continue working through additive response changes only.
   - *Motivation:* `user: continue with next steps after v1.2 shipped`
 
 ### Quality Scoring
@@ -58,11 +58,11 @@ Deferred beyond v1.3. Tracked now so they do not leak back into the active roadm
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| RAG-01 | Phase 19 | Pending |
-| RAG-02 | Phase 19 | Pending |
-| RAG-03 | Phase 19 | Pending |
-| RAG-04 | Phase 19 | Pending |
-| RAG-05 | Phase 19 | Pending |
+| RAG-01 | Phase 19 | Complete |
+| RAG-02 | Phase 19 | Complete |
+| RAG-03 | Phase 19 | Complete |
+| RAG-04 | Phase 19 | Complete |
+| RAG-05 | Phase 19 | Complete |
 | QUAL-01 | Phase 20 | Pending |
 | QUAL-02 | Phase 20 | Pending |
 | QUAL-03 | Phase 21 | Pending |
@@ -75,4 +75,4 @@ Deferred beyond v1.3. Tracked now so they do not leak back into the active roadm
 
 ---
 *Requirements defined: 2026-04-16*
-*Last updated: 2026-04-16 after starting milestone v1.3*
+*Last updated: 2026-04-16 after completing Phase 19*

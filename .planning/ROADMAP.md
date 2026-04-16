@@ -55,9 +55,9 @@ Full details: `.planning/milestones/v1.2-ROADMAP.md`
 
 **Milestone Goal:** Normalize the RAG pipeline output contract and add automated quality scoring without breaking existing MCP consumers. Deferred from v1.2 per [deliberation](.planning/deliberations/v12-scope-and-priorities.md) — the pipeline works (799 tests, 34/34 recall passing) but output format and scoring are internal refinements that weren't blocking deployment.
 
-**Status:** Planned on 2026-04-16. Next step: `$gsdr-execute-phase 19`.
+**Status:** Phase 19 completed on 2026-04-16. Next step: `$gsdr-plan-phase 20`.
 
-- [ ] **Phase 19: Structured RAG Output Contract** — Additive output contract for `process_document_for_rag` and `download_book_to_file`, with dedicated body/footnotes/metadata files and unified linking
+- [x] **Phase 19: Structured RAG Output Contract** — Additive output contract for `process_document_for_rag` and `download_book_to_file`, with dedicated body/footnotes/metadata files and unified linking (completed 2026-04-16)
 - [ ] **Phase 20: Quality Scoring Harness** — Ground-truth scoring runner with machine-readable reports for local validation
 - [ ] **Phase 21: CI Reporting & Regression Controls** — Publish quality artifacts in CI, compare against baselines, and decide whether `page_analysis_map` belongs in the scoring/reporting path
 
@@ -70,7 +70,7 @@ Full details: `.planning/milestones/v1.2-ROADMAP.md`
   2. Structured PDF processing writes deterministic body, footnotes, and metadata files with a single metadata authority describing produced outputs
   3. Metadata links related output files through relative paths rather than implicit filename guessing
   4. Existing MCP protocol, bridge, and handler tests for document processing continue passing after the contract change
-**Plans:** 0/2 plans executed
+**Plans:** 2/2 plans complete
 
 ### Phase 20: Quality Scoring Harness
 **Goal**: Turn the existing ground-truth corpus into a repeatable scoring harness for RAG output quality
@@ -115,10 +115,10 @@ Full details: `.planning/milestones/v1.2-ROADMAP.md`
 | 16. Documentation & Distribution | v1.2 | 3/3 | Complete | 2026-03-20 |
 | 17. Quality Gates & Release Pipeline | v1.2 | 2/2 | Complete | 2026-03-20 |
 | 18. v1.2 Gap Closure | v1.2 | 2/2 | Complete | 2026-03-20 |
-| 19. Structured RAG Output Contract | v1.3 | 0/2 | Planned    |  |
+| 19. Structured RAG Output Contract | v1.3 | 2/2 | Complete   | 2026-04-16 |
 | 20. Quality Scoring Harness | v1.3 | 0/0 | Pending | — |
 | 21. CI Reporting & Regression Controls | v1.3 | 0/0 | Pending | — |
 
 ---
 
-_Last updated: 2026-04-16 — Phase 19 planned and ready for execution_
+_Last updated: 2026-04-16 — Phase 19 completed, Phase 20 ready for planning_

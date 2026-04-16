@@ -60,8 +60,8 @@ Reliable, maintainable MCP server for book access — production-ready infrastru
 
 **Goal:** Normalize the structured RAG output contract and add automated quality scoring now that the production-readiness milestone is shipped and `v1.2.0` is tagged.
 
-- [ ] Structured RAG output contract for `process_document_for_rag` and `download_book_to_file`
-- [ ] Dedicated `body`, `footnotes`, and metadata outputs with unified linking
+- [x] Structured RAG output contract for `process_document_for_rag` and `download_book_to_file`
+- [x] Dedicated `body`, `footnotes`, and metadata outputs with unified linking
 - [ ] Automated quality scoring against ground truth with machine-readable reports
 - [ ] CI regression reporting for quality metrics with non-breaking rollout
 - [ ] Revisit whether `page_analysis_map` should feed the quality reporting pipeline
@@ -92,7 +92,7 @@ Shipped v1.2 Production Readiness across phases 13-18 and released `v1.2.0` on 2
 - Body text purity with 6 detectors, confidence scoring, multi-file output
 - Anna's Archive integration with quota-based LibGen fallback
 
-**Planning state:** v1.3 is initialized with phases 19-21. Phase 19 now has research plus 2 execution plans under `.planning/phases/19-structured-rag-output-contract/`, and the next workflow step is `$gsdr-execute-phase 19`.
+**Planning state:** Phase 19 is complete with research, 2 plan summaries, and 2 execution commits under `.planning/phases/19-structured-rag-output-contract/`. The next workflow step is `$gsdr-plan-phase 20`.
 
 **Scope cleanup:** `search_multi_source` is already an exposed MCP tool in the server, tests, and public docs, so v1.3 does not spend milestone scope on promoting it.
 
@@ -117,7 +117,7 @@ Shipped v1.2 Production Readiness across phases 13-18 and released `v1.2.0` on 2
 | Compositor recall bias to BODY | Unclaimed/low-confidence defaults safe | ✓ Good — no body text loss |
 | Anna's domain_index=1 | domain_index=0 has SSL errors | ✓ Good — fast downloads work |
 | LibGen as fallback only | Anna's has API key with quota | ✓ Good — quota-based fallback |
-| Keep v1.3 response changes additive | `process_document_for_rag` and `download_book_to_file` already have tests and consumers expecting current path fields | — Pending |
+| Keep v1.3 response changes additive | `process_document_for_rag` and `download_book_to_file` already have tests and consumers expecting current path fields | ✓ Good — Phase 19 shipped the richer bundle contract without breaking the body-path anchor |
 | Treat `search_multi_source` as shipped scope | Tool is already registered, tested, and documented, so milestone time should go to RAG quality internals instead | ✓ Good — resolved during v1.3 initialization |
 
 ## Constraints
@@ -129,4 +129,4 @@ Shipped v1.2 Production Readiness across phases 13-18 and released `v1.2.0` on 2
 - **Compatibility**: `process_document_for_rag` and `download_book_to_file` response shapes must remain additive for existing MCP clients
 
 ---
-*Last updated: 2026-04-16 after starting milestone v1.3*
+*Last updated: 2026-04-16 after completing Phase 19*

@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-04-16)
 
 **Core value:** Reliable, maintainable MCP server for book access — production-ready infrastructure with high-quality scholarly text extraction
-**Current focus:** v1.3 RAG Pipeline Refinement — Phase 19 planned and ready for execution
+**Current focus:** v1.3 RAG Pipeline Refinement — Phase 19 completed, Phase 20 ready for planning
 
 ## Current Position
 
-Phase: 19. Structured RAG Output Contract
-Plan: 19-01, 19-02
-Status: Research complete and execution plans written
-Last activity: 2026-04-16 — planned Phase 19 with 2 execution plans
+Phase: 20. Quality Scoring Harness
+Plan: None yet
+Status: Phase 19 completed; waiting on Phase 20 planning
+Last activity: 2026-04-16 — completed Phase 19 with 2 plan summaries and additive contract verification
 
-Progress: [████████████████----] v1.3 active (Phase 19 planned, 2 execution plans queued)
+Progress: [████████████████████----] v1.3 active (Phase 19 complete, Phase 20 next)
 
 ## Milestones Shipped
 
@@ -24,7 +24,7 @@ Progress: [████████████████----] v1.3 active (Ph
 | v1.1 | Quality & Expansion | 8-12 | 21 | 2026-02-04 |
 | v1.2 | Production Readiness | 13-18 | 16 | 2026-03-20 |
 
-**Total:** 18 phases, 59 plans executed across 3 milestones
+**Total:** 19 phases, 61 plans executed across 3 shipped milestones plus active v1.3 work
 
 ## Accumulated Context
 
@@ -33,12 +33,12 @@ Progress: [████████████████----] v1.3 active (Ph
 All v1.2 decisions are archived in `.planning/milestones/v1.2-ROADMAP.md`.
 All v1.2 phase artifacts now live under `.planning/milestones/v1.2-phases/`.
 v1.3 is now defined in `.planning/REQUIREMENTS.md` and `.planning/ROADMAP.md`.
-Phase 19 research and plans live under `.planning/phases/19-structured-rag-output-contract/`.
+Phase 19 research, summaries, and execution artifacts live under `.planning/phases/19-structured-rag-output-contract/`.
 
 ### Pending Todos
 
 - None in GSD.
-- Next workflow step: `$gsdr-execute-phase 19`.
+- Next workflow step: `$gsdr-plan-phase 20`.
 
 ### Deferred Items
 
@@ -56,8 +56,8 @@ Phase 19 research and plans live under `.planning/phases/19-structured-rag-outpu
 ## Session Continuity
 
 Last session: 2026-04-16
-Stopped at: Phase 19 planning after writing research and 2 execution plans
-Resume with: `$gsdr-execute-phase 19`
+Stopped at: Phase 19 completed after Python and Node/MCP contract execution
+Resume with: `$gsdr-plan-phase 20`
 
 ### Performance Metrics
 
@@ -80,7 +80,9 @@ Resume with: `$gsdr-execute-phase 19`
 | 17-02      | 8min     | 3     | 2     |
 | 18-01      | 18min    | 2     | 4     |
 | 18-02      | 3min     | 2     | 4     |
+| 19-01      | 35min    | 2     | 5     |
+| 19-02      | 45min    | 2     | 9     |
 
 ---
 
-_Last updated: 2026-04-16 after planning Phase 19_
+_Last updated: 2026-04-16 after completing Phase 19_

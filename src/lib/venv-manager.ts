@@ -34,7 +34,10 @@ const __dirname = path.dirname(__filename);
  */
 export async function getManagedPythonPath(): Promise<string> {
   const projectRoot = path.resolve(__dirname, '..', '..');
-  const uvVenvPython = path.join(projectRoot, '.venv', 'bin', 'python');
+  const isWindows = process.platform === 'win32';
+  const uvVenvPython = isWindows
+    ? path.join(projectRoot, '.venv', 'Scripts', 'python.exe')
+    : path.join(projectRoot, '.venv', 'bin', 'python');
 
   // Check if UV venv exists
   if (!existsSync(uvVenvPython)) {

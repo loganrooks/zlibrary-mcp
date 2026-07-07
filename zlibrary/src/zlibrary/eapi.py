@@ -5,11 +5,13 @@ Bypasses Cloudflare by using POST/GET to /eapi/* endpoints
 with cookie-based authentication.
 """
 
+import re
 import httpx
 import aiofiles
 import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from urllib.parse import unquote
 
 
 EAPI_HEADERS = {
@@ -225,11 +227,18 @@ class EAPIClient:
                 if not filename:
                     # Try Content-Disposition header
                     cd = response.headers.get("content-disposition", "")
-                    if "filename=" in cd:
-                        # Extract filename from header
-                        parts = cd.split("filename=")
-                        if len(parts) > 1:
-                            filename = parts[1].strip().strip('"').strip("'")
+                    if "filename" in cd:
+                        m = re.search(
+                            r"filename\*\s*=\s*UTF-8''([^;\s]+)", cd, re.IGNORECASE
+                        )
+                        if m:
+                            filename = unquote(m.group(1))
+                        else:
+                            m = re.search(r'filename\s*=\s*"([^"]+)"', cd)
+                            if not m:
+                                m = re.search(r'filename\s*=\s*([^;"\s]+)', cd)
+                            if m:
+                                filename = m.group(1).strip()
                     if not filename:
                         # Derive from URL path
                         url_path = str(response.url).split("?")[0]

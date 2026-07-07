@@ -781,8 +781,9 @@ async function start(
   }
 }
 
-// Auto-start logic
-if (import.meta.url === `file://${process.argv[1]}`) {
+// Auto-start logic (Windows-compatible path comparison)
+const _entryPoint = process.argv[1];
+if (_entryPoint && fileURLToPath(import.meta.url) === path.resolve(_entryPoint)) {
   start().catch((err) => {
     console.error('Fatal error starting server:', err);
     process.exit(1);

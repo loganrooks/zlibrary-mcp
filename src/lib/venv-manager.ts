@@ -50,7 +50,9 @@ export async function getManagedPythonPath(): Promise<string> {
       '  2. Install all dependencies from pyproject.toml\n' +
       '  3. Generate uv.lock for reproducibility\n\n' +
       'First time setup? Install UV:\n' +
-      '  curl -LsSf https://astral.sh/uv/install.sh | sh\n' +
+      (isWindows
+        ? '  powershell -c "irm https://astral.sh/uv/install.ps1 | iex"\n'
+        : '  curl -LsSf https://astral.sh/uv/install.sh | sh\n') +
       '  # Or: pip install uv\n\n' +
       'See: https://docs.astral.sh/uv/getting-started/installation/'
     );
@@ -69,7 +71,7 @@ export async function getManagedPythonPath(): Promise<string> {
     throw new Error(
       `Python at ${uvVenvPython} is not executable.\n` +
       `This usually means .venv is corrupted. Try:\n` +
-      `  rm -rf .venv\n` +
+      (isWindows ? `  rmdir /s /q .venv\n` : `  rm -rf .venv\n`) +
       `  uv sync`,
       { cause: error }
     );

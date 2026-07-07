@@ -244,6 +244,9 @@ class EAPIClient:
                         url_path = str(response.url).split("?")[0]
                         filename = url_path.split("/")[-1] or f"{book_id}.bin"
 
+                # Sanitize: strip directory components to prevent path traversal
+                filename = os.path.basename(filename) or f"{book_id}.bin"
+
                 output_path = Path(output_dir) / filename
 
                 async with aiofiles.open(output_path, "wb") as f:

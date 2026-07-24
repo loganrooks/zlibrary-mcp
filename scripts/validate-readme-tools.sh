@@ -5,13 +5,19 @@ set -euo pipefail
 # Compares tool names registered in src/index.ts against those documented in README.md.
 # Exits 0 if the sets match, exits 1 with a diff if they diverge.
 
+# Extraction runs through python3 rather than `grep -oP`: PCRE mode is a GNU
+# extension, so BSD grep on macOS fails this script with "invalid option -- P"
+# even though it passes on the Linux CI runner (issue #14).
+
 # Extract tool names from server.tool() calls in src/index.ts.
 # server.tool( appears on one line; the tool name string appears on the next line.
-SOURCE_TOOLS=$(grep -A 1 "server\.tool(" src/index.ts | grep -oP "(?<=['\"])[a-z_]+(?=['\"])" | sort)
+SOURCE_TOOLS=$(grep -A 1 "server\.tool(" src/index.ts \
+  | python3 -c "import re,sys; print('\n'.join(sorted(m for l in sys.stdin for m in re.findall(r'[\'\"]([a-z_]+)[\'\"]', l))))")
 
 # Extract tool names from the README.md Available MCP Tools section only.
 # Scopes to the section between "## Available MCP Tools" and the next "## " heading.
-README_TOOLS=$(sed -n '/## Available MCP Tools/,/^## /p' README.md | grep -oP '(?<=\| \`)[a-z_]+(?=\`)' | sort)
+README_TOOLS=$(sed -n '/## Available MCP Tools/,/^## /p' README.md \
+  | python3 -c "import re,sys; print('\n'.join(sorted(m for l in sys.stdin for m in re.findall(r'\| \`([a-z_]+)\`', l))))")
 
 SOURCE_COUNT=$(echo "$SOURCE_TOOLS" | grep -c .)
 README_COUNT=$(echo "$README_TOOLS" | grep -c .)

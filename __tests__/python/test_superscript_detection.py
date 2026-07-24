@@ -18,6 +18,8 @@ from pathlib import Path
 # Add lib to path for importing rag_processing
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "lib"))
 
+from conftest import require_real_fixture
+
 from rag_processing import _is_superscript, _calculate_page_normal_font_size
 
 pytestmark = pytest.mark.unit
@@ -243,8 +245,7 @@ class TestSuperscriptIntegration:
             / "kant_critique_pages_80_85.pdf"
         )
 
-        if not pdf_path.exists():
-            pytest.skip(f"Test PDF not found: {pdf_path}")
+        require_real_fixture(pdf_path)
 
         doc = fitz.open(str(pdf_path))
         page = doc[0]
@@ -285,8 +286,7 @@ class TestSuperscriptIntegration:
             / "kant_critique_pages_80_85.pdf"
         )
 
-        if not pdf_path.exists():
-            pytest.skip(f"Test PDF not found: {pdf_path}")
+        require_real_fixture(pdf_path)
 
         doc = fitz.open(str(pdf_path))
         page = doc[0]

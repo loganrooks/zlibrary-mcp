@@ -7,6 +7,7 @@ OCR artifacts.
 """
 
 import pytest
+from conftest import require_real_fixture
 import sys
 import os
 
@@ -180,7 +181,9 @@ class TestOCRQualityIntegration:
     @pytest.fixture
     def heidegger_pdf_path(self):
         """Path to Heidegger test PDF."""
-        return "test_files/heidegger_pages_22-23_primary_footnote_test.pdf"
+        path = "test_files/heidegger_pages_22-23_primary_footnote_test.pdf"
+        require_real_fixture(path)
+        return path
 
     def test_heidegger_false_positive_reduction(self, heidegger_pdf_path):
         """

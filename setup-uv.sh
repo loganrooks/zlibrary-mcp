@@ -6,8 +6,15 @@
 
 set -e
 
-# Check Python version
-PYTHON_VERSION=$(python3 --version 2>&1 | grep -oP '\d+\.\d+')
+# Check Python version.
+# Ask Python for its own version rather than parsing `python3 --version` with
+# `grep -oP`: PCRE mode is a GNU extension that BSD grep on macOS rejects with
+# "invalid option -- P" (issue #14).
+if ! command -v python3 &> /dev/null; then
+    echo "Error: python3 not found on PATH. Install Python 3.10+ and retry."
+    exit 1
+fi
+PYTHON_VERSION=$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
 REQUIRED="3.10"
 if [ "$(printf '%s\n' "$REQUIRED" "$PYTHON_VERSION" | sort -V | head -n1)" != "$REQUIRED" ]; then
     echo "Error: Python $REQUIRED+ required, found $PYTHON_VERSION"

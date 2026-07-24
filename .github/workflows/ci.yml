@@ -59,7 +59,18 @@ jobs:
       - run: npm ci
       - run: uv sync
       - run: npm audit --omit=dev --audit-level=critical
-      - run: uv run pip-audit --ignore-vuln CVE-2026-4539 --ignore-vuln CVE-2026-3029  # pygments + pymupdf - no compatible fix
+      # Blocking gate: any advisory with an available fix must be picked up via
+      # tool.uv.constraint-dependencies. Only advisories with NO shipped fix, or
+      # whose fix is blocked by a documented pin, may be ignored here — each one
+      # needs a reason on the line.
+      - run: >
+          uv run pip-audit
+          --ignore-vuln CVE-2026-4539
+          --ignore-vuln CVE-2026-3029
+          --ignore-vuln PYSEC-2026-597
+        # CVE-2026-4539  pygments  - no compatible fix published
+        # CVE-2026-3029  pymupdf   - fix requires 1.26.7, which breaks footnote extraction
+        # PYSEC-2026-597 nltk      - no fix published as of 2026-07
 
   lint:
     runs-on: ubuntu-latest

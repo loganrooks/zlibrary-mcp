@@ -8,6 +8,7 @@ from lib.rag_processing import (
 )  # Added detect_garbled_text import
 import pytest
 from pathlib import Path
+from conftest import require_real_fixture
 from unittest.mock import AsyncMock  # Import call
 from bs4 import BeautifulSoup  # Added for EPUB tests
 from PIL import Image as PILImage  # Import PIL directly for mocking spec
@@ -447,7 +448,7 @@ def test_detect_quality_text_high():  # Renamed test
     """Test that detect_pdf_quality identifies a high-quality text PDF."""
     # Use the existing sample.pdf fixture which should be good quality
     good_pdf_path = FIXTURE_DIR / "sample.pdf"
-    assert good_pdf_path.is_file(), "Good quality sample PDF fixture missing"
+    require_real_fixture(good_pdf_path)
 
     # Expected result for good quality text
     # NOTE: sample.pdf is detected as having text and significant image area.
@@ -1397,7 +1398,9 @@ def test_multiblock_footnote_collection():
     from lib.rag_processing import _find_definition_for_marker
 
     # Open Kant PDF (real test file required)
-    doc = fitz.open("test_files/kant_critique_pages_80_85.pdf")
+    kant_pdf = "test_files/kant_critique_pages_80_85.pdf"
+    require_real_fixture(kant_pdf)
+    doc = fitz.open(kant_pdf)
     page = doc[1]  # Page 2 (0-indexed)
 
     # Define marker patterns

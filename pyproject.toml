@@ -76,7 +76,7 @@ build-backend = "setuptools.build_meta"
 [tool.uv]
 # Development dependencies (alternative syntax)
 dev-dependencies = [
-    "pytest>=8.4.0",
+    "pytest>=9.0.3",  # PYSEC-2026-1845
     "pytest-asyncio>=1.2.0",
     "pytest-mock>=3.15.0",
     "pytest-benchmark>=5.1.0",
@@ -84,19 +84,30 @@ dev-dependencies = [
     "jsonschema>=4.26.0",
     "pytest-cov>=7.0.0",
     "pip-audit>=2.7.0",
+    "pip>=26.1.2",  # PYSEC-2026-196, PYSEC-2026-2875, PYSEC-2026-2876 (pulled in by pip-audit)
 ]
 
-# Constraints to fix security vulnerabilities in transitive deps
+# Constraints to fix security vulnerabilities in transitive deps.
+# Floors are raised to the lowest version pip-audit reports as fixed; keep them
+# as `>=` so Dependabot/`uv lock --upgrade` can move forward without edits here.
 constraint-dependencies = [
-    "aiohttp>=3.13.3",       # CVE-2025-69223 through CVE-2025-69230
+    "aiohttp>=3.14.1",       # PYSEC-2026-2094..2113 (22 advisories)
     "brotli>=1.2.0",         # CVE-2025-6176
+    "click>=8.3.3",          # PYSEC-2026-2132
     "pdfminer.six>=20251230", # CVE-2025-64512, GHSA-f83h-ghpp-7wcc
-    "cryptography>=46.0.5",  # CVE-2026-26007
+    "cryptography>=48.0.1",  # PYSEC-2026-36, GHSA-537c-gmf6-5ccf
+    "idna>=3.15",            # PYSEC-2026-215
+    "lxml>=6.1.0",           # PYSEC-2026 lxml advisories
+    "msgpack>=1.2.1",        # PYSEC-2026 msgpack advisory
     "nltk>=3.9.4",           # CVE-2025-14009, CVE-2026-33230
-    "pillow>=12.1.1",        # CVE-2026-25990
+    "pi-heif>=1.3.0",        # transitive via ocrmypdf image stack
+    "pillow>=12.3.0",        # PYSEC-2026-3451..3496 (26 advisories)
     "pymupdf==1.26.5",         # Pin — 1.26.6 lacks Docker wheel, 1.26.7 breaks footnote extraction; CVE-2026-3029 ignored in CI
+    "python-dotenv>=1.2.2",  # PYSEC-2026-2270
     "requests>=2.33.0",      # CVE-2026-25645
-    "ujson>=5.12.0",         # CVE-2026-32874, CVE-2026-32875
+    "soupsieve>=2.8.4",      # PYSEC-2026-3071, PYSEC-2026-3072
+    "ujson>=5.13.0",         # PYSEC-2026-2293, PYSEC-2026-2294
+    "urllib3>=2.7.0",        # PYSEC-2026-141, PYSEC-2026-142
 ]
 
 # Ruff configuration

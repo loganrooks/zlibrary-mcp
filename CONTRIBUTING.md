@@ -10,12 +10,19 @@ Thank you for your interest in contributing! This guide covers everything you ne
 - **Python 3.10+** ([download](https://www.python.org/))
 - **UV** -- modern Python package manager ([install](https://docs.astral.sh/uv/))
 - **Git**
+- **git-lfs** -- required; the test PDF corpus is LFS-tracked. Run `git lfs pull`
+  after cloning. Do **not** run `git lfs install` -- it writes its own git hooks
+  and conflicts with the repo's Husky-managed hooks (`core.hooksPath`); `git lfs
+  pull` works fine without it.
 
 ### Clone and Setup
 
 ```bash
 git clone https://github.com/loganrooks/zlibrary-mcp.git
 cd zlibrary-mcp
+
+# Hydrate LFS-tracked test fixtures (no `git lfs install` needed -- see Prerequisites)
+git lfs pull
 
 # Setup Python environment (creates .venv/ with all dependencies)
 bash setup-uv.sh
@@ -33,11 +40,12 @@ npm run build
 # Node.js tests (Jest)
 npm test
 
-# Python tests (pytest)
-uv run pytest
+# Python tests -- fast suite (pytest)
+uv run pytest -m "not slow and not integration and not performance"
 ```
 
-Both test suites should pass with no errors.
+Both should pass with no errors. This pair is exactly what CI gates pull requests
+on, so if it is green locally, the PR gate will be too.
 
 ## Project Architecture
 
@@ -77,11 +85,11 @@ node --experimental-vm-modules node_modules/jest/bin/jest.js __tests__/zlibrary-
 ### Python (pytest)
 
 ```bash
-# Full test suite
-uv run pytest
+# Fast suite (the routine command; skips slow, integration, and performance tests, ~4s)
+uv run pytest -m "not slow and not integration and not performance"
 
-# Fast subset (skips slow and integration tests, ~4s)
-uv run pytest -m "not slow and not integration"
+# Full corpus suite (requires LFS-hydrated test PDFs)
+uv run pytest
 
 # Specific test file
 uv run pytest __tests__/python/test_rag_processing.py
@@ -96,6 +104,15 @@ npm run test:e2e
 ```
 
 Coverage thresholds are enforced -- CI will fail if coverage drops below the project baseline.
+
+### Test tiers and credentials
+
+| Tier | Command | Needs |
+|------|---------|-------|
+| Fast (PR gate) | `uv run pytest -m "not slow and not integration and not performance"` | Nothing extra |
+| Full corpus | `uv run pytest` | LFS-hydrated test PDFs (`git lfs pull`) |
+| Integration | `uv run pytest -m integration` | `ZLIBRARY_EMAIL` / `ZLIBRARY_PASSWORD` in `.env`; auto-skips without them |
+| E2E | `npm run test:e2e` | Docker |
 
 ## Code Style
 
@@ -132,28 +149,67 @@ git checkout -b docs/topic                   # Documentation
 
 ### Commit Messages
 
-Use [Conventional Commits](https://www.conventionalcommits.org/) format:
+Use [Conventional Commits](https://www.conventionalcommits.org/) format: `<type>(<scope>): <subject>`
 
 ```
-feat: add new search filter for publisher
-fix: handle empty search results gracefully
+feat(search): add new search filter for publisher
+fix(api): handle empty search results gracefully
 docs: update API reference with new parameter
-refactor: extract retry logic into separate module
-test: add integration tests for download flow
-chore: update dependencies
+refactor(bridge): extract retry logic into separate module
+test(download): add integration tests for download flow
+chore(deps): update dependencies
 ```
+
+**Types:**
+
+| Type | Description | Example |
+|------|-------------|---------|
+| `feat` | New feature | `feat(search): add fuzzy matching support` |
+| `fix` | Bug fix | `fix(venv): handle undefined config values` |
+| `docs` | Documentation only | `docs(readme): update setup instructions` |
+| `style` | Code style changes (formatting) | `style: apply prettier formatting` |
+| `refactor` | Code refactoring | `refactor(bridge): extract retry logic` |
+| `perf` | Performance improvements | `perf(search): implement result caching` |
+| `test` | Adding/updating tests | `test(api): add error handling tests` |
+| `chore` | Maintenance tasks | `chore(deps): update dependencies` |
+| `ci` | CI/CD changes | `ci: add automated testing workflow` |
+| `build` | Build system changes | `build: update typescript config` |
+| `revert` | Revert previous commit | `revert: revert "feat: add feature"` |
+
+**Scopes** (the area of the codebase affected): `search`, `download`, `rag`, `api`,
+`bridge`, `venv`, `zlib`, plus `tests`, `docs`, and `deps` where appropriate.
 
 Keep commits focused -- one logical change per commit.
+
+## Constraints that will fail review
+
+These are hard rules; PRs that break them will be sent back:
+
+- **stdio purity**: under the stdio transport, stdout is the JSON-RPC channel and
+  nothing else. Diagnostics must use `logger` from `src/lib/logger.ts` (stderr).
+  A `console.log` in `src/` breaks strict stdio clients, and
+  `__tests__/stdio-purity.test.js` fails the build if one appears.
+- **Additive-only RAG bundle contract**: the Python bridge output shape (the
+  structured RAG output bundle from `process_document_for_rag` and
+  `download_book_to_file`) is consumed by MCP clients. Add fields only -- never
+  rename, remove, or change the meaning of existing ones.
+- **Dependency floors in `pyproject.toml`**: version floors follow the audit
+  policy in SECURITY.md. Do not lower a floor or loosen a constraint without
+  flagging it explicitly in the PR.
 
 ## Pull Request Process
 
 1. Create a feature branch from `master`
 2. Make your changes, following existing code patterns
-3. Ensure tests pass locally: `npm test` and `uv run pytest`
+3. Ensure tests pass locally: `npm test` and the fast pytest suite (see [Test tiers](#test-tiers-and-credentials))
 4. lint-staged hooks will run automatically on commit (ESLint, Prettier, Ruff, TypeScript type-check)
 5. Push your branch and open a PR
 6. CI will run tests, linting, and coverage checks
 7. Address any review feedback
+
+Note: PRs from forks run the fast suite only -- the full corpus and Docker E2E
+jobs run post-merge. Flag anything you could not verify locally in the PR
+description so reviewers can weigh a known gap rather than an unknown one.
 
 ### PR Description
 

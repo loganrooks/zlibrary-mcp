@@ -1,0 +1,50 @@
+version: 2
+
+# Security constraint floors in pyproject.toml went stale between v1.2.1 and now,
+# and the resulting 74 pip-audit advisories turned the `audit` job into a
+# permanently-red gate that nobody could act on. Automated updates keep that from
+# recurring: each bump arrives as a reviewable PR against a green CI baseline
+# instead of accumulating silently until a release is blocked.
+updates:
+  - package-ecosystem: npm
+    directory: '/'
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      # Test and lint tooling churns constantly and carries no runtime risk;
+      # reviewing it as one PR keeps the queue readable.
+      dev-tooling:
+        dependency-type: development
+        update-types: ['minor', 'patch']
+    commit-message:
+      prefix: 'chore(deps)'
+      prefix-development: 'chore(deps-dev)'
+
+  - package-ecosystem: uv
+    directory: '/'
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    ignore:
+      # Pinned deliberately: 1.26.6 lacks a Docker wheel and 1.26.7 breaks
+      # footnote text extraction. Revisit by hand, not by bot.
+      - dependency-name: pymupdf
+    commit-message:
+      prefix: 'chore(deps)'
+
+  - package-ecosystem: github-actions
+    directory: '/'
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: 'chore(ci)'
+
+  - package-ecosystem: docker
+    directory: '/docker'
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: 'chore(docker)'

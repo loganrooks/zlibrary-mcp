@@ -1,0 +1,95 @@
+name: Bug report
+description: Something is broken in the server itself
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Before filing, run the built-in diagnostic:**
+
+        ```bash
+        npm run doctor
+        ```
+
+        This probes Z-Library, Anna's Archive, and LibGen directly. Those are
+        undocumented third-party services that rotate domains without notice, so
+        an upstream outage and a bug in this server look identical from an MCP
+        client. If `doctor` reports failures against every source, the problem is
+        very likely upstream — please say so below rather than filing separately.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you expected, and what you got instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Configure the server in <client>
+        2. Call <tool> with <arguments>
+        3. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Output of `npm run doctor`
+      render: text
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Server logs (stderr)
+      description: >
+        Diagnostics go to stderr; your MCP client captures them. Re-run with
+        LOG_LEVEL=debug for detail — but scrub anything private first, since
+        debug level echoes your search arguments.
+      render: text
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Output of `node -p "require('./package.json').version"`, or the npm/Docker tag.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Linux
+        - macOS (Apple Silicon)
+        - macOS (Intel)
+        - Windows
+        - Docker
+    validations:
+      required: true
+
+  - type: dropdown
+    id: client
+    attributes:
+      label: MCP client
+      options:
+        - Claude Code
+        - Claude Desktop
+        - RooCode
+        - Cline
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: runtimes
+    attributes:
+      label: Node and Python versions
+      description: Output of `node -v` and `python3 --version`.
+    validations:
+      required: true

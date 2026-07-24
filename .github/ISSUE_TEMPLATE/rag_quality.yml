@@ -1,0 +1,66 @@
+name: RAG output quality
+description: Extracted text is wrong, garbled, or missing structure
+labels: [rag-quality]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Extraction quality reports need the source document to be actionable — the
+        pipeline's behaviour depends on how a specific PDF encodes text, footnotes,
+        and page furniture, and it cannot be reproduced from a description alone.
+
+  - type: dropdown
+    id: format
+    attributes:
+      label: Source format
+      options: [PDF, EPUB, TXT]
+    validations:
+      required: true
+
+  - type: dropdown
+    id: category
+    attributes:
+      label: What is wrong
+      options:
+        - Garbled text (OCR artefacts, letter spacing)
+        - Missing body text
+        - Footnotes wrong or misattributed
+        - Headings / structure lost
+        - Page numbers wrong or missing
+        - Marginalia or running heads leaking into body
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected vs actual
+      description: Quote the source passage, then the extracted output.
+    validations:
+      required: true
+
+  - type: input
+    id: source
+    attributes:
+      label: Source document
+      description: >
+        Z-Library book ID, or a description precise enough to identify the exact
+        edition. Please do not attach copyrighted files.
+    validations:
+      required: true
+
+  - type: input
+    id: pages
+    attributes:
+      label: Affected pages
+      placeholder: 'e.g. pp. 64-65'
+
+  - type: textarea
+    id: metadata
+    attributes:
+      label: Contents of the bundle's `.metadata.json`
+      description: >
+        Processing runs emit a metadata sidecar next to the output. It records
+        which pipeline stages ran, which is usually where the answer is.
+      render: json

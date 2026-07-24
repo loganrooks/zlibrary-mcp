@@ -63,7 +63,12 @@ describe('MCP Server', () => {
     expect(mockMcpServer.tool).toHaveBeenCalled();
     expect(mockMcpServer.tool.mock.calls.length).toBeGreaterThanOrEqual(11);
     expect(mockMcpServer.connect).toHaveBeenCalledWith(mockTransport);
-    expect(console.log).toHaveBeenCalledWith('Z-Library MCP server (ESM/TS) is running via Stdio...');
+    // Startup banner goes to stderr: stdout is reserved for JSON-RPC traffic.
+    expect(console.log).not.toHaveBeenCalled();
+    expect(console.error).toHaveBeenCalledWith(
+      expect.stringContaining('[info]'),
+      'Z-Library MCP server (ESM/TS) is running via Stdio...'
+    );
   });
 
   test('tools/list: McpServer should register all expected tools', async () => {

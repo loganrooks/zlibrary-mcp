@@ -1,0 +1,150 @@
+name: Upstream Contract Check
+
+# Every capability in this server rests on undocumented third-party surfaces:
+# Z-Library's EAPI JSON endpoints, Anna's Archive HTML, and LibGen. None of them
+# publish a contract or a changelog, and all of them rotate domains. The unit
+# suite mocks every one of those calls, so it stays green for months after the
+# real integrations break — which is how a server ships as "working" and users
+# report otherwise (issue #11).
+#
+# This job is the only thing in CI that talks to the real upstreams. It runs on a
+# schedule so that drift surfaces as a filed issue rather than a bug report, and
+# it never gates a pull request: upstream being down is not a reason to block a
+# merge.
+
+on:
+  schedule:
+    - cron: '17 6 * * *' # daily, 06:17 UTC
+  workflow_dispatch:
+    inputs:
+      run_live_tests:
+        description: 'Run the credentialed live integration suite'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  reachability:
+    name: Source reachability
+    runs-on: ubuntu-latest
+    outputs:
+      report: ${{ steps.probe.outputs.report }}
+      failed: ${{ steps.probe.outputs.failed }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        with:
+          build: 'false'
+      - name: Probe configured sources
+        id: probe
+        run: uv run python scripts/check_upstream.py --github-output
+
+  live_tests:
+    name: Live integration suite
+    runs-on: ubuntu-latest
+    # Credentials live in repository secrets. Forks and credential-less setups
+    # skip cleanly rather than reporting a false failure.
+    if: github.event_name == 'schedule' || inputs.run_live_tests
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+      - uses: ./.github/actions/setup
+      - name: Run integration-marked tests against live Z-Library
+        id: live
+        env:
+          ZLIBRARY_EMAIL: ${{ secrets.ZLIBRARY_EMAIL }}
+          ZLIBRARY_PASSWORD: ${{ secrets.ZLIBRARY_PASSWORD }}
+        run: |
+          if [ -z "$ZLIBRARY_EMAIL" ] || [ -z "$ZLIBRARY_PASSWORD" ]; then
+            echo "::warning::ZLIBRARY_EMAIL/ZLIBRARY_PASSWORD secrets are not set — live suite skipped."
+            echo "status=skipped" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          set +e
+          uv run pytest -m integration --benchmark-disable --no-header -q 2>&1 | tee live.log
+          code=${PIPESTATUS[0]}
+          set -e
+          if [ "$code" -eq 0 ]; then
+            echo "status=passed" >> "$GITHUB_OUTPUT"
+          else
+            echo "status=failed" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always() && steps.live.outputs.status != 'skipped'
+        with:
+          name: live-integration-log
+          path: live.log
+          retention-days: 30
+      - name: Fail the job when live tests regressed
+        if: steps.live.outputs.status == 'failed'
+        run: |
+          echo "Live integration tests failed — see the uploaded log."
+          exit 1
+
+  report:
+    name: File drift issue
+    runs-on: ubuntu-latest
+    needs: [reachability, live_tests]
+    if: always() && github.event_name == 'schedule' && (needs.reachability.result == 'failure' || needs.live_tests.result == 'failure' || needs.reachability.outputs.failed == 'true')
+    steps:
+      - uses: actions/github-script@v7
+        # The probe report is multi-line free text built partly from upstream
+        # responses. It is passed through env rather than interpolated into the
+        # script body, where a backtick or `${` would break out of the literal.
+        env:
+          PROBE_REPORT: ${{ needs.reachability.outputs.report }}
+          REACHABILITY_RESULT: ${{ needs.reachability.result }}
+          LIVE_RESULT: ${{ needs.live_tests.result }}
+        with:
+          script: |
+            const title = 'Upstream contract check failing';
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const report = process.env.PROBE_REPORT || '(no reachability report)';
+            const body = [
+              'The scheduled upstream contract check did not pass. One of the third-party',
+              'surfaces this server depends on has changed, moved, or gone down.',
+              '',
+              `- reachability job: **${process.env.REACHABILITY_RESULT}**`,
+              `- live integration job: **${process.env.LIVE_RESULT}**`,
+              `- run: ${runUrl}`,
+              '',
+              '<details><summary>Reachability report</summary>',
+              '',
+              '```',
+              report,
+              '```',
+              '',
+              '</details>',
+              '',
+              'Unit tests mock these calls and will stay green, so triage from the run log.',
+            ].join('\n');
+
+            // Reuse one rolling issue so a prolonged outage does not create a new
+            // issue every morning.
+            const existing = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'upstream-drift',
+            });
+
+            if (existing.data.length > 0) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.data[0].number,
+                body,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title,
+                body,
+                labels: ['upstream-drift'],
+              });
+            }

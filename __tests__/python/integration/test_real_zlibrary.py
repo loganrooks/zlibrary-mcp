@@ -35,6 +35,10 @@ import python_bridge
 # Skip all integration tests if credentials not available
 pytestmark = [
     pytest.mark.integration,
+    # The zlib_client fixture is module-scoped; its httpx client binds to the
+    # event loop it was created on, so all tests in this module must share a
+    # module-scoped loop or later tests hit "Event loop is closed".
+    pytest.mark.asyncio(loop_scope="module"),
     pytest.mark.skipif(
         not os.getenv("ZLIBRARY_EMAIL") or not os.getenv("ZLIBRARY_PASSWORD"),
         reason="Integration tests require ZLIBRARY_EMAIL and ZLIBRARY_PASSWORD environment variables",
@@ -67,7 +71,6 @@ def test_download_dir():
 class TestRealAuthentication:
     """Test real Z-Library authentication."""
 
-    @pytest.mark.asyncio
     async def test_authentication_succeeds(self, credentials):
         """Should successfully authenticate with real credentials."""
         from zlibrary.eapi import EAPIClient
@@ -86,7 +89,6 @@ class TestRealAuthentication:
 
         await client.close()
 
-    @pytest.mark.asyncio
     async def test_authentication_fails_with_invalid_credentials(self):
         """Should raise error or return failure with invalid credentials."""
         from zlibrary.eapi import EAPIClient
@@ -103,7 +105,6 @@ class TestRealAuthentication:
 
         await client.close()
 
-    @pytest.mark.asyncio
     async def test_session_persistence(self, credentials):
         """Should maintain session across multiple operations."""
         from zlibrary.eapi import EAPIClient
@@ -131,7 +132,6 @@ class TestRealAuthentication:
 class TestRealBasicSearch:
     """Test basic search operations with real Z-Library."""
 
-    @pytest.mark.asyncio
     async def test_basic_search_returns_results(self, zlib_client):
         """Should return results for a common search query."""
         # Use injected client (no global state)
@@ -153,7 +153,6 @@ class TestRealBasicSearch:
         assert "title" in first_book or "name" in first_book
         assert "id" in first_book or "href" in first_book
 
-    @pytest.mark.asyncio
     async def test_search_with_year_filter(self, zlib_client):
         """Should respect year filters in search."""
         result = await python_bridge.search(
@@ -169,12 +168,12 @@ class TestRealBasicSearch:
 
         # If we got results, verify years are in range
         for book in result["books"]:
-            year = book.get("year", "")
-            if year and year.isdigit():
+            # EAPI returns year as int; older HTML scraping returned str.
+            year = str(book.get("year") or "")
+            if year.isdigit():
                 year_int = int(year)
                 assert 2020 <= year_int <= 2023
 
-    @pytest.mark.asyncio
     async def test_search_with_language_filter(self, zlib_client):
         """Should respect language filters."""
         result = await python_bridge.search(
@@ -189,18 +188,19 @@ class TestRealBasicSearch:
 class TestRealTermSearch:
     """Test term search with real Z-Library API."""
 
-    @pytest.mark.asyncio
     async def test_search_common_term(self, credentials, zlib_client):
         """Should find books for a common philosophical term."""
         # Test now uses isolated client from fixture
         await asyncio.sleep(1)
 
-        # search_by_term creates its own client, so we test it directly
+        # Reuse the module's authenticated client: the live login endpoint
+        # rate-limits repeated logins from one IP, so per-call logins flake.
         result = await search_by_term(
             term="dialectic",
             email=credentials["email"],
             password=credentials["password"],
             limit=5,
+            eapi_client=zlib_client,
         )
 
         # Verify structure
@@ -222,7 +222,6 @@ class TestRealTermSearch:
         # Should have some metadata
         assert "id" in first_book or "href" in first_book
 
-    @pytest.mark.asyncio
     async def test_term_search_with_filters(self, credentials, zlib_client):
         """Should support year and language filters in term search."""
         await asyncio.sleep(1)
@@ -234,6 +233,7 @@ class TestRealTermSearch:
             year_from=2000,
             languages="English",
             limit=5,
+            eapi_client=zlib_client,
         )
 
         # Should not error
@@ -245,7 +245,6 @@ class TestRealTermSearch:
 class TestRealAuthorSearch:
     """Test author search with real Z-Library API."""
 
-    @pytest.mark.asyncio
     async def test_search_famous_author(self, credentials, zlib_client):
         """Should find books by a famous author."""
         await asyncio.sleep(1)
@@ -255,6 +254,7 @@ class TestRealAuthorSearch:
             email=credentials["email"],
             password=credentials["password"],
             limit=5,
+            eapi_client=zlib_client,
         )
 
         # Verify structure
@@ -271,7 +271,6 @@ class TestRealAuthorSearch:
         assert "title" in first_book
         assert first_book["title"] != ""
 
-    @pytest.mark.asyncio
     async def test_search_author_with_comma_format(self, credentials, zlib_client):
         """Should handle 'Lastname, Firstname' format."""
         await asyncio.sleep(1)
@@ -281,13 +280,13 @@ class TestRealAuthorSearch:
             email=credentials["email"],
             password=credentials["password"],
             limit=5,
+            eapi_client=zlib_client,
         )
 
         # Should find results
         assert result["total_results"] >= 0
         assert isinstance(result["books"], list)
 
-    @pytest.mark.asyncio
     async def test_author_search_with_year_filter(self, credentials, zlib_client):
         """Should support year filtering in author search."""
         await asyncio.sleep(1)
@@ -299,6 +298,7 @@ class TestRealAuthorSearch:
             year_from=1800,
             year_to=1850,
             limit=5,
+            eapi_client=zlib_client,
         )
 
         # Should return filtered results
@@ -309,11 +309,10 @@ class TestRealAuthorSearch:
 class TestRealMetadataExtraction:
     """Test metadata extraction with real book pages."""
 
-    @pytest.mark.asyncio
     @pytest.mark.skip(
         reason="terms and booklists not available via EAPI — were HTML-scraped"
     )
-    async def test_extract_from_known_book(self, credentials, zlib_client):
+    async def test_extract_from_known_book(self, credentials, zlib_client, known_book):
         """Test metadata extraction from a known good book."""
         # Hegel's Encyclopaedia - we know this book exists
         # ID: 1252896, Hash: 882753
@@ -322,7 +321,7 @@ class TestRealMetadataExtraction:
         # Use the isolated client (python_bridge.get_book_metadata_complete doesn't support client param yet)
         # But the reset_global_client fixture ensures clean state
         metadata = await python_bridge.get_book_metadata_complete(
-            book_id="1252896", book_hash="882753"
+            book_id=known_book["id"], book_hash=known_book["hash"]
         )
 
         # Validate core structure
@@ -374,14 +373,13 @@ class TestRealMetadataExtraction:
         print(f"Description length: {len(metadata.get('description', ''))}")
         print(f"Keys in metadata: {list(metadata.keys())}")
 
-    @pytest.mark.asyncio
     @pytest.mark.skip(reason="IPFS CIDs not available via EAPI — were HTML-scraped")
-    async def test_extract_ipfs_cids(self, credentials, zlib_client):
+    async def test_extract_ipfs_cids(self, credentials, zlib_client, known_book):
         """Test that IPFS CIDs are extracted."""
         await asyncio.sleep(1)
 
         metadata = await python_bridge.get_book_metadata_complete(
-            book_id="1252896", book_hash="882753"
+            book_id=known_book["id"], book_hash=known_book["hash"]
         )
 
         # Should have IPFS CIDs
@@ -396,27 +394,31 @@ class TestRealMetadataExtraction:
                 f"Unexpected CID format: {cid}"
             )
 
-    @pytest.mark.asyncio
-    async def test_extract_rating_data(self, credentials, zlib_client):
+    async def test_extract_rating_data(self, credentials, zlib_client, known_book):
         """Test that rating and quality metrics are extracted."""
         await asyncio.sleep(1)
 
         metadata = await python_bridge.get_book_metadata_complete(
-            book_id="1252896", book_hash="882753"
+            book_id=known_book["id"], book_hash=known_book["hash"]
         )
 
-        # Should have rating info
-        if "rating" in metadata:
+        # Rating is None when the book has no rating; when present it is a
+        # dict with value/count (see enhanced_metadata._extract_rating_from_eapi).
+        assert "rating" in metadata
+        if metadata["rating"] is not None:
             assert "value" in metadata["rating"] or "score" in metadata["rating"]
             assert "count" in metadata["rating"] or "votes" in metadata["rating"]
 
-    @pytest.mark.asyncio
-    async def test_extract_download_link(self, credentials, zlib_client):
+    @pytest.mark.skip(
+        reason="download link not part of EAPI metadata — downloads flow "
+        "through EAPIClient.download_book (covered by TestDownloadOperations)"
+    )
+    async def test_extract_download_link(self, credentials, zlib_client, known_book):
         """Test that download link is properly extracted."""
         await asyncio.sleep(1)
 
         metadata = await python_bridge.get_book_metadata_complete(
-            book_id="1252896", book_hash="882753"
+            book_id=known_book["id"], book_hash=known_book["hash"]
         )
 
         # Should have download info
@@ -427,14 +429,15 @@ class TestRealMetadataExtraction:
         assert "link" in metadata["download"]
         assert "/dl/" in metadata["download"]["link"]
 
-    @pytest.mark.asyncio
-    async def test_metadata_extraction_performance(self, credentials, zlib_client):
+    async def test_metadata_extraction_performance(
+        self, credentials, zlib_client, known_book
+    ):
         """Should extract metadata within performance target (<5s with network)."""
         await asyncio.sleep(1)
 
         start = time.time()
         metadata = await python_bridge.get_book_metadata_complete(
-            book_id="1252896", book_hash="882753"
+            book_id=known_book["id"], book_hash=known_book["hash"]
         )
         duration = time.time() - start
 
@@ -450,8 +453,7 @@ class TestRealMetadataExtraction:
 class TestRealBooklistFetching:
     """Test booklist fetching with real Z-Library."""
 
-    @pytest.mark.asyncio
-    async def test_fetch_known_booklist(self, credentials):
+    async def test_fetch_known_booklist(self, credentials, zlib_client):
         """Should fetch a known booklist (Philosophy list)."""
         await asyncio.sleep(1)
 
@@ -462,6 +464,7 @@ class TestRealBooklistFetching:
             email=credentials["email"],
             password=credentials["password"],
             page=1,
+            eapi_client=zlib_client,
         )
 
         # Verify structure
@@ -480,8 +483,7 @@ class TestRealBooklistFetching:
         assert "title" in first_book
         assert first_book["title"] != ""
 
-    @pytest.mark.asyncio
-    async def test_booklist_pagination(self, credentials):
+    async def test_booklist_pagination(self, credentials, zlib_client):
         """Should support paginating through large booklists."""
         await asyncio.sleep(1)
 
@@ -493,6 +495,7 @@ class TestRealBooklistFetching:
             email=credentials["email"],
             password=credentials["password"],
             page=1,
+            eapi_client=zlib_client,
         )
 
         await asyncio.sleep(2)  # Longer delay between requests
@@ -505,6 +508,7 @@ class TestRealBooklistFetching:
             email=credentials["email"],
             password=credentials["password"],
             page=2,
+            eapi_client=zlib_client,
         )
 
         # Both should have results
@@ -525,7 +529,6 @@ class TestRealBooklistFetching:
 class TestRealWorldEdgeCases:
     """Test with real-world edge cases from Z-Library."""
 
-    @pytest.mark.asyncio
     async def test_search_returns_both_books_and_articles(
         self, credentials, zlib_client
     ):
@@ -549,7 +552,6 @@ class TestRealWorldEdgeCases:
             assert title != "", "All results should have titles"
             assert title != "N/A", "Titles should be extracted, not 'N/A'"
 
-    @pytest.mark.asyncio
     async def test_handle_special_characters_in_titles(self, credentials, zlib_client):
         """Should handle books with special characters in titles."""
         await asyncio.sleep(1)
@@ -565,7 +567,6 @@ class TestRealWorldEdgeCases:
         assert "books" in result
         assert isinstance(result["books"], list)
 
-    @pytest.mark.asyncio
     async def test_unicode_handling(self, credentials, zlib_client):
         """Should handle Unicode characters in various scripts."""
         await asyncio.sleep(1)
@@ -580,7 +581,6 @@ class TestRealWorldEdgeCases:
         # Should not crash
         assert "books" in result
 
-    @pytest.mark.asyncio
     async def test_empty_search_results(self, credentials, zlib_client):
         """Should handle searches with no results gracefully."""
         await asyncio.sleep(1)
@@ -601,7 +601,6 @@ class TestRealWorldEdgeCases:
 class TestDownloadOperations:
     """Test download functionality with real Z-Library."""
 
-    @pytest.mark.asyncio
     async def test_download_small_book(
         self, credentials, zlib_client, test_download_dir
     ):
@@ -645,7 +644,6 @@ class TestDownloadOperations:
 class TestPerformanceMetrics:
     """Measure real-world performance with live API."""
 
-    @pytest.mark.asyncio
     async def test_search_response_time(self, credentials, zlib_client):
         """Measure search response time."""
         await asyncio.sleep(1)
@@ -660,14 +658,15 @@ class TestPerformanceMetrics:
         # Log performance for monitoring
         print(f"\nSearch performance: {duration:.2f}s")
 
-    @pytest.mark.asyncio
-    async def test_metadata_extraction_response_time(self, credentials, zlib_client):
+    async def test_metadata_extraction_response_time(
+        self, credentials, zlib_client, known_book
+    ):
         """Measure metadata extraction response time."""
         await asyncio.sleep(1)
 
         start = time.time()
         metadata = await python_bridge.get_book_metadata_complete(
-            book_id="1252896", book_hash="882753"
+            book_id=known_book["id"], book_hash=known_book["hash"]
         )
         duration = time.time() - start
 

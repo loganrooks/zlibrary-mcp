@@ -304,9 +304,14 @@ The project maintains its own Python venv (`.venv/`) with these key dependencies
 
 ## Current Development
 
-Working on: `master` branch
-- Focus: Repo cleanup, CI/CD improvements, documentation updates
-- Branching Strategy: See `.claude/VERSION_CONTROL.md` for feature branch conventions and workflow
+The live plan is `.planning/ROADMAP.md` (GSD). v1.2 shipped 2026-03-20; v1.3 (RAG
+Pipeline Refinement) is active with Phase 19 complete and Phases 20-21 pending.
+
+For the current health assessment and forward roadmap — open PR/issue disposition,
+CI and release state, coverage gaps, multi-source expansion — see
+[claudedocs/architecture/repo-health-and-roadmap-2026-07-24.md](claudedocs/architecture/repo-health-and-roadmap-2026-07-24.md).
+
+Branching Strategy: See `.claude/VERSION_CONTROL.md` for feature branch conventions and workflow.
 
 ## Development Ecosystem
 
@@ -327,11 +332,18 @@ The `.claude` folder contains comprehensive documentation for development:
 
 ### 🎯 Current Priorities
 
-Check `ISSUES.md` (project root) for the complete list. Top priorities:
-1. Fix venv manager test warnings (ISSUE-002)
-2. Implement retry logic with exponential backoff (ISSUE-005)
-3. Add fuzzy search capabilities (SRCH-001)
-4. Create download queue management (DL-001)
+Check `ISSUES.md` (project root) for the full list, and the health assessment
+linked under "Current Development" for the reasoning behind these:
+
+1. Cut a release — npm still serves an older build than this repo (the publish
+   pipeline was broken from v1.2 through v1.2.1 and is now fixed)
+2. Windows support — merge PR #13 with tests for the platform branches
+3. Phases 20-21 from `.planning/ROADMAP.md` (RAG quality scoring harness, CI reporting)
+4. Promote Z-Library to a `SourceAdapter` so all tools route through `SourceRouter`
+
+Resolved and no longer priorities, despite older docs saying otherwise: ISSUE-002
+(closed by the UV migration), ISSUE-005 (closed by `src/lib/retry-manager.ts` and
+`src/lib/circuit-breaker.ts`), SRCH-001 (`search_advanced` ships fuzzy matching).
 
 ### 🔧 Development Workflow
 
@@ -384,16 +396,28 @@ For detailed Git operations, see `.claude/VERSION_CONTROL.md`.
 
 ### 💡 Key Architectural Decisions
 
-- **No Official API**: Z-Library has no public API, using EAPI via web scraping
-- **Hydra Mode**: Domains change frequently, need dynamic discovery
+- **No Official API**: Z-Library publishes no public API. Since the Phase 7 EAPI
+  migration (Feb 2026) access goes through undocumented **JSON** endpoints
+  (`/eapi/book/search`, `/eapi/user/login`, `/eapi/info/domains`) — not HTML
+  scraping. There are zero BeautifulSoup selectors left in `zlibrary/`. The
+  residual DOM-fragile surfaces are `lib/sources/annas.py` and EPUB internals.
+- **Hydra Mode**: Domains change frequently; `discover_eapi_domain()` resolves them
+  at runtime from `/eapi/info/domains`.
+- **stdout is the protocol channel**: under the stdio transport, stdout carries
+  JSON-RPC and nothing else. Use `logger` from `src/lib/logger.ts` (stderr) for all
+  diagnostics — a `console.log` in `src/` disconnects strict clients, and
+  `__tests__/stdio-purity.test.js` fails the build if one appears.
 - **Python Bridge**: Best document processing libraries are Python-based
 - **File-Based RAG**: Return file paths, not raw text (prevents AI memory overflow)
 - **Vendored Fork**: Custom zlibrary fork for control over critical dependency
+- **Upstream drift is detected, not assumed**: the unit suite mocks every
+  third-party call, so it stays green after real integrations break. The scheduled
+  `.github/workflows/upstream-check.yml` and `npm run doctor` cover that gap.
 
 ### 🛠️ Recommended MCP Servers
 
 For optimal development with Claude Code, configure these MCP servers:
-1. **Playwright**: E2E testing of web scraping
+1. **Playwright**: E2E testing of the few remaining HTML-scraped surfaces (Anna's Archive)
 2. **SQLite**: Local caching and metadata storage
 3. **Filesystem**: Download directory management
 4. **Sequential**: Complex debugging and analysis

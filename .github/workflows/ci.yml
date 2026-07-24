@@ -59,7 +59,18 @@ jobs:
       - run: npm ci
       - run: uv sync
       - run: npm audit --omit=dev --audit-level=critical
-      - run: uv run pip-audit --ignore-vuln CVE-2026-4539 --ignore-vuln CVE-2026-3029  # pygments + pymupdf - no compatible fix
+      # Blocking gate: any advisory with an available fix must be picked up via
+      # tool.uv.constraint-dependencies. Only advisories with NO shipped fix, or
+      # whose fix is blocked by a documented pin, may be ignored here — each one
+      # needs a reason on the line.
+      - run: >
+          uv run pip-audit
+          --ignore-vuln CVE-2026-4539
+          --ignore-vuln CVE-2026-3029
+          --ignore-vuln PYSEC-2026-597
+        # CVE-2026-4539  pygments  - no compatible fix published
+        # CVE-2026-3029  pymupdf   - fix requires 1.26.7, which breaks footnote extraction
+        # PYSEC-2026-597 nltk      - no fix published as of 2026-07
 
   lint:
     runs-on: ubuntu-latest
@@ -123,9 +134,17 @@ jobs:
         run: |
           INIT_REQUEST='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"ci-smoke-test","version":"0.0.0"}}}'
           INIT_NOTIFICATION='{"jsonrpc":"2.0","method":"notifications/initialized"}'
-          RESPONSE=$(printf '%s\n%s\n' "$INIT_REQUEST" "$INIT_NOTIFICATION" | timeout 15 node dist/index.js 2>/dev/null | grep '^{' | head -1)
-          echo "Response: $RESPONSE"
-          echo "$RESPONSE" | jq -e '.jsonrpc == "2.0" and .id == 1 and .result.protocolVersion != null and .result.serverInfo.name == "zlibrary-mcp" and .result.capabilities.tools != null'
+          # No grep filter: stdout is the JSON-RPC channel, so EVERY line must be a
+          # valid MCP message. Filtering here would hide protocol-corrupting logs.
+          printf '%s\n%s\n' "$INIT_REQUEST" "$INIT_NOTIFICATION" \
+            | timeout 15 node dist/index.js 2>/dev/null > stdout.txt
+          echo "Raw stdout:"; cat stdout.txt
+          while IFS= read -r line; do
+            [ -z "$line" ] && continue
+            echo "$line" | jq -e '.jsonrpc == "2.0"' > /dev/null \
+              || { echo "ERROR: non-MCP output on stdout: $line"; exit 1; }
+          done < stdout.txt
+          head -1 stdout.txt | jq -e '.jsonrpc == "2.0" and .id == 1 and .result.protocolVersion != null and .result.serverInfo.name == "zlibrary-mcp" and .result.capabilities.tools != null'
 
   docker:
     if: github.event_name == 'push'

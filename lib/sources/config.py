@@ -2,7 +2,7 @@
 
 Environment variables:
     ANNAS_SECRET_KEY: API key for Anna's Archive fast downloads
-    ANNAS_BASE_URL: Anna's Archive base URL (default: https://annas-archive.li)
+    ANNAS_BASE_URL: Anna's Archive base URL (default: https://annas-archive.gl)
     LIBGEN_MIRROR: LibGen mirror to use (default: li)
     BOOK_SOURCE_DEFAULT: Default source selection (auto|annas|libgen)
     BOOK_SOURCE_FALLBACK_ENABLED: Enable fallback to other source (default: true)
@@ -10,6 +10,31 @@ Environment variables:
 
 import os
 from dataclasses import dataclass
+
+# Hosts operated by the Anna's Archive project, per the mirror list the live
+# site itself advertises (verified 2026-07-24: .gl/.pk/.gd serve real search
+# results; .is is the domain the project's Telegram channel names as official).
+#
+# The former default annas-archive.li lapsed in March 2026 and is now PARKED
+# by a domain squatter (Trellian/Above.com traffic-monetization page), and
+# annas-archive.org/.se are NXDOMAIN. Parked or unknown hosts must NEVER
+# receive ANNAS_SECRET_KEY — the adapter refuses to attach the key to any
+# host not listed here (see AnnasArchiveAdapter.get_download_url).
+ANNAS_TRUSTED_HOSTS = frozenset(
+    {
+        "annas-archive.gl",
+        "annas-archive.pk",
+        "annas-archive.gd",
+        "annas-archive.is",
+    }
+)
+
+DEFAULT_ANNAS_BASE_URL = "https://annas-archive.gl"
+
+# LibgenAdapter passes this suffix to LibgenSearch, which builds
+# https://libgen.{mirror}/ — keep scripts/check_upstream.py deriving its probe
+# host from here so the probe cannot drift from the runtime again.
+DEFAULT_LIBGEN_MIRROR = "li"
 
 
 @dataclass
@@ -25,8 +50,8 @@ class SourceConfig:
     """
 
     annas_secret_key: str = ""
-    annas_base_url: str = "https://annas-archive.li"
-    libgen_mirror: str = "li"
+    annas_base_url: str = DEFAULT_ANNAS_BASE_URL
+    libgen_mirror: str = DEFAULT_LIBGEN_MIRROR
     default_source: str = "auto"  # 'auto' | 'annas' | 'libgen'
     fallback_enabled: bool = True
 
@@ -44,8 +69,8 @@ def get_source_config() -> SourceConfig:
     """
     return SourceConfig(
         annas_secret_key=os.environ.get("ANNAS_SECRET_KEY", ""),
-        annas_base_url=os.environ.get("ANNAS_BASE_URL", "https://annas-archive.li"),
-        libgen_mirror=os.environ.get("LIBGEN_MIRROR", "li"),
+        annas_base_url=os.environ.get("ANNAS_BASE_URL", DEFAULT_ANNAS_BASE_URL),
+        libgen_mirror=os.environ.get("LIBGEN_MIRROR", DEFAULT_LIBGEN_MIRROR),
         default_source=os.environ.get("BOOK_SOURCE_DEFAULT", "auto"),
         fallback_enabled=os.environ.get("BOOK_SOURCE_FALLBACK_ENABLED", "true").lower()
         == "true",

@@ -51,12 +51,17 @@ export default {
     '!dist/**/*.test.js',
     '!dist/**/*.d.ts',
   ],
+  // Ratcheted to just under the actual measurement (85.08 / 79.59 / 77.89 / 87.37
+  // at 165 tests) so the gate catches a real regression. The previous floors were
+  // set against a 93-test suite and had drifted ~20 points below reality, which
+  // meant coverage could halve without CI noticing. Raise these when coverage
+  // rises; never lower them to make a change pass.
   coverageThreshold: {
     global: {
-      statements: 66,   // Baseline 71.16% minus ~5% (93-test suite)
-      branches: 56,     // Baseline 60.99% minus ~5% (93-test suite)
-      functions: 48,    // Baseline 53.08% minus ~5% (93-test suite)
-      lines: 68,        // Baseline 73.17% minus ~5% (93-test suite)
+      statements: 84,
+      branches: 78,
+      functions: 76,
+      lines: 86,
     },
   },
 };

@@ -3,6 +3,8 @@
  * Implements the pattern from .claude/PATTERNS.md
  */
 
+import { logger } from './logger.js';
+
 export interface RetryOptions {
   maxRetries?: number;
   initialDelay?: number;
@@ -47,7 +49,7 @@ export async function withRetry<T>(
 
       // Log retry attempt
       const errorMessage = error instanceof Error ? error.message : String(error);
-      console.log(`Attempt ${attempt + 1} failed, retrying in ${delay}ms...`, {
+      logger.warn(`Attempt ${attempt + 1} failed, retrying in ${delay}ms...`, {
         error: errorMessage,
         attempt: attempt + 1,
         maxRetries,

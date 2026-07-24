@@ -239,6 +239,94 @@ class TestSearch:
         patch_eapi_client.search.assert_called_once()
 
 
+class TestSearchAdvanced:
+    """search_advanced separates strict (e=1) matches from fuzzy matches.
+
+    Regression tests for GH-16: the Python implementation was deleted in the
+    EAPI migration (bd63d33) while the Node tool stayed registered, so every
+    live call raised "Unknown function: search_advanced".
+    """
+
+    EXACT_RESPONSE = {
+        "success": 1,
+        "books": [
+            {"id": 1, "title": "Exact One", "author": "A", "hash": "h1"},
+            {"id": 2, "title": "Exact Two", "author": "B", "hash": "h2"},
+        ],
+    }
+    FUZZY_RESPONSE = {
+        "success": 1,
+        "books": [
+            {"id": 1, "title": "Exact One", "author": "A", "hash": "h1"},
+            {"id": 3, "title": "Fuzzy Three", "author": "C", "hash": "h3"},
+            {"id": 4, "title": "Fuzzy Four", "author": "D", "hash": "h4"},
+        ],
+    }
+
+    @pytest.mark.asyncio
+    async def test_separates_exact_and_fuzzy(self, patch_eapi_client):
+        """Two EAPI calls; fuzzy list excludes ids already in the exact set."""
+        patch_eapi_client.search = AsyncMock(
+            side_effect=[self.EXACT_RESPONSE, self.FUZZY_RESPONSE]
+        )
+        result = await python_bridge.search_advanced(query="test")
+        assert [b["id"] for b in result["exact_matches"]] == ["1", "2"]
+        assert [b["id"] for b in result["fuzzy_matches"]] == ["3", "4"]
+        assert result["has_fuzzy_matches"] is True
+        assert result["total_results"] == 4
+        assert result["query"] == "test"
+        first, second = patch_eapi_client.search.call_args_list
+        assert first[1]["exact"] is True
+        assert second[1]["exact"] is False
+
+    @pytest.mark.asyncio
+    async def test_exact_only_skips_fuzzy_search(self, patch_eapi_client):
+        """exact=True issues a single strict search and no fuzzy list."""
+        patch_eapi_client.search = AsyncMock(return_value=self.EXACT_RESPONSE)
+        result = await python_bridge.search_advanced(query="test", exact=True)
+        assert len(result["exact_matches"]) == 2
+        assert result["fuzzy_matches"] == []
+        assert result["has_fuzzy_matches"] is False
+        patch_eapi_client.search.assert_called_once()
+        assert patch_eapi_client.search.call_args[1]["exact"] is True
+
+    @pytest.mark.asyncio
+    async def test_passes_filters_to_both_searches(self, patch_eapi_client):
+        """Year filters and count reach the EAPI client on both calls."""
+        patch_eapi_client.search = AsyncMock(
+            side_effect=[self.EXACT_RESPONSE, self.FUZZY_RESPONSE]
+        )
+        await python_bridge.search_advanced(
+            query="test", from_year=2020, to_year=2025, count=5
+        )
+        for call in patch_eapi_client.search.call_args_list:
+            assert call[1]["year_from"] == 2020
+            assert call[1]["year_to"] == 2025
+            assert call[1]["limit"] == 5
+
+
+class TestNodePythonDispatchContract:
+    """Every function name Node sends must have a dispatch branch (GH-16)."""
+
+    def test_all_node_function_names_are_dispatched(self):
+        import re
+
+        repo_root = Path(__file__).resolve().parents[2]
+        node_src = (repo_root / "src" / "lib" / "zlibrary-api.ts").read_text()
+        bridge_src = (repo_root / "lib" / "python_bridge.py").read_text()
+
+        node_names = set(re.findall(r"callPythonFunction\(\s*'([^']+)'", node_src))
+        assert node_names, "no callPythonFunction() names found — regex drifted?"
+        dispatched = set(
+            re.findall(r"function_name\s*==\s*[\"']([^\"']+)[\"']", bridge_src)
+        )
+        missing = node_names - dispatched
+        assert not missing, (
+            f"Node calls Python functions with no dispatch branch in "
+            f"python_bridge.main: {sorted(missing)}"
+        )
+
+
 # --- Tests for Download History / Limits (EAPI-based) ---
 
 

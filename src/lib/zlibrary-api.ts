@@ -9,6 +9,7 @@ import { fileURLToPath } from 'url';
 import { withRetry, isRetryableError } from './retry-manager.js';
 import { CircuitBreaker } from './circuit-breaker.js';
 import { ZLibraryError, PythonBridgeError } from './errors.js';
+import { logger } from './logger.js';
 
 // Recreate __dirname for ESM
 const __filename = fileURLToPath(import.meta.url);
@@ -25,7 +26,7 @@ const pythonBridgeCircuitBreaker = new CircuitBreaker({
   threshold: parseInt(process.env.CIRCUIT_BREAKER_THRESHOLD || '5'),
   timeout: parseInt(process.env.CIRCUIT_BREAKER_TIMEOUT || '60000'),
   onStateChange: (oldState, newState) => {
-    console.log(`Python bridge circuit breaker: ${oldState} -> ${newState}`);
+    logger.info(`Python bridge circuit breaker: ${oldState} -> ${newState}`);
   }
 });
 
@@ -290,7 +291,7 @@ export async function searchBooks({
   };
   // Moved logging to after pythonArgs is defined
   const searchBooksPythonArgsLog = `[${new Date().toISOString()}] Node.js searchBooks: Sending to callPythonFunction: ${JSON.stringify(pythonArgs)}\n`;
-  console.log(searchBooksPythonArgsLog.trim());
+  logger.debug(searchBooksPythonArgsLog.trim());
   try {
     const logFilePath = path.resolve(__dirname, '..', '..', 'logs', 'nodejs_debug.log');
     await mkdirAsyncFS(path.dirname(logFilePath), { recursive: true });
@@ -325,7 +326,7 @@ export async function fullTextSearch({
   };
   // Moved logging to after pythonArgsFTS is defined
   const ftsPythonArgsLog = `[${new Date().toISOString()}] Node.js fullTextSearch: Sending to callPythonFunction: ${JSON.stringify(pythonArgsFTS)}\n`;
-  console.log(ftsPythonArgsLog.trim());
+  logger.debug(ftsPythonArgsLog.trim());
   try {
     const logFilePath = path.resolve(__dirname, '..', '..', 'logs', 'nodejs_debug.log');
     await mkdirAsyncFS(path.dirname(logFilePath), { recursive: true });
@@ -361,7 +362,7 @@ export async function processDocumentForRag({
   if (!filePath) {
     throw new Error("Missing required argument: filePath");
   }
-  console.log(`Calling Python bridge to process document: ${filePath}`);
+  logger.debug(`Calling Python bridge to process document: ${filePath}`);
   // Ensure the file path is absolute or correctly relative for the Python script
   const absoluteFilePath = path.resolve(filePath);
   // Pass arguments as an object matching Python function signature

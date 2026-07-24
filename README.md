@@ -109,9 +109,16 @@ For complete parameter documentation, types, and examples, see [API Reference](d
 
 ## Installation
 
-### Option A: npm (recommended)
+### Option A: npm
 
 **Prerequisites:** Node.js 22+, Python 3.10+, [UV](https://docs.astral.sh/uv/)
+
+> **Check the published version before using this path.** The npm release
+> pipeline was broken from v1.2 through v1.2.1, so the registry may still serve an
+> older build than this repository. Compare
+> [the npm version badge](https://www.npmjs.com/package/zlibrary-mcp) against
+> [the latest release](https://github.com/loganrooks/zlibrary-mcp/releases); if
+> they differ, install from source (Option B).
 
 ```bash
 npm install -g zlibrary-mcp
@@ -125,7 +132,7 @@ curl -LsSf https://astral.sh/uv/install.sh | sh  # Install UV if needed
 bash setup-uv.sh
 ```
 
-### Option B: From Source (stdio transport)
+### Option B: From Source (stdio transport, recommended)
 
 **Prerequisites:** Node.js 22+, Python 3.10+, [UV](https://docs.astral.sh/uv/)
 
@@ -179,7 +186,7 @@ RooCode / Cline (`mcp_settings.json`):
 }
 ```
 
-### Option B: Docker (HTTP transport)
+### Option C: Docker (HTTP transport)
 
 **Prerequisites:** Docker and Docker Compose
 
@@ -239,6 +246,32 @@ The server requires Z-Library credentials, set as environment variables:
 | `ZLIBRARY_MIRROR` | No | Custom Z-Library mirror URL |
 
 The server validates credentials at startup and emits a clear error if they are missing.
+
+### Logging
+
+Diagnostics go to **stderr**, never stdout: under the stdio transport stdout is the
+JSON-RPC channel, and anything else written there corrupts the protocol stream and
+causes clients to disconnect. Your MCP client captures stderr into its own logs.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `LOG_LEVEL` | `info` | `silent`, `error`, `warn`, `info`, or `debug` |
+
+`debug` adds per-request argument tracing, which **includes your search queries**.
+Scrub client logs before attaching them to a bug report.
+
+### Diagnosing problems
+
+```bash
+npm run doctor
+```
+
+This probes Z-Library, Anna's Archive, and LibGen directly and reports which
+respond. Those are undocumented third-party services that change domains without
+notice, so an upstream outage and a bug in this server look identical from an MCP
+client. Run this before filing an issue — and see
+[TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) for the setup-related causes of a
+server that exits immediately.
 
 ### Retry and Circuit Breaker
 

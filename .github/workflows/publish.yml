@@ -1,4 +1,4 @@
-name: Publish to npm
+name: Publish
 
 on:
   push:
@@ -8,9 +8,10 @@ on:
 permissions:
   id-token: write
   contents: read
+  packages: write
 
 jobs:
-  publish:
+  publish-npm:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -28,9 +29,53 @@ jobs:
         run: |
           node --experimental-vm-modules node_modules/jest/bin/jest.js
           uv run pytest -m "not slow and not integration" --benchmark-disable
-      - name: Upgrade npm for provenance support
-        run: npm install -g npm@latest
+      # No `npm install -g npm@latest` here. That step failed every release from
+      # v1.2 through v1.2.1 (npm@latest's engines field outran the Node 22 runner),
+      # and it was never needed: `--provenance` has shipped in npm since 9.5, and
+      # Node 22 bundles npm 10.x.
+      - name: Verify tag matches package version
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          PKG=$(node -p "require('./package.json').version")
+          echo "tag=$TAG package.json=$PKG"
+          if [ "$TAG" != "$PKG" ]; then
+            echo "ERROR: tag v$TAG does not match package.json version $PKG"
+            exit 1
+          fi
       - name: Publish with provenance
         run: npm publish --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  # Ships the same release as a container image so Docker users get versioned
+  # tags instead of having to build from source (requested in issue #9).
+  publish-docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Derive image tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}

@@ -10,13 +10,13 @@ Key decisions:
 """
 
 from typing import List, Optional
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 import httpx
 from bs4 import BeautifulSoup
 
 from .base import SourceAdapter
-from .config import SourceConfig
+from .config import ANNAS_TRUSTED_HOSTS, SourceConfig
 from .models import DownloadResult, QuotaInfo, SourceType, UnifiedBookResult
 
 
@@ -34,8 +34,15 @@ class AnnasArchiveAdapter(SourceAdapter):
     - get_download_url(md5) -> DownloadResult via fast download API
 
     Configuration:
-    - annas_base_url: Base URL for Anna's Archive (default: https://annas-archive.li)
+    - annas_base_url: Base URL for Anna's Archive (default: https://annas-archive.gl)
     - annas_secret_key: API key for fast downloads (required for get_download_url)
+
+    Security: the secret key is only ever attached to hosts in
+    config.ANNAS_TRUSTED_HOSTS. Anna's Archive domains lapse and get re-registered
+    by squatters (annas-archive.li is a Trellian parking page as of 2026-03), and
+    the fast-download API sends the key as a URL query parameter — sending it to
+    an unverified host would disclose it to whoever now controls the domain.
+    Search (which carries no key) is not restricted.
     """
 
     def __init__(self, config: SourceConfig):
@@ -116,11 +123,26 @@ class AnnasArchiveAdapter(SourceAdapter):
             DownloadResult with URL and quota info
 
         Raises:
-            ValueError: If ANNAS_SECRET_KEY not configured
+            ValueError: If ANNAS_SECRET_KEY not configured, or if the configured
+                base URL's host is not a known Anna's Archive domain (the key is
+                never sent to unverified hosts)
             Exception: If API returns error or no download_url
         """
         if not self.secret_key:
             raise ValueError("ANNAS_SECRET_KEY not configured")
+
+        host = (urlsplit(self.base_url).hostname or "").lower()
+        if host not in ANNAS_TRUSTED_HOSTS:
+            raise ValueError(
+                f"Refusing to send ANNAS_SECRET_KEY to unverified host '{host}'. "
+                f"The fast-download API passes the key as a URL parameter, and "
+                f"lapsed Anna's Archive domains get re-registered by squatters "
+                f"(annas-archive.li is now a parking page). Set ANNAS_BASE_URL "
+                f"to a known Anna's Archive domain "
+                f"({', '.join(sorted(ANNAS_TRUSTED_HOSTS))}) or update "
+                f"ANNAS_TRUSTED_HOSTS in lib/sources/config.py if the project "
+                f"has moved to a new domain you have verified yourself."
+            )
 
         client = await self._get_client()
         url = f"{self.base_url}/dyn/api/fast_download.json"

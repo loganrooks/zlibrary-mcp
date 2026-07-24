@@ -4,6 +4,8 @@
  * Prevents cascading failures by opening circuit after repeated failures
  */
 
+import { logger } from './logger.js';
+
 export type CircuitState = 'CLOSED' | 'OPEN' | 'HALF_OPEN';
 
 export interface CircuitBreakerOptions {
@@ -98,7 +100,7 @@ export class CircuitBreaker {
       const oldState = this.state;
       this.state = newState;
 
-      console.log(`Circuit breaker state transition: ${oldState} -> ${newState}`);
+      logger.info(`Circuit breaker state transition: ${oldState} -> ${newState}`);
 
       if (this.onStateChange) {
         this.onStateChange(oldState, newState);

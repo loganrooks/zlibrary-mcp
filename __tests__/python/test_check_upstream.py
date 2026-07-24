@@ -100,6 +100,10 @@ def test_probe_targets_match_runtime_defaults(check_upstream):
         "ZLIBRARY_EAPI_DOMAIN", "z-library.sk"
     )
     assert check_upstream.ANNAS_BASE_URL == runtime.annas_base_url
+    # LibgenAdapter passes the mirror suffix to LibgenSearch, which builds
+    # https://libgen.{suffix}/ — the probe must target that same host (it
+    # previously hardcoded libgen.is while the runtime used libgen.li).
+    assert check_upstream.LIBGEN_BASE_URL == f"https://libgen.{runtime.libgen_mirror}"
 
 
 def test_annas_parking_page_is_reported_as_parked(check_upstream):

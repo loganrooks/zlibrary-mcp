@@ -43,6 +43,10 @@ ZLIB_DOMAIN = os.environ.get("ZLIBRARY_EAPI_DOMAIN", "z-library.sk")
 # get_source_config() already applies the ANNAS_BASE_URL / LIBGEN_MIRROR
 # environment overrides, same as the runtime adapters.
 ANNAS_BASE_URL = _source_config.annas_base_url
+# LibgenSearch(mirror=suffix) builds https://libgen.{suffix}/ (see
+# lib/sources/libgen.py and libgen_api_enhanced) — mirror that construction so
+# the probe checks the host the runtime actually contacts.
+LIBGEN_BASE_URL = f"https://libgen.{_source_config.libgen_mirror}"
 
 # Markers of domain-parking/traffic-monetization pages. A lapsed mirror that a
 # squatter re-registered (e.g. annas-archive.li -> Trellian/Above.com in
@@ -180,8 +184,9 @@ async def probe_annas(client: httpx.AsyncClient) -> ProbeResult:
 async def probe_libgen(client: httpx.AsyncClient) -> ProbeResult:
     """LibGen is the router's fallback source; mirrors rotate frequently."""
     try:
+        # The li-family mirrors serve search at /index.php (search.php 404s).
         resp = await client.get(
-            "https://libgen.is/search.php", params={"req": "python"}
+            f"{LIBGEN_BASE_URL}/index.php", params={"req": "python"}
         )
         resp.raise_for_status()
         return ProbeResult(

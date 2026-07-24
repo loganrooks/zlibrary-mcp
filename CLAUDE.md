@@ -289,8 +289,9 @@ The live plan is
 — the current health assessment and forward roadmap covering open PR/issue
 disposition, CI and release state, coverage gaps, and multi-source expansion.
 
-v1.3.0 was released 2026-07-24: the GitHub release and GHCR image are live, but the
-npm publish leg is pending an `NPM_TOKEN` secret. v1.3 (RAG Pipeline Refinement) has
+v1.3.0 was released 2026-07-24: the GitHub release and GHCR image are live; the npm
+publish leg now authenticates via OIDC trusted publishing (no `NPM_TOKEN` secret)
+and needs a re-run to ship v1.3.0 to npm. v1.3 (RAG Pipeline Refinement) has
 Phase 19 complete; Phases 20-21 are pending, with acceptance criteria preserved in
 [claudedocs/architecture/phase-20-21-review-2026-07-24.md](claudedocs/architecture/phase-20-21-review-2026-07-24.md).
 
@@ -318,8 +319,8 @@ linked under "Current Development" for the reasoning behind these:
 
 1. ISSUE-API-002 — the default EAPI domain `z-library.sk` is DiamWall-walled;
    decide a new default and make hydra discovery resilient (see ISSUES.md)
-2. Add the `NPM_TOKEN` repository secret and re-run the npm publish leg of the
-   v1.3.0 release (GitHub release and GHCR image are already live)
+2. Re-run the npm publish leg of the v1.3.0 release — it now uses OIDC trusted
+   publishing, no `NPM_TOKEN` secret (GitHub release and GHCR image are already live)
 3. Phases 20-21 — RAG quality scoring harness + CI reporting — per
    `claudedocs/architecture/phase-20-21-review-2026-07-24.md`
 4. Promote Z-Library to a `SourceAdapter` so all tools route through `SourceRouter`

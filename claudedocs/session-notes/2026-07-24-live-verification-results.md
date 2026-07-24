@@ -283,7 +283,7 @@ drift path fails at exactly the moment it is needed.
 
 ### 6. Then plan Phase 20
 
-`$gsdr-plan-phase 20`, after reading
+Plan Phase 20 per
 `claudedocs/architecture/phase-20-21-review-2026-07-24.md`. Task 20-00 (the orphaned
 `scripts/run_rag_tests.py`) comes before any new scoring code. Close the two missing recall
 baselines from finding 3 first, or the corpus scores over 117 of 119 documents while

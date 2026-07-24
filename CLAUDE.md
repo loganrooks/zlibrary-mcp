@@ -13,39 +13,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This applies equally to "cleanup" tasks. A file that looks stale may be a test fixture, a script input, or referenced by documentation that matters. Always check before removing.
 
-## GSD Model Profile
-
-**IMPORTANT:** Before spawning any GSD subagent, read `.planning/config.json` and use the `model_profile` value to select the correct model. Never hardcode or assume the profile.
-
-| Agent | quality | balanced | budget |
-|-------|---------|----------|--------|
-| gsd-phase-researcher | opus | sonnet | haiku |
-| gsd-planner | opus | opus | sonnet |
-| gsd-plan-checker | sonnet | sonnet | haiku |
-| gsd-executor | opus | sonnet | sonnet |
-
 ## 🚀 Quick Start for Claude Code
 
 **Essential Reading Order**:
 1. `.claude/PROJECT_CONTEXT.md` - Complete project understanding (mission, domain)
-2. `.claude/ROADMAP.md` - **Strategic plan** (1-3 weeks, current priorities)
-3. `.claude/ARCHITECTURE.md` - **System structure** (components, design decisions, status)
-4. `ISSUES.md` - Known problems and priorities (at project root)
-5. `.claude/IMPLEMENTATION_ROADMAP.md` - Concrete action plan and fixes
-6. `.claude/PATTERNS.md` - Code patterns to follow
-7. `.claude/RAG_QUALITY_FRAMEWORK.md` - Quality verification for RAG pipeline
-8. `.claude/TDD_WORKFLOW.md` - Rigorous real-world testing process
-9. `.claude/DEBUGGING.md` - Troubleshooting guide
-10. `.claude/VERSION_CONTROL.md` - Git workflow and best practices
-11. `.claude/CI_CD.md` - CI/CD strategy and implementation
-12. `.claude/MCP_SERVERS.md` - Development tools setup
-13. `.claude/META_LEARNING.md` - Lessons learned and insights
-
-**Session Resumption** (for AI assistants):
-- **Start**: Use `/sc:load` to restore context from Serena memory
-- **Orient**: Review ROADMAP.md (strategic direction) → ARCHITECTURE.md (system state)
-- **Work**: Follow TDD_WORKFLOW.md for RAG features, PATTERNS.md for code
-- **End**: Use `/sc:save` to preserve session state in Serena memory
+2. `.claude/ARCHITECTURE.md` - **System structure** (components, design decisions, status)
+3. `ISSUES.md` - Known problems and priorities (at project root)
+4. `claudedocs/architecture/repo-health-and-roadmap-2026-07-24.md` - Health assessment and forward roadmap
+5. `.claude/PATTERNS.md` - Code patterns to follow
+6. `.claude/RAG_QUALITY_FRAMEWORK.md` - Quality verification for RAG pipeline
+7. `.claude/TDD_WORKFLOW.md` - Rigorous real-world testing process
+8. `.claude/DEBUGGING.md` - Troubleshooting guide
+9. `.claude/VERSION_CONTROL.md` - Git workflow and best practices
+10. `.claude/CI_CD.md` - CI/CD strategy and implementation
 
 ## Project Overview
 
@@ -132,10 +112,10 @@ npm run build
 
 ### Testing
 ```bash
-# Run all tests (Jest for Node.js + Pytest for Python)
+# Run Jest (Node.js) tests — npm test does NOT run pytest
 npm test
 
-# Run Python tests only
+# Run Python tests (separate command)
 uv run pytest
 # Or: .venv/bin/python -m pytest
 
@@ -304,12 +284,15 @@ The project maintains its own Python venv (`.venv/`) with these key dependencies
 
 ## Current Development
 
-The live plan is `.planning/ROADMAP.md` (GSD). v1.2 shipped 2026-03-20; v1.3 (RAG
-Pipeline Refinement) is active with Phase 19 complete and Phases 20-21 pending.
+The live plan is
+[claudedocs/architecture/repo-health-and-roadmap-2026-07-24.md](claudedocs/architecture/repo-health-and-roadmap-2026-07-24.md)
+— the current health assessment and forward roadmap covering open PR/issue
+disposition, CI and release state, coverage gaps, and multi-source expansion.
 
-For the current health assessment and forward roadmap — open PR/issue disposition,
-CI and release state, coverage gaps, multi-source expansion — see
-[claudedocs/architecture/repo-health-and-roadmap-2026-07-24.md](claudedocs/architecture/repo-health-and-roadmap-2026-07-24.md).
+v1.3.0 was released 2026-07-24: the GitHub release and GHCR image are live, but the
+npm publish leg is pending an `NPM_TOKEN` secret. v1.3 (RAG Pipeline Refinement) has
+Phase 19 complete; Phases 20-21 are pending, with acceptance criteria preserved in
+[claudedocs/architecture/phase-20-21-review-2026-07-24.md](claudedocs/architecture/phase-20-21-review-2026-07-24.md).
 
 Branching Strategy: See `.claude/VERSION_CONTROL.md` for feature branch conventions and workflow.
 
@@ -321,25 +304,28 @@ The `.claude` folder contains comprehensive documentation for development:
 
 - **PROJECT_CONTEXT.md**: Mission, architecture principles, domain model, performance targets
 - **ISSUES.md** (root): All known issues categorized by severity with action items
-- **IMPLEMENTATION_ROADMAP.md**: Concrete action plan, priority fixes, 3-week roadmap
 - **PATTERNS.md**: Code patterns for error handling, logging, caching, testing
 - **RAG_QUALITY_FRAMEWORK.md**: Quality verification framework for RAG pipeline
 - **DEBUGGING.md**: Troubleshooting guides, diagnostic scripts, common solutions
 - **VERSION_CONTROL.md**: Git workflows, branching strategy, commit conventions
 - **CI_CD.md**: CI/CD pipelines, quality gates, deployment automation
-- **MCP_SERVERS.md**: Playwright, SQLite, and other MCP server configurations
-- **META_LEARNING.md**: Lessons learned, architectural insights, future predictions
+- **DEVELOPMENT_STANDARDS.md**: Naming, testing, and code-quality standards
 
 ### 🎯 Current Priorities
 
 Check `ISSUES.md` (project root) for the full list, and the health assessment
 linked under "Current Development" for the reasoning behind these:
 
-1. Cut a release — npm still serves an older build than this repo (the publish
-   pipeline was broken from v1.2 through v1.2.1 and is now fixed)
-2. Windows support — merge PR #13 with tests for the platform branches
-3. Phases 20-21 from `.planning/ROADMAP.md` (RAG quality scoring harness, CI reporting)
+1. ISSUE-API-002 — the default EAPI domain `z-library.sk` is DiamWall-walled;
+   decide a new default and make hydra discovery resilient (see ISSUES.md)
+2. Add the `NPM_TOKEN` repository secret and re-run the npm publish leg of the
+   v1.3.0 release (GitHub release and GHCR image are already live)
+3. Phases 20-21 — RAG quality scoring harness + CI reporting — per
+   `claudedocs/architecture/phase-20-21-review-2026-07-24.md`
 4. Promote Z-Library to a `SourceAdapter` so all tools route through `SourceRouter`
+
+Done and no longer priorities: the v1.3.0 release shipped 2026-07-24 (modulo the
+npm token above), and Windows support (PR #13) shipped in v1.3.0.
 
 Resolved and no longer priorities, despite older docs saying otherwise: ISSUE-002
 (closed by the UV migration), ISSUE-005 (closed by `src/lib/retry-manager.ts` and
@@ -366,7 +352,7 @@ Resolved and no longer priorities, despite older docs saying otherwise: ISSUE-00
 11. **Regression Check**: Run ALL real PDF tests (no regressions allowed)
 12. **Commit Properly**: Use conventional commits per `.claude/VERSION_CONTROL.md`
 13. **Create PR**: Follow PR template and review process in VERSION_CONTROL.md
-14. **Learn & Document**: Update `.claude/META_LEARNING.md` with insights
+14. **Learn & Document**: Codify durable lessons in `.claude/DEVELOPMENT_STANDARDS.md` or `.claude/PATTERNS.md`
 
 **Quality Gates**: Pre-commit runs real PDF tests + performance validation (automatic)
 
@@ -378,8 +364,8 @@ git status
 git branch --show-current
 git diff --stat
 
-# Run health check
-bash .claude/scripts/health_check.sh
+# Run health/drift check
+npm run doctor
 
 # Check for critical issues
 grep "CRITICAL\|HIGH" ISSUES.md
@@ -421,8 +407,6 @@ For optimal development with Claude Code, configure these MCP servers:
 2. **SQLite**: Local caching and metadata storage
 3. **Filesystem**: Download directory management
 4. **Sequential**: Complex debugging and analysis
-
-See `.claude/MCP_SERVERS.md` for complete configuration.
 
 ## 🤝 Contributing
 

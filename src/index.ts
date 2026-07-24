@@ -14,6 +14,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 
 // Import API handlers
 import * as zlibraryApi from './lib/zlibrary-api.js';
+import { logger } from './lib/logger.js';
 
 // Recreate __dirname for ESM
 const __filename = fileURLToPath(import.meta.url);
@@ -276,7 +277,7 @@ const handlers: HandlerMap = {
   searchBooks: async (args: z.infer<typeof SearchBooksParamsSchema>) => {
     try {
       const searchBooksReceivedArgsLog = `[${new Date().toISOString()}] [src/index.ts] searchBooks handler received Zod-parsed args: ${JSON.stringify(args)}\n`;
-      console.log(searchBooksReceivedArgsLog.trim());
+      logger.debug(searchBooksReceivedArgsLog.trim());
       try {
         const logFilePath = path.resolve(__dirname, '..', 'logs', 'nodejs_debug.log');
         await mkdirAsync(path.dirname(logFilePath), { recursive: true });
@@ -295,7 +296,7 @@ const handlers: HandlerMap = {
         count: args.count,
       };
       const searchBooksSendingLog = `[${new Date().toISOString()}] [src/index.ts] searchBooks handler sending to zlibraryApi: ${JSON.stringify(apiArgs)}\n`;
-      console.log(searchBooksSendingLog.trim());
+      logger.debug(searchBooksSendingLog.trim());
       try {
         const logFilePath = path.resolve(__dirname, '..', 'logs', 'nodejs_debug.log');
         await appendFileAsync(logFilePath, searchBooksSendingLog);
@@ -311,7 +312,7 @@ const handlers: HandlerMap = {
   fullTextSearch: async (args: z.infer<typeof FullTextSearchParamsSchema>) => {
     try {
       const ftsReceivedArgsLog = `[${new Date().toISOString()}] [src/index.ts] fullTextSearch handler received Zod-parsed args: ${JSON.stringify(args)}\n`;
-      console.log(ftsReceivedArgsLog.trim());
+      logger.debug(ftsReceivedArgsLog.trim());
       try {
         const logFilePath = path.resolve(__dirname, '..', 'logs', 'nodejs_debug.log');
         await mkdirAsync(path.dirname(logFilePath), { recursive: true });
@@ -330,7 +331,7 @@ const handlers: HandlerMap = {
         count: args.count,
       };
       const ftsSendingLog = `[${new Date().toISOString()}] [src/index.ts] fullTextSearch handler sending to zlibraryApi: ${JSON.stringify(apiArgsFTS)}\n`;
-      console.log(ftsSendingLog.trim());
+      logger.debug(ftsSendingLog.trim());
       try {
         const logFilePath = path.resolve(__dirname, '..', 'logs', 'nodejs_debug.log');
         await appendFileAsync(logFilePath, ftsSendingLog);
@@ -616,7 +617,7 @@ async function start(
     // Ensure the logs directory exists
     try {
       await mkdirAsync(path.resolve(__dirname, '..', 'logs'), { recursive: true });
-      console.log("Log directory 'logs/' ensured.");
+      logger.debug("Log directory 'logs/' ensured.");
     } catch (dirError: any) {
       console.error("Failed to create 'logs/' directory:", dirError.message);
     }
@@ -768,7 +769,7 @@ async function start(
     // Create and connect the Stdio transport
     const transport = new StdioServerTransport();
     await server.connect(transport);
-    console.log('Z-Library MCP server (ESM/TS) is running via Stdio...');
+    logger.info('Z-Library MCP server (ESM/TS) is running via Stdio...');
 
     return { server, transport };
   } catch (error: any) {

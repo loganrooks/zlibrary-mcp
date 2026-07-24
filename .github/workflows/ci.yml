@@ -123,9 +123,17 @@ jobs:
         run: |
           INIT_REQUEST='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"ci-smoke-test","version":"0.0.0"}}}'
           INIT_NOTIFICATION='{"jsonrpc":"2.0","method":"notifications/initialized"}'
-          RESPONSE=$(printf '%s\n%s\n' "$INIT_REQUEST" "$INIT_NOTIFICATION" | timeout 15 node dist/index.js 2>/dev/null | grep '^{' | head -1)
-          echo "Response: $RESPONSE"
-          echo "$RESPONSE" | jq -e '.jsonrpc == "2.0" and .id == 1 and .result.protocolVersion != null and .result.serverInfo.name == "zlibrary-mcp" and .result.capabilities.tools != null'
+          # No grep filter: stdout is the JSON-RPC channel, so EVERY line must be a
+          # valid MCP message. Filtering here would hide protocol-corrupting logs.
+          printf '%s\n%s\n' "$INIT_REQUEST" "$INIT_NOTIFICATION" \
+            | timeout 15 node dist/index.js 2>/dev/null > stdout.txt
+          echo "Raw stdout:"; cat stdout.txt
+          while IFS= read -r line; do
+            [ -z "$line" ] && continue
+            echo "$line" | jq -e '.jsonrpc == "2.0"' > /dev/null \
+              || { echo "ERROR: non-MCP output on stdout: $line"; exit 1; }
+          done < stdout.txt
+          head -1 stdout.txt | jq -e '.jsonrpc == "2.0" and .id == 1 and .result.protocolVersion != null and .result.serverInfo.name == "zlibrary-mcp" and .result.capabilities.tools != null'
 
   docker:
     if: github.event_name == 'push'

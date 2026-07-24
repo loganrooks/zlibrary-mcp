@@ -18,6 +18,7 @@ import * as path from 'path';
 import { existsSync } from 'fs';
 import { execSync } from 'child_process';
 import { fileURLToPath } from 'url';
+import { logger } from './logger.js';
 
 // Recreate __dirname for ESM
 const __filename = fileURLToPath(import.meta.url);
@@ -61,7 +62,7 @@ export async function getManagedPythonPath(): Promise<string> {
     }).trim();
 
     // Log Python version for debugging (optional, can be removed)
-    console.log(`[venv-manager] Using Python: ${version} from .venv`);
+    logger.debug(`[venv-manager] Using Python: ${version} from .venv`);
   } catch (error) {
     throw new Error(
       `Python at ${uvVenvPython} is not executable.\n` +

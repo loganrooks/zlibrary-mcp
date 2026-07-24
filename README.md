@@ -11,6 +11,7 @@ A Model Context Protocol (MCP) server that gives AI assistants -- Claude Code, C
 ```bash
 git clone https://github.com/loganrooks/zlibrary-mcp.git
 cd zlibrary-mcp
+git lfs pull        # hydrates the LFS-tracked test PDFs; don't run `git lfs install` (conflicts with the repo's Husky hooks)
 bash setup-uv.sh && npm install && npm run build
 ```
 
@@ -143,6 +144,8 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 # 2. Clone and build
 git clone https://github.com/loganrooks/zlibrary-mcp.git
 cd zlibrary-mcp
+git lfs pull         # Hydrates LFS-tracked test PDFs (don't run `git lfs install`;
+                     # it conflicts with the repo's Husky-managed hooks)
 bash setup-uv.sh    # Creates .venv/ and installs Python dependencies
 npm install          # Installs Node.js dependencies
 npm run build        # Compiles TypeScript to dist/
@@ -293,10 +296,13 @@ See [docs/RETRY_CONFIGURATION.md](docs/RETRY_CONFIGURATION.md) for details.
 ### Running Tests
 
 ```bash
-# Run all tests (Jest for Node.js + Pytest for Python)
+# Node.js tests (Jest only -- npm test does not run pytest)
 npm test
 
-# Python tests only
+# Python tests -- fast suite (the routine command)
+uv run pytest -m "not slow and not integration and not performance"
+
+# Python tests -- full corpus (requires LFS-hydrated test PDFs)
 uv run pytest
 
 # Specific Python test

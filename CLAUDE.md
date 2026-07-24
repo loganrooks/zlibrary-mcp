@@ -364,8 +364,8 @@ git status
 git branch --show-current
 git diff --stat
 
-# Run health check
-bash .claude/scripts/health_check.sh
+# Run health/drift check
+npm run doctor
 
 # Check for critical issues
 grep "CRITICAL\|HIGH" ISSUES.md

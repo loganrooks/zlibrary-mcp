@@ -10,11 +10,11 @@ This project uses GitHub Actions for CI and Husky + lint-staged for local pre-co
 
 **How it works:** Running `git commit` triggers the `.husky/pre-commit` hook, which runs `npx lint-staged`.
 
-**What lint-staged checks:**
+**What lint-staged checks** (see the `lint-staged` block in `package.json`):
 
 | File Pattern | Action |
 |-------------|--------|
-| `*.ts`, `*.js` | `npm run build` (TypeScript compilation check) |
+| `src/**/*.ts` | `eslint --fix` + `prettier --write` + `tsc --noEmit` |
 | `*.py` | `uv run ruff check --fix` + `uv run ruff format` |
 
 **Why no tests in pre-commit:** Jest with ESM experimental modules is too slow for hooks. Full tests run in CI.

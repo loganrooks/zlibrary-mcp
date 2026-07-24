@@ -6,24 +6,26 @@
 
 This document defines the Git workflow, branching strategy, commit conventions, and version control best practices for the Z-Library MCP project.
 
+> **For external contributors:** [CONTRIBUTING.md](../CONTRIBUTING.md) at the repo root
+> is the authoritative guide. This document is the internal, more detailed reference.
+
 ## Branch Strategy
 
-### Main Branches
+**Trunk-based on `master`.** There is a single long-lived branch — `master` — and
+short-lived topic branches that branch from it and merge back into it via PR. (An older
+revision of this document described a `master` + `development` gitflow model; no
+`development` branch exists.)
 
-#### `master` (Primary Branch)
+### `master` (Trunk)
 - Production-ready code only
 - All commits must pass CI/CD
-- Protected branch - requires PR and review
-- Direct commits prohibited
-- Automatically deployed to production (future)
+- Changes land via PR
+- Release tags (`vX.Y.Z`) are cut from here
 
-#### `development` (Integration Branch)
-- Integration branch for features
-- Pre-production testing environment
-- Features merge here before master
-- Should always be in deployable state
+### Topic Branches
 
-### Supporting Branches
+All topic branches branch from `master`, merge back to `master` via PR, and are
+deleted after merge.
 
 #### Feature Branches: `feature/*`
 **Purpose**: Develop new features
@@ -33,22 +35,12 @@ This document defines the Git workflow, branching strategy, commit conventions, 
 - `feature/fuzzy-search`
 - `feature/SRCH-001-advanced-filters`
 
-**Lifecycle**:
-1. Branch from: `development`
-2. Merge back to: `development`
-3. Delete after merge: Yes
-
 #### Bug Fix Branches: `fix/*`
 **Purpose**: Fix non-critical bugs
 **Naming**: `fix/descriptive-name` or `fix/ISSUE-###-description`
 **Examples**:
 - `fix/venv-manager-warnings`
 - `fix/ISSUE-002-test-failures`
-
-**Lifecycle**:
-1. Branch from: `development`
-2. Merge back to: `development`
-3. Delete after merge: Yes
 
 #### Hotfix Branches: `hotfix/*`
 **Purpose**: Emergency fixes for production issues
@@ -57,11 +49,7 @@ This document defines the Git workflow, branching strategy, commit conventions, 
 - `hotfix/authentication-failure`
 - `hotfix/memory-leak`
 
-**Lifecycle**:
-1. Branch from: `master`
-2. Merge back to: `master` AND `development`
-3. Delete after merge: Yes
-4. Create git tag for version bump
+Hotfixes additionally create a git tag for the version bump after merging.
 
 #### Documentation Branches: `docs/*`
 **Purpose**: Documentation-only changes
@@ -69,11 +57,6 @@ This document defines the Git workflow, branching strategy, commit conventions, 
 **Examples**:
 - `docs/api-reference`
 - `docs/contributing-guide`
-
-**Lifecycle**:
-1. Branch from: `development` or `master`
-2. Merge back to: source branch
-3. Delete after merge: Yes
 
 ## Commit Convention
 
@@ -185,11 +168,11 @@ code quality.
 
 1. **Ensure branch is up to date**:
    ```bash
-   git checkout development
-   git pull origin development
+   git checkout master
+   git pull origin master
    git checkout your-feature-branch
-   git merge development
-   # Or: git rebase development
+   git merge master
+   # Or: git rebase master
    ```
 
 2. **Run quality checks**:
@@ -202,7 +185,7 @@ code quality.
 
 3. **Review your changes**:
    ```bash
-   git diff development...your-feature-branch
+   git diff master...your-feature-branch
    ```
 
 ### Creating the PR
@@ -294,7 +277,7 @@ Check for:
 
 ```bash
 git checkout feature-branch
-git rebase development
+git rebase master
 git push --force-with-lease
 ```
 
@@ -304,7 +287,7 @@ git push --force-with-lease
 **Benefit**: Shows branch topology
 
 ```bash
-git checkout development
+git checkout master
 git merge --no-ff feature-branch
 ```
 
@@ -318,8 +301,8 @@ git merge --no-ff feature-branch
 
 2. **Update local repo**:
    ```bash
-   git checkout development
-   git pull origin development
+   git checkout master
+   git pull origin master
    ```
 
 ## Release Process
@@ -341,8 +324,8 @@ We follow [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 
 1. **Prepare release branch**:
    ```bash
-   git checkout development
-   git pull origin development
+   git checkout master
+   git pull origin master
    git checkout -b release/v1.2.0
    ```
 
@@ -376,14 +359,7 @@ We follow [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
    git push origin v1.2.0  # Push tag
    ```
 
-5. **Merge back to development**:
-   ```bash
-   git checkout development
-   git merge master
-   git push origin development
-   ```
-
-6. **Create GitHub Release**:
+5. **Create GitHub Release**:
    - Go to Releases → Draft new release
    - Select tag v1.2.0
    - Title: "v1.2.0 - Feature Description"
@@ -460,9 +436,9 @@ echo "✅ All tests passed"
 ### Starting a New Feature
 
 ```bash
-# 1. Update development branch
-git checkout development
-git pull origin development
+# 1. Update master branch
+git checkout master
+git pull origin master
 
 # 2. Create feature branch
 git checkout -b feature/my-awesome-feature
@@ -481,8 +457,8 @@ git push -u origin feature/my-awesome-feature
 
 ```bash
 # 1. Create fix branch
-git checkout development
-git pull origin development
+git checkout master
+git pull origin master
 git checkout -b fix/bug-description
 
 # 2. Fix the bug and test
@@ -519,12 +495,7 @@ git merge hotfix/critical-issue
 git tag -a v1.0.1 -m "Hotfix: critical issue"
 git push origin master --tags
 
-# 5. Merge to development
-git checkout development
-git merge hotfix/critical-issue
-git push origin development
-
-# 6. Delete hotfix branch
+# 5. Delete hotfix branch
 git branch -d hotfix/critical-issue
 git push origin --delete hotfix/critical-issue
 ```
@@ -534,11 +505,11 @@ git push origin --delete hotfix/critical-issue
 ```bash
 # Option 1: Merge (preserves history)
 git checkout feature/my-feature
-git merge development
+git merge master
 
 # Option 2: Rebase (cleaner history)
 git checkout feature/my-feature
-git rebase development
+git rebase master
 git push --force-with-lease  # If already pushed
 ```
 
@@ -546,9 +517,9 @@ git push --force-with-lease  # If already pushed
 
 ```bash
 # 1. Attempt merge/rebase
-git merge development
+git merge master
 # or
-git rebase development
+git rebase master
 
 # 2. Git shows conflicts
 # CONFLICT (content): Merge conflict in src/file.ts
@@ -643,7 +614,7 @@ For version control operations without automation:
 # Standard git operations
 git push origin feature-branch
 git fetch --all
-git merge origin/development
+git merge origin/master
 
 # Then use GitHub web interface for:
 # - Creating PRs
@@ -654,7 +625,7 @@ git merge origin/development
 
 ### Branch Protection Rules
 
-Configure for `master` and `development`:
+Configure for `master`:
 
 1. **Required Reviews**: At least 1 approval
 2. **Required Status Checks**:
@@ -709,7 +680,7 @@ Workflows triggered on:
 
 ### Don'ts
 
-❌ **Don't Force Push to Shared Branches**: Especially master/development
+❌ **Don't Force Push to Shared Branches**: Especially master
 ❌ **Don't Commit Secrets**: API keys, passwords, tokens
 ❌ **Don't Commit Large Files**: Use Git LFS if needed
 ❌ **Don't Leave WIP Commits**: Clean up before pushing
@@ -807,4 +778,4 @@ git rebase --abort
 **Version**: 1.1.0
 **Maintained By**: Z-Library MCP Team
 
-**Note**: A comprehensive 7-phase cleanup (Jan-Feb 2026) was completed on master branch, modernizing the codebase with EAPI transport, MCP SDK 1.25+, and decomposed Python modules. The `development` branch is no longer actively used; work proceeds directly on feature branches from master.
+**Note**: A comprehensive 7-phase cleanup (Jan-Feb 2026) was completed on master branch, modernizing the codebase with EAPI transport, MCP SDK 1.25+, and decomposed Python modules. Work proceeds on short-lived topic branches from master.

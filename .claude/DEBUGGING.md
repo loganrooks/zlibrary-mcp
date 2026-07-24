@@ -16,13 +16,12 @@ echo "Node.js: $(node --version)"
 # Check Python
 echo "Python: $(python3 --version)"
 
-# Check venv
-if [ -d "venv" ]; then
+# Check venv (UV-managed .venv/)
+if [ -d ".venv" ]; then
     echo "✅ Virtual environment exists"
-    source venv/bin/activate
-    echo "Python in venv: $(which python)"
+    echo "Python in venv: $(.venv/bin/python --version)"
 else
-    echo "❌ Virtual environment missing"
+    echo "❌ Virtual environment missing - run 'uv sync'"
 fi
 
 # Check environment variables
@@ -98,11 +97,10 @@ Error: Python shell process exited with code 1
 python3 lib/python_bridge.py test_connection
 
 # Check Python dependencies
-pip list | grep -E "zlibrary|httpx|beautifulsoup4"
+uv pip list | grep -E "zlibrary|httpx|beautifulsoup4"
 
-# Verify venv activation
-which python
-echo $VIRTUAL_ENV
+# Verify the UV-managed environment
+.venv/bin/python --version
 ```
 
 **Solution:**
@@ -499,7 +497,7 @@ read -r response
 
 if [ "$response" = "y" ]; then
     # Clean build artifacts
-    rm -rf dist/ node_modules/ venv/ __pycache__/
+    rm -rf dist/ node_modules/ .venv/ __pycache__/
 
     # Clean logs and cache
     rm -rf logs/ cache/ downloads/ processed_rag_output/

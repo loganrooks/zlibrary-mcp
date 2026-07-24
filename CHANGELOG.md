@@ -7,8 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **Path traversal in the download flow**: `Content-Disposition` filenames come from a
+  server-controlled header and were joined directly onto the output directory, so
+  `filename="../../etc/passwd"` wrote outside it. Filenames are now reduced to a bare
+  basename, using both posixpath and ntpath since `os.path.basename` on POSIX does not
+  treat a backslash as a separator.
+
 ### Fixed
 
+- **Windows support** (incorporates PR #13 by @ltspace): the ESM entry guard compared
+  `import.meta.url` against a concatenated `file://` string, which never matches a
+  backslash `argv[1]`, so the server never auto-started; `venv-manager` hardcoded
+  `.venv/bin/python` where UV places `.venv\Scripts\python.exe`; and RFC 6266 extended
+  `filename*=UTF-8''` headers were parsed as percent-encoded bytes. Platform-dependent
+  behaviour is now parameterised so a Linux runner exercises the Windows branch.
 - **MCP stdio protocol violation**: all diagnostics now write to stderr via a new
   `src/lib/logger.ts`. Thirteen `console.log` calls wrote to stdout — the JSON-RPC
   channel — causing strict clients to disconnect (issue #11). Four of them fired on

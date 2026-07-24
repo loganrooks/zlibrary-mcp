@@ -62,6 +62,32 @@ source's live response shape and runs the integration suite, filing a rolling
 `scripts/validate-readme-tools.sh` was fixed too — it escaped notice because CI runs
 on Linux.
 
+### ISSUE-SEC-001: Path Traversal via Content-Disposition [RESOLVED]
+**Severity**: Was HIGH
+**Impact**: The download filename came from a server-controlled `Content-Disposition`
+header and was joined straight onto the output directory, so
+`filename="../../etc/passwd"` escaped it. Verified: `Path("/downloads") /
+"../../etc/passwd"` resolves outside the directory, and the response stream was written
+there.
+**Resolution** (2026-07-24): `sanitize_download_filename()` reduces the value to a bare
+basename. Applies both posixpath and ntpath, because `os.path.basename` on POSIX does
+not split on backslashes — a `..\..\x` payload would otherwise pass through a Linux
+server untouched. Covered by 34 tests including the real path-join property.
+
+### ISSUE-PLAT-002: Windows Unsupported [RESOLVED]
+**Severity**: Was High for affected users
+**Impact**: Three independent bugs prevented the server from running on Windows. The ESM
+auto-start guard compared `import.meta.url` against a `file://` string concatenated from
+a backslash `argv[1]`, so it never matched and the server never started. `venv-manager`
+hardcoded `.venv/bin/python` where UV places `.venv\Scripts\python.exe`, so the venv
+was never found. `Content-Disposition` filenames were parsed with `split('filename=')`,
+breaking on RFC 6266 extended notation.
+**Resolution** (2026-07-24): All three fixed, incorporating PR #13 by @ltspace, with 46
+tests. Platform-dependent behaviour is parameterised (`venvPythonSegments(platform)`,
+`isProcessEntryPoint(url, argv1)`) so a Linux CI runner exercises the Windows branch —
+these bugs reached users precisely because the broken paths only execute on the platform
+they are broken for. PR #13 can be closed as incorporated with thanks.
+
 ### ISSUE-LFS-001: Missing LFS Fixtures Produced Misleading Test Failures [RESOLVED]
 **Severity**: Was Low (but high nuisance)
 **Impact**: A clone without Git LFS leaves pointer files where PDFs should be. Five
@@ -137,19 +163,6 @@ skips with the cause and the fix (`git lfs pull`).
 **Resolved items**:
 - Debug mode with verbose logging (`ZLIBRARY_DEBUG=1`)
 
-### ISSUE-PLAT-002: Windows Unsupported
-**Severity**: High for affected users
-**Impact**: Three independent bugs prevent the server from running on Windows: the
-ESM auto-start guard compares `import.meta.url` against a `file://` string built from
-a backslash path so it never matches; `venv-manager` hardcodes `.venv/bin/python`
-where UV places `.venv\Scripts\python.exe`; and `Content-Disposition` filenames are
-parsed with `split('filename=')`, which breaks on RFC 6266 extended notation.
-**Status**: Open — correctly diagnosed and fixed in PR #13 (`ltspace`).
-**Blocking**: PR carries no tests for the three platform behaviours, and its CI has
-never run (fork PRs show `action_required`). Approve the run, add table-driven tests
-for the Content-Disposition tiers and a platform-branch test for the venv path, then
-merge. Do not reimplement independently.
-
 ### ISSUE-SRC-001: Z-Library Bypasses the Source Abstraction
 **Severity**: Medium (architectural)
 **Impact**: `lib/sources/` has a working `SourceAdapter` interface, unified result
@@ -193,7 +206,8 @@ superseded analyses to `archive/`.
 4. **Multi-source fallback under-tested**: `router.py` shows 97% line coverage, but the
    branch users hit when a source degrades — Anna's quota exhausted mid-request,
    falling back to LibGen, reconciling two result shapes — is not exercised.
-5. **No platform-branch coverage**: see ISSUE-PLAT-002.
+5. **Platform-branch coverage**: now covered for the venv path and entry guard
+   (ISSUE-PLAT-002); other platform-dependent behaviour remains untested.
 
 ### Code Quality
 1. **Inconsistent Error Handling**: Mix of exceptions across Python modules

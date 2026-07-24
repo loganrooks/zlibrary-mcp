@@ -10,8 +10,8 @@ integration viability, public-facing polish, multi-source expansion, feature roa
 ## Executive summary
 
 The codebase is in considerably better shape than its public presentation
-suggests. 1,114 tests pass (165 Jest, 949 Python), the architecture is clean, and
-seven of eight CI jobs were green. The problems were concentrated almost entirely
+suggests. At the baseline, 1,114 tests passed (165 Jest, 949 Python), the
+architecture is clean, and seven of eight CI jobs were green. The problems were concentrated almost entirely
 in the **seam between the repo and its users**:
 
 | | Finding | Status |
@@ -20,7 +20,7 @@ in the **seam between the repo and its users**:
 | P0 | Every npm publish since v1.2 failed; npm serves 1.0.0 from April 2025 while README advertises `npx zlibrary-mcp` | **Fixed** (needs a release cut) |
 | P0 | CI red on master since 2026-04-03 — solely the `audit` job, 74 stale dependency advisories | **Fixed** |
 | P1 | Nothing detected upstream drift; 26 live integration tests existed but never ran | **Fixed** |
-| P1 | Windows unusable (3 bugs) | Open — PR #13 |
+| P1 | Windows unusable (3 bugs) — plus an unreported path traversal in the same code | **Fixed** (PR #13 incorporated, with tests) |
 | P2 | macOS setup script failed on `grep -oP` | **Fixed** (issue #14) |
 | P2 | Four overlapping documentation trees, load-bearing docs factually stale | Partly addressed |
 
@@ -138,12 +138,19 @@ The remainder is `nltk` PYSEC-2026-597, which has no published fix. The upgrade
 crossed two majors (pytest 8→9, cryptography 46→49) with **no test changes
 required**.
 
-**(d) Platform support gaps.**
+**(d) Platform support gaps, and a path traversal hiding among them.**
 
-Windows is unusable for three independent reasons, all correctly diagnosed in
+Windows was unusable for three independent reasons, all correctly diagnosed in
 PR #13. macOS setup failed on `grep -oP` (GNU-only PCRE mode), fixed here along
 with a second occurrence in `scripts/validate-readme-tools.sh` that only escaped
 notice because CI runs on Linux.
+
+The same `Content-Disposition` code carried a security bug that PR #13 quietly
+fixed without mentioning it. The parsed filename is joined onto the output
+directory and originates in a server-controlled header, so a response bearing
+`filename="../../etc/passwd"` wrote outside the download directory. Confirmed at
+the baseline: `Path("/downloads") / "../../etc/passwd"` resolves outside, and the
+stream was written to the resolved location.
 
 **(e) A diagnostic trap in the test suite.**
 
@@ -162,7 +169,7 @@ the kind of false signal that trains a maintainer to distrust the suite.
 
 ## 2. Open PRs and issues: recommended disposition
 
-### PR #13 — Windows compatibility (`ltspace`) → **merge after adding tests**
+### PR #13 — Windows compatibility (`ltspace`) → **incorporated; close with thanks**
 
 Three real bugs, each correctly diagnosed. Verified against the current tree:
 
@@ -172,15 +179,31 @@ Three real bugs, each correctly diagnosed. Verified against the current tree:
 | `venv-manager` hardcodes `.venv/bin/python`; UV puts it at `.venv\Scripts\python.exe` on Windows | Yes — zero `win32` references in `src/` |
 | `Content-Disposition` parsed by `split('filename=')`, breaking on RFC 6266 `filename*=UTF-8''` | Yes — `zlibrary/src/zlibrary/eapi.py` |
 
-This is a good contribution. Two things hold it back: it carries **no tests** for
-three platform-specific parsing/path behaviours, and its CI has never run —
-GitHub shows `action_required`, the fork-PR approval gate.
+A good contribution. Two things held it back: **no tests** for three
+platform-specific parsing/path behaviours, and CI that had never run (GitHub shows
+`action_required`, the fork-PR approval gate).
 
-Recommended: approve the workflow run, then add table-driven tests for the
-`Content-Disposition` tiers and a platform-branch test for the venv path (both
-testable on Linux by parameterising the platform). Either ask the contributor or
-land them as a follow-up — do not reimplement the fix independently, which would
-discard their work and create a conflict.
+It also contained a **security fix its own description did not mention**: the parsed
+filename is joined onto the output directory and comes from a server-controlled
+header, so `filename="../../etc/passwd"` escaped it. Confirmed against the baseline
+— `Path("/downloads") / "../../etc/passwd"` resolves outside the directory and the
+stream was written there. That deserved to be called out, not slipped in.
+
+**Resolution:** the fixes are incorporated on this branch with 46 tests, following
+this repository's own precedent for PR #9 → PR #10 ("Based on PR #9 by @zaggash").
+Attribution to @ltspace is in the commit message, the tests, and the changelog. The
+sanitizer additionally applies `ntpath` alongside `posixpath`, because
+`os.path.basename` on POSIX does not treat a backslash as a separator — the PR's
+`os.path.basename` call would have let a `..\..\x` payload through a Linux server
+untouched.
+
+Both platform behaviours are now parameterised by platform
+(`venvPythonSegments(platform)`, `isProcessEntryPoint(url, argv1)`) rather than
+reading `process.platform` inline, so a Linux runner exercises the Windows branch.
+This is the structural fix: these bugs reached users because the broken code only
+executes on the platform it is broken for.
+
+Close #13 as incorporated, thanking the contributor and noting the traversal finding.
 
 ### PR #12 — "Configurando o MCP da Z-Library" → **close**
 
@@ -233,8 +256,10 @@ is:**
    coverage, but the branch that matters — Anna's quota exhausted mid-request,
    falling back to LibGen, and reconciling two different result shapes — is the
    one users hit when a source degrades. Line coverage flatters it.
-3. **Platform branches.** Zero coverage of Windows/macOS path and parsing
-   behaviour, which is why PR #13's bugs reached users at all.
+3. **Platform branches.** Was zero coverage of Windows/macOS path and parsing
+   behaviour, which is why PR #13's bugs reached users at all. Now covered for the
+   venv path, entry-point detection, and `Content-Disposition` parsing; other
+   platform-dependent behaviour remains untested.
 4. **`lib/python_bridge.py`** — the widest surface in the codebase and the
    dispatch point for all 13 tools.
 5. **Cross-language contract.** Jest mocks the Python bridge; pytest tests Python
@@ -373,7 +398,8 @@ The theme is making the project's claims true.
 2. ~~release pipeline~~ **done** — remaining: cut v1.3.0, verify npm and GHCR
 3. ~~audit gate~~ **done**
 4. ~~upstream drift detection~~ **done**
-5. Windows support — merge PR #13 with tests
+5. ~~Windows support~~ **done** — PR #13 incorporated with tests, plus the
+   path-traversal fix its description omitted
 6. Reply to and close #11, #14; close #12; clean up the draft release
 7. Rewrite `CLAUDE.md`; fix README's duplicate Option B
 8. Ratchet coverage thresholds to just under current actuals
@@ -415,8 +441,8 @@ The theme is making the project's claims true.
 ## 8. Verification of this pass
 
 ```
-Jest                165 passed  (11 suites, +1 new: stdio purity)
-Pytest (fast)       949 passed, 8 skipped, 184 deselected, 7 xfailed
+Jest                177 passed  (12 suites, +2 new: stdio purity, platform compat)
+Pytest (fast)       983 passed, 8 skipped, 184 deselected, 7 xfailed
 pip-audit           1 advisory in 1 package  (was 74 in 15)
 npm audit           passes at --audit-level=critical
 eslint + prettier   clean

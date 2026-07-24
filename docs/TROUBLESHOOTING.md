@@ -1,10 +1,41 @@
 # Troubleshooting Guide
 
-Common issues and solutions for Z-Library MCP server.
+Common issues and solutions for the Z-Library MCP server.
+
+> **Note**: Since v2.0.0 the project uses [UV](https://docs.astral.sh/uv/) with a
+> project-local `.venv/`. There is **no** cache venv at `~/.cache/zlibrary-mcp/` and no
+> `.venv_config` file — if a guide mentions those, it predates the UV migration.
 
 ---
 
-## ImportError: cannot import name from 'zlibrary'
+## Server exits immediately / won't start
+
+### Symptoms
+
+The MCP client reports the server disconnected, or `node dist/index.js` exits at once.
+
+### Checks, in order
+
+1. **Build output missing or stale**:
+   ```bash
+   npm run build      # compiles TypeScript and validates Python files exist
+   ```
+2. **Python venv missing** (fresh clone or after cleaning):
+   ```bash
+   uv sync            # creates .venv/ and installs all Python dependencies
+   ```
+3. **Node version**: Node 22+ is required (see `engines` in `package.json` / `.nvmrc`).
+4. **Credentials**: `ZLIBRARY_EMAIL` / `ZLIBRARY_PASSWORD` must be set in the
+   environment or the client's `.mcp.json` `env` block.
+
+A healthy start prints (to **stderr**):
+```
+Z-Library MCP server (ESM/TS) is running via Stdio...
+```
+
+---
+
+## ImportError: cannot import name ... from 'zlibrary'
 
 ### Symptom
 
@@ -13,80 +44,22 @@ MCP tools fail with:
 ImportError: cannot import name 'Extension' from 'zlibrary' (unknown location)
 ```
 
-### Causes
+### Cause
 
-#### Cause 1: Stale Cache Venv After Project Move
+The project-local `.venv/` is missing, stale, or was created before the vendored
+`./zlibrary` fork changed. The fork is installed editable, so the venv must be in sync
+with the working tree.
 
-**Description**: The venv-manager uses a shared cache venv at `~/.cache/zlibrary-mcp/` instead of the project-local `venv/`. If you move the project directory, the editable zlibrary install in the cache venv points to the old location.
+### Solution
 
-**How to Diagnose**:
 ```bash
-# Check cache venv zlibrary location
-~/.cache/zlibrary-mcp/zlibrary-mcp-venv/bin/pip show zlibrary
-
-# Look for:
-# Location: /old/path/to/project/zlibrary  ← WRONG
-# Should be: /current/path/to/project/zlibrary
+uv sync
+.venv/bin/python -c "from zlibrary import Extension; print('OK')"
 ```
 
-**Solution**: Reinstall zlibrary in cache venv
-
-**Quick Fix** (Run from project root):
-```bash
-bash scripts/fix-cache-venv.sh
-```
-
-**Manual Fix**:
-```bash
-# Get current project location
-PROJECT_ROOT=$(pwd)
-
-# Reinstall zlibrary in cache venv
-~/.cache/zlibrary-mcp/zlibrary-mcp-venv/bin/pip install -e "$PROJECT_ROOT/zlibrary" --force-reinstall --no-deps
-
-# Verify
-~/.cache/zlibrary-mcp/zlibrary-mcp-venv/bin/python -c "from zlibrary import Extension; print('✅ Fixed')"
-```
-
-**Then**: Restart Claude Code in your workspace
-
----
-
-#### Cause 2: Cache Venv Not Initialized
-
-**Description**: The cache venv doesn't exist or wasn't properly initialized.
-
-**How to Diagnose**:
-```bash
-ls ~/.cache/zlibrary-mcp/zlibrary-mcp-venv/
-# If doesn't exist or empty → not initialized
-```
-
-**Solution**: Run initial setup
-```bash
-cd /path/to/zlibrary-mcp
-npm run build  # Creates and initializes cache venv
-```
-
----
-
-#### Cause 3: Python Version Mismatch
-
-**Description**: Cache venv created with different Python version than current system.
-
-**How to Diagnose**:
-```bash
-~/.cache/zlibrary-mcp/zlibrary-mcp-venv/bin/python --version
-python3 --version
-
-# If versions don't match or cache Python doesn't work → version issue
-```
-
-**Solution**: Recreate cache venv
-```bash
-rm -rf ~/.cache/zlibrary-mcp/
-npm run build  # Recreates with current Python
-```
+If you **moved the project directory**, `.venv/` moves with it (it is project-local),
+but run `uv sync` once from the new location to be safe, and update any absolute paths
+in your clients' `.mcp.json`.
 
 ---
 
@@ -94,94 +67,62 @@ npm run build  # Recreates with current Python
 
 ### Symptom
 
-Error message shows:
 ```
 Python bridge script not found at: /path/to/dist/lib/python_bridge.py
 This usually indicates a build or installation issue.
 ```
 
-### Cause
-
-Build didn't complete successfully or Python scripts are missing.
-
 ### Solution
 
-**Verify files exist**:
-```bash
-npm run validate
+Python sources stay in `lib/` (they are not copied into `dist/`); the built JS resolves
+them relative to the project root. Verify and rebuild:
 
-# Should show:
-# ✅ lib/python_bridge.py
-# ✅ lib/rag_processing.py
-# etc.
-```
-
-**Rebuild if needed**:
 ```bash
+npm run validate   # checks all Python bridge files exist
 npm run build
 ```
 
-**Check source files**:
-```bash
-ls -la lib/*.py
-# All Python files should be present
-```
+See `docs/adr/ADR-004-Python-Bridge-Path-Resolution.md` for how resolution works.
 
 ---
 
-## Virtual environment configuration is missing or invalid
+## Network / upstream failures (searches fail, downloads fail)
 
-### Symptom
+### First step: run the doctor
 
-```
-Error: Virtual environment configuration is missing or invalid.
-Please run the setup process again.
-```
-
-### Cause
-
-Config file at `~/.cache/zlibrary-mcp/.venv_config` is missing or points to non-existent Python.
-
-### Solution
-
-**Check config**:
 ```bash
-cat ~/.cache/zlibrary-mcp/.venv_config
-# Should show path to cache venv Python
-
-ls -la "$(cat ~/.cache/zlibrary-mcp/.venv_config)"
-# Python should exist at that path
+npm run doctor
 ```
 
-**Fix by rebuilding**:
-```bash
-rm ~/.cache/zlibrary-mcp/.venv_config
-npm run build  # Recreates config
-```
+It probes the live endpoints the server actually uses (Z-Library EAPI, Anna's Archive,
+LibGen) and reports OK/WARN/FAIL per surface. Required failures point at real breakage;
+optional failures usually mean a secondary source is unreachable.
+
+### Common causes
+
+- **Region blocking**: Z-Library domains are blocked on some networks. Domain discovery
+  ("hydra mode") normally finds a working mirror at runtime; you can pin one explicitly:
+  ```bash
+  ZLIBRARY_EAPI_DOMAIN=<working-domain> npm run doctor
+  ```
+  The same variable works for the server and the integration tests.
+- **Bad credentials**: login failures surface as auth errors, not network errors —
+  re-check `ZLIBRARY_EMAIL` / `ZLIBRARY_PASSWORD`.
+- **Genuine upstream drift**: if the doctor reports a contract change (JSON shape
+  changed), that is a bug — please open an issue and include the doctor output.
 
 ---
 
-## MCP Tools Work Locally But Fail in Claude Code
-
-### Symptom
-
-Direct execution works:
-```bash
-node dist/index.js
-# Works ✅
-```
-
-But MCP calls from Claude Code fail.
+## MCP tools work locally but fail in Claude Code / other clients
 
 ### Causes
 
-1. **Different working directory**: Claude Code may run from different directory
-2. **Environment variables**: ZLIBRARY_EMAIL/PASSWORD not set in .mcp.json
-3. **Permission issues**: Cache venv not readable
+1. Relative path to `dist/index.js` in `.mcp.json` — must be absolute
+2. Credentials missing from the client's `env` block
+3. A modified build printing to stdout (see next section)
 
 ### Solution
 
-**Check .mcp.json configuration**:
 ```json
 {
   "mcpServers": {
@@ -197,118 +138,72 @@ But MCP calls from Claude Code fail.
 }
 ```
 
-**Important**:
-- Use ABSOLUTE path to `dist/index.js`
-- Include credentials in env block
-- Restart Claude Code after changes
+Use `node`, not `uv`, as the command — the Node entry point locates the UV venv itself.
+Restart the client after changes.
 
 ---
 
-## After Moving Project Directory
+## Strict clients disconnect (developers)
 
-If you've moved the project from one location to another:
-
-### Steps to Fix
-
-1. **Update cache venv** (run from new location):
-   ```bash
-   bash scripts/fix-cache-venv.sh
-   ```
-
-2. **Verify build**:
-   ```bash
-   npm run validate
-   ```
-
-3. **Update .mcp.json** in your workspaces:
-   ```json
-   "args": ["/new/absolute/path/to/zlibrary-mcp/dist/index.js"]
-   ```
-
-4. **Restart Claude Code**
+Under the stdio transport, **stdout carries JSON-RPC and nothing else**. A single
+`console.log` anywhere in `src/` corrupts the protocol stream and strict clients drop
+the connection. Use the `logger` from `src/lib/logger.ts` (writes to stderr).
+`__tests__/stdio-purity.test.js` enforces this at build time — run `npm test` before
+debugging the client side.
 
 ---
 
-## Testing the MCP Server
+## Test suite fails on a fresh clone (PyMuPDF errors, tiny PDF files)
 
-### Test 1: Direct Execution
+### Symptom
+
+Many Python tests fail with PDF parse errors; files under `test_files/` are ~130 bytes.
+
+### Cause
+
+The test corpus is stored in **Git LFS**. Without LFS you have pointer files, not PDFs.
+
+### Solution
 
 ```bash
-cd /path/to/zlibrary-mcp
-export ZLIBRARY_EMAIL="your-email"
-export ZLIBRARY_PASSWORD="your-password"
-node dist/index.js
+sudo apt-get install -y git-lfs   # or brew install git-lfs
+git lfs pull                      # from the repo root
+file test_files/*.pdf             # should say "PDF document", not "ASCII text"
 ```
 
-Should show:
-```
-Z-Library MCP server (ESM/TS) is running via Stdio...
-```
+> Do not run `git lfs install` inside this repo — it refuses to overwrite the repo's
+> existing `pre-push` hook. `git lfs pull` alone is enough for fetching objects.
+
+### Which tests need what
+
+| Subset | Command | Needs |
+|---|---|---|
+| Fast (what CI gates PRs on) | `uv run pytest -m "not slow and not integration and not performance"` | nothing extra |
+| Full corpus | `uv run pytest` | LFS objects |
+| Live integration | `uv run pytest -m integration` | `ZLIBRARY_EMAIL`/`ZLIBRARY_PASSWORD` (auto-**skips** without them) |
+| E2E | `npm run test:e2e` | Docker |
 
 ---
 
-### Test 2: Python Bridge Direct Call
+## Quick diagnostic commands
 
 ```bash
-~/.cache/zlibrary-mcp/zlibrary-mcp-venv/bin/python \
-  /path/to/zlibrary-mcp/lib/python_bridge.py \
-  get_download_limits \
-  '{}'
-```
-
-Should return JSON with download limits (not ImportError).
-
----
-
-### Test 3: Via MCP (from another workspace)
-
-1. Create test `.mcp.json` (or use existing)
-2. Start Claude Code
-3. Try: "Search Z-Library for test query"
-4. Should work without ImportError
-
----
-
-## Quick Diagnostic Commands
-
-```bash
-# Check which Python venv-manager is using
-cat ~/.cache/zlibrary-mcp/.venv_config
-
-# Check if that Python works
-$(cat ~/.cache/zlibrary-mcp/.venv_config) -c "from zlibrary import Extension; print('OK')"
-
-# Check zlibrary installation location
-~/.cache/zlibrary-mcp/zlibrary-mcp-venv/bin/pip show zlibrary | grep Location
-
-# Run build validation
-npm run validate
-
-# Run integration tests
-npm test __tests__/integration/
+npm run validate                  # Python bridge files present?
+uv run python -c "import lib.python_bridge; print('bridge imports OK')"
+npm run doctor                    # live upstream contract check
+npm test                          # Jest (Node side, includes stdio purity)
+uv run pytest -m "not slow and not integration and not performance"  # fast Python suite
 ```
 
 ---
 
 ## Getting Help
 
-If issues persist:
-
-1. Run diagnostics:
-   ```bash
-   bash scripts/fix-cache-venv.sh  # Attempts automatic fix
-   npm run validate                 # Checks files
-   npm test                        # Runs tests
-   ```
-
-2. Check logs (if enabled):
-   ```bash
-   tail -f logs/nodejs_debug.log
-   ```
-
-3. Report issue with diagnostics:
-   - https://github.com/loganrooks/zlibrary-mcp/issues
+1. Run `npm run doctor` and `npm run validate` and capture the output.
+2. Check existing issues: https://github.com/loganrooks/zlibrary-mcp/issues
+3. Open a bug report — the issue template asks for the doctor output and your
+   OS/client; scrub any credentials from pasted stderr logs first.
 
 ---
 
-**Last Updated**: 2025-10-12
+**Last verified**: 2026-07-24

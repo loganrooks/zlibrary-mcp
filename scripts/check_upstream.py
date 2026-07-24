@@ -23,16 +23,38 @@ import json
 import os
 import sys
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Optional
 
 import httpx
 
+# Import the runtime defaults directly from lib/sources/config.py so the probe
+# cannot drift from what the server actually contacts (it previously hardcoded
+# copies that went stale).
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from lib.sources.config import get_source_config  # noqa: E402
+
 TIMEOUT = httpx.Timeout(20.0, connect=10.0)
 
-# Mirrors the runtime defaults in lib/python_bridge.py and lib/sources/config.py
-# so the probe reports on what the server would actually contact.
+_source_config = get_source_config()
+
+# Mirrors the runtime default in lib/python_bridge.py.
 ZLIB_DOMAIN = os.environ.get("ZLIBRARY_EAPI_DOMAIN", "z-library.sk")
-ANNAS_BASE_URL = os.environ.get("ANNAS_BASE_URL", "https://annas-archive.li")
+# get_source_config() already applies the ANNAS_BASE_URL / LIBGEN_MIRROR
+# environment overrides, same as the runtime adapters.
+ANNAS_BASE_URL = _source_config.annas_base_url
+
+# Markers of domain-parking/traffic-monetization pages. A lapsed mirror that a
+# squatter re-registered (e.g. annas-archive.li -> Trellian/Above.com in
+# 2026-03) still returns HTTP 200, so "no /md5/ links" alone under-reports what
+# happened.
+PARKING_MARKERS = (
+    "above.com",
+    "abovedomains",
+    "trellian",
+    "tr_uuid=",
+    "fingerprintjs",
+)
 
 
 @dataclass
@@ -124,17 +146,25 @@ async def probe_annas(client: httpx.AsyncClient) -> ProbeResult:
         resp.raise_for_status()
         body = resp.text
         # The adapter keys off result anchors; their absence means either a layout
-        # change or a block page.
+        # change, a block page, or a parked domain.
         looks_like_results = "/md5/" in body
+        if looks_like_results:
+            detail = "search page contains /md5/ result links"
+        else:
+            lower_body = body.lower()
+            parked = any(marker in lower_body for marker in PARKING_MARKERS)
+            detail = (
+                "domain appears PARKED (squatter/traffic-monetization page) — "
+                "the configured base URL no longer belongs to Anna's Archive; "
+                "update ANNAS_BASE_URL / lib/sources/config.py"
+                if parked
+                else "reachable but no /md5/ links found "
+                "(layout change or block page — the HTML adapter will return nothing)"
+            )
         return ProbeResult(
             name="annas-archive:search",
             ok=looks_like_results,
-            detail=(
-                "search page contains /md5/ result links"
-                if looks_like_results
-                else "reachable but no /md5/ links found "
-                "(layout change or block page — the HTML adapter will return nothing)"
-            ),
+            detail=detail,
             # Anna's is optional: the router falls back to LibGen without a key.
             required=False,
         )

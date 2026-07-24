@@ -87,10 +87,25 @@ def test_github_output_is_a_noop_outside_ci(check_upstream, monkeypatch):
 
 
 def test_probe_targets_match_runtime_defaults(check_upstream):
-    """The probe is only useful if it checks what the server actually contacts."""
+    """The probe is only useful if it checks what the server actually contacts.
+
+    The Anna's/LibGen targets are derived from lib/sources/config.py at import
+    time (get_source_config applies the env overrides), so the probe cannot
+    drift from the runtime adapters again.
+    """
+    from lib.sources.config import get_source_config
+
+    runtime = get_source_config()
     assert check_upstream.ZLIB_DOMAIN == os.environ.get(
         "ZLIBRARY_EAPI_DOMAIN", "z-library.sk"
     )
-    assert check_upstream.ANNAS_BASE_URL == os.environ.get(
-        "ANNAS_BASE_URL", "https://annas-archive.li"
-    )
+    assert check_upstream.ANNAS_BASE_URL == runtime.annas_base_url
+
+
+def test_annas_parking_page_is_reported_as_parked(check_upstream):
+    """A parked domain returns HTTP 200 with no /md5/ links; the report must say
+    'parked', not just 'no links found', so the operator knows the domain is gone."""
+    assert any("trellian" in m for m in check_upstream.PARKING_MARKERS)
+    # The markers list is what probe_annas scans the body with; keep them
+    # lowercase because the body is lowercased before matching.
+    assert all(m == m.lower() for m in check_upstream.PARKING_MARKERS)

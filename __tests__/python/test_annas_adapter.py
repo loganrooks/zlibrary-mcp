@@ -56,7 +56,7 @@ class TestAnnasArchiveSearch:
 
         config = SourceConfig(
             annas_secret_key="test-key",
-            annas_base_url="https://annas-archive.li",
+            annas_base_url="https://annas-archive.gl",
         )
         adapter = AnnasArchiveAdapter(config)
 
@@ -89,7 +89,7 @@ class TestAnnasArchiveSearch:
 
         config = SourceConfig(
             annas_secret_key="test-key",
-            annas_base_url="https://annas-archive.li",
+            annas_base_url="https://annas-archive.gl",
         )
         adapter = AnnasArchiveAdapter(config)
 
@@ -119,7 +119,7 @@ class TestAnnasArchiveSearch:
 
         config = SourceConfig(
             annas_secret_key="test-key",
-            annas_base_url="https://annas-archive.li",
+            annas_base_url="https://annas-archive.gl",
         )
         adapter = AnnasArchiveAdapter(config)
 
@@ -148,7 +148,7 @@ class TestAnnasArchiveSearch:
 
         config = SourceConfig(
             annas_secret_key="test-key",
-            annas_base_url="https://annas-archive.li",
+            annas_base_url="https://annas-archive.gl",
         )
         adapter = AnnasArchiveAdapter(config)
 
@@ -186,7 +186,7 @@ class TestAnnasArchiveFastDownload:
 
         config = SourceConfig(
             annas_secret_key="test-secret-key",
-            annas_base_url="https://annas-archive.li",
+            annas_base_url="https://annas-archive.gl",
         )
         adapter = AnnasArchiveAdapter(config)
 
@@ -215,7 +215,7 @@ class TestAnnasArchiveFastDownload:
 
         config = SourceConfig(
             annas_secret_key="test-secret-key",
-            annas_base_url="https://annas-archive.li",
+            annas_base_url="https://annas-archive.gl",
         )
         adapter = AnnasArchiveAdapter(config)
 
@@ -246,7 +246,7 @@ class TestAnnasArchiveFastDownload:
 
         config = SourceConfig(
             annas_secret_key="test-secret-key",
-            annas_base_url="https://annas-archive.li",
+            annas_base_url="https://annas-archive.gl",
         )
         adapter = AnnasArchiveAdapter(config)
 
@@ -277,7 +277,7 @@ class TestAnnasArchiveFastDownload:
 
         config = SourceConfig(
             annas_secret_key="test-secret-key",
-            annas_base_url="https://annas-archive.li",
+            annas_base_url="https://annas-archive.gl",
         )
         adapter = AnnasArchiveAdapter(config)
 
@@ -306,7 +306,7 @@ class TestAnnasArchiveFastDownload:
 
         config = SourceConfig(
             annas_secret_key="",  # No key
-            annas_base_url="https://annas-archive.li",
+            annas_base_url="https://annas-archive.gl",
         )
         adapter = AnnasArchiveAdapter(config)
 
@@ -325,7 +325,7 @@ class TestAnnasArchiveFastDownload:
 
         config = SourceConfig(
             annas_secret_key="test-secret-key",
-            annas_base_url="https://annas-archive.li",
+            annas_base_url="https://annas-archive.gl",
         )
         adapter = AnnasArchiveAdapter(config)
 
@@ -359,7 +359,7 @@ class TestAnnasArchiveAdapterInterface:
 
         config = SourceConfig(
             annas_secret_key="test-key",
-            annas_base_url="https://annas-archive.li",
+            annas_base_url="https://annas-archive.gl",
         )
         adapter = AnnasArchiveAdapter(config)
 
@@ -373,7 +373,7 @@ class TestAnnasArchiveAdapterInterface:
 
         config = SourceConfig(
             annas_secret_key="test-key",
-            annas_base_url="https://annas-archive.li",
+            annas_base_url="https://annas-archive.gl",
         )
         adapter = AnnasArchiveAdapter(config)
 
@@ -402,3 +402,99 @@ class TestQuotaExhaustedError:
         error = QuotaExhaustedError("Quota exhausted")
         assert isinstance(error, Exception)
         assert str(error) == "Quota exhausted"
+
+
+class TestSecretKeyHostAllowlist:
+    """Regression tests for the secret-key host allowlist.
+
+    Anna's Archive domains lapse and get re-registered by squatters
+    (annas-archive.li became a Trellian parking page in 2026-03), and the
+    fast-download API sends ANNAS_SECRET_KEY as a URL query parameter. The
+    adapter must never attach the key to a host outside ANNAS_TRUSTED_HOSTS.
+    """
+
+    def test_default_base_url_host_is_allowlisted(self):
+        """The shipped default must point at a host the key may be sent to."""
+        from urllib.parse import urlsplit
+
+        from lib.sources.config import ANNAS_TRUSTED_HOSTS, SourceConfig
+
+        default_host = urlsplit(SourceConfig().annas_base_url).hostname
+        assert default_host in ANNAS_TRUSTED_HOSTS
+
+    def test_parked_former_default_is_not_allowlisted(self):
+        """annas-archive.li is parked (Trellian/Above.com) — never trust it."""
+        from lib.sources.config import ANNAS_TRUSTED_HOSTS
+
+        assert "annas-archive.li" not in ANNAS_TRUSTED_HOSTS
+
+    @pytest.mark.asyncio
+    async def test_key_not_sent_to_unknown_host(self):
+        """get_download_url must refuse before any request leaves the process."""
+        from lib.sources.annas import AnnasArchiveAdapter
+        from lib.sources.config import SourceConfig
+
+        config = SourceConfig(
+            annas_secret_key="super-secret-key",
+            annas_base_url="https://annas-archive.li",  # parked squatter domain
+        )
+        adapter = AnnasArchiveAdapter(config)
+
+        mock_client = AsyncMock()
+        with patch.object(adapter, "_get_client", return_value=mock_client):
+            with pytest.raises(ValueError, match="Refusing to send ANNAS_SECRET_KEY"):
+                await adapter.get_download_url("abc123def456")
+
+        # The key must never have been put on the wire.
+        mock_client.get.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_key_sent_to_allowlisted_host(self):
+        """Allowlisted hosts keep working (control case for the guard)."""
+        from lib.sources.annas import AnnasArchiveAdapter
+        from lib.sources.config import SourceConfig
+
+        config = SourceConfig(
+            annas_secret_key="test-key",
+            annas_base_url="https://annas-archive.gl",
+        )
+        adapter = AnnasArchiveAdapter(config)
+
+        mock_response = MagicMock()
+        mock_response.json.return_value = MOCK_FAST_DOWNLOAD_RESPONSE
+        mock_response.raise_for_status = MagicMock()
+
+        with patch.object(adapter, "_get_client") as mock_get_client:
+            mock_client = AsyncMock()
+            mock_client.get.return_value = mock_response
+            mock_get_client.return_value = mock_client
+
+            result = await adapter.get_download_url("abc123def456")
+
+        assert result.url == MOCK_FAST_DOWNLOAD_RESPONSE["download_url"]
+
+    @pytest.mark.asyncio
+    async def test_search_still_allowed_on_unknown_host(self):
+        """Plain search carries no key, so it is not restricted by the allowlist."""
+        from lib.sources.annas import AnnasArchiveAdapter
+        from lib.sources.config import SourceConfig
+
+        config = SourceConfig(
+            annas_secret_key="test-key",
+            annas_base_url="https://annas-archive.li",
+        )
+        adapter = AnnasArchiveAdapter(config)
+
+        mock_response = MagicMock()
+        mock_response.text = MOCK_SEARCH_HTML
+        mock_response.status_code = 200
+        mock_response.raise_for_status = MagicMock()
+
+        with patch.object(adapter, "_get_client") as mock_get_client:
+            mock_client = AsyncMock()
+            mock_client.get.return_value = mock_response
+            mock_get_client.return_value = mock_client
+
+            results = await adapter.search("python")
+
+        assert len(results) == 3

@@ -197,11 +197,14 @@ failure.
 **Direction**: Wrap the EAPI client in `SourceAdapter`, register it in the router,
 route all tools through it. See section 6 of the health assessment.
 
-### ISSUE-DOCS-001: Four Overlapping Documentation Trees
+### ISSUE-DOCS-001: Overlapping Documentation Trees
 **Severity**: Low (public-facing polish)
-**Impact**: `docs/` (40+ files), `claudedocs/`, `.claude/`, and `.planning/` overlap,
-with three separate roadmaps and stale one-off analyses. Reads as sprawl on a public
-repo and buries the ~6 documents a user needs.
+**Impact**: `docs/` (40+ files) and `claudedocs/` overlap, with stale one-off
+analyses. Reads as sprawl on a public repo and buries the ~6 documents a user
+needs. (Previously four trees with three separate roadmaps — the GSD `.planning/`
+tree was removed 2026-07-24 with its durable content preserved in `claudedocs/`,
+and `.claude/` was pruned to living guides only, so the overlap has shrunk to the
+two doc trees with a single live roadmap.)
 **Direction**: Consolidate `docs/` into `{guides,reference,adr,archive}`; move
 superseded analyses to `archive/`.
 

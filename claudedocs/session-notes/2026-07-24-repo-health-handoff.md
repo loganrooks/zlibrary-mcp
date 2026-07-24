@@ -146,7 +146,7 @@ against.
 
 ### 7. Then: plan Phase 20 against the revised criteria
 
-`$gsdr-plan-phase 20`. Read `claudedocs/architecture/phase-20-21-review-2026-07-24.md`
+Plan Phase 20 per `claudedocs/architecture/phase-20-21-review-2026-07-24.md`. Read it
 first — the phase was rewritten because ~60% of its original criteria were already
 implemented. In particular task 20-00 (resolve the orphaned `scripts/run_rag_tests.py`)
 must come before any new scoring code, or the repo ends up with two JSON quality reporters.

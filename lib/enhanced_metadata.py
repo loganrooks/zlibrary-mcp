@@ -16,15 +16,17 @@ import sys
 import os
 
 # Add zlibrary source directory to path
-zlibrary_path = os.path.join(os.path.dirname(__file__), '..', 'zlibrary', 'src')
+zlibrary_path = os.path.join(os.path.dirname(__file__), "..", "zlibrary", "src")
 sys.path.insert(0, zlibrary_path)
 
-from zlibrary.eapi import EAPIClient, normalize_eapi_book
+from zlibrary.eapi import EAPIClient
 
 logger = logging.getLogger(__name__)
 
 
-def extract_metadata_from_eapi(book_info: dict, mirror_url: str = None) -> Dict[str, Any]:
+def extract_metadata_from_eapi(
+    book_info: dict, mirror_url: str = None
+) -> Dict[str, Any]:
     """
     Extract enhanced metadata from an EAPI book info response.
 
@@ -46,35 +48,35 @@ def extract_metadata_from_eapi(book_info: dict, mirror_url: str = None) -> Dict[
     try:
         metadata = {
             # Tier 1: Essential
-            'description': book.get('description') or None,
-            'terms': [],  # Not available via EAPI
-            'booklists': [],  # Not available via EAPI; see booklist_tools.py for enriched topic search fallback
-
+            "description": book.get("description") or None,
+            "terms": [],  # Not available via EAPI
+            "booklists": [],  # Not available via EAPI; see booklist_tools.py for enriched topic search fallback
             # Tier 2: Important
-            'rating': _extract_rating_from_eapi(book),
-            'ipfs_cids': [],  # Not available via EAPI
-            'series': book.get('series') or None,
-            'categories': _extract_categories_from_eapi(book),
-
+            "rating": _extract_rating_from_eapi(book),
+            "ipfs_cids": [],  # Not available via EAPI
+            "series": book.get("series") or None,
+            "categories": _extract_categories_from_eapi(book),
             # Tier 3: Optional
-            'quality_score': _safe_float(book.get('qualityScore')),
+            "quality_score": _safe_float(book.get("qualityScore")),
         }
 
         # ISBNs
-        isbn = book.get('isbn', '') or ''
-        metadata['isbn_10'] = None
-        metadata['isbn_13'] = None
+        isbn = book.get("isbn", "") or ""
+        metadata["isbn_10"] = None
+        metadata["isbn_13"] = None
         if isbn:
-            cleaned = isbn.replace('-', '').strip()
+            cleaned = isbn.replace("-", "").strip()
             if len(cleaned) == 13:
-                metadata['isbn_13'] = isbn
+                metadata["isbn_13"] = isbn
             elif len(cleaned) == 10:
-                metadata['isbn_10'] = isbn
+                metadata["isbn_10"] = isbn
             else:
                 # Store in isbn_13 as default
-                metadata['isbn_13'] = isbn
+                metadata["isbn_13"] = isbn
 
-        logger.info("Extracted EAPI metadata for book: %s", book.get('title', 'unknown'))
+        logger.info(
+            "Extracted EAPI metadata for book: %s", book.get("title", "unknown")
+        )
         return metadata
 
     except Exception as e:
@@ -110,8 +112,10 @@ async def get_enhanced_metadata(
     client = eapi_client
     should_close = False
     if client is None:
-        from zlibrary.util import discover_eapi_domain
-        domain = await discover_eapi_domain()
+        # discover_eapi_domain() requires an authenticated client, so before
+        # login we must start from a known domain (same default as
+        # booklist_tools and python_bridge).
+        domain = os.environ.get("ZLIBRARY_EAPI_DOMAIN", "z-library.sk")
         client = EAPIClient(domain)
         await client.login(email, password)
         should_close = True
@@ -125,7 +129,9 @@ async def get_enhanced_metadata(
 
 
 # Legacy compatibility alias
-def extract_complete_metadata(html: str = None, mirror_url: str = None, **kwargs) -> Dict[str, Any]:
+def extract_complete_metadata(
+    html: str = None, mirror_url: str = None, **kwargs
+) -> Dict[str, Any]:
     """
     Legacy compatibility wrapper.
 
@@ -146,13 +152,13 @@ def extract_description(html: str = None) -> Optional[str]:
 
 def _extract_rating_from_eapi(book: dict) -> Optional[Dict[str, Any]]:
     """Extract rating info from EAPI book data."""
-    rating_val = book.get('rating')
+    rating_val = book.get("rating")
     if rating_val is None:
         return None
     try:
         return {
-            'value': float(rating_val),
-            'count': int(book.get('ratingCount', 0)),
+            "value": float(rating_val),
+            "count": int(book.get("ratingCount", 0)),
         }
     except (ValueError, TypeError):
         return None
@@ -160,13 +166,13 @@ def _extract_rating_from_eapi(book: dict) -> Optional[Dict[str, Any]]:
 
 def _extract_categories_from_eapi(book: dict) -> List[Dict[str, str]]:
     """Extract categories from EAPI book data."""
-    categories = book.get('categories', [])
+    categories = book.get("categories", [])
     if not categories:
         return []
     if isinstance(categories, list):
-        return [{'name': str(c), 'url': ''} for c in categories]
+        return [{"name": str(c), "url": ""} for c in categories]
     if isinstance(categories, str):
-        return [{'name': categories, 'url': ''}]
+        return [{"name": categories, "url": ""}]
     return []
 
 
@@ -183,14 +189,14 @@ def _safe_float(value) -> Optional[float]:
 def _empty_metadata() -> Dict[str, Any]:
     """Return empty metadata structure with default values."""
     return {
-        'description': None,
-        'terms': [],
-        'booklists': [],
-        'rating': None,
-        'ipfs_cids': [],
-        'series': None,
-        'categories': [],
-        'isbn_10': None,
-        'isbn_13': None,
-        'quality_score': None,
+        "description": None,
+        "terms": [],
+        "booklists": [],
+        "rating": None,
+        "ipfs_cids": [],
+        "series": None,
+        "categories": [],
+        "isbn_10": None,
+        "isbn_13": None,
+        "quality_score": None,
     }

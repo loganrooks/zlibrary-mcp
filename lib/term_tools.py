@@ -7,12 +7,12 @@ than just keywords. Uses EAPI for all Z-Library data access.
 """
 
 import asyncio
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 import sys
 import os
 
 # Add zlibrary source directory to path
-zlibrary_path = os.path.join(os.path.dirname(__file__), '..', 'zlibrary', 'src')
+zlibrary_path = os.path.join(os.path.dirname(__file__), "..", "zlibrary", "src")
 sys.path.insert(0, zlibrary_path)
 
 from zlibrary.eapi import EAPIClient, normalize_eapi_search_response
@@ -62,8 +62,10 @@ async def search_by_term(
     client = eapi_client
     should_close = False
     if client is None:
-        from zlibrary.util import discover_eapi_domain
-        domain = await discover_eapi_domain()
+        # discover_eapi_domain() requires an authenticated client, so before
+        # login we must start from a known domain (same default as
+        # booklist_tools and python_bridge).
+        domain = os.environ.get("ZLIBRARY_EAPI_DOMAIN", "z-library.sk")
         client = EAPIClient(domain)
         await client.login(email, password)
         should_close = True
@@ -72,10 +74,14 @@ async def search_by_term(
         # Build search kwargs
         lang_list = None
         if languages:
-            lang_list = languages.split(',') if isinstance(languages, str) else languages
+            lang_list = (
+                languages.split(",") if isinstance(languages, str) else languages
+            )
         ext_list = None
         if extensions:
-            ext_list = extensions.split(',') if isinstance(extensions, str) else extensions
+            ext_list = (
+                extensions.split(",") if isinstance(extensions, str) else extensions
+            )
 
         response = await client.search(
             message=term,
@@ -91,9 +97,9 @@ async def search_by_term(
         books = normalize_eapi_search_response(response)
 
         return {
-            'term': term,
-            'books': books,
-            'total_results': len(books),
+            "term": term,
+            "books": books,
+            "total_results": len(books),
         }
     finally:
         if should_close:

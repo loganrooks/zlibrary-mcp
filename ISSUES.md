@@ -145,6 +145,29 @@ skips with the cause and the fix (`git lfs pull`).
 **Status**: Handled by vendored zlibrary fork with EAPI client
 **Note**: EAPI endpoints appear more stable than HTML pages for Hydra mode domains.
 
+### ISSUE-API-002: Default EAPI Domain (z-library.sk) Fronted by DiamWall Anti-Bot
+**Severity**: High
+**Discovered**: 2026-07-24, first automated run of the credentialed integration suite
+**Impact**: The default EAPI domain `z-library.sk` no longer serves `/eapi/*` to
+programmatic clients. All requests get an HTTP 307 self-redirect from "DiamWall"
+that sets a `__diamwall` cookie, then 513/517 "Access Denied" on retry — including
+with the EAPIClient's browser User-Agent. `1lib.sk` shows the same wall. With
+defaults, `initialize_eapi_client()` fails at login and every tool is dead.
+**Evidence** (2026-07-24, unrestricted network):
+- `POST https://z-library.sk/eapi/user/login` → 307 → `Set-Cookie: __diamwall=…` → retry → 517 Access Denied (DiamWall-branded page, cdn.diamwall.com assets)
+- Same request against `z-library.ec` → normal EAPI JSON (`{"success":0,"error":"Incorrect email or password"}` for bad creds; real login succeeds)
+- `/eapi/info/domains` (queried via z-library.ec) still advertises `z-library.sk` FIRST, so Hydra-mode domain discovery in `initialize_eapi_client()` would actively switch a working client back to the walled domain.
+**Workaround**: `export ZLIBRARY_EAPI_DOMAIN=z-library.ec` (verified working 2026-07-24).
+**Related finding**: `/eapi/user/login` rate-limits repeated logins from one IP —
+after ~10 logins in an hour it returns 400 `{"success":0,"error":"Incorrect email
+or password"}` even for valid credentials, recovering after a cooldown. The
+integration suite now logs in once per module (shared `zlib_client` fixture)
+instead of per test to stay under this limit.
+**Direction**: (1) Consider changing the default domain or trying a fallback list
+at login; (2) make domain discovery validate a candidate domain with a probe
+request before switching to it; (3) surface a clearer error when DiamWall HTML
+appears where JSON was expected (extend `_classify_health_error`).
+
 ### ISSUE-008: Performance Optimizations Needed
 **Severity**: Low
 **Remaining**:

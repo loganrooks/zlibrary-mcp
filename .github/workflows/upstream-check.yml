@@ -34,7 +34,7 @@ jobs:
       report: ${{ steps.probe.outputs.report }}
       failed: ${{ steps.probe.outputs.failed }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/setup
         with:
           build: 'false'
@@ -49,7 +49,7 @@ jobs:
     # skip cleanly rather than reporting a false failure.
     if: github.event_name == 'schedule' || inputs.run_live_tests
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           lfs: true
       - uses: ./.github/actions/setup

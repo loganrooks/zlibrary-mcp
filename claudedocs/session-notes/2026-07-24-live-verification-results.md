@@ -96,10 +96,12 @@ SKIPPED test_recall_baseline.py:86 — Baseline text file missing for DerridaJac
 SKIPPED test_recall_baseline.py:86 — Baseline text file missing for UnknownAuthor_MarginsOfPhilosophy_984933.pdf
 ```
 
-The PDFs hydrate fine; the *baseline text* artifacts are absent. Recall is therefore
-unmeasured for two corpus documents and skips silently. This is the "false green over zero
-documents" failure mode from the previous handoff, in miniature — worth closing before
-Phase 20 builds scoring on this corpus.
+The PDFs hydrate fine; the *baseline text* artifacts are absent.
+`test_files/ground_truth/baseline_texts/` holds 15 entries — every page-range excerpt, but
+neither of the two full books. Recall is therefore unmeasured for two corpus documents and
+skips silently. This is the "false green over zero documents" failure mode from the
+previous handoff, in miniature — worth closing before Phase 20 builds scoring on this
+corpus.
 
 ### 4. One test is fragile by construction
 
@@ -131,6 +133,87 @@ isolation and within the corpus subset.
 Integration tests: **33 collect, not 26** — 25 credentialed in
 `__tests__/python/integration/test_real_zlibrary.py`, plus 8 in
 `test_pipeline_integration.py` that need no credentials. **The 8 pass.**
+
+---
+
+## Performance and install size — measured, not yet acted on
+
+This was not previously on the roadmap. The numbers below are from this container.
+
+### The npm package is not the problem
+
+`npm pack --dry-run`: **428 kB packed, 1.5 MB unpacked, 129 files**, 4 runtime Node
+dependencies. That is already lean; no work needed there.
+
+### The install footprint is 458 MB, and most of it is optional
+
+```
+458M  .venv          <- what every user installs
+132M  node_modules   (dev only)
+116M  .git
+112M  test_files     (LFS corpus, dev only)
+```
+
+Inside `.venv`:
+
+| Package | Size | Status |
+|---|---|---|
+| `opencv-python-headless` (`cv2` + `.libs`) | **163 MB** | imported under `try/except`, degrades gracefully |
+| `pymupdf` | 60 MB | genuinely required |
+| `numpy` (+`.libs`) | 61 MB | pulled in by opencv |
+| `nltk` | 12 MB | required — sentence boundaries |
+| `pdfminer` | 8.5 MB | **never imported by this project** — transitive via `ocrmypdf` |
+
+`opencv-python-headless` and `ocrmypdf` are declared as **hard dependencies** in
+`pyproject.toml`, but:
+
+- Every `cv2` import in the codebase is guarded, e.g. `lib/rag/quality/pipeline.py:30-36`
+  sets `XMARK_AVAILABLE = False` and logs *"X-mark detection requested but opencv not
+  available"*. The code is already written to run without it.
+- `pyproject.toml` has an `[project.optional-dependencies] ocr` group commented *"OCR
+  capabilities for scanned PDFs (not currently active)"* — while `ocrmypdf` sits in the
+  required list, contradicting it. `ocrmypdf` is invoked as a **subprocess**
+  (`lib/rag/ocr/recovery.py:207`), not imported.
+
+Moving both to extras should roughly halve the install for users who do not need X-mark
+detection or re-OCR. **Verify before doing this** — confirm no test or runtime path
+imports them unguarded, and decide whether the default install should keep OCR.
+
+### Every tool call spawns a fresh Python interpreter
+
+`src/lib/zlibrary-api.ts:61` uses `PythonShell.run(...)`, the one-shot API: spawn,
+execute, exit. There is no persistent process or pool. Measured import cost of
+`lib/python_bridge.py`:
+
+```
+cold: 14842 ms      warm: 1002 ms / 1096 ms
+```
+
+So roughly **one second of pure overhead per tool call**, before any network I/O.
+`python -X importtime` attributes it:
+
+```
+768 ms  python_bridge (total)
+ 405 ms   lib.rag_processing      <- pymupdf, nltk, the whole RAG stack
+ 273 ms   lib.enhanced_metadata -> zlibrary.eapi -> httpx/aiohttp
+ 198 ms   lib.footnote_continuation -> nltk (191 ms)
+  87 ms   fitz/pymupdf
+```
+
+`lib/python_bridge.py:18` imports `lib.rag_processing` eagerly at module scope, so a plain
+`search_books` call loads PyMuPDF and NLTK it will never use.
+
+Two independent fixes, cheapest first:
+
+1. **Lazy-import the RAG stack.** Defer `rag_processing` / `fitz` / `nltk` into the
+   functions that need them. Search-only calls stop paying ~400-600 ms. Low risk,
+   no architectural change.
+2. **Reuse the interpreter.** A long-lived Python process or pool removes the remaining
+   per-call interpreter startup. Larger change: needs a request framing protocol, crash
+   recovery, and care around the stdio purity constraint.
+
+Neither has been attempted. Both are measurable — re-run the two timings above to confirm
+any change actually helps.
 
 ---
 

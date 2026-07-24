@@ -1,15 +1,74 @@
 # Z-Library MCP - Issues & Technical Debt
 
-<!-- Last Verified: 2026-03-20 -->
+<!-- Last Verified: 2026-07-24 -->
 
 ## Executive Summary
 
-**Last Updated**: 2026-03-20
-**Status**: v1.2 Production Readiness (18 phases complete). CI gates active. test-fast (PR gate) is green. ISSUE-GT-001 and ISSUE-PERF-001 resolved by Phase 18-01.
+**Last Updated**: 2026-07-24
+**Status**: v1.3 active (Phase 19 complete). All CI jobs green after the audit-gate
+fix below. 1,114 tests passing (165 Jest, 949 Python fast suite).
+
+Full context for the 2026-07-24 findings, including PR/issue disposition and the
+forward roadmap: [claudedocs/architecture/repo-health-and-roadmap-2026-07-24.md](claudedocs/architecture/repo-health-and-roadmap-2026-07-24.md).
 
 ---
 
 ## Resolved Issues
+
+### ISSUE-STDIO-001: Server Wrote Non-JSON to stdout, Breaking the MCP Protocol [RESOLVED]
+**Severity**: Was CRITICAL
+**Impact**: Strict stdio clients dropped the connection — the "server disconnected"
+symptom in GitHub issue #11. Thirteen `console.log` calls wrote to stdout, which is
+the JSON-RPC channel; four fired on every search, corrupting an active stream.
+**Resolution** (2026-07-24): All diagnostics moved to stderr via `src/lib/logger.ts`.
+Guarded by `__tests__/stdio-purity.test.js` (static scan + live handshake). The CI
+smoke test previously piped stdout through `grep '^{'`, masking the bug; that filter
+is removed and the job now fails on any non-MCP line.
+
+### ISSUE-REL-001: npm Publish Failed on Every Release Since v1.2 [RESOLVED]
+**Severity**: Was CRITICAL
+**Impact**: npm served 1.0.0 (2025-04-11) while README recommended `npm install -g
+zlibrary-mcp`. All four publish runs failed at `npm install -g npm@latest`, whose
+engines field outran the Node 22 runner. Build and tests passed every time.
+**Resolution** (2026-07-24): Step removed — `--provenance` has shipped in npm since
+9.5 and Node 22 bundles npm 10.x. Added a tag/package.json version check and a GHCR
+image publish job (closes the request in PR #9).
+**Remaining**: a release must actually be cut to update the registry.
+
+### ISSUE-AUDIT-002: Stale Security Floors Kept CI Red [RESOLVED]
+**Severity**: Was HIGH
+**Impact**: CI red on master from 2026-04-03 onward. Seven of eight jobs passed; only
+`audit` failed, with 74 advisories across 15 packages because
+`tool.uv.constraint-dependencies` floors had gone stale.
+**Resolution** (2026-07-24): Floors raised to the lowest fixed version of each
+advisory: 74 advisories in 15 packages down to 1 in 1 (`nltk` PYSEC-2026-597, no fix
+published). Includes pytest 8 to 9 and cryptography 46 to 49 with no test changes.
+Dependabot now keeps floors current. Audit policy documented in SECURITY.md.
+
+### ISSUE-DRIFT-001: No Detection of Upstream Contract Changes [RESOLVED]
+**Severity**: Was HIGH
+**Impact**: Every third-party call is mocked, so the suite stays green indefinitely
+after the real integrations break. 26 credentialed integration tests existed but
+nothing ever ran them.
+**Resolution** (2026-07-24): Daily `.github/workflows/upstream-check.yml` probes each
+source's live response shape and runs the integration suite, filing a rolling
+`upstream-drift` issue on failure. Same probe exposed to users as `npm run doctor`.
+
+### ISSUE-PLAT-001: setup-uv.sh Failed on macOS [RESOLVED]
+**Severity**: Was Medium
+**Impact**: `grep -oP` is GNU-only; BSD grep rejects it with "invalid option -- P"
+(GitHub issue #14), so setup failed before it began.
+**Resolution** (2026-07-24): Version detected via `python3 -c`. A second occurrence in
+`scripts/validate-readme-tools.sh` was fixed too — it escaped notice because CI runs
+on Linux.
+
+### ISSUE-LFS-001: Missing LFS Fixtures Produced Misleading Test Failures [RESOLVED]
+**Severity**: Was Low (but high nuisance)
+**Impact**: A clone without Git LFS leaves pointer files where PDFs should be. Five
+tests then failed with assertions resembling detection regressions
+(`assert 'ERROR' == 'MIXED'`) rather than naming the real cause.
+**Resolution** (2026-07-24): `require_real_fixture()` in `__tests__/python/conftest.py`
+skips with the cause and the fix (`git lfs pull`).
 
 ### ISSUE-API-001: Z-Library Cloudflare Bot Protection [RESOLVED]
 **Severity**: Was CRITICAL
@@ -78,6 +137,38 @@
 **Resolved items**:
 - Debug mode with verbose logging (`ZLIBRARY_DEBUG=1`)
 
+### ISSUE-PLAT-002: Windows Unsupported
+**Severity**: High for affected users
+**Impact**: Three independent bugs prevent the server from running on Windows: the
+ESM auto-start guard compares `import.meta.url` against a `file://` string built from
+a backslash path so it never matches; `venv-manager` hardcodes `.venv/bin/python`
+where UV places `.venv\Scripts\python.exe`; and `Content-Disposition` filenames are
+parsed with `split('filename=')`, which breaks on RFC 6266 extended notation.
+**Status**: Open — correctly diagnosed and fixed in PR #13 (`ltspace`).
+**Blocking**: PR carries no tests for the three platform behaviours, and its CI has
+never run (fork PRs show `action_required`). Approve the run, add table-driven tests
+for the Content-Disposition tiers and a platform-branch test for the venv path, then
+merge. Do not reimplement independently.
+
+### ISSUE-SRC-001: Z-Library Bypasses the Source Abstraction
+**Severity**: Medium (architectural)
+**Impact**: `lib/sources/` has a working `SourceAdapter` interface, unified result
+model, and quota-aware `SourceRouter` — but Z-Library does not implement it, going
+through `python_bridge.py` directly. Of 13 tools, 12 are Z-Library-only and one
+reaches the router. A new source therefore cannot inherit metadata enrichment,
+booklists, term search, or the RAG pipeline, and Z-Library remains a single point of
+failure.
+**Direction**: Wrap the EAPI client in `SourceAdapter`, register it in the router,
+route all tools through it. See section 6 of the health assessment.
+
+### ISSUE-DOCS-001: Four Overlapping Documentation Trees
+**Severity**: Low (public-facing polish)
+**Impact**: `docs/` (40+ files), `claudedocs/`, `.claude/`, and `.planning/` overlap,
+with three separate roadmaps and stale one-off analyses. Reads as sprawl on a public
+repo and buries the ~6 documents a user needs.
+**Direction**: Consolidate `docs/` into `{guides,reference,adr,archive}`; move
+superseded analyses to `archive/`.
+
 ### ISSUE-AUDIT-001: pip-audit False Positives for Vendored Fork
 **Severity**: Low
 **Component**: zlibrary/ vendored fork
@@ -96,6 +187,13 @@
 ### Testing
 1. **No Performance Tests**: Missing load testing, stress testing
 2. **Limited E2E with Live Credentials**: Full workflow needs `TEST_LIVE=true`
+3. **No cross-language contract test**: Jest mocks the Python bridge and pytest tests
+   Python directly, so nothing asserts that the JSON shape TypeScript expects is the
+   shape Python emits. The Phase 19 bundle contract is exactly what drifts here.
+4. **Multi-source fallback under-tested**: `router.py` shows 97% line coverage, but the
+   branch users hit when a source degrades — Anna's quota exhausted mid-request,
+   falling back to LibGen, reconciling two result shapes — is not exercised.
+5. **No platform-branch coverage**: see ISSUE-PLAT-002.
 
 ### Code Quality
 1. **Inconsistent Error Handling**: Mix of exceptions across Python modules

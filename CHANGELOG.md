@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **MCP stdio protocol violation**: all diagnostics now write to stderr via a new
+  `src/lib/logger.ts`. Thirteen `console.log` calls wrote to stdout — the JSON-RPC
+  channel — causing strict clients to disconnect (issue #11). Four of them fired on
+  every search, corrupting active streams. Guarded by `__tests__/stdio-purity.test.js`.
+- **npm publish pipeline**: removed `npm install -g npm@latest`, which failed on every
+  release from v1.2 through v1.2.1 and was never needed (`--provenance` ships in npm
+  9.5+; Node 22 bundles npm 10.x). npm had only ever served 1.0.0.
+- **Dependency audit gate**: security constraint floors refreshed, taking pip-audit from
+  74 advisories across 15 packages to 1 (`nltk`, no fix published). Includes pytest 8→9
+  and cryptography 46→49.
+- **macOS setup**: `setup-uv.sh` and `scripts/validate-readme-tools.sh` no longer use
+  `grep -oP`, which BSD grep rejects (issue #14).
+- Tests using Git LFS PDF fixtures now skip with an actionable message instead of failing
+  with assertions that resemble detection regressions.
+- README: duplicate "Option B" heading; npm install path now warns when the registry
+  version trails the repository.
+
+### Added
+
+- Scheduled **Upstream Contract Check** workflow: probes Z-Library, Anna's Archive, and
+  LibGen response shapes daily, runs the credentialed integration suite, and files a
+  rolling `upstream-drift` issue on failure.
+- `npm run doctor` — the same probe for users, to distinguish an upstream outage from a
+  bug in this server before filing an issue.
+- GHCR container image publishing on release tags (requested in PR #9).
+- Tag/`package.json` version verification before publish.
+- Dependabot for npm, uv, GitHub Actions, and Docker.
+- `SECURITY.md` with private reporting, the dependency-audit policy, and the
+  `LOG_LEVEL=debug` disclosure caveat.
+- Issue templates (bug, RAG quality) and a PR template.
+- `LOG_LEVEL` environment variable (`silent`|`error`|`warn`|`info`|`debug`).
+
+### Changed
+
+- Coverage thresholds ratcheted to just under actual measurements (Jest 66→84
+  statements, pytest 52→60), converting them from decoration into a real gate.
+- CI smoke test no longer filters stdout through `grep '^{'`, a workaround that had been
+  masking the protocol violation above.
+
 ## [1.2.1] - 2026-04-16
 
 ### Added

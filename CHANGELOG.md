@@ -17,6 +17,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`search_advanced` tool restored** (issue #16): the Phase 7 EAPI migration deleted
+  the Python implementation and its dispatch branch while the Node tool stayed
+  registered, so every live call since February raised `Unknown function`.
+  Reimplemented on EAPI: a strict `e=1` search supplies `exact_matches` and a
+  default-mode search (typo-tolerant) minus those ids supplies `fuzzy_matches`. A new
+  contract test asserts every function name Node sends has a dispatch branch, so a
+  registration/dispatch mismatch can no longer ship silently.
 - **Windows support** (incorporates PR #13 by @ltspace): the ESM entry guard compared
   `import.meta.url` against a concatenated `file://` string, which never matches a
   backslash `argv[1]`, so the server never auto-started; `venv-manager` hardcoded

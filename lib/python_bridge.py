@@ -492,6 +492,95 @@ async def full_text_search(
     }
 
 
+async def search_advanced(
+    query,
+    exact=False,
+    from_year=None,
+    to_year=None,
+    languages=None,
+    extensions=None,
+    content_types=None,
+    count=10,
+    client=None,
+):
+    """
+    Advanced search separating exact matches from fuzzy/approximate matches.
+
+    EAPI has no equivalent of the old website's fuzzyMatchesLine divider, so
+    this issues two searches: one in exact mode (e=1 — every term must match
+    verbatim, no typo tolerance) and one in default mode (relevance matching
+    with typo tolerance). Default-mode results not present in the exact set
+    are reported as fuzzy matches. With exact=True the fuzzy search is
+    skipped entirely and only strict matches are returned.
+
+    Args:
+        query: Search query string
+        exact: Only return strict (e=1) matches; skip the fuzzy search
+        from_year: Filter by start year
+        to_year: Filter by end year
+        languages: List of language codes
+        extensions: List of file extensions
+        content_types: List of content types (ignored by EAPI)
+        count: Max results per category
+        client: Unused (kept for backward compatibility)
+
+    Returns:
+        dict with keys: query, exact_matches, fuzzy_matches,
+        has_fuzzy_matches, total_results, retrieved_from_url
+    """
+    eapi = await get_eapi_client()
+
+    lang_list = None
+    if languages:
+        lang_list = [str(l) if not isinstance(l, str) else l for l in languages]
+    ext_list = None
+    if extensions:
+        ext_list = [str(e) if not isinstance(e, str) else e for e in extensions]
+
+    logger.info(
+        f"python_bridge.search_advanced: EAPI search query='{query}', "
+        f"exact={exact}, count={count}"
+    )
+
+    exact_response = await eapi.search(
+        message=query,
+        limit=count,
+        exact=True,
+        year_from=from_year,
+        year_to=to_year,
+        languages=lang_list,
+        extensions=ext_list,
+    )
+    exact_matches = normalize_eapi_search_response(exact_response)
+
+    fuzzy_matches = []
+    if not exact:
+        fuzzy_response = await eapi.search(
+            message=query,
+            limit=count,
+            exact=False,
+            year_from=from_year,
+            year_to=to_year,
+            languages=lang_list,
+            extensions=ext_list,
+        )
+        exact_ids = {b["id"] for b in exact_matches if b.get("id")}
+        fuzzy_matches = [
+            b
+            for b in normalize_eapi_search_response(fuzzy_response)
+            if b.get("id") not in exact_ids
+        ]
+
+    return {
+        "query": query,
+        "exact_matches": exact_matches,
+        "fuzzy_matches": fuzzy_matches,
+        "has_fuzzy_matches": bool(fuzzy_matches),
+        "total_results": len(exact_matches) + len(fuzzy_matches),
+        "retrieved_from_url": f"EAPI search: {query}",
+    }
+
+
 async def get_download_history(count=10):
     """Get user's download history via EAPI."""
     eapi = await get_eapi_client()
@@ -966,6 +1055,8 @@ async def main():
             result = await search_by_term_bridge(**args_dict)
         elif function_name == "search_by_author_bridge":
             result = await search_by_author_bridge(**args_dict)
+        elif function_name == "search_advanced":
+            result = await search_advanced(**args_dict)
         elif function_name == "fetch_booklist_bridge":
             result = await fetch_booklist_bridge(**args_dict)
         elif function_name == "get_recent_books":

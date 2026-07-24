@@ -1,5 +1,7 @@
 # Project Milestones: Z-Library MCP
 
+> Historical record of shipped milestones (v1.0-v1.2), preserved from the retired GSD planning tree.
+
 ## v1.2 Production Readiness (Shipped: 2026-03-20)
 
 **Delivered:** Made the repo deployment-ready with clean CI pipeline (8 quality gate jobs), comprehensive documentation (README, API docs, CONTRIBUTING, CHANGELOG), dual distribution paths (npm + Docker), and automated release workflow. Closed all tech debt from milestone audit.

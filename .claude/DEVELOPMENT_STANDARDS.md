@@ -51,6 +51,12 @@ export function createVenv() { ... }
 export default class VenvManager { ... }
 ```
 
+**Project-level hook/helper scripts must use `.cjs`**: `package.json` has
+`"type": "module"`, so Node treats any `.js` file inside the project as ESM.
+A CommonJS script (one that calls `require()`) saved as `.js` fails with
+`ReferenceError: require is not defined in ES module scope`. Name it `.cjs`
+(e.g. `.claude/hooks/*.cjs`) to force CommonJS regardless of the `type` field.
+
 ---
 
 ## Documentation Standards

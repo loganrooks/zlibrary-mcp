@@ -1,5 +1,9 @@
 # Deliberation: v1.2 Scope — Ship a Solid Base for Deployment and Contribution
 
+> Decision record for why RAG structured output and quality scoring were deferred from
+> v1.2 to v1.3. Preserved from the retired GSD planning tree; the `.planning/` paths it
+> references no longer exist.
+
 **Date:** 2026-03-19
 **Status:** Concluded
 **Trigger:** User strategic assessment — "where are we at and what should we do next?" with emphasis on deployment readiness, CI, testing, organization, and enabling external contributors

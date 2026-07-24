@@ -782,8 +782,30 @@ async function start(
   }
 }
 
+/**
+ * Whether this module is the process entry point (as opposed to being imported).
+ *
+ * The original check compared `import.meta.url` against a `file://` URL built by
+ * string concatenation from `process.argv[1]`. That is never equal on Windows:
+ * `argv[1]` is a backslash path (`C:\app\dist\index.js`) while `import.meta.url`
+ * is percent-encoded with forward slashes (`file:///C:/app/dist/index.js`), so
+ * the server never auto-started and the client saw an immediate exit.
+ *
+ * Comparing resolved filesystem paths is correct on every platform. Exported so
+ * both operands can be exercised in tests without spawning a process.
+ */
+export function isProcessEntryPoint(moduleUrl: string, argv1: string | undefined): boolean {
+  if (!argv1) return false;
+  try {
+    return path.resolve(fileURLToPath(moduleUrl)) === path.resolve(argv1);
+  } catch {
+    // A non-file:// URL (e.g. a bundler's virtual module) is never the entry point.
+    return false;
+  }
+}
+
 // Auto-start logic
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isProcessEntryPoint(import.meta.url, process.argv[1])) {
   start().catch((err) => {
     console.error('Fatal error starting server:', err);
     process.exit(1);

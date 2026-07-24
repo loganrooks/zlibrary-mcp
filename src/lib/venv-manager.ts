@@ -33,9 +33,41 @@ const __dirname = path.dirname(__filename);
  * @returns {Promise<string>} Path to Python executable in .venv
  * @throws {Error} If .venv not found (user needs to run: uv sync)
  */
+/**
+ * Path segments to UV's Python executable inside `.venv`, for a given platform.
+ *
+ * UV follows the platform convention: `.venv/bin/python` on POSIX,
+ * `.venv\Scripts\python.exe` on Windows. Hardcoding the POSIX layout meant the
+ * venv was never found on Windows and every invocation failed with the
+ * "run uv sync" error even after a successful sync.
+ *
+ * Exported and platform-parameterised so both branches are testable from any
+ * host — a platform-conditional that only runs on the platform it is broken for
+ * is how this reached users in the first place.
+ *
+ * @param platform - A `process.platform` value
+ */
+export function venvPythonSegments(platform: NodeJS.Platform): string[] {
+  return platform === 'win32'
+    ? ['.venv', 'Scripts', 'python.exe']
+    : ['.venv', 'bin', 'python'];
+}
+
+/** Shell command for removing a corrupted `.venv`, per platform. */
+export function venvRemoveCommand(platform: NodeJS.Platform): string {
+  return platform === 'win32' ? 'rmdir /s /q .venv' : 'rm -rf .venv';
+}
+
+/** Shell command for installing UV, per platform. */
+export function uvInstallCommand(platform: NodeJS.Platform): string {
+  return platform === 'win32'
+    ? 'powershell -c "irm https://astral.sh/uv/install.ps1 | iex"'
+    : 'curl -LsSf https://astral.sh/uv/install.sh | sh';
+}
+
 export async function getManagedPythonPath(): Promise<string> {
   const projectRoot = path.resolve(__dirname, '..', '..');
-  const uvVenvPython = path.join(projectRoot, '.venv', 'bin', 'python');
+  const uvVenvPython = path.join(projectRoot, ...venvPythonSegments(process.platform));
 
   // Check if UV venv exists
   if (!existsSync(uvVenvPython)) {
@@ -48,7 +80,7 @@ export async function getManagedPythonPath(): Promise<string> {
       '  2. Install all dependencies from pyproject.toml\n' +
       '  3. Generate uv.lock for reproducibility\n\n' +
       'First time setup? Install UV:\n' +
-      '  curl -LsSf https://astral.sh/uv/install.sh | sh\n' +
+      `  ${uvInstallCommand(process.platform)}\n` +
       '  # Or: pip install uv\n\n' +
       'See: https://docs.astral.sh/uv/getting-started/installation/'
     );
@@ -67,7 +99,7 @@ export async function getManagedPythonPath(): Promise<string> {
     throw new Error(
       `Python at ${uvVenvPython} is not executable.\n` +
       `This usually means .venv is corrupted. Try:\n` +
-      `  rm -rf .venv\n` +
+      `  ${venvRemoveCommand(process.platform)}\n` +
       `  uv sync`,
       { cause: error }
     );

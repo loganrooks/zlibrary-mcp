@@ -5,11 +5,15 @@ Bypasses Cloudflare by using POST/GET to /eapi/* endpoints
 with cookie-based authentication.
 """
 
+import ntpath
+import posixpath
+import re
 import httpx
 import aiofiles
 import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from urllib.parse import unquote
 
 
 EAPI_HEADERS = {
@@ -18,6 +22,62 @@ EAPI_HEADERS = {
     "Accept": "application/json, text/plain, */*",
     "Content-Type": "application/x-www-form-urlencoded",
 }
+
+# RFC 6266 / RFC 5987 permit three spellings of the filename parameter, and
+# Z-Library uses all of them depending on the title's character set. Tried in
+# priority order: the extended form wins when present, because a server sending
+# `filename*` also sends an ASCII-mangled `filename` fallback that loses
+# characters.
+_CD_EXTENDED = re.compile(r"filename\*\s*=\s*UTF-8''([^;\s]+)", re.IGNORECASE)
+_CD_QUOTED = re.compile(r'filename\s*=\s*"([^"]*)"', re.IGNORECASE)
+_CD_BARE = re.compile(r'filename\s*=\s*([^;"\s]+)', re.IGNORECASE)
+
+
+def filename_from_content_disposition(header: str) -> Optional[str]:
+    """Extract a filename from a Content-Disposition header.
+
+    Returns None when the header carries no usable filename, leaving the caller
+    to fall back to the URL path.
+
+    The previous implementation split on the literal ``"filename="``, which
+    mis-parsed the RFC 6266 extended form: ``filename*=UTF-8''%E2%80%A6`` split
+    into a fragment beginning with ``*`` and yielded percent-encoded bytes as the
+    name. It also could not tell ``filename`` from ``filename*``.
+    """
+    if not header:
+        return None
+
+    match = _CD_EXTENDED.search(header)
+    if match:
+        return unquote(match.group(1)).strip() or None
+
+    for pattern in (_CD_QUOTED, _CD_BARE):
+        match = pattern.search(header)
+        if match:
+            # A bare value may still be single-quoted by lenient servers.
+            return match.group(1).strip().strip("'") or None
+
+    return None
+
+
+def sanitize_download_filename(filename: str) -> str:
+    """Reduce a filename to a bare basename safe to join onto a directory.
+
+    The value can originate from a server-controlled Content-Disposition header,
+    so directory components must be stripped before it reaches the filesystem.
+    Both separators are handled regardless of host platform: ``os.path.basename``
+    on POSIX does not treat a backslash as a separator, so a Windows-style
+    ``..\\..\\x`` payload would survive on a Linux server and then escape once the
+    path reached a Windows client.
+    """
+    if not filename:
+        return ""
+    # Take the last segment under either separator convention.
+    candidate = ntpath.basename(posixpath.basename(filename)).strip()
+    # "." and ".." are not usable names; treat them as absent.
+    if candidate in {"", ".", ".."}:
+        return ""
+    return candidate
 
 
 class EAPIClient:
@@ -223,17 +283,18 @@ class EAPIClient:
 
                 # Determine filename
                 if not filename:
-                    # Try Content-Disposition header
                     cd = response.headers.get("content-disposition", "")
-                    if "filename=" in cd:
-                        # Extract filename from header
-                        parts = cd.split("filename=")
-                        if len(parts) > 1:
-                            filename = parts[1].strip().strip('"').strip("'")
+                    filename = filename_from_content_disposition(cd)
                     if not filename:
                         # Derive from URL path
                         url_path = str(response.url).split("?")[0]
                         filename = url_path.split("/")[-1] or f"{book_id}.bin"
+
+                # The filename may come from a server-controlled header, so reduce
+                # it to a bare basename before joining. Without this,
+                # `filename="../../x"` escapes output_dir entirely, since
+                # Path("/downloads") / "../../x" resolves outside the directory.
+                filename = sanitize_download_filename(filename) or f"{book_id}.bin"
 
                 output_path = Path(output_dir) / filename
 

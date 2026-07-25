@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- README Docker instructions now lead with the published GHCR image (verified
+  end-to-end: SSE handshake and `initialize` against the released container);
+  building from source via compose is the secondary path.
+- Removed GSD-era `.claude/commands/` (referencing the deleted `ROADMAP.md`
+  workflow) and the empty `.claude/settings.json`.
+
 ## [1.3.2] - 2026-07-24
 
 ### Fixed

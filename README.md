@@ -194,24 +194,38 @@ RooCode / Cline (`mcp_settings.json`):
 
 ### Option C: Docker (HTTP transport)
 
-**Prerequisites:** Docker and Docker Compose
+**Prerequisites:** Docker
+
+Versioned images are published to GHCR on every release (`latest`, `1.3`,
+`1.3.2`, …) — no clone or build needed:
 
 ```bash
-# 1. Clone the repository
-git clone https://github.com/loganrooks/zlibrary-mcp.git
-cd zlibrary-mcp
-
-# 2. Configure credentials
-cp docker/env.example docker/.env
-# Edit docker/.env with your Z-Library email and password
-
-# 3. Build and start the container
-docker compose -f docker/docker-compose.yaml up -d
+docker run -d --name zlibrary-mcp -p 8000:8000 \
+  -e ZLIBRARY_EMAIL="your-email@example.com" \
+  -e ZLIBRARY_PASSWORD="your-password" \
+  -v "$PWD/downloads:/app/downloads" \
+  ghcr.io/loganrooks/zlibrary-mcp:latest
 ```
 
-The server will be available at `http://localhost:8000`. Verify with:
+The image wraps the stdio server in
+[SuperGateway](https://github.com/supercorp-ai/supergateway), exposing MCP over
+SSE at `http://localhost:8000/sse`. Verify it's serving:
 
 ```bash
+curl -s -N --max-time 3 http://localhost:8000/sse | head -2
+# event: endpoint
+# data: /message?sessionId=...
+```
+
+> Alpine caveat: OpenCV has no musl wheels, so X-mark detection is unavailable
+> in the container; everything else works.
+
+**Building from source instead** (adds a `/health` endpoint via compose):
+
+```bash
+git clone https://github.com/loganrooks/zlibrary-mcp.git && cd zlibrary-mcp
+cp docker/env.example docker/.env   # then edit in your credentials
+docker compose -f docker/docker-compose.yaml up -d
 curl http://localhost:8000/health
 ```
 

@@ -16,7 +16,15 @@ __all__ = [
 ]
 
 # Cache for PyMuPDF textpage objects (performance optimization)
-# Key: (page_obj_id, extraction_type) -> cached result
+# Key: (page_obj_id, extraction_type) -> (page, cached result)
+#
+# The entry pins a strong reference to the page object. Without the pin,
+# CPython recycles the id() of a garbage-collected Page for the next Page
+# allocated (measured ~90% of the time for back-to-back load_page calls),
+# and the cache then serves page N's blocks for page M — non-deterministic
+# footnote detection that depends on heap state (i.e. on which tests ran
+# earlier in the suite). Storing the page keeps its id unique for the
+# lifetime of the entry; the identity check on read is belt-and-braces.
 _TEXTPAGE_CACHE = {}
 
 def _get_cached_text_blocks(page: Any, extraction_type: str = "dict") -> List[Dict[str, Any]]:
@@ -35,15 +43,19 @@ def _get_cached_text_blocks(page: Any, extraction_type: str = "dict") -> List[Di
     """
     cache_key = (id(page), extraction_type)
 
-    if cache_key not in _TEXTPAGE_CACHE:
-        if extraction_type == "dict":
-            _TEXTPAGE_CACHE[cache_key] = page.get_text("dict")["blocks"]
-        elif extraction_type == "text":
-            _TEXTPAGE_CACHE[cache_key] = page.get_text("text")
-        else:
-            raise ValueError(f"Invalid extraction_type: {extraction_type}")
+    entry = _TEXTPAGE_CACHE.get(cache_key)
+    if entry is not None and entry[0] is page:
+        return entry[1]
 
-    return _TEXTPAGE_CACHE[cache_key]
+    if extraction_type == "dict":
+        result = page.get_text("dict")["blocks"]
+    elif extraction_type == "text":
+        result = page.get_text("text")
+    else:
+        raise ValueError(f"Invalid extraction_type: {extraction_type}")
+
+    _TEXTPAGE_CACHE[cache_key] = (page, result)
+    return result
 
 
 def _clear_textpage_cache():

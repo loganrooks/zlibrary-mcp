@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Upstream contract check now distinguishes network-level blocks from drift: a
+  DiamWall wall or bare 403 (what GitHub-hosted runners get from every Z-Library
+  domain) reports as `BLOCK` instead of `FAIL`, does not file the rolling drift
+  issue, and skips the credentialed live suite rather than burning login
+  attempts (~10/hour/IP) against a wall. Only a probe from an unblocked network
+  can distinguish IP blocking from a global outage — `npm run doctor` says so
+  explicitly.
+
 ### Fixed
 
 - **Resilient EAPI domain fallback and probing** (ISSUE-API-002): the single default

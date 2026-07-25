@@ -33,6 +33,10 @@ jobs:
     outputs:
       report: ${{ steps.probe.outputs.report }}
       failed: ${{ steps.probe.outputs.failed }}
+      # Z-Library refuses this network's IP (anti-bot wall / datacenter
+      # blocking). Distinct from drift: the contract may be intact for
+      # clients the wall admits, so this must not fail jobs or file issues.
+      zlib_blocked: ${{ steps.probe.outputs.zlib_blocked }}
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup
@@ -46,7 +50,10 @@ jobs:
     name: Live integration suite
     runs-on: ubuntu-latest
     # Credentials live in repository secrets. Forks and credential-less setups
-    # skip cleanly rather than reporting a false failure.
+    # skip cleanly rather than reporting a false failure. Depends on the
+    # reachability probe so a network-level block skips the suite instead of
+    # burning login attempts (~10/hour/IP) against a wall.
+    needs: reachability
     if: github.event_name == 'schedule' || inputs.run_live_tests
     steps:
       - uses: actions/checkout@v7
@@ -58,7 +65,13 @@ jobs:
         env:
           ZLIBRARY_EMAIL: ${{ secrets.ZLIBRARY_EMAIL }}
           ZLIBRARY_PASSWORD: ${{ secrets.ZLIBRARY_PASSWORD }}
+          ZLIB_BLOCKED: ${{ needs.reachability.outputs.zlib_blocked }}
         run: |
+          if [ "$ZLIB_BLOCKED" = "true" ]; then
+            echo "::warning::Z-Library refuses this network's IP (anti-bot/datacenter block) — live suite skipped. This is not upstream drift; run npm run doctor from a residential network to discriminate."
+            echo "status=blocked" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           if [ -z "$ZLIBRARY_EMAIL" ] || [ -z "$ZLIBRARY_PASSWORD" ]; then
             echo "::warning::ZLIBRARY_EMAIL/ZLIBRARY_PASSWORD secrets are not set — live suite skipped."
             echo "status=skipped" >> "$GITHUB_OUTPUT"
@@ -74,7 +87,7 @@ jobs:
             echo "status=failed" >> "$GITHUB_OUTPUT"
           fi
       - uses: actions/upload-artifact@v4
-        if: always() && steps.live.outputs.status != 'skipped'
+        if: always() && (steps.live.outputs.status == 'passed' || steps.live.outputs.status == 'failed')
         with:
           name: live-integration-log
           path: live.log

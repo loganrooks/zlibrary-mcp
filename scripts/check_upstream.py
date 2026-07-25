@@ -34,7 +34,7 @@ import httpx
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "zlibrary" / "src"))
 from lib.sources.config import get_source_config  # noqa: E402
-from zlibrary.eapi import DEFAULT_EAPI_DOMAINS  # noqa: E402
+from zlibrary.eapi import DEFAULT_EAPI_DOMAINS, WALLED_STATUS_CODES  # noqa: E402
 
 TIMEOUT = httpx.Timeout(20.0, connect=10.0)
 
@@ -72,30 +72,44 @@ class ProbeResult:
     ok: bool
     detail: str
     required: bool = True
+    # A network-level refusal (anti-bot wall, datacenter-IP block). Not drift:
+    # the upstream contract may be perfectly intact for clients the wall lets
+    # through, so a blocked probe must not trigger the drift issue.
+    blocked: bool = False
     extra: dict[str, Any] = field(default_factory=dict)
 
     @property
     def symbol(self) -> str:
         if self.ok:
             return "OK"
+        if self.blocked:
+            return "BLOCK"
         return "FAIL" if self.required else "WARN"
 
 
-def _diamwall_detail(resp: httpx.Response) -> Optional[str]:
-    """Detect the DiamWall anti-bot wall in a response, returning a report line.
+def _block_detail(resp: httpx.Response) -> Optional[str]:
+    """Detect a network-level block in a response, returning a report line.
 
-    Walled domains 307-redirect /eapi/* to themselves setting a `__diamwall`
-    cookie, then serve 513/517 "Access Denied" pages built from
-    cdn.diamwall.com assets (ISSUE-API-002).
+    Covers the DiamWall anti-bot wall (307 self-redirect setting a `__diamwall`
+    cookie, then 513/517 "Access Denied" pages built from cdn.diamwall.com
+    assets — ISSUE-API-002) and plain IP-reputation blocking (bare 403, which
+    is what GitHub-hosted runners get from every Z-Library domain).
+
+    A probe from a blocked network cannot distinguish "this IP is refused"
+    from "the wall is up for everyone" — only a probe from a residential
+    network (a user running `npm run doctor`) can. So the detail says both.
     """
-    if "diamwall" in resp.text.lower():
-        return (
-            f"DiamWall anti-bot wall (HTTP {resp.status_code}) — {ZLIB_DOMAIN} "
-            "blocks programmatic /eapi access; "
-            "export ZLIBRARY_EAPI_DOMAIN=<working-domain> "
-            "(e.g. z-library.ec) or unset it to use the fallback list"
-        )
-    return None
+    body_is_diamwall = "diamwall" in resp.text.lower()
+    if not body_is_diamwall and resp.status_code not in WALLED_STATUS_CODES:
+        return None
+    wall = "DiamWall anti-bot wall" if body_is_diamwall else "network-level block"
+    return (
+        f"{wall} (HTTP {resp.status_code}) — {ZLIB_DOMAIN} refuses this "
+        "network's clients. From a datacenter/CI address this is expected IP "
+        "blocking, not upstream drift. From a residential network, "
+        "export ZLIBRARY_EAPI_DOMAIN=<working-domain> (e.g. z-library.ec) "
+        "or unset it to use the fallback list"
+    )
 
 
 async def probe_zlibrary_eapi(client: httpx.AsyncClient) -> list[ProbeResult]:
@@ -105,10 +119,15 @@ async def probe_zlibrary_eapi(client: httpx.AsyncClient) -> list[ProbeResult]:
 
     try:
         resp = await client.get(f"{base}/eapi/info/domains")
-        walled = _diamwall_detail(resp)
+        walled = _block_detail(resp)
         if walled:
             results.append(
-                ProbeResult(name="zlibrary:eapi/info/domains", ok=False, detail=walled)
+                ProbeResult(
+                    name="zlibrary:eapi/info/domains",
+                    ok=False,
+                    detail=walled,
+                    blocked=True,
+                )
             )
         else:
             resp.raise_for_status()
@@ -143,10 +162,15 @@ async def probe_zlibrary_eapi(client: httpx.AsyncClient) -> list[ProbeResult]:
             f"{base}/eapi/book/search",
             data={"message": "philosophy", "limit": "1", "page": "1"},
         )
-        walled = _diamwall_detail(resp)
+        walled = _block_detail(resp)
         if walled:
             results.append(
-                ProbeResult(name="zlibrary:eapi/book/search", ok=False, detail=walled)
+                ProbeResult(
+                    name="zlibrary:eapi/book/search",
+                    ok=False,
+                    detail=walled,
+                    blocked=True,
+                )
             )
             return results
         resp.raise_for_status()
@@ -252,26 +276,45 @@ async def run_probes() -> list[ProbeResult]:
     return [*zlib_results, annas, libgen]
 
 
+def actionable_failures(results: list[ProbeResult]) -> list[ProbeResult]:
+    """Failures that indicate drift a maintainer can act on.
+
+    Blocked probes are excluded: an IP-level refusal says nothing about the
+    upstream contract, and counting it would keep the drift issue permanently
+    open from CI's datacenter address.
+    """
+    return [r for r in results if r.required and not r.ok and not r.blocked]
+
+
 def render(results: list[ProbeResult]) -> str:
     width = max(len(r.name) for r in results)
     lines = [f"{r.symbol:<5} {r.name:<{width}}  {r.detail}" for r in results]
-    required_failures = [r for r in results if r.required and not r.ok]
-    optional_failures = [r for r in results if not r.required and not r.ok]
+    required_failures = actionable_failures(results)
+    optional_failures = [
+        r for r in results if not r.required and not r.ok and not r.blocked
+    ]
+    blocked = [r for r in results if r.blocked]
     lines.append("")
-    lines.append(
-        f"{len(results) - len(required_failures) - len(optional_failures)} passing, "
+    summary = (
+        f"{sum(1 for r in results if r.ok)} passing, "
         f"{len(required_failures)} required failing, "
         f"{len(optional_failures)} optional failing"
     )
+    if blocked:
+        summary += f", {len(blocked)} blocked (network-level, not drift)"
+    lines.append(summary)
     return "\n".join(lines)
 
 
-def emit_github_output(report: str, failed: bool) -> None:
+def emit_github_output(report: str, failed: bool, zlib_blocked: bool = False) -> None:
     path: Optional[str] = os.environ.get("GITHUB_OUTPUT")
     if not path:
         return
     with open(path, "a", encoding="utf-8") as handle:
         handle.write(f"failed={'true' if failed else 'false'}\n")
+        # The live-suite job gates on this: logging in through a wall would
+        # both fail spuriously and burn the ~10/hour login rate limit.
+        handle.write(f"zlib_blocked={'true' if zlib_blocked else 'false'}\n")
         # Heredoc form so multi-line reports survive intact.
         handle.write("report<<PROBE_EOF\n")
         handle.write(report + "\n")
@@ -291,18 +334,21 @@ def main() -> int:
     args = parser.parse_args()
 
     results = asyncio.run(run_probes())
-    required_failed = any(r.required and not r.ok for r in results)
+    required_failed = bool(actionable_failures(results))
+    zlib_blocked = any(r.blocked for r in results)
 
     if args.json:
         print(
             json.dumps(
                 {
                     "failed": required_failed,
+                    "zlib_blocked": zlib_blocked,
                     "results": [
                         {
                             "name": r.name,
                             "ok": r.ok,
                             "required": r.required,
+                            "blocked": r.blocked,
                             "detail": r.detail,
                             **r.extra,
                         }
@@ -316,7 +362,7 @@ def main() -> int:
         print(render(results))
 
     if args.github_output:
-        emit_github_output(render(results), required_failed)
+        emit_github_output(render(results), required_failed, zlib_blocked)
 
     # Required-source failure is an actionable signal; optional-source failure is not.
     return 1 if required_failed else 0

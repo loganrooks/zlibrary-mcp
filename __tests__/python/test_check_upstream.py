@@ -10,6 +10,7 @@ import os
 import sys
 from pathlib import Path
 
+import httpx
 import pytest
 
 MODULE_PATH = Path(__file__).parent.parent.parent / "scripts" / "check_upstream.py"
@@ -108,6 +109,75 @@ def test_probe_targets_match_runtime_defaults(check_upstream):
     # https://libgen.{suffix}/ — the probe must target that same host (it
     # previously hardcoded libgen.is while the runtime used libgen.li).
     assert check_upstream.LIBGEN_BASE_URL == f"https://libgen.{runtime.libgen_mirror}"
+
+
+def test_blocked_probe_reports_block_not_fail(check_upstream):
+    """An IP-level refusal is not drift; it must render as BLOCK, not FAIL."""
+    result = check_upstream.ProbeResult(
+        name="zlibrary:eapi/book/search",
+        ok=False,
+        detail="network-level block",
+        required=True,
+        blocked=True,
+    )
+    assert result.symbol == "BLOCK"
+
+
+def test_blocked_probe_is_not_actionable(check_upstream):
+    """Blocked probes must not set the failed flag that files the drift issue —
+    otherwise CI's datacenter address keeps the rolling issue open forever."""
+    results = [
+        check_upstream.ProbeResult("a", True, "fine"),
+        check_upstream.ProbeResult("b", False, "walled", required=True, blocked=True),
+    ]
+    assert check_upstream.actionable_failures(results) == []
+    results.append(check_upstream.ProbeResult("c", False, "drift", required=True))
+    assert [r.name for r in check_upstream.actionable_failures(results)] == ["c"]
+
+
+def test_render_counts_blocked_separately(check_upstream):
+    results = [
+        check_upstream.ProbeResult("a", True, "fine"),
+        check_upstream.ProbeResult("b", False, "walled", required=True, blocked=True),
+    ]
+    report = check_upstream.render(results)
+    assert "BLOCK" in report
+    assert "1 passing, 0 required failing, 0 optional failing" in report
+    assert "1 blocked (network-level, not drift)" in report
+
+
+def test_block_detail_classifies_bare_403(check_upstream):
+    """GitHub-hosted runners get a bare 403 with no DiamWall markers from every
+    Z-Library domain; that must classify as a block, with the caveat that only
+    a residential probe can distinguish IP blocking from a global wall."""
+    detail = check_upstream._block_detail(httpx.Response(403, text="Forbidden"))
+    assert detail is not None
+    assert "network-level block" in detail
+    assert "HTTP 403" in detail
+    assert "not upstream drift" in detail
+
+
+def test_block_detail_names_diamwall_when_present(check_upstream):
+    body = '<html><script src="https://cdn.diamwall.com/x.js"></script></html>'
+    detail = check_upstream._block_detail(httpx.Response(517, text=body))
+    assert detail is not None and "DiamWall" in detail
+
+
+def test_block_detail_passes_healthy_response(check_upstream):
+    assert check_upstream._block_detail(httpx.Response(200, text='{"ok":1}')) is None
+
+
+def test_github_output_carries_zlib_blocked_flag(check_upstream, tmp_path, monkeypatch):
+    """The live-suite job gates on zlib_blocked to avoid logging in through a
+    wall (spurious failure + burns the ~10/hour login rate limit)."""
+    out = tmp_path / "gh_output"
+    monkeypatch.setenv("GITHUB_OUTPUT", str(out))
+
+    check_upstream.emit_github_output("report", failed=False, zlib_blocked=True)
+
+    written = out.read_text(encoding="utf-8")
+    assert "failed=false\n" in written
+    assert "zlib_blocked=true\n" in written
 
 
 def test_annas_parking_page_is_reported_as_parked(check_upstream):

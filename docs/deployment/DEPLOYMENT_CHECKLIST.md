@@ -380,7 +380,7 @@ npm test  # Verify tests pass
 - `ALL_TOOLS_VALIDATION_MATRIX.md` - Tool data completeness
 - `DEPLOYMENT_READINESS_AND_IMPROVEMENTS.md` - This analysis
 - `COMPLETE_MCP_VALIDATION.md` - Full validation results
-- `claudedocs/WORKFLOW_VISUAL_GUIDE.md` - Research workflows
+- `claudedocs/WORKFLOW_VISUAL_GUIDE.md` - Research workflows (archived — in git history)
 
 ---
 

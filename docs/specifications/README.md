@@ -152,7 +152,7 @@
 - [ADR-007](../adr/ADR-007-Phase-2-Integration-Complete.md) - Integration completion record
 - [ADR-008](../adr/ADR-008-Stage-2-Independence-Correction.md) - Stage 2 correction
 - Implementation: `lib/rag_processing.py`, `lib/garbled_text_detection.py`, `lib/strikethrough_detection.py`
-- Status Report: [claudedocs/PHASE_2_INTEGRATION_COMPLETE_2025_10_18.md](../../claudedocs/PHASE_2_INTEGRATION_COMPLETE_2025_10_18.md)
+- Status Report: `claudedocs/PHASE_2_INTEGRATION_COMPLETE_2025_10_18.md` (archived — in git history)
 
 ---
 
@@ -266,8 +266,8 @@ IF garbled detected AND no visual markers (X-marks)
 - [ADR-006](../adr/ADR-006-Quality-Pipeline-Architecture.md) - Quality pipeline (Stage 2)
 - [ADR-008](../adr/ADR-008-Stage-2-Independence-Correction.md) - Stage 2 independence
 - Implementation: `lib/strikethrough_detection.py`, `scripts/validation/xmark_detector.py`
-- Research: [claudedocs/strikethrough-research/](../../claudedocs/strikethrough-research/)
-- Validation Report: [claudedocs/SOUS_RATURE_DETECTION_VALIDATION_2025_10_20.md](../../claudedocs/SOUS_RATURE_DETECTION_VALIDATION_2025_10_20.md)
+- Research: `claudedocs/strikethrough-research/` (archived — in git history)
+- Validation Report: `claudedocs/SOUS_RATURE_DETECTION_VALIDATION_2025_10_20.md` (archived — in git history)
 
 ---
 

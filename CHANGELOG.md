@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.2] - 2026-07-24
+
+### Fixed
+
+- **`uv sync` failed inside the npm-installed package**, breaking the README
+  quickstart's Python setup step for every npm user of v1.3.0/v1.3.1. The root
+  pyproject had always relied on an accident: the repo's `src/` directory flips
+  setuptools to src-layout package discovery (which finds no Python packages and
+  builds an empty dist), but the published package ships no `src/`, so flat-layout
+  discovery found `['lib', 'zlibrary', 'node_modules']` and refused to build.
+  The root project is dependency-management-only and is now declared
+  `[tool.uv] package = false`, which is layout-independent. CI's pack-check job
+  now extracts the actual npm tarball and runs `uv sync` plus bridge-import
+  checks inside it, so a repo-works/package-breaks split cannot ship again.
+  Verified end-to-end against the fixed layout: global install → bin symlink →
+  MCP `initialize` → live authenticated `search_books` returns results.
+
 ## [1.3.1] - 2026-07-24
 
 ### Changed
@@ -230,7 +247,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - BUG-X/FIX comments cleaned from production code
 - Debug print statements converted to proper logging
 
-[Unreleased]: https://github.com/loganrooks/zlibrary-mcp/compare/v1.3.1...HEAD
+[Unreleased]: https://github.com/loganrooks/zlibrary-mcp/compare/v1.3.2...HEAD
+[1.3.2]: https://github.com/loganrooks/zlibrary-mcp/compare/v1.3.1...v1.3.2
 [1.3.1]: https://github.com/loganrooks/zlibrary-mcp/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/loganrooks/zlibrary-mcp/compare/v1.2.1...v1.3.0
 [1.2.1]: https://github.com/loganrooks/zlibrary-mcp/compare/v1.2.0...v1.2.1

@@ -9,19 +9,20 @@ from urllib.parse import quote
 
 from .logger import logger
 from .exception import (
-    BookNotFound,
     EmptyQueryError,
     ProxyNotMatchError,
     NoProfileError,
     NoDomainError,
-    NoIdError,
     LoginFailed,
-    ParseError,
-    DownloadError
+    DownloadError,
 )
 from .util import GET_request, POST_request, GET_request_cookies
-from .abs import SearchPaginator, BookItem
-from .eapi import EAPIClient, normalize_eapi_book, normalize_eapi_search_response
+from .eapi import (
+    EAPIClient,
+    normalize_eapi_search_response,
+    resolve_eapi_domain,
+    select_advertised_domain,
+)
 from .profile import ZlibProfile
 from .const import Extension, Language, OrderOptions
 import json
@@ -102,19 +103,23 @@ class AsyncZlib:
                 response = await GET_request(
                     url, proxy_list=self.proxy_list, cookies=self.cookies
                 )
-                if hasattr(response, 'text'):
+                if hasattr(response, "text"):
                     logger.debug(f"Response text for {url}: {response.text[:1000]}")
                 else:
-                    logger.debug(f"Response for {url} is not an HTTPX object, it is a string: {str(response)[:1000]}")
+                    logger.debug(
+                        f"Response for {url} is not an HTTPX object, it is a string: {str(response)[:1000]}"
+                    )
                 return response
         else:
             response = await GET_request(
                 url, proxy_list=self.proxy_list, cookies=self.cookies
             )
-            if hasattr(response, 'text'):
+            if hasattr(response, "text"):
                 logger.debug(f"Response text for {url}: {response.text[:1000]}")
             else:
-                logger.debug(f"Response for {url} is not an HTTPX object, it is a string: {str(response)[:1000]}")
+                logger.debug(
+                    f"Response for {url} is not an HTTPX object, it is a string: {str(response)[:1000]}"
+                )
             return response
 
     async def login(self, email: str, password: str):
@@ -133,9 +138,9 @@ class AsyncZlib:
             self.login_domain, data, proxy_list=self.proxy_list
         )
         resp = json.loads(resp)
-        resp = resp['response']
+        resp = resp["response"]
         logger.debug(f"Login response: {resp}")
-        if resp.get('validationError'):
+        if resp.get("validationError"):
             raise LoginFailed(json.dumps(resp, indent=4))
         self._jar = jar
 
@@ -166,26 +171,37 @@ class AsyncZlib:
             if not self.mirror:
                 raise NoDomainError
 
-        # Initialize EAPI client with auth cookies
-        eapi_domain = "z-library.sk"  # Default domain for EAPI
+        # Initialize EAPI client with auth cookies. Respects
+        # ZLIBRARY_EAPI_DOMAIN, otherwise probes the fallback list
+        # (ISSUE-API-002: the old hardcoded z-library.sk is DiamWall-walled).
+        eapi_domain = await resolve_eapi_domain()
         self._eapi = EAPIClient(
             domain=eapi_domain,
             remix_userid=self.cookies.get("remix_userid"),
             remix_userkey=self.cookies.get("remix_userkey"),
         )
 
-        # Discover personal domain for downloads
+        # Discover personal domain for downloads — probe advertised domains
+        # before adopting one, since /eapi/info/domains advertises walled
+        # domains first (ISSUE-API-002).
         try:
             domains_resp = await self._eapi.get_domains()
             domains = domains_resp.get("domains", [])
-            if domains:
-                first = domains[0]
-                self._personal_domain = first if isinstance(first, str) else first.get("domain", "")
+            usable = await select_advertised_domain(domains, eapi_domain)
+            if usable:
+                self._personal_domain = usable
                 logger.info(f"EAPI personal domain: {self._personal_domain}")
+            elif domains:
+                logger.warning(
+                    "No advertised EAPI domain passed the health probe; "
+                    f"keeping {eapi_domain} for downloads."
+                )
         except Exception as e:
             logger.warning(f"Failed to discover EAPI domains: {e}. Using default.")
 
-        self.profile = ZlibProfile(self._r, self.cookies, self.mirror, ZLIB_DOMAIN, eapi_client=self._eapi)
+        self.profile = ZlibProfile(
+            self._r, self.cookies, self.mirror, ZLIB_DOMAIN, eapi_client=self._eapi
+        )
         return self.profile
 
     async def logout(self):
@@ -209,8 +225,12 @@ class AsyncZlib:
     ):
         if not self.profile:
             raise NoProfileError
-        if not q and not (order and (order == OrderOptions.NEWEST or order == "date_created")):
-             raise EmptyQueryError("Search query cannot be empty unless ordering by newest.")
+        if not q and not (
+            order and (order == OrderOptions.NEWEST or order == "date_created")
+        ):
+            raise EmptyQueryError(
+                "Search query cannot be empty unless ordering by newest."
+            )
 
         if not self._eapi:
             raise NoProfileError("EAPI client not initialized. Call login() first.")
@@ -245,7 +265,9 @@ class AsyncZlib:
                 else:
                     logger.warning(f"Invalid order value '{order}'. Ignoring.")
 
-        logger.info(f"EAPI search: q={q}, exact={exact}, count={count}, order={order_str}")
+        logger.info(
+            f"EAPI search: q={q}, exact={exact}, count={count}, order={order_str}"
+        )
 
         try:
             eapi_resp = await self._eapi.search(
@@ -266,11 +288,19 @@ class AsyncZlib:
         books = normalize_eapi_search_response(eapi_resp)
 
         # Build a lightweight paginator-like wrapper for backward compat
-        paginator = _EAPISearchResult(books, eapi_resp, self._eapi, q,
-                                       count=count, exact=exact,
-                                       from_year=from_year, to_year=to_year,
-                                       languages=languages, extensions=ext_list,
-                                       order=order_str)
+        paginator = _EAPISearchResult(
+            books,
+            eapi_resp,
+            self._eapi,
+            q,
+            count=count,
+            exact=exact,
+            from_year=from_year,
+            to_year=to_year,
+            languages=languages,
+            extensions=ext_list,
+            order=order_str,
+        )
         payload = f"{self.mirror}/eapi/book/search?message={quote(q)}"
 
         logger.info(f"EAPI search returned {len(books)} results")
@@ -345,10 +375,18 @@ class AsyncZlib:
             raise
 
         books = normalize_eapi_search_response(eapi_resp)
-        paginator = _EAPISearchResult(books, eapi_resp, self._eapi, q,
-                                       count=count, exact=exact,
-                                       from_year=from_year, to_year=to_year,
-                                       languages=languages, extensions=ext_list)
+        paginator = _EAPISearchResult(
+            books,
+            eapi_resp,
+            self._eapi,
+            q,
+            count=count,
+            exact=exact,
+            from_year=from_year,
+            to_year=to_year,
+            languages=languages,
+            extensions=ext_list,
+        )
         payload = f"{self.mirror}/eapi/book/search?message={quote(q)}"
 
         logger.info(f"EAPI full_text_search returned {len(books)} results")
@@ -362,19 +400,23 @@ class AsyncZlib:
         if not self._eapi:
             raise NoProfileError("EAPI client not initialized. Call login() first.")
 
-        book_id = book_details.get('id', 'Unknown')
-        book_hash = book_details.get('hash') or book_details.get('book_hash', '')
+        book_id = book_details.get("id", "Unknown")
+        book_hash = book_details.get("hash") or book_details.get("book_hash", "")
 
         if not book_hash:
-            logger.warning(f"No hash found in book_details for book ID {book_id}. "
-                          f"Attempting download without hash may fail.")
+            logger.warning(
+                f"No hash found in book_details for book ID {book_id}. "
+                f"Attempting download without hash may fail."
+            )
 
         logger.info(f"EAPI download_book: id={book_id}, hash={book_hash}")
 
         try:
             # Get download link from EAPI
             dl_resp = await self._eapi.get_download_link(int(book_id), book_hash)
-            download_url = dl_resp.get("file", {}).get("downloadLink") or dl_resp.get("downloadLink", "")
+            download_url = dl_resp.get("file", {}).get("downloadLink") or dl_resp.get(
+                "downloadLink", ""
+            )
 
             if not download_url:
                 # Try alternative response structures
@@ -383,26 +425,39 @@ class AsyncZlib:
                     download_url = dl_resp.get("url", "") or dl_resp.get("link", "")
 
             if not download_url:
-                raise DownloadError(f"EAPI returned no download link for book ID {book_id}. Response: {dl_resp}")
+                raise DownloadError(
+                    f"EAPI returned no download link for book ID {book_id}. Response: {dl_resp}"
+                )
 
             # Make URL absolute if needed
             if download_url.startswith("/"):
-                base = f"https://{self._personal_domain}" if self._personal_domain else self.mirror
+                base = (
+                    f"https://{self._personal_domain}"
+                    if self._personal_domain
+                    else self.mirror
+                )
                 download_url = f"{base.rstrip('/')}{download_url}"
 
             logger.info(f"EAPI download URL: {download_url}")
 
         except httpx.HTTPStatusError as e:
             logger.error(f"EAPI download link request failed: {e}", exc_info=True)
-            raise DownloadError(f"Failed to get download link for book ID {book_id} (HTTP {e.response.status_code})") from e
+            raise DownloadError(
+                f"Failed to get download link for book ID {book_id} (HTTP {e.response.status_code})"
+            ) from e
         except DownloadError:
             raise
         except Exception as e:
-            logger.error(f"Error getting EAPI download link for book ID {book_id}: {e}", exc_info=True)
-            raise DownloadError(f"Failed to get download link for book ID {book_id}") from e
+            logger.error(
+                f"Error getting EAPI download link for book ID {book_id}: {e}",
+                exc_info=True,
+            )
+            raise DownloadError(
+                f"Failed to get download link for book ID {book_id}"
+            ) from e
 
         # Construct output path
-        extension = book_details.get('extension', 'epub')
+        extension = book_details.get("extension", "epub")
         filename = f"{book_id}.{extension}"
         output_directory = Path(output_dir_str)
         actual_output_path = output_directory / filename
@@ -413,7 +468,9 @@ class AsyncZlib:
         try:
             os.makedirs(output_directory, exist_ok=True)
         except OSError as e:
-            raise DownloadError(f"Failed to create output directory {output_directory}: {e}") from e
+            raise DownloadError(
+                f"Failed to create output directory {output_directory}: {e}"
+            ) from e
 
         # Stream download
         try:
@@ -425,31 +482,39 @@ class AsyncZlib:
             ) as client:
                 async with client.stream("GET", download_url) as response:
                     response.raise_for_status()
-                    total_size = int(response.headers.get('content-length', 0))
+                    total_size = int(response.headers.get("content-length", 0))
                     logger.info(f"Starting download ({total_size} bytes)...")
 
-                    async with aiofiles.open(actual_output_path, 'wb') as f:
+                    async with aiofiles.open(actual_output_path, "wb") as f:
                         async for chunk in response.aiter_bytes():
                             await f.write(chunk)
 
-            logger.info(f"Successfully downloaded book ID {book_id} to {actual_output_path}")
+            logger.info(
+                f"Successfully downloaded book ID {book_id} to {actual_output_path}"
+            )
             return str(actual_output_path)
 
         except httpx.HTTPStatusError as e:
             if os.path.exists(actual_output_path):
                 os.remove(actual_output_path)
-            raise DownloadError(f"Download failed for book ID {book_id} (HTTP {e.response.status_code})") from e
+            raise DownloadError(
+                f"Download failed for book ID {book_id} (HTTP {e.response.status_code})"
+            ) from e
         except httpx.RequestError as e:
             if os.path.exists(actual_output_path):
                 os.remove(actual_output_path)
-            raise DownloadError(f"Download failed for book ID {book_id} (Network Error)") from e
+            raise DownloadError(
+                f"Download failed for book ID {book_id} (Network Error)"
+            ) from e
         except Exception as e:
             try:
                 if os.path.exists(actual_output_path):
                     os.remove(actual_output_path)
             except OSError:
                 pass
-            raise DownloadError(f"An unexpected error occurred during download for book ID {book_id}") from e
+            raise DownloadError(
+                f"An unexpected error occurred during download for book ID {book_id}"
+            ) from e
 
 
 class _EAPISearchResult:
@@ -459,9 +524,20 @@ class _EAPISearchResult:
     (result, total, next/prev page navigation).
     """
 
-    def __init__(self, books, eapi_response, eapi_client, query,
-                 count=10, exact=False, from_year=None, to_year=None,
-                 languages=None, extensions=None, order=None):
+    def __init__(
+        self,
+        books,
+        eapi_response,
+        eapi_client,
+        query,
+        count=10,
+        exact=False,
+        from_year=None,
+        to_year=None,
+        languages=None,
+        extensions=None,
+        order=None,
+    ):
         self.result = books
         self.storage = {1: books}
         self.page = 1
@@ -487,7 +563,9 @@ class _EAPISearchResult:
                 self.result = []
                 return self.result
 
-        self.result = self.storage.get(self.page, [])[self.__pos:self.__pos + self.count]
+        self.result = self.storage.get(self.page, [])[
+            self.__pos : self.__pos + self.count
+        ]
         self.__pos += self.count
         return self.result
 
@@ -500,7 +578,7 @@ class _EAPISearchResult:
                 return self.result
 
         start = max(0, self.__pos)
-        self.result = self.storage.get(self.page, [])[start:start + self.count]
+        self.result = self.storage.get(self.page, [])[start : start + self.count]
         return self.result
 
     async def next_page(self):

@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Resilient EAPI domain fallback and probing** (ISSUE-API-002): the single default
+  EAPI domain `z-library.sk` is fronted by the DiamWall anti-bot wall (HTTP 307
+  self-redirect setting a `__diamwall` cookie, then 513/517 Access Denied), which
+  killed login and every tool with default settings. The default is now a probed
+  fallback list (`z-library.ec`, `z-library.sk`, `1lib.sk`): each candidate is
+  validated with a cheap unauthenticated `GET /eapi/info/domains` — never the
+  rate-limited login endpoint — and the first healthy one is used. Hydra-mode
+  domain discovery also probes advertised domains before switching, since
+  `/eapi/info/domains` still advertises the walled domain first; if nothing
+  advertised is usable the client keeps its working domain. An explicit
+  `ZLIBRARY_EAPI_DOMAIN` is honoured verbatim with no probing and no silent
+  switching. DiamWall HTML where JSON was expected now raises a dedicated
+  `DiamWallError` naming the wall and the remedy; the health check classifies it
+  as `diamwall_blocked` and `npm run doctor` reports it explicitly.
+
 ## [1.3.0] - 2026-07-24
 
 ### Security

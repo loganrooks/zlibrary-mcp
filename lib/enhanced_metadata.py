@@ -19,7 +19,7 @@ import os
 zlibrary_path = os.path.join(os.path.dirname(__file__), "..", "zlibrary", "src")
 sys.path.insert(0, zlibrary_path)
 
-from zlibrary.eapi import EAPIClient
+from zlibrary.eapi import EAPIClient, resolve_eapi_domain
 
 logger = logging.getLogger(__name__)
 
@@ -112,10 +112,11 @@ async def get_enhanced_metadata(
     client = eapi_client
     should_close = False
     if client is None:
-        # discover_eapi_domain() requires an authenticated client, so before
-        # login we must start from a known domain (same default as
-        # booklist_tools and python_bridge).
-        domain = os.environ.get("ZLIBRARY_EAPI_DOMAIN", "z-library.sk")
+        # Resolve a healthy EAPI domain before login: honours an explicit
+        # ZLIBRARY_EAPI_DOMAIN override, otherwise probes the fallback list
+        # via GET /eapi/info/domains (ISSUE-API-002: the old z-library.sk
+        # default is DiamWall-walled).
+        domain = await resolve_eapi_domain()
         client = EAPIClient(domain)
         await client.login(email, password)
         should_close = True

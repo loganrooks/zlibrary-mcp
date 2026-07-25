@@ -32,6 +32,8 @@ from zlibrary.eapi import (
     EAPIClient,
     normalize_eapi_book,
     normalize_eapi_search_response,
+    resolve_eapi_domain,
+    select_advertised_domain,
 )
 
 logger = logging.getLogger("zlibrary")  # Get the 'zlibrary' logger instance
@@ -228,9 +230,13 @@ async def initialize_eapi_client() -> EAPIClient:
             "ZLIBRARY_EMAIL and ZLIBRARY_PASSWORD environment variables required"
         )
 
-    # Use a known EAPI domain for initial login
-    # Z-Library EAPI domains follow the pattern: z-library.sk, singlelogin.re, etc.
-    initial_domain = os.environ.get("ZLIBRARY_EAPI_DOMAIN", "z-library.sk")
+    # ISSUE-API-002: the old single default (z-library.sk) is fronted by the
+    # DiamWall anti-bot wall. resolve_eapi_domain() honours an explicit
+    # ZLIBRARY_EAPI_DOMAIN override without probing; otherwise it probes the
+    # fallback list (GET /eapi/info/domains — never login, which is
+    # rate-limited) and logs in on the first healthy candidate.
+    domain_pinned = bool(os.environ.get("ZLIBRARY_EAPI_DOMAIN", "").strip())
+    initial_domain = await resolve_eapi_domain()
 
     client = EAPIClient(initial_domain)
     login_result = await client.login(email, password)
@@ -240,28 +246,32 @@ async def initialize_eapi_client() -> EAPIClient:
 
     logger.info(f"EAPI client authenticated (userid={client.remix_userid})")
 
-    # Discover optimal domain
-    try:
-        domains_result = await client.get_domains()
-        domains = domains_result.get("domains", [])
-        if domains:
-            primary = (
-                domains[0]
-                if isinstance(domains[0], str)
-                else domains[0].get("domain", "")
-            )
-            if primary and primary != initial_domain:
-                logger.info(f"Switching EAPI domain: {initial_domain} -> {primary}")
+    # Discover optimal domain — skipped entirely when ZLIBRARY_EAPI_DOMAIN is
+    # set (an explicit override means no silent switching, ever). Advertised
+    # domains are probed before adoption: /eapi/info/domains still lists
+    # walled domains first, and switching blindly would kill a working client.
+    if not domain_pinned:
+        try:
+            domains_result = await client.get_domains()
+            domains = domains_result.get("domains", [])
+            target = await select_advertised_domain(domains, initial_domain)
+            if target and target != initial_domain:
+                logger.info(f"Switching EAPI domain: {initial_domain} -> {target}")
                 # Create new client on discovered domain with existing credentials
                 new_client = EAPIClient(
-                    primary,
+                    target,
                     remix_userid=client.remix_userid,
                     remix_userkey=client.remix_userkey,
                 )
                 await client.close()
                 client = new_client
-    except Exception as e:
-        logger.warning(f"Domain discovery failed, using initial domain: {e}")
+            elif not target and domains:
+                logger.warning(
+                    "No advertised EAPI domain passed the health probe; "
+                    f"keeping working domain {initial_domain}"
+                )
+        except Exception as e:
+            logger.warning(f"Domain discovery failed, using initial domain: {e}")
 
     _eapi_client = client
     return _eapi_client
@@ -270,11 +280,15 @@ async def initialize_eapi_client() -> EAPIClient:
 def _classify_health_error(error: Exception) -> str:
     """Classify a health check error into a specific error code.
 
-    Checks exception message for Cloudflare indicators first,
-    then falls back to exception type checking for network errors.
-    Uses only built-in Python exception types (no httpx imports).
+    Checks the exception message for anti-bot wall indicators first
+    (DiamWall, then Cloudflare), then falls back to exception type checking
+    for network errors. Uses only built-in Python exception types (no httpx
+    imports) — DiamWallError raised by the EAPI client is matched by its
+    message, which always names the wall.
     """
     msg = str(error).lower()
+    if "diamwall" in msg:
+        return "diamwall_blocked"
     cloudflare_patterns = ["checking your browser", "cloudflare", "cf-", "challenge"]
     for pattern in cloudflare_patterns:
         if pattern in msg:
@@ -296,6 +310,9 @@ async def eapi_health_check() -> dict:
         and optionally 'error' and 'error_code'.
 
     Error codes:
+        - diamwall_blocked: DiamWall anti-bot wall served HTML/Access Denied
+          where EAPI JSON was expected (fix: export ZLIBRARY_EAPI_DOMAIN to a
+          working domain, or unset it to use the built-in fallback list)
         - cloudflare_blocked: Cloudflare challenge detected in response
         - network_error: Connection or timeout failure
         - malformed_response: Non-JSON or unexpected response format

@@ -100,6 +100,20 @@ optional failures usually mean a secondary source is unreachable.
 
 ### Common causes
 
+- **Anti-bot wall on a Z-Library domain** (`diamwall_blocked` in the health check, or
+  the doctor reporting "DiamWall anti-bot wall"): some Z-Library domains (notably
+  `z-library.sk` and `1lib.sk` since 2026-07) block programmatic `/eapi` access with
+  the DiamWall wall — a 307 self-redirect, then 513/517 "Access Denied". The server
+  handles this automatically: it probes its candidate list (`z-library.ec` first)
+  with an unauthenticated `GET /eapi/info/domains` and logs in on the first healthy
+  domain, and hydra-mode discovery skips advertised domains that fail the same
+  probe. If every built-in candidate is walled on your network, pin a domain you
+  know works:
+  ```bash
+  export ZLIBRARY_EAPI_DOMAIN=<working-domain>
+  ```
+  A pinned domain is used exactly as given — no probing, no silent switching — so
+  unset it again to return to automatic fallback.
 - **Region blocking**: Z-Library domains are blocked on some networks. Domain discovery
   ("hydra mode") normally finds a working mirror at runtime; you can pin one explicitly:
   ```bash

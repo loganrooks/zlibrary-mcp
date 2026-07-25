@@ -95,9 +95,13 @@ def test_probe_targets_match_runtime_defaults(check_upstream):
     """
     from lib.sources.config import get_source_config
 
+    from zlibrary.eapi import DEFAULT_EAPI_DOMAINS
+
     runtime = get_source_config()
+    # The runtime resolves a domain from ZLIBRARY_EAPI_DOMAIN or (by probing)
+    # DEFAULT_EAPI_DOMAINS; the doctor mirrors that by importing the same list.
     assert check_upstream.ZLIB_DOMAIN == os.environ.get(
-        "ZLIBRARY_EAPI_DOMAIN", "z-library.sk"
+        "ZLIBRARY_EAPI_DOMAIN", DEFAULT_EAPI_DOMAINS[0]
     )
     assert check_upstream.ANNAS_BASE_URL == runtime.annas_base_url
     # LibgenAdapter passes the mirror suffix to LibgenSearch, which builds

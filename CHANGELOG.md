@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-07-24
+
 ### Changed
 
 - Upstream contract check now distinguishes network-level blocks from drift: a
@@ -19,6 +21,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`zlibrary-mcp` bin never started under a global npm install**: npm installs the
+  bin as a symlink into `<prefix>/bin`, so `argv[1]` is the link path while
+  `import.meta.url` is the real file — the ESM entry guard's lexical path
+  comparison never matched and the server exited silently, making
+  `"command": "zlibrary-mcp"` in an MCP client config a no-op. The guard now
+  canonicalises both sides with `realpathSync` (falling back to lexical
+  resolution for paths that do not exist). Verified end-to-end: a symlinked
+  invocation now answers `initialize` over stdio.
+- **Footnote detection was non-deterministic across a full test run**: the PyMuPDF
+  textpage cache keyed entries by `id(page)` without holding a reference; CPython
+  recycles a freed page's address (~90% of back-to-back loads), so page N's cached
+  text blocks could be served for page M. Entries now pin the page object and
+  verify identity on read. This was the cause of the long-standing
+  full-suite-ordering test flakes.
+- Tests no longer leak `MagicMock/` and `dummy_output*/` directories into the
+  repository root (mocked argparse args now route `output_dir` through pytest
+  `tmp_path`); removed the orphaned `test_data/` fixtures (referenced by nothing)
+  and untracked per-developer `.serena/` tool state.
 - **Resilient EAPI domain fallback and probing** (ISSUE-API-002): the single default
   EAPI domain `z-library.sk` is fronted by the DiamWall anti-bot wall (HTTP 307
   self-redirect setting a `__diamwall` cookie, then 513/517 Access Denied), which
@@ -210,7 +230,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - BUG-X/FIX comments cleaned from production code
 - Debug print statements converted to proper logging
 
-[Unreleased]: https://github.com/loganrooks/zlibrary-mcp/compare/v1.2.1...HEAD
+[Unreleased]: https://github.com/loganrooks/zlibrary-mcp/compare/v1.3.1...HEAD
+[1.3.1]: https://github.com/loganrooks/zlibrary-mcp/compare/v1.3.0...v1.3.1
+[1.3.0]: https://github.com/loganrooks/zlibrary-mcp/compare/v1.2.1...v1.3.0
 [1.2.1]: https://github.com/loganrooks/zlibrary-mcp/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/loganrooks/zlibrary-mcp/compare/v1.1...v1.2.0
 [1.1.0]: https://github.com/loganrooks/zlibrary-mcp/compare/v1.0...v1.1

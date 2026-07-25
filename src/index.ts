@@ -796,8 +796,21 @@ async function start(
  */
 export function isProcessEntryPoint(moduleUrl: string, argv1: string | undefined): boolean {
   if (!argv1) return false;
+  // npm installs the `zlibrary-mcp` bin as a symlink into <prefix>/bin, so
+  // argv[1] is the link path while import.meta.url is the real file under the
+  // package directory — a plain path.resolve comparison never matches and the
+  // server silently refused to auto-start for global-install users. Resolve
+  // symlinks when the path exists; fall back to lexical resolution so the
+  // comparison still works for paths that do not exist on this filesystem.
+  const canonical = (p: string): string => {
+    try {
+      return fs.realpathSync(p);
+    } catch {
+      return path.resolve(p);
+    }
+  };
   try {
-    return path.resolve(fileURLToPath(moduleUrl)) === path.resolve(argv1);
+    return canonical(fileURLToPath(moduleUrl)) === canonical(argv1);
   } catch {
     // A non-file:// URL (e.g. a bundler's virtual module) is never the entry point.
     return false;

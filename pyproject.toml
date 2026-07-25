@@ -74,6 +74,16 @@ build-backend = "setuptools.build_meta"
 
 # UV-specific configuration
 [tool.uv]
+# This pyproject exists for dependency management only — nothing imports the
+# root project as a Python package (the bridge runs lib/*.py by path, and the
+# importable `zlibrary` package is the vendored fork installed editable from
+# ./zlibrary). package = false stops uv from building/installing the root.
+# Without it the build only ever succeeded by accident: the repo's src/ dir
+# flips setuptools to src-layout discovery (which finds nothing), while the
+# published npm package ships no src/, so flat-layout discovery found
+# ['lib', 'zlibrary', 'node_modules'] and refused to build — breaking
+# `uv sync` for every npm-installed user.
+package = false
 # Development dependencies (alternative syntax)
 dev-dependencies = [
     "pytest>=9.0.3",  # PYSEC-2026-1845

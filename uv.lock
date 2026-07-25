@@ -2884,7 +2884,7 @@ requires-dist = [
 [[package]]
 name = "zlibrary-mcp"
 version = "2.0.0"
-source = { editable = "." }
+source = { virtual = "." }
 dependencies = [
     { name = "aiofiles" },
     { name = "beautifulsoup4" },

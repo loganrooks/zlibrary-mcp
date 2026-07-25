@@ -119,7 +119,7 @@ or password"}` even for valid credentials, recovering after a cooldown. The
 integration suite logs in once per module (shared `zlib_client` fixture) to stay
 under this limit — and the domain probe deliberately uses `GET /eapi/info/domains`,
 never login, for the same reason.
-**Resolution** (2026-07-24, PR "fix: resilient EAPI domain fallback and probing"):
+**Resolution** (2026-07-24, PR #36 "fix: resilient EAPI domain fallback and probing"):
 (1) single default replaced by the probed fallback list
 `DEFAULT_EAPI_DOMAINS = ["z-library.ec", "z-library.sk", "1lib.sk"]` in
 `zlibrary/src/zlibrary/eapi.py`; an explicit `ZLIBRARY_EAPI_DOMAIN` is honoured

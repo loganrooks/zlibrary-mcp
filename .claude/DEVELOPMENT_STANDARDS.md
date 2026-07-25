@@ -80,7 +80,7 @@ A CommonJS script (one that calls `require()`) saved as `.js` fails with
 
 ### Where to Document
 
-See [QUICK_REFERENCE.md](../claudedocs/QUICK_REFERENCE.md) for complete guide.
+See the documentation-guidelines table in [CLAUDE.md](../CLAUDE.md) for the complete guide.
 
 **Quick Reference**:
 | Type | Location |
@@ -460,7 +460,8 @@ write_memory("checkpoint_20251021_1430", {
 # Optionally generates: .claude/STATUS.md
 ```
 
-See: Research findings in `claudedocs/research/claude-code-best-practices/findings.md`
+See: research findings formerly at `claudedocs/research/claude-code-best-practices/findings.md`
+(claudedocs pruned 2026-07-24 — retrieve from git history if needed)
 
 ---
 
@@ -622,4 +623,4 @@ Required before version bump:
 - **TDD Process**: [TDD_WORKFLOW.md](TDD_WORKFLOW.md)
 - **Git Workflow**: [VERSION_CONTROL.md](VERSION_CONTROL.md)
 - **Quality Framework**: [RAG_QUALITY_FRAMEWORK.md](RAG_QUALITY_FRAMEWORK.md)
-- **Session State System**: Research findings in `claudedocs/research/claude-code-best-practices/`
+- **Session State System**: research formerly in `claudedocs/research/claude-code-best-practices/` (in git history)

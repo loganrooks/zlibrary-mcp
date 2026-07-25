@@ -180,7 +180,7 @@ Stage 3: OCR Recovery (Tesseract re-processing)
 **Related**:
 - [ADR-006](ADR-006-Quality-Pipeline-Architecture.md) - Pipeline architecture
 - [ADR-008](ADR-008-Stage-2-Independence-Correction.md) - Stage 2 correction
-- Status Report: [claudedocs/PHASE_2_INTEGRATION_COMPLETE_2025_10_18.md](../../claudedocs/PHASE_2_INTEGRATION_COMPLETE_2025_10_18.md)
+- Status Report: `claudedocs/PHASE_2_INTEGRATION_COMPLETE_2025_10_18.md` (archived — in git history)
 - Implementation: `lib/rag_processing.py`, `lib/garbled_text_detection.py`, `lib/strikethrough_detection.py`
 
 ---

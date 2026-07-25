@@ -187,7 +187,7 @@ node dist/index.js
 - Phase reports: Always (`phase-2-complete-2025-10-18.md`)
 - Living docs: Never (git tracks history)
 
-**See [claudedocs/QUICK_REFERENCE.md](claudedocs/QUICK_REFERENCE.md) for complete guide**
+**See [claudedocs/README.md](claudedocs/README.md) for the directory index**
 
 ## Environment Configuration
 

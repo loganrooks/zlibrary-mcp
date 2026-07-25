@@ -24,7 +24,7 @@ if git diff --cached --name-only | grep -qE "^claudedocs/[^/]*[A-Z_]{3,}.*\.md$"
   git diff --cached --name-only | grep -E "^claudedocs/[^/]*[A-Z_]{3,}"
   echo ""
   echo "Use kebab-case naming per CLAUDE.md guidelines"
-  echo "See: claudedocs/QUICK_REFERENCE.md"
+  echo "See: documentation guidelines in CLAUDE.md"
   exit 1
 fi
 

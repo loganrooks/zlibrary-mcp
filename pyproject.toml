@@ -65,7 +65,7 @@ Repository = "https://github.com/loganrooks/zlibrary-mcp.git"
 Issues = "https://github.com/loganrooks/zlibrary-mcp/issues"
 
 [build-system]
-requires = ["setuptools>=68", "wheel"]
+requires = ["setuptools>=83.0.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 # Note: This project is primarily Node.js/TypeScript

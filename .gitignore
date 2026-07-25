@@ -85,7 +85,7 @@ logs/
 .venv/
 
 # Serena MCP memories (session-specific, not checked in)
-.serena/memories/
+.serena/
 
 # Test output files
 test_strikethrough_findings.json

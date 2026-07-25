@@ -130,6 +130,12 @@ advertised is usable; (3) DiamWall HTML-where-JSON-expected now raises
 `DiamWallError`, classified as `diamwall_blocked` by the health check and reported
 explicitly by `npm run doctor`, with the `export ZLIBRARY_EAPI_DOMAIN=<working-domain>`
 remedy in the message. Covered by `__tests__/python/test_eapi_domain_resilience.py`.
+**CI caveat** (2026-07-25, post-fix dispatch of upstream-check): GitHub-hosted
+runners get a bare HTTP 403 from **every** Z-Library domain including
+`z-library.ec` — datacenter-IP blocking, unrelated to which domain is default.
+The upstream check therefore classifies walls/403s as `BLOCK` (environmental,
+no drift issue filed, live suite skipped) rather than `FAIL`; only a probe from
+a residential network can distinguish IP blocking from a global outage.
 
 ### ISSUE-002: Venv Manager Test Failures [CLOSED]
 **Severity**: Was High

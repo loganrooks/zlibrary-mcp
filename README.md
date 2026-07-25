@@ -6,6 +6,8 @@
 
 A Model Context Protocol (MCP) server that gives AI assistants -- Claude Code, Claude Desktop, RooCode, Cline -- the ability to search Z-Library, download books, and extract document content for Retrieval-Augmented Generation (RAG) workflows. Built with a Node.js/TypeScript MCP frontend and a Python bridge backend for document processing.
 
+For what this project is — and deliberately isn't — see [VISION.md](VISION.md).
+
 ## Quick Start
 
 **Prerequisites:** Node.js 22+, Python 3.10+, and [UV](https://docs.astral.sh/uv/)

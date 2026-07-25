@@ -16,6 +16,7 @@ This applies equally to "cleanup" tasks. A file that looks stale may be a test f
 ## 🚀 Quick Start for Claude Code
 
 **Essential Reading Order**:
+0. `VISION.md` - Invariants and non-goals (what the project is, at project root)
 1. `.claude/PROJECT_CONTEXT.md` - Complete project understanding (mission, domain)
 2. `.claude/ARCHITECTURE.md` - **System structure** (components, design decisions, status)
 3. `ISSUES.md` - Known problems and priorities (at project root)

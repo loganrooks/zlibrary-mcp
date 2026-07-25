@@ -85,7 +85,7 @@ const GetRecentBooksParamsSchema = z.object({
 const DownloadBookToFileParamsSchema = z.object({
   bookDetails: z
     .object({})
-    .passthrough()
+    .loose()
     .describe('The full book details object obtained from search_books'),
   outputDir: z
     .string()

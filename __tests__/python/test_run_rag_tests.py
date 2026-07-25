@@ -56,11 +56,18 @@ def test_main_function_exists():
 
 # Remove decorators, we will use 'with patch' inside
 @pytest.mark.asyncio  # Mark as async test
-async def test_main_parses_arguments():
+async def test_main_parses_arguments(tmp_path):
     """
     Tests if the main function sets up argument parsing for manifest_path and output_dir.
     """
     mock_parser = MagicMock()
+    # parse_args must return concrete values: main_async() mkdirs
+    # args.output_dir, and a bare MagicMock attribute becomes a literal
+    # "MagicMock/mock.parse_args().output_dir/<id>" directory in the CWD.
+    mock_args = MagicMock()
+    mock_args.manifest_path = "dummy.json"
+    mock_args.output_dir = str(tmp_path / "out")
+    mock_parser.parse_args.return_value = mock_args
     mock_argument_parser = MagicMock(return_value=mock_parser)
     mock_load_manifest_func = MagicMock(
         return_value={"documents": []}
@@ -186,15 +193,17 @@ def test_load_manifest_invalid_json():
 # Test main execution loop
 # Test main execution loop - Using mocker.patch
 @pytest.mark.asyncio  # Mark as async test
-async def test_main_loads_manifest_and_runs_tests_revised(mocker):  # Add mocker fixture
+async def test_main_loads_manifest_and_runs_tests_revised(mocker, tmp_path):
     """
     Tests if main loads the manifest, calls run_single_test for each doc,
     and calls generate_report, using mocker.patch for better isolation.
     """
-    # Setup mock argparse
+    # Setup mock argparse. output_dir must live under tmp_path: main_async()
+    # mkdirs it for real, and a relative path leaks a dummy_output/ directory
+    # into the repo root.
     mock_args = MagicMock()
     mock_args.manifest_path = "dummy_manifest.json"
-    mock_args.output_dir = "dummy_output"
+    mock_args.output_dir = str(tmp_path / "rag_output")
     mock_parser = MagicMock()
     mock_parser.parse_args.return_value = mock_args
     mocker.patch("argparse.ArgumentParser", return_value=mock_parser)
@@ -249,7 +258,9 @@ async def test_main_loads_manifest_and_runs_tests_revised(mocker):  # Add mocker
         {"id": "doc1", "status": "PASS"},
         {"id": "doc2", "status": "FAIL"},
     ]
-    mock_generate_report.assert_called_once_with(expected_report_arg, "dummy_output")
+    mock_generate_report.assert_called_once_with(
+        expected_report_arg, mock_args.output_dir
+    )
 
 
 # Add this test function, e.g., after test_main_loads_manifest_and_runs_tests_revised
@@ -257,7 +268,9 @@ async def test_main_loads_manifest_and_runs_tests_revised(mocker):  # Add mocker
 
 # xfail removed - Green phase for Cycle 18
 @pytest.mark.asyncio  # Mark as async test
-async def test_main_integration_calls_run_single_test_and_generate_report(mocker):
+async def test_main_integration_calls_run_single_test_and_generate_report(
+    mocker, tmp_path
+):
     """
     Tests the main function's loop integration: calls run_single_test
     for each document and then calls generate_report with the results.
@@ -266,7 +279,7 @@ async def test_main_integration_calls_run_single_test_and_generate_report(mocker
     # --- Mock setup similar to test_main_loads_manifest_and_runs_tests_revised ---
     mock_args = MagicMock()
     mock_args.manifest_path = "dummy_manifest.json"
-    mock_args.output_dir = "dummy_output_integration"
+    mock_args.output_dir = str(tmp_path / "rag_output_integration")
     mock_parser = MagicMock()
     mock_parser.parse_args.return_value = mock_args
     mocker.patch("argparse.ArgumentParser", return_value=mock_parser)
@@ -354,9 +367,7 @@ async def test_main_integration_calls_run_single_test_and_generate_report(mocker
             "status": "PASS",
         },
     ]
-    mock_generate_report.assert_called_once_with(
-        expected_results, "dummy_output_integration"
-    )
+    mock_generate_report.assert_called_once_with(expected_results, mock_args.output_dir)
 
 
 # Test run_single_test function - Using Dependency Injection and mocker

@@ -177,8 +177,8 @@ describe('Tool Handlers (Direct)', () => {
         expect(schema.shape.format).toBeUndefined(); // Ensure old 'format' is removed
         expect(schema.shape.outputDir).toBeDefined();
         expect(schema.shape.process_for_rag).toBeDefined();
-        expect(schema.shape.process_for_rag._def.typeName).toBe(z.ZodOptional.name);
-        expect(schema.shape.process_for_rag.unwrap()._def.typeName).toBe(z.ZodBoolean.name);
+        expect(schema.shape.process_for_rag).toBeInstanceOf(z.ZodOptional);
+        expect(schema.shape.process_for_rag.unwrap()).toBeInstanceOf(z.ZodBoolean);
         expect(schema.shape.processed_output_format).toBeDefined();
       });
 
@@ -187,9 +187,9 @@ describe('Tool Handlers (Direct)', () => {
 
         // Check input schema properties
         expect(schema.shape.file_path).toBeDefined();
-        expect(schema.shape.file_path._def.typeName).toBe(z.ZodString.name);
+        expect(schema.shape.file_path).toBeInstanceOf(z.ZodString);
         expect(schema.shape.output_format).toBeDefined();
-        expect(schema.shape.output_format._def.typeName).toBe(z.ZodOptional.name);
+        expect(schema.shape.output_format).toBeInstanceOf(z.ZodOptional);
       });
     }); // End Tool Schemas describe
 

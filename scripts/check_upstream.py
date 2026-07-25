@@ -32,14 +32,19 @@ import httpx
 # cannot drift from what the server actually contacts (it previously hardcoded
 # copies that went stale).
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "zlibrary" / "src"))
 from lib.sources.config import get_source_config  # noqa: E402
+from zlibrary.eapi import DEFAULT_EAPI_DOMAINS  # noqa: E402
 
 TIMEOUT = httpx.Timeout(20.0, connect=10.0)
 
 _source_config = get_source_config()
 
-# Mirrors the runtime default in lib/python_bridge.py.
-ZLIB_DOMAIN = os.environ.get("ZLIBRARY_EAPI_DOMAIN", "z-library.sk")
+# Mirrors the runtime resolution in lib/python_bridge.py: an explicit
+# ZLIBRARY_EAPI_DOMAIN wins; otherwise the runtime probes DEFAULT_EAPI_DOMAINS
+# in order and the doctor checks the first candidate (importing the list so
+# the probe cannot drift from what the server actually contacts).
+ZLIB_DOMAIN = os.environ.get("ZLIBRARY_EAPI_DOMAIN", DEFAULT_EAPI_DOMAINS[0])
 # get_source_config() already applies the ANNAS_BASE_URL / LIBGEN_MIRROR
 # environment overrides, same as the runtime adapters.
 ANNAS_BASE_URL = _source_config.annas_base_url
@@ -76,6 +81,23 @@ class ProbeResult:
         return "FAIL" if self.required else "WARN"
 
 
+def _diamwall_detail(resp: httpx.Response) -> Optional[str]:
+    """Detect the DiamWall anti-bot wall in a response, returning a report line.
+
+    Walled domains 307-redirect /eapi/* to themselves setting a `__diamwall`
+    cookie, then serve 513/517 "Access Denied" pages built from
+    cdn.diamwall.com assets (ISSUE-API-002).
+    """
+    if "diamwall" in resp.text.lower():
+        return (
+            f"DiamWall anti-bot wall (HTTP {resp.status_code}) — {ZLIB_DOMAIN} "
+            "blocks programmatic /eapi access; "
+            "export ZLIBRARY_EAPI_DOMAIN=<working-domain> "
+            "(e.g. z-library.ec) or unset it to use the fallback list"
+        )
+    return None
+
+
 async def probe_zlibrary_eapi(client: httpx.AsyncClient) -> list[ProbeResult]:
     """Check the EAPI domain-discovery endpoint and the search endpoint's shape."""
     results: list[ProbeResult] = []
@@ -83,22 +105,28 @@ async def probe_zlibrary_eapi(client: httpx.AsyncClient) -> list[ProbeResult]:
 
     try:
         resp = await client.get(f"{base}/eapi/info/domains")
-        resp.raise_for_status()
-        payload = resp.json()
-        domains = payload.get("domains") or []
-        results.append(
-            ProbeResult(
-                name="zlibrary:eapi/info/domains",
-                ok=bool(domains),
-                detail=(
-                    f"{len(domains)} domain(s) advertised: {', '.join(map(str, domains[:3]))}"
-                    if domains
-                    else "endpoint reachable but advertised no domains "
-                    "(contract change — domain discovery drives every later call)"
-                ),
-                extra={"domains": domains[:5]},
+        walled = _diamwall_detail(resp)
+        if walled:
+            results.append(
+                ProbeResult(name="zlibrary:eapi/info/domains", ok=False, detail=walled)
             )
-        )
+        else:
+            resp.raise_for_status()
+            payload = resp.json()
+            domains = payload.get("domains") or []
+            results.append(
+                ProbeResult(
+                    name="zlibrary:eapi/info/domains",
+                    ok=bool(domains),
+                    detail=(
+                        f"{len(domains)} domain(s) advertised: {', '.join(map(str, domains[:3]))}"
+                        if domains
+                        else "endpoint reachable but advertised no domains "
+                        "(contract change — domain discovery drives every later call)"
+                    ),
+                    extra={"domains": domains[:5]},
+                )
+            )
     except Exception as exc:  # noqa: BLE001 - any failure is a reportable signal
         results.append(
             ProbeResult(
@@ -115,6 +143,12 @@ async def probe_zlibrary_eapi(client: httpx.AsyncClient) -> list[ProbeResult]:
             f"{base}/eapi/book/search",
             data={"message": "philosophy", "limit": "1", "page": "1"},
         )
+        walled = _diamwall_detail(resp)
+        if walled:
+            results.append(
+                ProbeResult(name="zlibrary:eapi/book/search", ok=False, detail=walled)
+            )
+            return results
         resp.raise_for_status()
         payload = resp.json()
         has_shape = isinstance(payload, dict) and (

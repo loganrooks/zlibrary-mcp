@@ -12,8 +12,10 @@ import httpx
 import aiofiles
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence, Union
 from urllib.parse import unquote
+
+from .logger import logger
 
 
 EAPI_HEADERS = {
@@ -22,6 +24,167 @@ EAPI_HEADERS = {
     "Accept": "application/json, text/plain, */*",
     "Content-Type": "application/x-www-form-urlencoded",
 }
+
+# Candidate EAPI domains tried in order when ZLIBRARY_EAPI_DOMAIN is not set.
+# z-library.sk and 1lib.sk are fronted by the DiamWall anti-bot wall as of
+# 2026-07-24 (ISSUE-API-002) but stay listed in case the wall is lifted;
+# z-library.ec serves normal EAPI JSON and goes first.
+DEFAULT_EAPI_DOMAINS = ["z-library.ec", "z-library.sk", "1lib.sk"]
+
+# Status codes observed from DiamWall-fronted domains: a 307 self-redirect
+# setting a `__diamwall` cookie, then 513/517 "Access Denied" on retry.
+# 403 covers generic bot-blocking.
+WALLED_STATUS_CODES = (307, 403, 513, 517)
+
+
+class DiamWallError(RuntimeError):
+    """An /eapi request was intercepted by the DiamWall anti-bot wall.
+
+    Raised when a domain returns the DiamWall block page (or its status
+    codes) where EAPI JSON was expected. The message names the wall and the
+    remedy so it survives str(e) propagation through the health check.
+    """
+
+
+def _diamwall_error(domain: str, detail: str) -> DiamWallError:
+    return DiamWallError(
+        f"DiamWall anti-bot wall detected on {domain} ({detail}): the domain "
+        f"blocks programmatic /eapi access. Set ZLIBRARY_EAPI_DOMAIN to a "
+        f"working domain (e.g. export ZLIBRARY_EAPI_DOMAIN=z-library.ec) "
+        f"or unset it to let the built-in fallback list pick one."
+    )
+
+
+def decode_eapi_json(resp: httpx.Response, domain: str) -> dict:
+    """Parse an /eapi response as JSON, classifying anti-bot walls explicitly.
+
+    A healthy EAPI endpoint returns HTTP 200 with JSON. DiamWall-fronted
+    domains return a 307 self-redirect, 403/513/517 "Access Denied", or an
+    HTML block page — this raises DiamWallError for those so callers see
+    "anti-bot wall" instead of a bare JSONDecodeError or status error.
+    """
+    if resp.status_code == 200:
+        try:
+            return resp.json()
+        except ValueError:
+            pass  # fall through to wall classification
+    body = resp.text
+    if "diamwall" in body.lower():
+        raise _diamwall_error(domain, f"HTTP {resp.status_code} DiamWall block page")
+    if resp.status_code in WALLED_STATUS_CODES:
+        raise _diamwall_error(domain, f"HTTP {resp.status_code}")
+    resp.raise_for_status()
+    raise RuntimeError(
+        f"Expected JSON from {domain}, got non-JSON HTTP {resp.status_code} "
+        f"response (possible block page or upstream contract change)"
+    )
+
+
+async def probe_eapi_domain(
+    domain: str,
+    *,
+    timeout: float = 8.0,
+    transport: Optional[httpx.AsyncBaseTransport] = None,
+) -> bool:
+    """Cheaply check whether a domain serves real EAPI JSON.
+
+    Issues an unauthenticated GET /eapi/info/domains — never /eapi/user/login,
+    which is rate-limited (~10/hour/IP) and would lock out real credentials.
+    Healthy means HTTP 200 with a parseable JSON object containing a domains
+    payload. Redirects are NOT followed: DiamWall's 307 self-redirect is
+    itself the walled signal.
+
+    The `transport` parameter exists for tests (httpx.MockTransport); it is
+    None in production.
+    """
+    url = f"https://{domain.strip().rstrip('/')}/eapi/info/domains"
+    try:
+        async with httpx.AsyncClient(
+            headers=EAPI_HEADERS,
+            timeout=httpx.Timeout(timeout, connect=timeout),
+            follow_redirects=False,
+            transport=transport,
+        ) as client:
+            resp = await client.get(url)
+    except Exception as exc:  # noqa: BLE001 - any network failure means unusable
+        logger.debug(f"EAPI probe failed for {domain}: {type(exc).__name__}: {exc}")
+        return False
+    if resp.status_code != 200:
+        logger.debug(f"EAPI probe: {domain} returned HTTP {resp.status_code}")
+        return False
+    if "diamwall" in resp.text.lower():
+        logger.debug(f"EAPI probe: {domain} served a DiamWall block page")
+        return False
+    try:
+        payload = resp.json()
+    except ValueError:
+        logger.debug(f"EAPI probe: {domain} returned non-JSON")
+        return False
+    return isinstance(payload, dict) and "domains" in payload
+
+
+async def resolve_eapi_domain(
+    *,
+    transport: Optional[httpx.AsyncBaseTransport] = None,
+) -> str:
+    """Resolve the EAPI domain to use for login.
+
+    If ZLIBRARY_EAPI_DOMAIN is set, that domain is returned as-is with no
+    probing — an explicit override means no silent switching, ever.
+    Otherwise each candidate in DEFAULT_EAPI_DOMAINS is probed in order and
+    the first healthy one wins. If every candidate fails the probe, the
+    first candidate is returned so login can surface the real error.
+    """
+    override = os.environ.get("ZLIBRARY_EAPI_DOMAIN")
+    if override and override.strip():
+        domain = override.strip()
+        logger.info(f"EAPI domain pinned via ZLIBRARY_EAPI_DOMAIN: {domain}")
+        return domain
+    for candidate in DEFAULT_EAPI_DOMAINS:
+        if await probe_eapi_domain(candidate, transport=transport):
+            logger.info(f"EAPI domain selected by probe: {candidate}")
+            return candidate
+        logger.warning(
+            f"EAPI candidate domain {candidate} failed health probe "
+            f"(anti-bot wall or unreachable), trying next"
+        )
+    logger.warning(
+        f"All EAPI candidate domains failed the health probe; "
+        f"falling back to {DEFAULT_EAPI_DOMAINS[0]}"
+    )
+    return DEFAULT_EAPI_DOMAINS[0]
+
+
+async def select_advertised_domain(
+    advertised: Sequence[Union[str, dict]],
+    current: str,
+    *,
+    transport: Optional[httpx.AsyncBaseTransport] = None,
+) -> Optional[str]:
+    """Pick the first usable domain from a /eapi/info/domains listing.
+
+    /eapi/info/domains still advertises walled domains first (ISSUE-API-002),
+    so blindly adopting the primary entry would switch a working client onto
+    a dead domain. Each advertised entry is probed before being accepted;
+    walled/dead ones are skipped. Returns `current` if it appears in the list
+    before any healthy alternative (no switch needed), the first advertised
+    domain that passes the probe otherwise, or None when nothing advertised
+    is usable — the caller keeps whatever domain it already has.
+    """
+    for entry in advertised or []:
+        domain = entry if isinstance(entry, str) else (entry or {}).get("domain", "")
+        if not domain:
+            continue
+        if domain == current:
+            return current
+        if await probe_eapi_domain(domain, transport=transport):
+            return domain
+        logger.warning(
+            f"Skipping advertised EAPI domain {domain}: failed health probe "
+            f"(anti-bot wall or unreachable)"
+        )
+    return None
+
 
 # RFC 6266 / RFC 5987 permit three spellings of the filename parameter, and
 # Z-Library uses all of them depending on the title's character set. Tried in
@@ -125,15 +288,13 @@ class EAPIClient:
         client = await self._get_client()
         url = f"{self.base_url}{path}"
         resp = await client.post(url, data=data or {})
-        resp.raise_for_status()
-        return resp.json()
+        return decode_eapi_json(resp, self.domain)
 
     async def _get(self, path: str, params: Optional[Dict[str, Any]] = None) -> dict:
         client = await self._get_client()
         url = f"{self.base_url}{path}"
         resp = await client.get(url, params=params)
-        resp.raise_for_status()
-        return resp.json()
+        return decode_eapi_json(resp, self.domain)
 
     # --- Auth ---
 

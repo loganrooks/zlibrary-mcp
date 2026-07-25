@@ -35,9 +35,13 @@ async def GET_request(url, cookies=None, proxy_list=None) -> str:
                 logger.debug(f"Response status for {url}: {resp.status}")
                 logger.debug(f"Response headers for {url}: {resp.headers}")
                 if response_text:
-                    logger.debug(f"Response body for {url} (first 1000 chars): {response_text[:1000]}")
+                    logger.debug(
+                        f"Response body for {url} (first 1000 chars): {response_text[:1000]}"
+                    )
                     if len(response_text) > 1000:
-                        logger.debug(f"Response body for {url} is longer than 1000 chars, full length: {len(response_text)}")
+                        logger.debug(
+                            f"Response body for {url} is longer than 1000 chars, full length: {len(response_text)}"
+                        )
                     else:
                         logger.debug(f"Full response body for {url}: {response_text}")
                 else:
@@ -98,6 +102,7 @@ async def HEAD_request(url, proxy_list=None):
 
 # --- EAPI helpers ---
 
+
 async def eapi_login(domain: str, email: str, password: str):
     """Convenience: login via EAPI, return (remix_userid, remix_userkey, client).
 
@@ -114,9 +119,16 @@ async def eapi_login(domain: str, email: str, password: str):
 
 
 async def discover_eapi_domain(eapi_client):
-    """Call get_domains() and return the primary EAPI domain."""
+    """Call get_domains() and return the first *usable* advertised EAPI domain.
+
+    Advertised domains are probed before being returned (ISSUE-API-002:
+    /eapi/info/domains advertises DiamWall-walled domains first, so returning
+    the raw primary entry would steer a working client onto a dead domain).
+    Returns None when nothing advertised passes the probe — callers should
+    keep the domain they already have.
+    """
+    from .eapi import select_advertised_domain
+
     result = await eapi_client.get_domains()
     domains = result.get("domains", [])
-    if domains:
-        return domains[0] if isinstance(domains[0], str) else domains[0].get("domain", "")
-    return None
+    return await select_advertised_domain(domains, eapi_client.domain)

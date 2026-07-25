@@ -101,6 +101,36 @@ skips with the cause and the fix (`git lfs pull`).
 **Resolution**: EAPI migration (Phase 7, Feb 2026). All API calls now use EAPI JSON endpoints which bypass Cloudflare browser challenges. Health check with Cloudflare detection added.
 **ADR**: [ADR-005-EAPI-Migration](docs/adr/ADR-005-EAPI-Migration.md)
 
+### ISSUE-API-002: Default EAPI Domain (z-library.sk) Fronted by DiamWall Anti-Bot [RESOLVED]
+**Severity**: Was High
+**Discovered**: 2026-07-24, first automated run of the credentialed integration suite
+**Impact**: The default EAPI domain `z-library.sk` no longer serves `/eapi/*` to
+programmatic clients. All requests get an HTTP 307 self-redirect from "DiamWall"
+that sets a `__diamwall` cookie, then 513/517 "Access Denied" on retry — including
+with the EAPIClient's browser User-Agent. `1lib.sk` shows the same wall. With the
+old defaults, `initialize_eapi_client()` failed at login and every tool was dead.
+**Evidence** (2026-07-24, unrestricted network):
+- `POST https://z-library.sk/eapi/user/login` → 307 → `Set-Cookie: __diamwall=…` → retry → 517 Access Denied (DiamWall-branded page, cdn.diamwall.com assets)
+- Same request against `z-library.ec` → normal EAPI JSON (`{"success":0,"error":"Incorrect email or password"}` for bad creds; real login succeeds)
+- `/eapi/info/domains` (queried via z-library.ec) still advertises `z-library.sk` FIRST, so Hydra-mode domain discovery in `initialize_eapi_client()` would actively switch a working client back to the walled domain.
+**Related finding**: `/eapi/user/login` rate-limits repeated logins from one IP —
+after ~10 logins in an hour it returns 400 `{"success":0,"error":"Incorrect email
+or password"}` even for valid credentials, recovering after a cooldown. The
+integration suite logs in once per module (shared `zlib_client` fixture) to stay
+under this limit — and the domain probe deliberately uses `GET /eapi/info/domains`,
+never login, for the same reason.
+**Resolution** (2026-07-24, PR #36 "fix: resilient EAPI domain fallback and probing"):
+(1) single default replaced by the probed fallback list
+`DEFAULT_EAPI_DOMAINS = ["z-library.ec", "z-library.sk", "1lib.sk"]` in
+`zlibrary/src/zlibrary/eapi.py`; an explicit `ZLIBRARY_EAPI_DOMAIN` is honoured
+verbatim with no probing and no silent switching; (2) hydra discovery
+(`select_advertised_domain()` / `discover_eapi_domain()`) probes each advertised
+domain and skips walled ones, keeping the current working domain when nothing
+advertised is usable; (3) DiamWall HTML-where-JSON-expected now raises
+`DiamWallError`, classified as `diamwall_blocked` by the health check and reported
+explicitly by `npm run doctor`, with the `export ZLIBRARY_EAPI_DOMAIN=<working-domain>`
+remedy in the message. Covered by `__tests__/python/test_eapi_domain_resilience.py`.
+
 ### ISSUE-002: Venv Manager Test Failures [CLOSED]
 **Severity**: Was High
 **Resolution**: UV migration (Phase 2, Jan 2026) eliminated the entire venv manager complexity. Code reduced 77% (406 to 92 lines), tests reduced 90% (833 to 85 lines). The undefined `.trim()` error and venv creation failures no longer occur.
@@ -144,29 +174,6 @@ skips with the cause and the fix (`git lfs pull`).
 **Impact**: Domain discovery and session management
 **Status**: Handled by vendored zlibrary fork with EAPI client
 **Note**: EAPI endpoints appear more stable than HTML pages for Hydra mode domains.
-
-### ISSUE-API-002: Default EAPI Domain (z-library.sk) Fronted by DiamWall Anti-Bot
-**Severity**: High
-**Discovered**: 2026-07-24, first automated run of the credentialed integration suite
-**Impact**: The default EAPI domain `z-library.sk` no longer serves `/eapi/*` to
-programmatic clients. All requests get an HTTP 307 self-redirect from "DiamWall"
-that sets a `__diamwall` cookie, then 513/517 "Access Denied" on retry — including
-with the EAPIClient's browser User-Agent. `1lib.sk` shows the same wall. With
-defaults, `initialize_eapi_client()` fails at login and every tool is dead.
-**Evidence** (2026-07-24, unrestricted network):
-- `POST https://z-library.sk/eapi/user/login` → 307 → `Set-Cookie: __diamwall=…` → retry → 517 Access Denied (DiamWall-branded page, cdn.diamwall.com assets)
-- Same request against `z-library.ec` → normal EAPI JSON (`{"success":0,"error":"Incorrect email or password"}` for bad creds; real login succeeds)
-- `/eapi/info/domains` (queried via z-library.ec) still advertises `z-library.sk` FIRST, so Hydra-mode domain discovery in `initialize_eapi_client()` would actively switch a working client back to the walled domain.
-**Workaround**: `export ZLIBRARY_EAPI_DOMAIN=z-library.ec` (verified working 2026-07-24).
-**Related finding**: `/eapi/user/login` rate-limits repeated logins from one IP —
-after ~10 logins in an hour it returns 400 `{"success":0,"error":"Incorrect email
-or password"}` even for valid credentials, recovering after a cooldown. The
-integration suite now logs in once per module (shared `zlib_client` fixture)
-instead of per test to stay under this limit.
-**Direction**: (1) Consider changing the default domain or trying a fallback list
-at login; (2) make domain discovery validate a candidate domain with a probe
-request before switching to it; (3) surface a clearer error when DiamWall HTML
-appears where JSON was expected (extend `_classify_health_error`).
 
 ### ISSUE-008: Performance Optimizations Needed
 **Severity**: Low

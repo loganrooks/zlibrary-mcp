@@ -21,7 +21,11 @@ logger = logging.getLogger(__name__)
 zlibrary_path = os.path.join(os.path.dirname(__file__), "..", "zlibrary", "src")
 sys.path.insert(0, zlibrary_path)
 
-from zlibrary.eapi import EAPIClient, normalize_eapi_search_response
+from zlibrary.eapi import (
+    EAPIClient,
+    normalize_eapi_search_response,
+    resolve_eapi_domain,
+)
 
 
 async def fetch_booklist(
@@ -58,7 +62,9 @@ async def fetch_booklist(
     client = eapi_client
     should_close = False
     if client is None:
-        domain = os.environ.get("ZLIBRARY_EAPI_DOMAIN", "z-library.sk")
+        # Honours ZLIBRARY_EAPI_DOMAIN, otherwise probes the fallback
+        # list (ISSUE-API-002).
+        domain = await resolve_eapi_domain()
         client = EAPIClient(domain)
         await client.login(email, password)
         should_close = True

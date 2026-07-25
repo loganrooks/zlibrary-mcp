@@ -317,14 +317,14 @@ The `.claude` folder contains comprehensive documentation for development:
 Check `ISSUES.md` (project root) for the full list, and the health assessment
 linked under "Current Development" for the reasoning behind these:
 
-1. ISSUE-API-002 — the default EAPI domain `z-library.sk` is DiamWall-walled;
-   decide a new default and make hydra discovery resilient (see ISSUES.md)
-2. Phases 20-21 — RAG quality scoring harness + CI reporting — per
+1. Phases 20-21 — RAG quality scoring harness + CI reporting — per
    `claudedocs/architecture/phase-20-21-review-2026-07-24.md`
-3. Promote Z-Library to a `SourceAdapter` so all tools route through `SourceRouter`
+2. Promote Z-Library to a `SourceAdapter` so all tools route through `SourceRouter`
 
 Done and no longer priorities: the v1.3.0 release shipped 2026-07-24 (modulo the
-npm token above), and Windows support (PR #13) shipped in v1.3.0.
+npm token above), Windows support (PR #13) shipped in v1.3.0, and ISSUE-API-002
+(DiamWall-walled default domain) is fixed by the probed EAPI domain fallback list
+with probe-guarded hydra discovery (see ISSUES.md).
 
 Resolved and no longer priorities, despite older docs saying otherwise: ISSUE-002
 (closed by the UV migration), ISSUE-005 (closed by `src/lib/retry-manager.ts` and

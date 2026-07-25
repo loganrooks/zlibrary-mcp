@@ -10,6 +10,8 @@
  */
 
 import { describe, test, expect } from '@jest/globals';
+import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import { pathToFileURL } from 'url';
 import {
@@ -74,6 +76,23 @@ describe('ESM entry-point detection across platforms', () => {
     const windowsArgv = 'C:\\app\\dist\\index.js';
     const windowsUrl = 'file:///C:/app/dist/index.js';
     expect(windowsUrl === `file://${windowsArgv}`).toBe(false);
+  });
+
+  test('detects the entry point through an npm-style bin symlink', () => {
+    // npm installs bins as symlinks into <prefix>/bin: argv[1] is the link,
+    // import.meta.url the real file. This is the global-install/`zlibrary-mcp`
+    // startup path, and a lexical path comparison silently fails it.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'entry-guard-'));
+    try {
+      const real = path.join(dir, 'index.js');
+      fs.writeFileSync(real, '');
+      const link = path.join(dir, 'zlibrary-mcp');
+      fs.symlinkSync(real, link);
+      const url = pathToFileURL(real).href;
+      expect(isProcessEntryPoint(url, link)).toBe(true);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   test('returns false when the module is imported rather than executed', () => {

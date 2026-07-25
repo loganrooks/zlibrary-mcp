@@ -8,11 +8,12 @@ A Model Context Protocol (MCP) server that gives AI assistants -- Claude Code, C
 
 ## Quick Start
 
+**Prerequisites:** Node.js 22+, Python 3.10+, and [UV](https://docs.astral.sh/uv/)
+(`curl -LsSf https://astral.sh/uv/install.sh | sh`)
+
 ```bash
-git clone https://github.com/loganrooks/zlibrary-mcp.git
-cd zlibrary-mcp
-git lfs pull        # hydrates the LFS-tracked test PDFs; don't run `git lfs install` (conflicts with the repo's Husky hooks)
-bash setup-uv.sh && npm install && npm run build
+npm install -g zlibrary-mcp
+cd "$(npm root -g)/zlibrary-mcp" && bash setup-uv.sh   # one-time Python environment setup
 ```
 
 Then add to your MCP client config (Claude Code `.mcp.json`, Claude Desktop `claude_desktop_config.json`):
@@ -21,8 +22,7 @@ Then add to your MCP client config (Claude Code `.mcp.json`, Claude Desktop `cla
 {
   "mcpServers": {
     "zlibrary": {
-      "command": "node",
-      "args": ["/absolute/path/to/zlibrary-mcp/dist/index.js"],
+      "command": "zlibrary-mcp",
       "env": {
         "ZLIBRARY_EMAIL": "your-email@example.com",
         "ZLIBRARY_PASSWORD": "your-password"
@@ -31,6 +31,8 @@ Then add to your MCP client config (Claude Code `.mcp.json`, Claude Desktop `cla
   }
 }
 ```
+
+Developing or contributing? Install [from source](#option-b-from-source-for-development) instead.
 
 ## Architecture Overview
 
@@ -110,30 +112,31 @@ For complete parameter documentation, types, and examples, see [API Reference](d
 
 ## Installation
 
-### Option A: npm
+### Option A: npm (recommended)
 
 **Prerequisites:** Node.js 22+, Python 3.10+, [UV](https://docs.astral.sh/uv/)
-
-> **Check the published version before using this path.** The npm release
-> pipeline was broken from v1.2 through v1.2.1, so the registry may still serve an
-> older build than this repository. Compare
-> [the npm version badge](https://www.npmjs.com/package/zlibrary-mcp) against
-> [the latest release](https://github.com/loganrooks/zlibrary-mcp/releases); if
-> they differ, install from source (Option B).
 
 ```bash
 npm install -g zlibrary-mcp
 ```
 
-Then set up the Python environment:
+Then set up the Python environment inside the installed package (one-time):
 
 ```bash
-cd $(npm root -g)/zlibrary-mcp
+cd "$(npm root -g)/zlibrary-mcp"
 curl -LsSf https://astral.sh/uv/install.sh | sh  # Install UV if needed
 bash setup-uv.sh
 ```
 
-### Option B: From Source (stdio transport, recommended)
+The package ships the complete Python bridge (`lib/`, the vendored `zlibrary/`
+fork, `pyproject.toml`, `uv.lock`), so no clone is needed. Since v1.3.0 the
+release workflow verifies the tag against `package.json` and publishes with
+provenance, so the registry version tracks GitHub releases; if
+`npm view zlibrary-mcp version` ever trails the
+[latest release](https://github.com/loganrooks/zlibrary-mcp/releases), that is a
+release-pipeline bug worth filing.
+
+### Option B: From Source (for development)
 
 **Prerequisites:** Node.js 22+, Python 3.10+, [UV](https://docs.astral.sh/uv/)
 

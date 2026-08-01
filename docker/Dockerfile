@@ -7,7 +7,7 @@
 # Based on PR #9 by @zaggash with fixes applied
 
 # --- Stage 1: Build ---
-FROM node:22-alpine AS builder
+FROM node:25-alpine AS builder
 
 # UV configuration for portable Python installation
 ENV UV_COMPILE_BYTECODE=1 \

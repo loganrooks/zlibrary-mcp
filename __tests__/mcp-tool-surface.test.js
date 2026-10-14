@@ -290,28 +290,10 @@ test('get_download_history dispatches exactly once to the correct operation', ()
   // still has to reach the runner with the history operation, not another one.
   callAdvertised('get_download_history', { books: [] }));
 
-async function settledCall(name) {
-  const [args, , payload] = cases[name];
-  runBridge.mockResolvedValue([
-    JSON.stringify({ content: [{ type: 'text', text: JSON.stringify(payload) }] }),
-  ]);
-  return client.callTool({ name, arguments: args }).then(
-    (result) => ({ result }),
-    (error) => ({ error: { code: error.code, message: error.message } }),
-  );
-}
-
-// https://github.com/rookslog/zlibrary-mcp/issues/171 — invert only this exact
-// defect. A different error or a successful call passes the negated matcher,
-// which makes test.failing itself RED instead of accepting the new regression.
-test.failing('get_recent_books has only the known missing-export defect', async () => {
-  expect(await settledCall('get_recent_books')).not.toEqual({
-    result: {
-      content: [{ type: 'text', text: 'Error: zlibraryApi.getRecentBooks is not a function' }],
-      isError: true,
-    },
-  });
-});
+// https://github.com/rookslog/zlibrary-mcp/issues/171 — repaired here. Keep the
+// ordinary real-facade result check as well as the independent wiring check.
+test('get_recent_books dispatches and returns an SDK-valid result', () =>
+  callAdvertised('get_recent_books'));
 
 // https://github.com/rookslog/zlibrary-mcp/issues/197 — repaired here. Arrays
 // must now round-trip successfully, with ordinary dispatch checked separately.

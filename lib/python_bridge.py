@@ -1342,8 +1342,6 @@ async def download_book(
                     stem = Path(preserved).stem
                     identity = Path(unified_filename).stem.rsplit("_", 1)[-1]
                     identity_suffix = f"_{identity}"
-                    if stem.endswith(identity_suffix):
-                        stem = stem[: -len(identity_suffix)]
                     ending = identity_suffix + Path(unified_filename).suffix
                     stem = stem[: max(1, 200 - len(ending))].rstrip(" .")
                     final_filename = stem + ending

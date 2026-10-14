@@ -218,3 +218,16 @@ async def test_sparse_id_without_declared_extension_keeps_valid_server_extension
     result = await download_book({"id": 7}, str(tmp_path))
     assert Path(result["file_path"]).name == "A real server title_7.epub"
     assert Path(result["file_path"]).exists()
+
+
+async def test_same_server_name_with_existing_id_does_not_move_previous_book(tmp_path):
+    python_bridge._eapi_client = FakeEAPIDownloader("Shared server title_8.pdf")
+    first = await download_book({"id": 8, "extension": "pdf"}, str(tmp_path))
+    first_path = Path(first["file_path"])
+    first_content = first_path.read_bytes()
+    second = await download_book({"id": 9, "extension": "pdf"}, str(tmp_path))
+    assert first_path.is_file()
+    assert first_path.read_bytes() == first_content
+    assert first_path != Path(second["file_path"])
+    assert first_path.name == "Shared server title_8_8.pdf"
+    assert Path(second["file_path"]).name == "Shared server title_8_9.pdf"

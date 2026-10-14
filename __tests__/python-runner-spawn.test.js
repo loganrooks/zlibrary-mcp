@@ -34,7 +34,7 @@ describe('Python bridge spawn and signal failures', () => {
       'const uncaughtBefore = process.listenerCount("uncaughtException");',
       'runPythonBridge("missing.py", { mode: "text", pythonPath: "/nonexistent/python", scriptPath: process.cwd() })',
       '  .then(() => console.log("UNEXPECTED_RESOLVE"))',
-      '  .catch((error) => console.log("SPAWN_REJECTION", JSON.stringify({ name: error.name, code: error.code })));',
+      '  .catch((error) => console.log("SPAWN_REJECTION", JSON.stringify({ name: error.name, code: error.code, errnoCode: error.errnoCode })));',
       'setTimeout(() => console.log("SERVER_SURVIVED", process.listenerCount("uncaughtException") === uncaughtBefore && liveChildCount() === 0), 500);',
     ].join('\n');
 
@@ -42,12 +42,11 @@ describe('Python bridge spawn and signal failures', () => {
 
     expect(result.error).toBeUndefined();
     expect(result.status).toBe(0);
-    expect(result.stdout).toContain('SPAWN_REJECTION {"name":"BridgeSpawnError","code":"ENOENT"}');
+    expect(result.stdout).toContain('SPAWN_REJECTION {"name":"BridgeSpawnError","code":"BRIDGE_SPAWN","errnoCode":"ENOENT"}');
     expect(result.stdout).toContain('SERVER_SURVIVED true');
   });
 
-  test('a signal death reports its signal and releases the process-tree record', () => {
-    if (!PYTHON) return;
+  (PYTHON ? test : test.skip)('a signal death reports its signal and releases the process-tree record', () => {
 
     const scriptDir = fs.mkdtempSync(path.join(os.tmpdir(), 'zlib-bridge-signal-'));
     try {
@@ -122,8 +121,8 @@ describe('spawn errors and circuit-breaker counting', () => {
     const { searchByTerm, BridgeSpawnError } = await loadApi();
     mockRunPythonBridge.mockRejectedValue(new BridgeSpawnError('python was not found', 'ENOENT'));
 
-    await expect(searchByTerm({ term: 'book' })).rejects.toMatchObject({ code: 'ENOENT' });
-    await expect(searchByTerm({ term: 'book' })).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(searchByTerm({ term: 'book' })).rejects.toMatchObject({ code: 'BRIDGE_SPAWN', errnoCode: 'ENOENT' });
+    await expect(searchByTerm({ term: 'book' })).rejects.toMatchObject({ code: 'BRIDGE_SPAWN', errnoCode: 'ENOENT' });
 
     expect(mockRunPythonBridge).toHaveBeenCalledTimes(2);
   });
@@ -132,9 +131,29 @@ describe('spawn errors and circuit-breaker counting', () => {
     const { searchByTerm, BridgeSpawnError } = await loadApi();
     mockRunPythonBridge.mockRejectedValue(new BridgeSpawnError('process limit reached', 'EAGAIN'));
 
-    await expect(searchByTerm({ term: 'book' })).rejects.toMatchObject({ code: 'EAGAIN' });
+    await expect(searchByTerm({ term: 'book' })).rejects.toMatchObject({ code: 'BRIDGE_SPAWN', errnoCode: 'EAGAIN' });
     await expect(searchByTerm({ term: 'book' })).rejects.toThrow('Circuit breaker is OPEN');
 
     expect(mockRunPythonBridge).toHaveBeenCalledTimes(1);
+  });
+});
+
+
+describe('bridge failure retry policy', () => {
+  test.each(['ENOENT', 'EAGAIN', 'ECONNREFUSED', 'ETIMEDOUT'])(
+    'spawn errno %s keeps the explicit retry verdict with a domain code', async (errnoCode) => {
+      const { BridgeSpawnError } = await import('../lib/errors.js');
+      const { isRetryableError } = await import('../lib/retry-manager.js');
+      const error = new BridgeSpawnError('could not start', errnoCode);
+      expect(error).toMatchObject({ code: 'BRIDGE_SPAWN', errnoCode });
+      expect(error.toJSON().context.errnoCode).toBe(errnoCode);
+      expect(isRetryableError(error)).toBe(errnoCode !== 'ENOENT');
+    },
+  );
+
+  test('an OS signal death is not retried, including SIGKILL/OOM', async () => {
+    const { BridgeKilledError } = await import('../lib/errors.js');
+    const { isRetryableError } = await import('../lib/retry-manager.js');
+    expect(isRetryableError(new BridgeKilledError('killed by OS', 'SIGKILL'))).toBe(false);
   });
 });

@@ -39,7 +39,7 @@ const pythonBridgeCircuitBreaker = new CircuitBreaker({
   // turning a user's own impatience into an outage.
   isFailure: (error) =>
     error?.context?.reason !== 'aborted' &&
-    !(error instanceof BridgeSpawnError && error.code === 'ENOENT') &&
+    !(error instanceof BridgeSpawnError && error.errnoCode === 'ENOENT') &&
     !isPermanentBridgeDetail(error?.context?.details),
 });
 

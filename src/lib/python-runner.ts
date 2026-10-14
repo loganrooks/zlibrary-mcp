@@ -430,7 +430,10 @@ export function runPythonBridge(
     const pid = shell.childProcess?.pid;
     if (!pid) {
       // A failed spawn has no pid; PythonShell forwards its ChildProcess error
-      // asynchronously through the listener registered above.
+      // asynchronously through the listener registered above. The missing-
+      // interpreter subprocess regression exercises this no-pid branch: it
+      // must reject and leave zero live tree records without a timeout/abort
+      // handler, because Node emits an error when spawn cannot create a child.
       return;
     }
     const treeRecord: ProcessTreeRecord = { shell, pid, label };

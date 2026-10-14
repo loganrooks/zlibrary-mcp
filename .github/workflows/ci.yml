@@ -222,7 +222,8 @@ jobs:
           head -1 stdout.txt | jq -e '.jsonrpc == "2.0" and .id == 1 and .result.protocolVersion != null and .result.serverInfo.name == "zlibrary-mcp" and .result.capabilities.tools != null'
 
   docker:
-    if: github.event_name == 'push'
+    # Exercise the published image on PRs so Python/wheel drift is caught (#230).
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7

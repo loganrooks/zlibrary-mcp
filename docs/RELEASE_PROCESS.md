@@ -123,6 +123,23 @@ Every rule above is one of those failures, inverted.
    **and creates the GitHub Release** from the CHANGELOG section.
 7. Close the milestone. Close the map issue with its outcome recorded in the body.
 
+### Publish ordering
+
+On a `v*` tag, `validate-release-notes` must succeed before `publish-npm`
+runs setup, build, and the existing Jest and pytest suites. npm publication
+follows those tests in the same job. `publish-docker` then requires successful
+`publish-npm` completion as well as validated notes, so GHCR publication waits
+for both tests and npm publication. A failed or skipped test gate blocks both
+publishers (#211).
+
+`github-release` still depends on validated notes and successful npm publication;
+it can run alongside Docker and does not wait for a GHCR push.
+`__tests__/publish-workflow.test.js` parses the workflow and checks its dependency
+graph in the normal Jest CI suite, including failed, skipped, cancelled, and
+missing test-gate outcomes and the original Docker-bypass mutation. These are
+offline configuration checks, not an execution of GitHub's scheduler or a real
+registry publish; those remain untested until the release.
+
 ## Opening the next release
 
 1. Create the milestone `vX.Y — <destination in one clause>`.

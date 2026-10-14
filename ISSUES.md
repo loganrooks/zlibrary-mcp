@@ -189,8 +189,8 @@ old defaults, `initialize_eapi_client()` failed at login and every tool was dead
 after ~10 logins in an hour it returns 400 `{"success":0,"error":"Incorrect email
 or password"}` even for valid credentials, recovering after a cooldown. The
 integration suite logs in once per module (shared `zlib_client` fixture) to stay
-under this limit — and the domain probe deliberately uses `GET /eapi/info/domains`,
-never login, for the same reason.
+under this limit. The domain probe uses an unauthenticated one-row
+`POST /eapi/book/search`, never login, for the same reason.
 **Resolution** (2026-07-24, PR #36 "fix: resilient EAPI domain fallback and probing"):
 (1) single default replaced by the probed fallback list
 `DEFAULT_EAPI_DOMAINS = ["z-library.ec", "z-library.sk", "1lib.sk"]` in
@@ -208,6 +208,15 @@ runners get a bare HTTP 403 from **every** Z-Library domain including
 The upstream check therefore classifies walls/403s as `BLOCK` (environmental,
 no drift issue filed, live suite skipped) rather than `FAIL`; only a probe from
 a residential network can distinguish IP blocking from a global outage.
+**Probe correction (#125, 2026-10-14)**: the operator observed
+`GET /eapi/info/domains` returning 200 on `z-library.sk` while searches returned
+307 then 513 ([evidence](https://github.com/rookslog/zlibrary-mcp/issues/125#issuecomment-6175979418)).
+The probe now exercises the guarded search endpoint with a one-row query and no
+credentials or redirects. Non-200 responses, DiamWall pages and non-search JSON
+fail the probe, so advertised walled domains are skipped before switching.
+Mocked transport tests cover the open-listing/blocked-search mismatch, retaining
+the working domain and selecting a healthy alternative. Explicit domain pinning
+is unchanged; live provider behavior remains unchecked by these offline tests.
 
 ### ISSUE-002: Venv Manager Test Failures [CLOSED]
 **Severity**: Was High

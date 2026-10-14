@@ -293,7 +293,7 @@ async def initialize_eapi_client() -> EAPIClient:
     # ISSUE-API-002: the old single default (z-library.sk) is fronted by the
     # DiamWall anti-bot wall. resolve_eapi_domain() honours an explicit
     # ZLIBRARY_EAPI_DOMAIN override without probing; otherwise it probes the
-    # fallback list (GET /eapi/info/domains — never login, which is
+    # fallback list (one-row POST /eapi/book/search — never login, which is
     # rate-limited) and logs in on the first healthy candidate.
     domain_pinned = bool(os.environ.get("ZLIBRARY_EAPI_DOMAIN", "").strip())
     initial_domain = await resolve_eapi_domain()

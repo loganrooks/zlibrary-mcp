@@ -3,6 +3,7 @@
 import hashlib
 import os
 import stat
+import subprocess
 import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor
@@ -101,7 +102,9 @@ async def test_book_details_keep_existing_filename_shape(tmp_path, monkeypatch):
 
 
 @pytest.mark.integration
-def test_real_pdf_output_files_use_sibling_atomic_replacements(tmp_path, monkeypatch):
+def test_real_pdf_output_files_use_sibling_atomic_replacements(
+    tmp_path, monkeypatch, lfs_fixture
+):
     pdf_candidates = (
         PROJECT_ROOT / "test_files" / "heidegger_pages_22-23_primary_footnote_test.pdf",
         PROJECT_ROOT / "test_files" / "derrida_footnote_pages_120_125.pdf",
@@ -109,6 +112,7 @@ def test_real_pdf_output_files_use_sibling_atomic_replacements(tmp_path, monkeyp
     pdf = next((path for path in pdf_candidates if path.exists()), None)
     if pdf is None:
         pytest.skip("No real PDF fixture available")
+    lfs_fixture(pdf)  # require_real_fixture: missing/LFS pointer fixtures skip.
     document = process_pdf_structured(pdf, output_format="markdown")
     replacements = []
     original_replace = os.replace
@@ -195,3 +199,65 @@ def test_concurrent_atomic_writes_leave_one_complete_last_write(tmp_path):
 
     assert destination.read_text(encoding="utf-8") in contents
     assert sorted(path.name for path in tmp_path.iterdir()) == [destination.name]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Directory fsync is POSIX-only")
+def test_atomic_write_syncs_file_and_directory_around_replacement(
+    tmp_path, monkeypatch
+):
+    events = []
+    original_fsync = os.fsync
+    original_replace = os.replace
+
+    def record_fsync(fd):
+        events.append("directory" if stat.S_ISDIR(os.fstat(fd).st_mode) else "file")
+        original_fsync(fd)
+
+    def record_replace(source, target):
+        events.append("replace")
+        original_replace(source, target)
+
+    monkeypatch.setattr(os, "fsync", record_fsync)
+    monkeypatch.setattr(os, "replace", record_replace)
+    destination = tmp_path / "durable.txt"
+    atomic_write_text(destination, "complete")
+    assert destination.read_text(encoding="utf-8") == "complete"
+    assert events == ["file", "directory", "replace", "directory"]
+
+
+def test_file_sync_failure_keeps_previous_output_and_cleans_temp(tmp_path, monkeypatch):
+    destination = tmp_path / "book.txt"
+    destination.write_text("old", encoding="utf-8")
+
+    def fail_sync(_fd):
+        raise OSError("simulated sync failure")
+
+    monkeypatch.setattr(os, "fsync", fail_sync)
+    with pytest.raises(OSError, match="simulated sync failure"):
+        atomic_write_text(destination, "new")
+    assert destination.read_text(encoding="utf-8") == "old"
+    assert list(tmp_path.glob(".rag-output-*.tmp")) == []
+
+
+def test_interrupted_writer_leaves_only_documented_sweepable_temporary(tmp_path):
+    destination = tmp_path / "book.txt"
+    destination.write_text("old", encoding="utf-8")
+    script = (
+        "import os\nfrom lib.rag.utils.atomic_write import atomic_write\n"
+        "from pathlib import Path\n"
+        "def interrupted(path):\n"
+        "    path.write_text('partial', encoding='utf-8')\n"
+        "    os._exit(23)\n"
+        f"atomic_write(Path({str(destination)!r}), interrupted)\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", script], cwd=PROJECT_ROOT, timeout=10
+    )
+    assert result.returncode == 23
+    assert destination.read_text(encoding="utf-8") == "old"
+    leftovers = list(tmp_path.glob(".rag-output-*.tmp"))
+    assert len(leftovers) == 1
+    # The writer has exited: an operator can now sweep the documented glob.
+    for leftover in leftovers:
+        leftover.unlink()
+    assert list(tmp_path.iterdir()) == [destination]

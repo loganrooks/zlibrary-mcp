@@ -1205,7 +1205,7 @@ class TestRealWorldInlineFootnotes:
         if not gt_path.exists():
             pytest.skip(f"Derrida ground truth not found: {gt_path}")
 
-        with open(gt_path, "r") as f:
+        with open(gt_path, "r", encoding="utf-8") as f:
             ground_truth = json.load(f)
 
         # Process PDF

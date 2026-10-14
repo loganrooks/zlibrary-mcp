@@ -643,6 +643,17 @@ function wrapResult(result: any, toolName: string) {
       isError: true as const,
     };
   }
+  if (result === null || typeof result !== 'object') {
+    return {
+      content: [
+        {
+          type: 'text' as const,
+          text: `Error from tool "${toolName}": Invalid backend result: expected an object or array.`,
+        },
+      ],
+      isError: true as const,
+    };
+  }
   // MCP requires structuredContent to be a record; a bare array (get_download_history
   // returns one) is rejected by clients with invalid_type: "expected record,
   // received array" before the caller ever sees the data. Keep the JSON text

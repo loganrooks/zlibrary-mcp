@@ -96,9 +96,40 @@ for (const name of Object.keys(cases)) {
     // https://github.com/rookslog/zlibrary-mcp/issues/171 — missing API export.
     test.failing(`${name} dispatches and returns an SDK-valid result`, () => callAdvertised(name));
   } else if (name === 'get_download_history') {
-    // https://github.com/rookslog/zlibrary-mcp/issues/197 — array structuredContent.
-    test.failing(`${name} dispatches and returns an SDK-valid result`, () => callAdvertised(name));
+    // https://github.com/rookslog/zlibrary-mcp/issues/197 — array result wrapped in a record.
+    test(`${name} dispatches and returns an SDK-valid result`, () => callAdvertised(name));
   } else {
     test(`${name} dispatches and returns an SDK-valid result`, () => callAdvertised(name));
   }
 }
+
+// Mutation caught: publishing scalar/null/array structuredContent causes an
+// SDK -32602 rejection before the client can see a valid tool response.
+for (const payload of [[], null, false, 0, '', 'backend string']) {
+  test(`history round-trip is schema-valid for ${JSON.stringify(payload)}`, async () => {
+    runBridge.mockResolvedValueOnce([JSON.stringify({
+      content: [{ type: 'text', text: JSON.stringify(payload) }],
+    })]);
+    const result = await client.callTool({ name: 'get_download_history', arguments: { count: 1 } });
+    expect(CallToolResultSchema.safeParse(result).success).toBe(true);
+    if (Array.isArray(payload)) {
+      expect(result.isError).not.toBe(true);
+      expect(result.content).toEqual([{ type: 'text', text: JSON.stringify(payload) }]);
+      expect(result.structuredContent).toEqual({ items: payload });
+    } else {
+      expect(result.isError).toBe(true);
+      expect(result.content[0].type).toBe('text');
+    }
+  });
+}
+
+test('object result wire bytes match the pre-fix baseline', async () => {
+  const payload = { books: [{ id: '1', title: 'Offline' }], nextPage: null };
+  runBridge.mockResolvedValueOnce([JSON.stringify({
+    content: [{ type: 'text', text: JSON.stringify(payload) }],
+  })]);
+  const result = await client.callTool({ name: 'get_download_history', arguments: {} });
+  // Literal captured/checked on the #196 base; no implementation helper
+  // computes the expectation. This same assertion must pass before and after.
+  expect(JSON.stringify(result)).toBe('{"content":[{"type":"text","text":"{\\"books\\":[{\\"id\\":\\"1\\",\\"title\\":\\"Offline\\"}],\\"nextPage\\":null}"}],"structuredContent":{"books":[{"id":"1","title":"Offline"}],"nextPage":null}}');
+});

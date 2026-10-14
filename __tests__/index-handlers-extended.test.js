@@ -429,6 +429,25 @@ describe('Tool Handlers - Extended Coverage', () => {
     });
   });
 
+  describe('non-record backend results', () => {
+    test.each([null, false, 0, '', 'backend string', undefined])(
+      'returns a tool error rather than invalid structuredContent for %p',
+      async (payload) => {
+        const { start, registeredTools } = await setupWithMocks({
+          searchMultiSource: jest.fn().mockResolvedValue(payload),
+        });
+        await start({ testing: true });
+        const response = await registeredTools.get('search_multi_source')({ query: 'offline' }, {});
+        expect(response.isError).toBe(true);
+        expect(response.content).toEqual([{
+          type: 'text',
+          text: 'Error from tool "search_multi_source": Invalid backend result: expected an object or array.',
+        }]);
+        expect(response.structuredContent).toBeUndefined();
+      },
+    );
+  });
+
   describe('toolRegistry entries for newer tools', () => {
     test('search_by_term registry entry should have description, schema, and handler', async () => {
       const { toolRegistry } = await setupWithMocks();

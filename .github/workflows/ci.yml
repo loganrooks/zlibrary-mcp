@@ -110,9 +110,13 @@ jobs:
           --ignore-vuln CVE-2026-3029
           --ignore-vuln PYSEC-2026-3001
           --ignore-vuln PYSEC-2026-597
+          --ignore-vuln PYSEC-2026-3740
         # CVE-2026-3029   pymupdf - fix requires 1.26.7, blocked by the pin in pyproject.toml
         # PYSEC-2026-3001 pymupdf - same pin, same fix version; tracked in #148
         # PYSEC-2026-597  nltk    - no fix published as of 2026-07
+        # PYSEC-2026-3740 nltk    - no patched release; GHSA-8mgp-746c-j5xp lists none, PyPI latest is 3.10.3 (2026-10-14)
+        # Runtime uses only nltk.tokenize.sent_tokenize, not the affected model-artifact APIs;
+        # NLTK is optional (rag/scholar extras). Review this ignore when NLTK ships a fix.
 
   lint:
     runs-on: ubuntu-latest

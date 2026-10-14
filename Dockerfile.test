@@ -30,7 +30,7 @@ RUN npm run build
 
 # Copy test files
 COPY __tests__/e2e/ ./__tests__/e2e/
-COPY jest.config.js jest.integration.config.js jest.teardown.js ./
+COPY jest.config.js jest.integration.config.js ./
 
 # Run E2E tests
 CMD ["node", "--experimental-vm-modules", "node_modules/jest/bin/jest.js", "--config", "jest.integration.config.js", "--testPathPatterns", "e2e", "--forceExit"]

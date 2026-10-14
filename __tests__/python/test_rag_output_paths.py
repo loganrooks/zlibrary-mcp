@@ -19,7 +19,8 @@ import lib.rag.orchestrator as rag_orchestrator
 from filename_utils import create_unified_filename
 from lib.rag.pipeline.models import DocumentOutput
 from lib.rag.orchestrator_pdf import process_pdf_structured
-from lib.rag.utils.atomic_write import atomic_write_text
+from lib.rag.utils.atomic_write import atomic_write, atomic_write_text
+from lib.rag.utils.exceptions import FileSaveError
 
 
 @pytest.mark.asyncio
@@ -166,7 +167,7 @@ def test_footnote_replace_failure_preserves_old_file_and_cleans_temp(
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX permission modes are unavailable")
-def test_atomic_writes_preserve_existing_mode_and_use_default_creation_mode(tmp_path):
+def test_atomic_writes_preserve_existing_mode_and_keep_new_files_private(tmp_path):
     regular_path = tmp_path / "regular.txt"
     regular_path.write_text("regular", encoding="utf-8")
 
@@ -179,9 +180,7 @@ def test_atomic_writes_preserve_existing_mode_and_use_default_creation_mode(tmp_
     atomic_write_text(new_path, "new")
 
     assert stat.S_IMODE(existing_path.stat().st_mode) == 0o640
-    assert stat.S_IMODE(new_path.stat().st_mode) == stat.S_IMODE(
-        regular_path.stat().st_mode
-    )
+    assert stat.S_IMODE(new_path.stat().st_mode) == 0o600
 
 
 def test_concurrent_atomic_writes_leave_one_complete_last_write(tmp_path):
@@ -315,3 +314,71 @@ def test_file_sync_uses_writable_descriptor_before_preserving_mode(
     assert len(writable_file_syncs) == 1
     if os.name == "posix":
         assert stat.S_IMODE(destination.stat().st_mode) == destination_mode
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX permission bits")
+def test_staging_is_private_before_and_during_callback(tmp_path):
+    destination = tmp_path / "restricted.txt"
+    destination.write_text("old", encoding="utf-8")
+    destination.chmod(0o640)
+
+    def write(path):
+        assert stat.S_IMODE(path.stat().st_mode) == 0o600
+        path.write_text("private document", encoding="utf-8")
+        assert stat.S_IMODE(path.stat().st_mode) == 0o600
+
+    previous_umask = os.umask(0o022)
+    try:
+        atomic_write(destination, write)
+    finally:
+        os.umask(previous_umask)
+    assert destination.read_text(encoding="utf-8") == "private document"
+    assert stat.S_IMODE(destination.stat().st_mode) == 0o640
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("output_format", ["../../escaped", "txt/../../escaped", "TXT", ""])
+async def test_output_format_rejected_before_any_output_write(
+    tmp_path, monkeypatch, output_format
+):
+    output_dir = tmp_path / "processed"
+    monkeypatch.setattr(rag_orchestrator, "PROCESSED_OUTPUT_DIR", output_dir)
+    with pytest.raises(FileSaveError, match="Unsupported output format"):
+        await rag_orchestrator.save_processed_text(
+            tmp_path / "source.txt", "content", output_format=output_format
+        )
+    assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.asyncio
+async def test_resolved_output_symlink_cannot_escape_output_directory(tmp_path, monkeypatch):
+    output_dir = tmp_path / "processed"
+    output_dir.mkdir()
+    outside = tmp_path / "outside.txt"
+    outside.write_text("untouched", encoding="utf-8")
+    source = tmp_path / "source.txt"
+    digest = hashlib.sha256(str(source.resolve()).encode("utf-8")).hexdigest()[:8]
+    (output_dir / f"source-{digest}.txt.processed.txt").symlink_to(outside)
+    monkeypatch.setattr(rag_orchestrator, "PROCESSED_OUTPUT_DIR", output_dir)
+    with pytest.raises(FileSaveError, match="outside the output directory"):
+        await rag_orchestrator.save_processed_text(source, "replacement")
+    assert outside.read_text(encoding="utf-8") == "untouched"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stem_length", [229, 237])
+@pytest.mark.parametrize("output_format", ["txt", "markdown"])
+async def test_long_source_names_reserve_digest_and_sidecar_space(
+    tmp_path, monkeypatch, stem_length, output_format
+):
+    source = tmp_path / ("a" * stem_length + ".txt")
+    source.write_text("source content", encoding="utf-8")
+    output_dir = tmp_path / "processed"
+    monkeypatch.setattr(rag_orchestrator, "PROCESSED_OUTPUT_DIR", output_dir)
+    result = await rag_orchestrator.process_document(str(source), output_format)
+    digest = hashlib.sha256(str(source.resolve()).encode("utf-8")).hexdigest()[:8]
+    path = Path(result["processed_file_path"])
+    assert path.name.endswith(f"-{digest}.txt.processed.{output_format}")
+    assert len(os.fsencode(path.name)) <= 200
+    assert "source content" in path.read_text(encoding="utf-8")
+    assert Path(result["metadata_file_path"]).is_file()

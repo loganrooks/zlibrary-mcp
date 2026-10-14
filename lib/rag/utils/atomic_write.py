@@ -21,8 +21,10 @@ def _create_temporary_path(destination: Path) -> Path:
             f".rag-output-{secrets.token_hex(16)}.tmp"
         )
         try:
-            with temporary_path.open("x", encoding="utf-8"):
-                pass
+            # The writer may be interrupted after any byte. Keep the staging
+            # inode private from creation, independent of the process umask.
+            fd = os.open(temporary_path, os.O_CREAT | os.O_EXCL | os.O_RDWR, 0o600)
+            os.close(fd)
         except FileExistsError:
             continue
         return temporary_path
@@ -31,7 +33,7 @@ def _create_temporary_path(destination: Path) -> Path:
 
 
 def atomic_write(path: Path, write_temporary: Callable[[Path], None]) -> Path:
-    """Write a sibling temporary file, then atomically replace ``path``."""
+    """Replace ``path`` atomically, preserving its mode; new files are private."""
     destination = Path(path)
     destination.parent.mkdir(parents=True, exist_ok=True)
     temporary_path: Path | None = None

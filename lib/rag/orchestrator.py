@@ -134,6 +134,8 @@ async def process_document(
     Processes a document (PDF, EPUB, TXT) based on its extension,
     extracts text, applies preprocessing, saves it, and returns the path.
     """
+    if output_format not in {"txt", "markdown"}:
+        raise ValueError(f"Unsupported output format: {output_format!r}")
     if book_details is None:  # Ensure book_details is a dict for _slugify
         book_details = {}
 
@@ -266,6 +268,8 @@ async def save_processed_text(
         original_path = Path(original_file_path)
         original_filename = original_path.stem
         original_extension = original_path.suffix.lower()
+        if output_format not in {"txt", "markdown"}:
+            raise ValueError(f"Unsupported output format: {output_format!r}")
 
         # --- Generate Filename using unified format ---
         if book_details:
@@ -289,14 +293,21 @@ async def save_processed_text(
             source_digest = hashlib.sha256(
                 str(original_path.resolve()).encode("utf-8")
             ).hexdigest()[:8]
+            # Leave room for the digest and every body/sidecar suffix. The
+            # fallback slug is ASCII, so this also bounds filesystem bytes.
+            ending = f"-{source_digest}{original_extension}.processed.{output_format}"
+            base_name = base_name[: max(1, 200 - len(ending))].rstrip("-")
             base_name = f"{base_name}-{source_digest}"
             processed_filename = (
                 f"{base_name}{original_extension}.processed.{output_format}"
             )
 
         # --- Ensure Output Directory Exists ---
-        PROCESSED_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-        output_path = (PROCESSED_OUTPUT_DIR / processed_filename).resolve()
+        output_directory = PROCESSED_OUTPUT_DIR.resolve()
+        output_path = (output_directory / processed_filename).resolve()
+        if not output_path.is_relative_to(output_directory):
+            raise ValueError("Resolved artifact is outside the output directory")
+        output_directory.mkdir(parents=True, exist_ok=True)
 
         # --- Write Content Asynchronously (NO YAML frontmatter) ---
         # Main markdown should be CLEAN for RAG (only content + page markers)

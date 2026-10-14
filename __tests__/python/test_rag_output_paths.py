@@ -382,3 +382,34 @@ async def test_long_source_names_reserve_digest_and_sidecar_space(
     assert len(os.fsencode(path.name)) <= 200
     assert "source content" in path.read_text(encoding="utf-8")
     assert Path(result["metadata_file_path"]).is_file()
+
+
+@pytest.mark.asyncio
+async def test_advertised_text_alias_uses_plain_text_for_both_entry_points(tmp_path, monkeypatch):
+    output_dir = tmp_path / "processed"
+    monkeypatch.setattr(rag_orchestrator, "PROCESSED_OUTPUT_DIR", output_dir)
+    source = tmp_path / "source.txt"
+    source.write_text("plain text content", encoding="utf-8")
+    result = await rag_orchestrator.process_document(str(source), output_format="text")
+    path = Path(result["processed_file_path"])
+    assert path.name.endswith(".processed.txt")
+    assert "plain text content" in path.read_text(encoding="utf-8")
+    saved = await rag_orchestrator.save_processed_text(source, "direct text", output_format="text")
+    assert saved == str(path)
+    assert path.read_text(encoding="utf-8") == "direct text"
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX undecodable filename bytes")
+@pytest.mark.asyncio
+async def test_undecodable_source_filename_hashes_filesystem_bytes(tmp_path, monkeypatch):
+    output_dir = tmp_path / "processed"
+    monkeypatch.setattr(rag_orchestrator, "PROCESSED_OUTPUT_DIR", output_dir)
+    source = Path(os.fsdecode(os.fsencode(tmp_path) + b"/bad-\xff.txt"))
+    source.write_text("source content", encoding="utf-8")
+    result = await rag_orchestrator.process_document(str(source))
+    path = Path(result["processed_file_path"])
+    digest = hashlib.sha256(os.fsencode(source.resolve())).hexdigest()[:8]
+    assert path.name == f"bad-{digest}.txt.processed.txt"
+    assert "source content" in path.read_text(encoding="utf-8")
+    repeated = await rag_orchestrator.process_document(str(source))
+    assert repeated["processed_file_path"] == str(path)

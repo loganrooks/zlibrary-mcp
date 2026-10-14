@@ -134,6 +134,8 @@ async def process_document(
     Processes a document (PDF, EPUB, TXT) based on its extension,
     extracts text, applies preprocessing, saves it, and returns the path.
     """
+    if output_format == "text":
+        output_format = "txt"
     if output_format not in {"txt", "markdown"}:
         raise ValueError(f"Unsupported output format: {output_format!r}")
     if book_details is None:  # Ensure book_details is a dict for _slugify
@@ -268,6 +270,8 @@ async def save_processed_text(
         original_path = Path(original_file_path)
         original_filename = original_path.stem
         original_extension = original_path.suffix.lower()
+        if output_format == "text":
+            output_format = "txt"
         if output_format not in {"txt", "markdown"}:
             raise ValueError(f"Unsupported output format: {output_format!r}")
 
@@ -291,7 +295,7 @@ async def save_processed_text(
             ):
                 base_name = "doc"
             source_digest = hashlib.sha256(
-                str(original_path.resolve()).encode("utf-8")
+                os.fsencode(original_path.resolve())
             ).hexdigest()[:8]
             # Leave room for the digest and every body/sidecar suffix. The
             # fallback slug is ASCII, so this also bounds filesystem bytes.

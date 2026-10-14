@@ -514,11 +514,8 @@ export async function downloadBookToFile({
     // Error with details hidden under cause made every direct consumer invent
     // its own traversal rule and dropped structuredContent at the handler.
     if (error instanceof ZLibraryError) {
-      throw new PythonBridgeError(
-        `Failed to download book: ${error.message || 'Unknown error'}`,
-        error.context,
-        error.retryable,
-      );
+      error.message = `Failed to download book: ${error.message || 'Unknown error'}`;
+      throw error;
     }
     throw new Error(
       `Failed to download book: ${error.message || 'Unknown error'}`,

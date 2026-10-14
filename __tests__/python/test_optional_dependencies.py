@@ -69,9 +69,9 @@ def test_import_checker_reports_module_scope_heavy_imports(tmp_path):
     lib_dir = tmp_path / "lib"
     lib_dir.mkdir()
     (lib_dir / "guarded.py").write_text(
-        "try:\n    import fitz\nexcept ImportError:\n    fitz = None\n"
+        "try:\n    import fitz\nexcept ImportError:\n    fitz = None\n", encoding="utf-8"
     )
-    (lib_dir / "unguarded.py").write_text("from PIL import Image\n")
+    (lib_dir / "unguarded.py").write_text("from PIL import Image\n", encoding="utf-8")
 
     result = subprocess.run(
         [sys.executable, str(CHECKER), "--root", str(lib_dir)],

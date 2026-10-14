@@ -1563,7 +1563,7 @@ class SignalResponse:
 
     async def aiter_bytes(self):
         yield b'partial'
-        ready.write_text('ready')
+        ready.write_text('ready', encoding='utf-8')
         await asyncio.sleep(600)
 
 class SignalStream:
@@ -2259,7 +2259,7 @@ asyncio.run(python_bridge.main())
 
         mock_eapi_download.download_file.return_value = original_path
         Path(output_dir_mock).mkdir(parents=True)
-        Path(original_path).write_text("EAPI text fixture")
+        Path(original_path).write_text("EAPI text fixture", encoding="utf-8")
         mocker.patch(
             "python_bridge.create_unified_filename", return_value=expected_filename
         )

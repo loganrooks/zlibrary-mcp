@@ -173,7 +173,7 @@ def test_load_manifest_invalid_json():
     """
     # Create a temporary invalid JSON file
     invalid_json_path = "scripts/invalid_manifest.json"
-    with open(invalid_json_path, "w") as f:
+    with open(invalid_json_path, "w", encoding="utf-8") as f:
         f.write("{invalid json content")
 
     with pytest.raises(json.JSONDecodeError):

@@ -10,10 +10,9 @@ Two audiences:
   rotate domains without notice, so "the server is broken" and "the upstream
   moved" look identical from a client.
 
-Basic reachability checks need no credentials. When ZLIBRARY_EMAIL and
-ZLIBRARY_PASSWORD are present, a read-only recent-books check also validates
-that authenticated route; it is explicitly skipped otherwise. Broader live
-coverage lives in the `integration`-marked pytest suite.
+No credentials are required: the probe checks reachability and response shape,
+not authenticated behaviour. Authenticated coverage lives in the
+`integration`-marked pytest suite.
 """
 
 from __future__ import annotations
@@ -149,7 +148,7 @@ def _block_detail(resp: httpx.Response) -> Optional[str]:
 
 
 async def probe_zlibrary_eapi(client: httpx.AsyncClient) -> list[ProbeResult]:
-    """Check discovery/search and, when configured, authenticated recent books."""
+    """Check the EAPI domain-discovery endpoint and the search endpoint's shape."""
     results: list[ProbeResult] = []
     base = f"https://{ZLIB_DOMAIN}"
 
@@ -208,23 +207,23 @@ async def probe_zlibrary_eapi(client: httpx.AsyncClient) -> list[ProbeResult]:
                     blocked=True,
                 )
             )
-        else:
-            resp.raise_for_status()
-            payload = resp.json()
-            has_shape = isinstance(payload, dict) and (
-                "books" in payload or "success" in payload
+            return results
+        resp.raise_for_status()
+        payload = resp.json()
+        has_shape = isinstance(payload, dict) and (
+            "books" in payload or "success" in payload
+        )
+        results.append(
+            ProbeResult(
+                name="zlibrary:eapi/book/search",
+                ok=has_shape,
+                detail=(
+                    f"JSON response with keys: {sorted(payload)[:6]}"
+                    if has_shape
+                    else f"unexpected response shape: {str(payload)[:200]}"
+                ),
             )
-            results.append(
-                ProbeResult(
-                    name="zlibrary:eapi/book/search",
-                    ok=has_shape,
-                    detail=(
-                        f"JSON response with keys: {sorted(payload)[:6]}"
-                        if has_shape
-                        else f"unexpected response shape: {str(payload)[:200]}"
-                    ),
-                )
-            )
+        )
     except Exception as exc:  # noqa: BLE001
         results.append(
             ProbeResult(
@@ -234,91 +233,7 @@ async def probe_zlibrary_eapi(client: httpx.AsyncClient) -> list[ProbeResult]:
             )
         )
 
-    results.append(
-        await probe_zlibrary_recent(client, blocked=any(r.blocked for r in results))
-    )
     return results
-
-
-async def probe_zlibrary_recent(
-    client: httpx.AsyncClient, *, blocked: bool = False
-) -> ProbeResult:
-    """Read the distinct recent-books route without spending download quota.
-
-    One login is made only when credentials are configured and the preceding
-    reachability checks found no wall. Cookies stay on the individual request;
-    the shared client's cookie jar is not populated with the JSON login secrets.
-    No session persistence or account-selection policy is introduced here.
-    """
-    name = "zlibrary:eapi/book/recently"
-    email = os.environ.get("ZLIBRARY_EMAIL")
-    password = os.environ.get("ZLIBRARY_PASSWORD")
-    if not email or not password:
-        return ProbeResult(
-            name, False, "Skipped: Z-Library credentials not configured", required=False
-        )
-    if blocked:
-        return ProbeResult(
-            name, False, "Skipped: preceding Z-Library probe was blocked", blocked=True
-        )
-
-    base = f"https://{ZLIB_DOMAIN}"
-    try:
-        login = await client.post(
-            f"{base}/eapi/user/login", data={"email": email, "password": password}
-        )
-        walled = _block_detail(login)
-        if walled:
-            return ProbeResult(name, False, walled, blocked=True)
-        login.raise_for_status()
-        auth = login.json()
-        user = auth.get("user") if isinstance(auth, dict) else None
-        if (
-            not isinstance(auth, dict)
-            or auth.get("success") != 1
-            or not isinstance(user, dict)
-            or not user.get("id")
-            or not user.get("remix_userkey")
-        ):
-            return ProbeResult(
-                name,
-                False,
-                "Authentication rejected; recent-books probe skipped",
-                required=False,
-            )
-
-        request = client.build_request(
-            "GET",
-            f"{base}/eapi/book/recently",
-            cookies={
-                "siteLanguageV2": "en",
-                "remix_userid": str(user["id"]),
-                "remix_userkey": str(user["remix_userkey"]),
-            },
-        )
-        resp = await client.send(request)
-        walled = _block_detail(resp)
-        if walled:
-            return ProbeResult(name, False, walled, blocked=True)
-        resp.raise_for_status()
-        payload = resp.json()
-        has_shape = (
-            isinstance(payload, dict)
-            and payload.get("success") != 0
-            and isinstance(payload.get("books"), list)
-            and all(isinstance(book, dict) for book in payload["books"])
-        )
-        return ProbeResult(
-            name,
-            has_shape,
-            f"Recent-books JSON contains {len(payload['books'])} book(s)"
-            if has_shape
-            else "Unexpected recent-books response shape",
-        )
-    except Exception as exc:  # noqa: BLE001 - report without echoing authentication data
-        return ProbeResult(
-            name, False, f"{type(exc).__name__}: recent-books probe failed"
-        )
 
 
 async def probe_annas(client: httpx.AsyncClient) -> ProbeResult:

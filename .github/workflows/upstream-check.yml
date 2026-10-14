@@ -44,11 +44,6 @@ jobs:
           build: 'false'
       - name: Probe configured sources
         id: probe
-        # Missing secrets skip authenticated recent-books; wall checks run
-        # before login. Reuse the live-suite secrets, never dispatch from a PR.
-        env:
-          ZLIBRARY_EMAIL: ${{ secrets.ZLIBRARY_EMAIL }}
-          ZLIBRARY_PASSWORD: ${{ secrets.ZLIBRARY_PASSWORD }}
         run: uv run python scripts/check_upstream.py --github-output
 
   live_tests:

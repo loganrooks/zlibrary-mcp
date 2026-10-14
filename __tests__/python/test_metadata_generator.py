@@ -287,7 +287,7 @@ class TestSaveMetadataSidecar:
             assert Path(result).exists()
 
             # Verify content
-            with open(result, "r") as f:
+            with open(result, "r", encoding="utf-8") as f:
                 saved_data = json.load(f)
 
             assert saved_data["source"]["title"] == "Test"

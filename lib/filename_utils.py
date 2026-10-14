@@ -342,7 +342,9 @@ def is_preservable_server_filename(filename: str) -> bool:
         return False
     # URL fallbacks such as book456.epub contribute no wording and should not
     # replace the real title/author components that partial metadata provides.
-    if re.fullmatch(r"(?:book|file|document|download)?[-_ ]?\d+", stem, re.IGNORECASE):
+    if re.fullmatch(r"(?:book|file|document|download)(?:[-_ ]?\d+)?|\d+", stem, re.IGNORECASE):
+        return False
+    if not normalize_document_extension(Path(name).suffix):
         return False
     sanitized = sanitize_preserved_filename(name)
     return bool(sanitized and normalize_document_extension(Path(sanitized).suffix))

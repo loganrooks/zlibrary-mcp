@@ -287,3 +287,16 @@ async def test_generic_id_response_name_does_not_discard_known_title(tmp_path, s
         {"id": 456, "title": "A Meaningful Title", "extension": "epub"}, str(tmp_path)
     )
     assert Path(result["file_path"]).name == "UnknownAuthor_AMeaningfulTitle_456.epub"
+
+
+@pytest.mark.parametrize("server_name", ["download.epub", "book.pdf", "x." + "a" * 199])
+async def test_bare_generic_or_unsupported_long_suffix_preserves_known_title(
+    tmp_path, server_name
+):
+    python_bridge._eapi_client = FakeEAPIDownloader(server_name)
+    result = await download_book(
+        {"id": 456, "title": "A Meaningful Title", "extension": "pdf"}, str(tmp_path)
+    )
+    path = Path(result["file_path"])
+    assert path.name == "UnknownAuthor_AMeaningfulTitle_456.pdf"
+    assert path.read_bytes() == b"%PDF-1.4 unit test stand-in"

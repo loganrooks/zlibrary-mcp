@@ -78,7 +78,7 @@ const GetDownloadHistoryParamsSchema = z.object({
 const GetDownloadLimitsParamsSchema = z.object({});
 
 const GetRecentBooksParamsSchema = z.object({
-  count: z.number().int().optional().default(10).describe('Number of books to return'),
+  count: z.number().int().positive().optional().default(10).describe('Number of books to return'),
   format: z.string().optional().describe('Filter by file format (e.g., "pdf", "epub")'),
 });
 
@@ -643,9 +643,25 @@ function wrapResult(result: any, toolName: string) {
       isError: true as const,
     };
   }
+  if (result === null || typeof result !== 'object') {
+    return {
+      content: [
+        {
+          type: 'text' as const,
+          text: `Error from tool "${toolName}": Invalid backend result: expected an object or array.`,
+        },
+      ],
+      isError: true as const,
+    };
+  }
+  // MCP requires structuredContent to be a record; a bare array (get_download_history
+  // returns one) is rejected by clients with invalid_type: "expected record,
+  // received array" before the caller ever sees the data. Keep the JSON text
+  // payload byte-identical and wrap only the structured mirror.
+  const structured = Array.isArray(result) ? { items: result } : result;
   return {
     content: [{ type: 'text' as const, text: JSON.stringify(result) }],
-    structuredContent: result,
+    structuredContent: structured,
   };
 }
 
@@ -687,6 +703,205 @@ interface StartOptions {
   testing?: boolean;
 }
 
+export function createServer(): McpServer {
+  // Instantiate the McpServer
+  const server = new McpServer({
+    name: 'zlibrary-mcp',
+    version: getPackageVersion(),
+  });
+
+  // ========================================================================
+  // Register all 13 tools via server.tool()
+  // ========================================================================
+
+  // Helper to get annotations with proper typing
+  const ann = (name: string) => toolAnnotations[name] as ToolAnnotations;
+
+  // Every handler below receives `extra.signal`, which aborts when the client
+  // cancels or times out the request. Passing it down is what turns that
+  // cancellation into a killed subprocess instead of one still running
+  // against a dead provider with nobody left to receive the result.
+
+  // 1. search_books
+  server.tool(
+    'search_books',
+    'Search for books in Z-Library by title, author, or keywords. Returns matching books with metadata including title (string), author (string), name, authors (array), year, format, and file size. Use exact=true for precise title matching. Filter results by year range, language, or file format.',
+    SearchBooksParamsSchema.shape,
+    ann('search_books'),
+    async (args, extra) =>
+      wrapResult(
+        await handlers.searchBooks(args as any, { signal: extra?.signal }),
+        'search_books',
+      ),
+  );
+
+  // 2. full_text_search
+  server.tool(
+    'full_text_search',
+    'Search for books containing specific text within their content. Returns books with title (string), author (string), name, authors (array), and other metadata. Useful for finding books that discuss particular topics, quotes, or concepts.',
+    FullTextSearchParamsSchema.shape,
+    ann('full_text_search'),
+    async (args, extra) =>
+      wrapResult(
+        await handlers.fullTextSearch(args as any, { signal: extra?.signal }),
+        'full_text_search',
+      ),
+  );
+
+  // 3. get_download_history
+  server.tool(
+    'get_download_history',
+    "Get the user's Z-Library download history. Returns a list of previously downloaded books with their metadata.",
+    GetDownloadHistoryParamsSchema.shape,
+    ann('get_download_history'),
+    async (args, extra) =>
+      wrapResult(
+        await handlers.getDownloadHistory(args as any, { signal: extra?.signal }),
+        'get_download_history',
+      ),
+  );
+
+  // 4. get_download_limits
+  server.tool(
+    'get_download_limits',
+    "Get the user's current Z-Library download limits. Shows daily download quota, downloads used today, and remaining downloads.",
+    GetDownloadLimitsParamsSchema.shape,
+    ann('get_download_limits'),
+    async (_args, extra) =>
+      wrapResult(
+        await handlers.getDownloadLimits(_args, { signal: extra?.signal }),
+        'get_download_limits',
+      ),
+  );
+
+  // 5. get_recent_books
+  server.tool(
+    'get_recent_books',
+    'Get recently added books to Z-Library. Optionally filter by file format.',
+    GetRecentBooksParamsSchema.shape,
+    ann('search_books'),
+    async (args, extra) => {
+      try {
+        const result = await zlibraryApi.getRecentBooks(args, {
+          signal: extra?.signal,
+        });
+        return wrapResult(result, 'get_recent_books');
+      } catch (error: any) {
+        return {
+          content: [{ type: 'text' as const, text: `Error: ${error.message}` }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // 6. download_book_to_file
+  server.tool(
+    'download_book_to_file',
+    'Download a book to a local file. Pass the full bookDetails object from search_books results. Optionally process the document for RAG (text extraction) after download. Returns file paths for both the original book and processed text.',
+    DownloadBookToFileParamsSchema.shape,
+    ann('download_book_to_file'),
+    async (args, extra) =>
+      wrapResult(
+        await handlers.downloadBookToFile(args as any, { signal: extra?.signal }),
+        'download_book_to_file',
+      ),
+  );
+
+  // 7. process_document_for_rag
+  server.tool(
+    'process_document_for_rag',
+    'Process a downloaded document (EPUB, TXT, PDF) to extract clean text content for RAG (Retrieval-Augmented Generation). Extracts text, preserves structure, detects footnotes, and outputs a text file.',
+    ProcessDocumentForRagParamsSchema.shape,
+    ann('process_document_for_rag'),
+    async (args, extra) =>
+      wrapResult(
+        await handlers.processDocumentForRag(args as any, { signal: extra?.signal }),
+        'process_document_for_rag',
+      ),
+  );
+
+  // 8. get_book_metadata
+  server.tool(
+    'get_book_metadata',
+    'Get metadata for a book. By default returns core fields (title, author, year, publisher, language, pages, isbn, rating, cover, categories). Use the include parameter to add optional field groups: terms (60+ conceptual keywords), booklists (11+ curated collections), ipfs (IPFS CIDs), ratings (quality score), description (full text). Requires bookId and bookHash from search results.',
+    GetBookMetadataParamsSchema.shape,
+    ann('get_book_metadata'),
+    async (args, extra) =>
+      wrapResult(
+        await handlers.getBookMetadata(args as any, { signal: extra?.signal }),
+        'get_book_metadata',
+      ),
+  );
+
+  // 9. search_by_term
+  server.tool(
+    'search_by_term',
+    'Search for books by conceptual term (e.g., "phenomenology", "dialectic", "epistemology"). Returns books with title (string), author (string), and other metadata. Books in Z-Library are tagged with 60+ conceptual terms.',
+    SearchByTermParamsSchema.shape,
+    ann('search_by_term'),
+    async (args, extra) =>
+      wrapResult(
+        await handlers.searchByTerm(args as any, { signal: extra?.signal }),
+        'search_by_term',
+      ),
+  );
+
+  // 10. search_by_author
+  server.tool(
+    'search_by_author',
+    'Advanced author search with support for various name formats. Returns books with title (string), author (string), and other metadata. Use exact=true for precise matching. Filter by publication year, language, or file format.',
+    SearchByAuthorParamsSchema.shape,
+    ann('search_by_author'),
+    async (args, extra) =>
+      wrapResult(
+        await handlers.searchByAuthor(args as any, { signal: extra?.signal }),
+        'search_by_author',
+      ),
+  );
+
+  // 11. fetch_booklist
+  server.tool(
+    'fetch_booklist',
+    'Fetch books from an expert-curated booklist. Z-Library books belong to 11+ booklists with up to 954 books per list. Get booklist IDs from get_book_metadata.',
+    FetchBooklistParamsSchema.shape,
+    ann('fetch_booklist'),
+    async (args, extra) =>
+      wrapResult(
+        await handlers.fetchBooklist(args as any, { signal: extra?.signal }),
+        'fetch_booklist',
+      ),
+  );
+
+  // 12. search_advanced
+  server.tool(
+    'search_advanced',
+    'Advanced search with automatic separation of exact matches from fuzzy/approximate matches. Returns two arrays: exact_matches and fuzzy_matches, each containing books with title (string), author (string), and other metadata.',
+    SearchAdvancedParamsSchema.shape,
+    ann('search_advanced'),
+    async (args, extra) =>
+      wrapResult(
+        await handlers.searchAdvanced(args as any, { signal: extra?.signal }),
+        'search_advanced',
+      ),
+  );
+
+  // 13. search_multi_source
+  server.tool(
+    'search_multi_source',
+    "Search for books across Anna's Archive and LibGen. Alternative to Z-Library EAPI. Returns books with md5, title, author, year, extension, size, source, download_url. Use source=auto to prefer Anna's Archive with LibGen fallback, or force a specific source.",
+    SearchMultiSourceParamsSchema.shape,
+    ann('search_multi_source'),
+    async (args, extra) =>
+      wrapResult(
+        await handlers.searchMultiSource(args as any, { signal: extra?.signal }),
+        'search_multi_source',
+      ),
+  );
+
+  return server;
+}
+
 async function start(
   opts: StartOptions = {},
 ): Promise<{ server: McpServer; transport: StdioServerTransport } | null> {
@@ -704,200 +919,7 @@ async function start(
       console.error("Failed to create 'logs/' directory:", dirError.message);
     }
 
-    // Instantiate the McpServer
-    const server = new McpServer({
-      name: 'zlibrary-mcp',
-      version: getPackageVersion(),
-    });
-
-    // ========================================================================
-    // Register all 13 tools via server.tool()
-    // ========================================================================
-
-    // Helper to get annotations with proper typing
-    const ann = (name: string) => toolAnnotations[name] as ToolAnnotations;
-
-    // Every handler below receives `extra.signal`, which aborts when the client
-    // cancels or times out the request. Passing it down is what turns that
-    // cancellation into a killed subprocess instead of one still running
-    // against a dead provider with nobody left to receive the result.
-
-    // 1. search_books
-    server.tool(
-      'search_books',
-      'Search for books in Z-Library by title, author, or keywords. Returns matching books with metadata including title (string), author (string), name, authors (array), year, format, and file size. Use exact=true for precise title matching. Filter results by year range, language, or file format.',
-      SearchBooksParamsSchema.shape,
-      ann('search_books'),
-      async (args, extra) =>
-        wrapResult(
-          await handlers.searchBooks(args as any, { signal: extra?.signal }),
-          'search_books',
-        ),
-    );
-
-    // 2. full_text_search
-    server.tool(
-      'full_text_search',
-      'Search for books containing specific text within their content. Returns books with title (string), author (string), name, authors (array), and other metadata. Useful for finding books that discuss particular topics, quotes, or concepts.',
-      FullTextSearchParamsSchema.shape,
-      ann('full_text_search'),
-      async (args, extra) =>
-        wrapResult(
-          await handlers.fullTextSearch(args as any, { signal: extra?.signal }),
-          'full_text_search',
-        ),
-    );
-
-    // 3. get_download_history
-    server.tool(
-      'get_download_history',
-      "Get the user's Z-Library download history. Returns a list of previously downloaded books with their metadata.",
-      GetDownloadHistoryParamsSchema.shape,
-      ann('get_download_history'),
-      async (args, extra) =>
-        wrapResult(
-          await handlers.getDownloadHistory(args as any, { signal: extra?.signal }),
-          'get_download_history',
-        ),
-    );
-
-    // 4. get_download_limits
-    server.tool(
-      'get_download_limits',
-      "Get the user's current Z-Library download limits. Shows daily download quota, downloads used today, and remaining downloads.",
-      GetDownloadLimitsParamsSchema.shape,
-      ann('get_download_limits'),
-      async (_args, extra) =>
-        wrapResult(
-          await handlers.getDownloadLimits(_args, { signal: extra?.signal }),
-          'get_download_limits',
-        ),
-    );
-
-    // 5. get_recent_books
-    server.tool(
-      'get_recent_books',
-      'Get recently added books to Z-Library. Optionally filter by file format.',
-      GetRecentBooksParamsSchema.shape,
-      ann('search_books'),
-      async (args, extra) => {
-        try {
-          const result = await (zlibraryApi as any).getRecentBooks(args, {
-            signal: extra?.signal,
-          });
-          return wrapResult(result, 'get_recent_books');
-        } catch (error: any) {
-          return {
-            content: [{ type: 'text' as const, text: `Error: ${error.message}` }],
-            isError: true,
-          };
-        }
-      },
-    );
-
-    // 6. download_book_to_file
-    server.tool(
-      'download_book_to_file',
-      'Download a book to a local file. Pass the full bookDetails object from search_books results. Optionally process the document for RAG (text extraction) after download. Returns file paths for both the original book and processed text.',
-      DownloadBookToFileParamsSchema.shape,
-      ann('download_book_to_file'),
-      async (args, extra) =>
-        wrapResult(
-          await handlers.downloadBookToFile(args as any, { signal: extra?.signal }),
-          'download_book_to_file',
-        ),
-    );
-
-    // 7. process_document_for_rag
-    server.tool(
-      'process_document_for_rag',
-      'Process a downloaded document (EPUB, TXT, PDF) to extract clean text content for RAG (Retrieval-Augmented Generation). Extracts text, preserves structure, detects footnotes, and outputs a text file.',
-      ProcessDocumentForRagParamsSchema.shape,
-      ann('process_document_for_rag'),
-      async (args, extra) =>
-        wrapResult(
-          await handlers.processDocumentForRag(args as any, { signal: extra?.signal }),
-          'process_document_for_rag',
-        ),
-    );
-
-    // 8. get_book_metadata
-    server.tool(
-      'get_book_metadata',
-      'Get metadata for a book. By default returns core fields (title, author, year, publisher, language, pages, isbn, rating, cover, categories). Use the include parameter to add optional field groups: terms (60+ conceptual keywords), booklists (11+ curated collections), ipfs (IPFS CIDs), ratings (quality score), description (full text). Requires bookId and bookHash from search results.',
-      GetBookMetadataParamsSchema.shape,
-      ann('get_book_metadata'),
-      async (args, extra) =>
-        wrapResult(
-          await handlers.getBookMetadata(args as any, { signal: extra?.signal }),
-          'get_book_metadata',
-        ),
-    );
-
-    // 9. search_by_term
-    server.tool(
-      'search_by_term',
-      'Search for books by conceptual term (e.g., "phenomenology", "dialectic", "epistemology"). Returns books with title (string), author (string), and other metadata. Books in Z-Library are tagged with 60+ conceptual terms.',
-      SearchByTermParamsSchema.shape,
-      ann('search_by_term'),
-      async (args, extra) =>
-        wrapResult(
-          await handlers.searchByTerm(args as any, { signal: extra?.signal }),
-          'search_by_term',
-        ),
-    );
-
-    // 10. search_by_author
-    server.tool(
-      'search_by_author',
-      'Advanced author search with support for various name formats. Returns books with title (string), author (string), and other metadata. Use exact=true for precise matching. Filter by publication year, language, or file format.',
-      SearchByAuthorParamsSchema.shape,
-      ann('search_by_author'),
-      async (args, extra) =>
-        wrapResult(
-          await handlers.searchByAuthor(args as any, { signal: extra?.signal }),
-          'search_by_author',
-        ),
-    );
-
-    // 11. fetch_booklist
-    server.tool(
-      'fetch_booklist',
-      'Fetch books from an expert-curated booklist. Z-Library books belong to 11+ booklists with up to 954 books per list. Get booklist IDs from get_book_metadata.',
-      FetchBooklistParamsSchema.shape,
-      ann('fetch_booklist'),
-      async (args, extra) =>
-        wrapResult(
-          await handlers.fetchBooklist(args as any, { signal: extra?.signal }),
-          'fetch_booklist',
-        ),
-    );
-
-    // 12. search_advanced
-    server.tool(
-      'search_advanced',
-      'Advanced search with automatic separation of exact matches from fuzzy/approximate matches. Returns two arrays: exact_matches and fuzzy_matches, each containing books with title (string), author (string), and other metadata.',
-      SearchAdvancedParamsSchema.shape,
-      ann('search_advanced'),
-      async (args, extra) =>
-        wrapResult(
-          await handlers.searchAdvanced(args as any, { signal: extra?.signal }),
-          'search_advanced',
-        ),
-    );
-
-    // 13. search_multi_source
-    server.tool(
-      'search_multi_source',
-      "Search for books across Anna's Archive and LibGen. Alternative to Z-Library EAPI. Returns books with md5, title, author, year, extension, size, source, download_url. Use source=auto to prefer Anna's Archive with LibGen fallback, or force a specific source.",
-      SearchMultiSourceParamsSchema.shape,
-      ann('search_multi_source'),
-      async (args, extra) =>
-        wrapResult(
-          await handlers.searchMultiSource(args as any, { signal: extra?.signal }),
-          'search_multi_source',
-        ),
-    );
+    const server = createServer();
 
     // Create and connect the Stdio transport
     const transport = new StdioServerTransport();

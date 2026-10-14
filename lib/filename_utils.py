@@ -303,11 +303,18 @@ def sanitize_preserved_filename(filename: str, max_total_length: int = 200) -> s
     control characters, and reserved punctuation, and capping length with
     the extension preserved. Returns "" when nothing usable remains.
     """
-    name = os.path.basename(str(filename).replace("\\", "/"))
+    name = "".join(c for c in str(filename) if unicodedata.category(c) != "Cf")
+    name = os.path.basename(name.replace("\\", "/"))
     name = re.sub(r'[\\/:*?"<>|\x00-\x1f]', "_", name).strip(" .")
     if not name:
         return ""
     stem, ext = os.path.splitext(name)
+    device = stem.split(".", 1)[0].rstrip(" ").upper()
+    if device in {"CON", "PRN", "AUX", "NUL"} or re.fullmatch(
+        r"(?:COM|LPT)[1-9]", device
+    ):
+        stem = "_" + stem
+        name = stem + ext
     if len(name) > max_total_length:
         stem = stem[: max(1, max_total_length - len(ext))].rstrip(" .")
         name = stem + ext
@@ -327,7 +334,8 @@ def is_preservable_server_filename(filename: str) -> bool:
     stem = Path(name).stem
     if _MD5_ARTIFACT_RE.fullmatch(stem):
         return False
-    return bool(sanitize_preserved_filename(name))
+    sanitized = sanitize_preserved_filename(name)
+    return bool(sanitized and normalize_document_extension(Path(sanitized).suffix))
 
 
 def create_metadata_filename(original_filename: str) -> str:

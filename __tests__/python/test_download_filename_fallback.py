@@ -94,6 +94,9 @@ class TestFilenameHelpers:
             (f"{STAGING_MD5}.download", False),  # content-hash staging artifact
             (STAGING_MD5, False),
             ("", False),
+            ("12345.bin", False),
+            ("real title.BIN", False),
+            ("real title", False),
         ],
     )
     def test_is_preservable(self, filename, expected):
@@ -112,8 +115,8 @@ class TestDownloadBookFilenameFallback:
 
         result = await download_book(sparse, str(tmp_path))
 
-        assert Path(result["file_path"]).name == SERVER_NAME
-        assert (tmp_path / SERVER_NAME).exists()
+        assert Path(result["file_path"]).name == SERVER_NAME[:-4] + "_127803575.pdf"
+        assert Path(result["file_path"]).exists()
         assert not any(
             path.name.startswith("UnknownAuthor") for path in tmp_path.iterdir()
         )
@@ -152,4 +155,57 @@ class TestDownloadBookFilenameFallback:
 
         result = await download_book(sparse, str(tmp_path))
 
-        assert Path(result["file_path"]).name == "name_v1__.pdf"
+        assert Path(result["file_path"]).name == "name_v1___3.pdf"
+
+
+@pytest.mark.parametrize("server_name", ["12345.bin", "12345", "Title.BIN"])
+async def test_unknown_server_extension_keeps_generated_pdf_name(tmp_path, server_name):
+    python_bridge._eapi_client = FakeEAPIDownloader(server_name)
+    result = await download_book(
+        {"id": 4, "hash": "h", "extension": "pdf"}, str(tmp_path)
+    )
+    assert Path(result["file_path"]).name == "UnknownAuthor_UntitledBook_4.pdf"
+
+
+@pytest.mark.parametrize("extension", ["PDF", ".pdf", " pdf "])
+async def test_declared_normalized_extension_wins_over_server_suffix(
+    tmp_path, extension
+):
+    python_bridge._eapi_client = FakeEAPIDownloader("A real title.epub")
+    result = await download_book(
+        {"id": 5, "hash": "h", "extension": extension}, str(tmp_path)
+    )
+    assert Path(result["file_path"]).name == "A real title_5.pdf"
+
+
+def test_bidi_and_unicode_format_characters_are_removed():
+    assert sanitize_preserved_filename("Report\u202e\u200d.pdf") == "Report.pdf"
+
+
+@pytest.mark.parametrize(
+    "reserved",
+    [
+        "CON",
+        "PRN",
+        "AUX",
+        "NUL",
+        *[f"COM{i}" for i in range(1, 10)],
+        *[f"LPT{i}" for i in range(1, 10)],
+    ],
+)
+def test_windows_device_names_are_neutralized(reserved):
+    assert sanitize_preserved_filename(f"{reserved}.pdf") == f"_{reserved}.pdf"
+    assert (
+        sanitize_preserved_filename(f"{reserved.lower()}.notes.pdf")
+        == f"_{reserved.lower()}.notes.pdf"
+    )
+
+
+async def test_long_server_name_retains_id_and_normalized_extension(tmp_path):
+    python_bridge._eapi_client = FakeEAPIDownloader("x" * 240 + ".epub")
+    result = await download_book(
+        {"id": 6, "hash": "h", "extension": "pdf"}, str(tmp_path)
+    )
+    name = Path(result["file_path"]).name
+    assert len(name) <= 200
+    assert name.endswith("_6.pdf")

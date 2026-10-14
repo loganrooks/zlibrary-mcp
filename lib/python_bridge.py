@@ -1327,14 +1327,8 @@ async def download_book(
             language=book_details.get("language", ""),
         )
         final_filename = unified_filename
-        # A degraded unified name means the caller's metadata could not
-        # identify the book — but the download response usually could, and
-        # already named the file on disk from real metadata (EAPI carries it
-        # in Content-Disposition). Renaming that to
-        # "UnknownAuthor_UntitledBook_12345.pdf" destroys information the
-        # server handed us; keep the server's wording instead. Determinism
-        # is preserved in practice: the server derives the name from the
-        # book's own metadata, so re-downloads land on the same target.
+        # Preserve the server's wording for sparse metadata while keeping the
+        # normalized extension and deterministic identity suffix used by RAG.
         if is_degraded_unified_filename(unified_filename):
             server_name = Path(original_download_path_str).name
             if is_preservable_server_filename(server_name):
@@ -1345,7 +1339,14 @@ async def download_book(
                         "keeping server-provided name %r",
                         preserved,
                     )
-                    final_filename = preserved
+                    stem = Path(preserved).stem
+                    identity = Path(unified_filename).stem.rsplit("_", 1)[-1]
+                    identity_suffix = f"_{identity}"
+                    if stem.endswith(identity_suffix):
+                        stem = stem[: -len(identity_suffix)]
+                    ending = identity_suffix + Path(unified_filename).suffix
+                    stem = stem[: max(1, 200 - len(ending))].rstrip(" .")
+                    final_filename = stem + ending
         final_file_path = Path(output_dir) / final_filename
         final_file_path_str = str(final_file_path)
 

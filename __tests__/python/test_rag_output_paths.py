@@ -1,6 +1,7 @@
 """Regression tests for deterministic, collision-resistant RAG output files."""
 
 import hashlib
+import logging
 import os
 import stat
 import subprocess
@@ -261,3 +262,56 @@ def test_interrupted_writer_leaves_only_documented_sweepable_temporary(tmp_path)
     for leftover in leftovers:
         leftover.unlink()
     assert list(tmp_path.iterdir()) == [destination]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Directory fsync is POSIX-only")
+def test_post_replace_directory_sync_failure_reports_warning_and_published_path(
+    tmp_path, monkeypatch, caplog
+):
+    destination = tmp_path / "published.txt"
+    destination.write_text("old", encoding="utf-8")
+    original_fsync = os.fsync
+    directory_syncs = 0
+
+    def fail_after_publish(fd):
+        nonlocal directory_syncs
+        if stat.S_ISDIR(os.fstat(fd).st_mode):
+            directory_syncs += 1
+            if directory_syncs == 2:
+                raise OSError("simulated post-publication sync failure")
+        original_fsync(fd)
+
+    monkeypatch.setattr(os, "fsync", fail_after_publish)
+    with caplog.at_level(logging.WARNING):
+        result = atomic_write_text(destination, "new")
+    assert result == destination
+    assert destination.read_text(encoding="utf-8") == "new"
+    assert "simulated post-publication sync failure" in caplog.text
+    assert str(destination) in caplog.text
+    assert list(tmp_path.glob(".rag-output-*.tmp")) == []
+
+
+@pytest.mark.parametrize("destination_mode", [0o640, 0o444])
+def test_file_sync_uses_writable_descriptor_before_preserving_mode(
+    tmp_path, monkeypatch, destination_mode
+):
+    destination = tmp_path / "writable-sync.txt"
+    destination.write_text("old", encoding="utf-8")
+    if os.name == "posix":
+        os.chmod(destination, destination_mode)
+    original_fsync = os.fsync
+    writable_file_syncs = []
+
+    def require_write_access(fd):
+        if stat.S_ISREG(os.fstat(fd).st_mode):
+            # A zero-byte write leaves content unchanged but rejects a read-only fd.
+            assert os.write(fd, b"") == 0
+            writable_file_syncs.append(fd)
+        original_fsync(fd)
+
+    monkeypatch.setattr(os, "fsync", require_write_access)
+    assert atomic_write_text(destination, "new") == destination
+    assert destination.read_text(encoding="utf-8") == "new"
+    assert len(writable_file_syncs) == 1
+    if os.name == "posix":
+        assert stat.S_IMODE(destination.stat().st_mode) == destination_mode

@@ -7,6 +7,7 @@ staging files share the same prefix. Each final file is replaced independently;
 this does not make a set of body/sidecar files one atomic transaction.
 """
 
+import logging
 import os
 import secrets
 import stat
@@ -42,21 +43,30 @@ def atomic_write(path: Path, write_temporary: Callable[[Path], None]) -> Path:
         try:
             destination_mode = stat.S_IMODE(destination.stat().st_mode) & 0o777
         except FileNotFoundError:
-            pass
-        else:
-            os.chmod(temporary_path, destination_mode)
+            destination_mode = None
 
         # The callback has closed its writer; persist content and mode before
         # publishing it. On POSIX also persist the temporary directory entry,
-        # then the rename itself. A sync error is surfaced to the caller.
-        with temporary_path.open("rb") as handle:
+        # then the rename itself. Pre-publication sync errors fail the write.
+        # Open for writing before applying a possibly read-only destination mode;
+        # Windows FlushFileBuffers requires a handle with write access.
+        with temporary_path.open("r+b") as handle:
+            if destination_mode is not None:
+                os.chmod(temporary_path, destination_mode)
             os.fsync(handle.fileno())
         if os.name == "posix":
             directory_fd = os.open(destination.parent, os.O_RDONLY | os.O_DIRECTORY)
             os.fsync(directory_fd)
         os.replace(temporary_path, destination)
         if directory_fd is not None:
-            os.fsync(directory_fd)
+            try:
+                os.fsync(directory_fd)
+            except OSError as exc:
+                # The path is already published. Report reduced durability without
+                # misreporting a failed acquisition that callers might replay.
+                logging.getLogger(__name__).warning(
+                    "Published %s, but directory fsync failed: %s", destination, exc
+                )
         return destination
     finally:
         if directory_fd is not None:

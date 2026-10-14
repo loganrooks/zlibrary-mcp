@@ -184,6 +184,18 @@ class TestRealBasicSearch:
         # Should return results
         assert len(result["books"]) >= 0
 
+    async def test_recent_books_contract(self, zlib_client):
+        """Check the distinct recent endpoint using the already-authenticated fixture.
+
+        Inspect upstream shape before bridge normalization can turn a missing
+        books field into an empty list. No new client or login is created.
+        """
+        result = await zlib_client.get_recently()
+        assert isinstance(result, dict)
+        assert result.get("success", 1) == 1
+        assert isinstance(result.get("books"), list)
+        assert all(isinstance(book, dict) for book in result["books"])
+
 
 @pytest.mark.integration
 class TestRealTermSearch:

@@ -209,3 +209,12 @@ async def test_long_server_name_retains_id_and_normalized_extension(tmp_path):
     name = Path(result["file_path"]).name
     assert len(name) <= 200
     assert name.endswith("_6.pdf")
+
+
+async def test_sparse_id_without_declared_extension_keeps_valid_server_extension(
+    tmp_path,
+):
+    python_bridge._eapi_client = FakeEAPIDownloader("A real server title.epub")
+    result = await download_book({"id": 7}, str(tmp_path))
+    assert Path(result["file_path"]).name == "A real server title_7.epub"
+    assert Path(result["file_path"]).exists()

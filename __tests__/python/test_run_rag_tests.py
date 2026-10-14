@@ -874,9 +874,8 @@ async def test_run_single_test_downloads_file_from_manifest(mocker, tmp_path):
     assert "format" in actual_arg_dict and actual_arg_dict["format"] == "pdf"
     # Note: with sparse manifest metadata download_book keeps the
     # server-provided wording plus ID rather than collapsing to a placeholder
-    assert "downloaded_path" in actual_arg_dict and actual_arg_dict[
-        "downloaded_path"
-    ].endswith("_12345.pdf")
+    assert "downloaded_path" in actual_arg_dict
+    assert Path(actual_arg_dict["downloaded_path"]).name == "downloaded_book_12345.pdf"
     assert "text_eval" in actual_arg_dict and actual_arg_dict["text_eval"] == {
         "text_length": 100,
         "word_count": 20,
@@ -893,7 +892,7 @@ async def test_run_single_test_downloads_file_from_manifest(mocker, tmp_path):
 
     # Assert the final result dictionary contains the status string returned by the mock
     assert result["status"] == "PASS"  # Expect simple string
-    assert result["downloaded_path"].endswith("_12345.pdf")
+    assert Path(result["downloaded_path"]).name == "downloaded_book_12345.pdf"
     assert (
         result["processed_text_preview"] == "Processed PDF text"[:100]
     )  # Check preview uses processed text

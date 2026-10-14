@@ -249,9 +249,9 @@ if (!ghReady) {
     // milestone. Iterating milestones and comparing against tags catches a
     // malformed milestone but never a missing one, so a version could be
     // tagged with no milestone at all and the audit would pass in silence.
-    const slots = new Map(); // "1.5" -> [milestone titles]
+    const slots = new Map(); // "1.5" or "1.4.1" -> [milestone titles]
     for (const ms of milestones) {
-      const m = ms.title.match(/^v(\d+\.\d+)/);
+      const m = ms.title.match(/^v(\d+\.\d+(?:\.\d+)?)/);
       if (m) slots.set(m[1], [...(slots.get(m[1]) ?? []), ms.title]);
     }
     for (const version of taggedVersions) {
@@ -259,7 +259,7 @@ if (!ghReady) {
       if (!tagged || Date.parse(tagged) < PROCESS_START) continue;
 
       const line = version.split('.').slice(0, 2).join('.');
-      if (!slots.has(line)) {
+      if (!slots.has(version) && !slots.has(line)) {
         fail(
           `v${version} is tagged but no milestone claims v${line}.`,
           `A release is a milestone. Create "v${line} — <destination>" with "Map: #N" in its description and put the shipped issues on it.`,
@@ -281,7 +281,7 @@ if (!ghReady) {
     }
 
     for (const ms of milestones) {
-      const versionMatch = ms.title.match(/^v(\d+\.\d+)/);
+      const versionMatch = ms.title.match(/^v(\d+\.\d+(?:\.\d+)?)/);
       const isUnslotted = /\(unslotted\)/i.test(ms.title);
 
       // Rule 2, and it fails rather than warns. This is THE invariant the
@@ -305,7 +305,11 @@ if (!ghReady) {
 
       // Rule: a version does not ship while its milestone has open issues.
       if (versionMatch) {
-        const shipped = [...taggedVersions].some((v) => v.startsWith(`${versionMatch[1]}.`));
+        // Exact patch milestones own their tags. Preserve legacy minor-only
+        // records only for tags that have no exact patch milestone.
+        const shipped = [...taggedVersions].some((v) =>
+          v === versionMatch[1] || (v.startsWith(`${versionMatch[1]}.`) && !slots.has(v)),
+        );
         if (shipped && ms.open_issues > 0) {
           fail(
             `Milestone "${ms.title}" has ${ms.open_issues} open issue(s), but ${versionMatch[0]} is already tagged.`,

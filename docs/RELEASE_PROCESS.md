@@ -28,6 +28,10 @@ Corollaries the script also checks:
   behind. A draft does not count — nobody outside the maintainers can see it.
 - **One release slot, one milestone.** Two milestones both claiming `v1.5` is the precise
   state that motivated this document, so it fails even when both are otherwise well-formed.
+  An explicit patch slot such as `v1.4.1` is distinct from `v1.4`; tagging `v1.4.0` does
+  not ship the `v1.4.1` milestone. An exact patch milestone owns its matching tag. For
+  historical records without an exact patch milestone, the audit retains the existing
+  minor-slot match (`v1.4` can account for `v1.4.0`). Duplicate exact slots still fail.
 - **`## [Unreleased]` is written as work lands**, not reconstructed from `git log` at
   release time.
 

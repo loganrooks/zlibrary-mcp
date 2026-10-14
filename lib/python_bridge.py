@@ -18,7 +18,14 @@ import asyncio
 import signal
 
 from pathlib import Path
-from filename_utils import create_unified_filename, normalize_document_extension
+from filename_utils import (
+    create_unified_filename,
+    is_degraded_unified_filename,
+    is_preservable_server_filename,
+    normalize_document_extension,
+    sanitize_preserved_filename,
+    truncate_filename_stem,
+)
 import logging
 
 # Import the new RAG processing functions
@@ -1280,6 +1287,7 @@ async def download_book(
     final_file_path_str = None  # Path with enhanced filename
     processed_file_path_str = None  # Path for RAG processed file
     process_result = None
+    eapi_staging = None
 
     try:
         # Step 1: Fetch the file. Z-Library goes through the EAPI client;
@@ -1289,10 +1297,15 @@ async def download_book(
                 book_details, output_dir
             )
         else:
+            # Raw server names can equal a previously published identity name.
+            # Keep EAPI's replacing write in a private per-call namespace until
+            # the final no-replace publication checks have run.
+            Path(output_dir).mkdir(parents=True, exist_ok=True)
+            eapi_staging = tempfile.TemporaryDirectory(prefix=".eapi-", dir=output_dir)
             original_download_path_str = await eapi.download_file(
                 book_id=int(book_id),
                 book_hash=book_hash,
-                output_dir=output_dir,
+                output_dir=eapi_staging.name,
             )
 
         if (
@@ -1320,7 +1333,26 @@ async def download_book(
             year=book_details.get("year", ""),
             language=book_details.get("language", ""),
         )
-        final_file_path = Path(output_dir) / unified_filename
+        final_filename = unified_filename
+        # Preserve the server's wording for sparse metadata while keeping the
+        # normalized extension and deterministic identity suffix used by RAG.
+        if is_degraded_unified_filename(unified_filename):
+            server_name = Path(original_download_path_str).name
+            if is_preservable_server_filename(server_name):
+                preserved = sanitize_preserved_filename(server_name)
+                if preserved:
+                    logger.info(
+                        "Sparse book metadata degraded the unified filename; "
+                        "keeping server-provided name %r",
+                        preserved,
+                    )
+                    stem = Path(preserved).stem
+                    identity = Path(unified_filename).stem.rsplit("_", 1)[-1]
+                    identity_suffix = f"_{identity}"
+                    ending = identity_suffix + Path(unified_filename).suffix
+                    stem = truncate_filename_stem(stem, ending)
+                    final_filename = stem + ending
+        final_file_path = Path(output_dir) / final_filename
         final_file_path_str = str(final_file_path)
 
         if process_for_rag and final_file_path.suffix.lower() not in {
@@ -1378,6 +1410,9 @@ async def download_book(
         identifier = book_details.get("id") or book_details.get("md5") or "unknown"
         logger.exception(f"Error in download_book for {identifier}")
         raise e
+    finally:
+        if eapi_staging is not None:
+            eapi_staging.cleanup()
 
 
 async def get_book_metadata_complete(book_id: str, book_hash: str = None) -> dict:

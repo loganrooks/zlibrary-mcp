@@ -448,6 +448,11 @@ export async function getRecentBooks(
   options: CallOptions = {},
 ): Promise<any> {
   const count = args.count ?? 10;
+  // Keep direct facade consumers aligned with the MCP schema. Broader limits
+  // across tools remain #173; this only prevents invalid Python slice counts.
+  if (!Number.isInteger(count) || count <= 0) {
+    throw new RangeError('count must be a positive integer');
+  }
   const format = args.format;
 
   const result = await callPythonFunction('get_recent_books', { count }, options);

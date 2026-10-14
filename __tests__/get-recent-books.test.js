@@ -218,11 +218,9 @@ describe('get_recent_books suite', () => {
       });
 
       const controller = new AbortController();
-      const callPromise = client.callTool(
-        { name: 'get_recent_books', arguments: {} },
-        undefined,
-        { signal: controller.signal },
-      );
+      const callPromise = client.callTool({ name: 'get_recent_books', arguments: {} }, undefined, {
+        signal: controller.signal,
+      });
 
       // Wait deterministically for the mock runner to receive the call (no arbitrary sleep)
       const runnerOpts = await runnerStartedPromise;
@@ -236,5 +234,40 @@ describe('get_recent_books suite', () => {
       await expect(callPromise).rejects.toThrow();
       expect(runnerOpts.signal.aborted).toBe(true);
     });
+  });
+});
+
+describe('recent-books positive count contract', () => {
+  test.each([-1, 0, 1.5, Infinity, NaN])(
+    'facade rejects count=%p before dispatch',
+    async (count) => {
+      jest.resetModules();
+      mockRunPythonBridge.mockReset();
+      const { getRecentBooks } = await import('../dist/lib/zlibrary-api.js');
+      await expect(getRecentBooks({ count })).rejects.toThrow(/positive integer/i);
+      expect(mockRunPythonBridge).not.toHaveBeenCalled();
+    },
+  );
+
+  test.each([-1, 0, 1.5])('MCP rejects count=%p before dispatch', async (count) => {
+    jest.resetModules();
+    mockRunPythonBridge.mockReset();
+    const { createServer } = await import('../dist/index.js');
+    const server = createServer();
+    const [localClientTransport, localServerTransport] = InMemoryTransport.createLinkedPair();
+    const localClient = new Client({ name: 'positive-count', version: '1.0.0' });
+    try {
+      await Promise.all([
+        server.connect(localServerTransport),
+        localClient.connect(localClientTransport),
+      ]);
+      const result = await localClient.callTool({ name: 'get_recent_books', arguments: { count } });
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('Invalid arguments');
+      expect(mockRunPythonBridge).not.toHaveBeenCalled();
+    } finally {
+      await localClient.close();
+      await server.close();
+    }
   });
 });

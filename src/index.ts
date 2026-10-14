@@ -78,7 +78,7 @@ const GetDownloadHistoryParamsSchema = z.object({
 const GetDownloadLimitsParamsSchema = z.object({});
 
 const GetRecentBooksParamsSchema = z.object({
-  count: z.number().int().optional().default(10).describe('Number of books to return'),
+  count: z.number().int().positive().optional().default(10).describe('Number of books to return'),
   format: z.string().optional().describe('Filter by file format (e.g., "pdf", "epub")'),
 });
 

@@ -294,7 +294,7 @@ Results from this tool can be downloaded. Pass a result to `download_book_to_fil
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
-| count | integer | No | `10` | Number of books to return |
+| count | positive integer | No | `10` | Number of books to return |
 | format | string | No | -- | Filter by file format (e.g., `"pdf"`, `"epub"`) |
 
 **Returns:** JSON object `{"books": [...]}` containing recently added book objects with standard metadata fields. `count` sets the size of the recent-book window; `format` filters that window by file extension and may return fewer than `count` books when other formats are present.

@@ -46,7 +46,7 @@ describe('Python bridge spawn and signal failures', () => {
     expect(result.stdout).toContain('SERVER_SURVIVED true');
   });
 
-  (PYTHON ? test : test.skip)('a signal death reports its signal and releases the process-tree record', () => {
+  (PYTHON && process.platform !== 'win32' ? test : test.skip)('a signal death reports its signal and releases the process-tree record', () => {
 
     const scriptDir = fs.mkdtempSync(path.join(os.tmpdir(), 'zlib-bridge-signal-'));
     try {

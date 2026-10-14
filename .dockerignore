@@ -32,6 +32,9 @@ Thumbs.db
 # Test fixtures and test suites (not needed in runtime)
 test_files
 __tests__
+!__tests__/
+!__tests__/e2e/
+!__tests__/e2e/**
 
 # Planning and documentation (not needed in runtime)
 .planning

@@ -1614,7 +1614,7 @@ asyncio.run(python_bridge.main())
             assert ready.exists()
             assert not partial.exists()
             staging_files = [
-                path for path in tmp_path.iterdir() if path.name.endswith(".part")
+                path for path in tmp_path.rglob("*.part")
             ]
             assert len(staging_files) == 1
 
@@ -1624,8 +1624,9 @@ asyncio.run(python_bridge.main())
 
             assert not partial.exists()
             assert not [
-                path for path in tmp_path.iterdir() if path.name.endswith(".part")
+                path for path in tmp_path.rglob("*.part")
             ]
+            assert not list(tmp_path.glob(".eapi-*"))
             assert stdout == ""
         finally:
             if process.poll() is None:

@@ -276,7 +276,7 @@ def create_unified_filename(
 
 # Placeholders create_unified_filename substitutes when the caller's metadata
 # cannot identify the book at all.
-_PLACEHOLDER_TOKENS = frozenset({"UnknownAuthor", "UntitledBook", "NoID"})
+_PLACEHOLDER_TOKENS = frozenset({"Unknown", "UnknownAuthor", "UntitledBook", "NoID"})
 
 # A bare content hash (with or without the .download staging suffix) carries
 # no human-usable identity worth preserving.
@@ -293,6 +293,14 @@ def is_degraded_unified_filename(filename: str) -> bool:
     """
     stem = Path(filename).stem
     return any(token in _PLACEHOLDER_TOKENS for token in stem.split("_"))
+
+
+def truncate_filename_stem(stem: str, ending: str, max_total_length: int = 200) -> str:
+    """Reserve an ending within a UTF-8 byte budget (also bounds UTF-16 units)."""
+    budget = max_total_length - len(ending.encode("utf-8"))
+    if budget < 1:
+        raise ValueError("Filename ending exceeds component budget")
+    return stem.encode("utf-8")[:budget].decode("utf-8", errors="ignore").rstrip(" .")
 
 
 def sanitize_preserved_filename(filename: str, max_total_length: int = 200) -> str:
@@ -315,10 +323,8 @@ def sanitize_preserved_filename(filename: str, max_total_length: int = 200) -> s
     ):
         stem = "_" + stem
         name = stem + ext
-    if len(name) > max_total_length:
-        stem = stem[: max(1, max_total_length - len(ext))].rstrip(" .")
-        name = stem + ext
-    return name
+    stem = truncate_filename_stem(stem, ext, max_total_length)
+    return stem + ext if stem else ""
 
 
 def is_preservable_server_filename(filename: str) -> bool:
@@ -333,6 +339,10 @@ def is_preservable_server_filename(filename: str) -> bool:
         return False
     stem = Path(name).stem
     if _MD5_ARTIFACT_RE.fullmatch(stem):
+        return False
+    # URL fallbacks such as book456.epub contribute no wording and should not
+    # replace the real title/author components that partial metadata provides.
+    if re.fullmatch(r"(?:book|file|document|download)?[-_ ]?\d+", stem, re.IGNORECASE):
         return False
     sanitized = sanitize_preserved_filename(name)
     return bool(sanitized and normalize_document_extension(Path(sanitized).suffix))

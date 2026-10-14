@@ -24,6 +24,7 @@ from filename_utils import (
     is_preservable_server_filename,
     normalize_document_extension,
     sanitize_preserved_filename,
+    truncate_filename_stem,
 )
 import logging
 
@@ -1286,6 +1287,7 @@ async def download_book(
     final_file_path_str = None  # Path with enhanced filename
     processed_file_path_str = None  # Path for RAG processed file
     process_result = None
+    eapi_staging = None
 
     try:
         # Step 1: Fetch the file. Z-Library goes through the EAPI client;
@@ -1295,10 +1297,15 @@ async def download_book(
                 book_details, output_dir
             )
         else:
+            # Raw server names can equal a previously published identity name.
+            # Keep EAPI's replacing write in a private per-call namespace until
+            # the final no-replace publication checks have run.
+            Path(output_dir).mkdir(parents=True, exist_ok=True)
+            eapi_staging = tempfile.TemporaryDirectory(prefix=".eapi-", dir=output_dir)
             original_download_path_str = await eapi.download_file(
                 book_id=int(book_id),
                 book_hash=book_hash,
-                output_dir=output_dir,
+                output_dir=eapi_staging.name,
             )
 
         if (
@@ -1343,7 +1350,7 @@ async def download_book(
                     identity = Path(unified_filename).stem.rsplit("_", 1)[-1]
                     identity_suffix = f"_{identity}"
                     ending = identity_suffix + Path(unified_filename).suffix
-                    stem = stem[: max(1, 200 - len(ending))].rstrip(" .")
+                    stem = truncate_filename_stem(stem, ending)
                     final_filename = stem + ending
         final_file_path = Path(output_dir) / final_filename
         final_file_path_str = str(final_file_path)
@@ -1403,6 +1410,9 @@ async def download_book(
         identifier = book_details.get("id") or book_details.get("md5") or "unknown"
         logger.exception(f"Error in download_book for {identifier}")
         raise e
+    finally:
+        if eapi_staging is not None:
+            eapi_staging.cleanup()
 
 
 async def get_book_metadata_complete(book_id: str, book_hash: str = None) -> dict:

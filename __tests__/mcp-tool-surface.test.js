@@ -55,6 +55,118 @@ const cases = {
   ],
 };
 
+// Literal expectations describe the Python boundary, independently of the
+// schemas/facade under test. JSON normalization omits undefined year filters.
+const expectedBridgeArgs = {
+  search_books: {
+    query: 'offline', exact: false, from_year: null, to_year: null,
+    languages: [], extensions: [], content_types: [], count: 10,
+  },
+  full_text_search: {
+    query: 'offline phrase', exact: false, phrase: true, words: false,
+    languages: [], extensions: [], content_types: [], count: 10,
+  },
+  get_download_history: { count: 1 },
+  get_download_limits: {},
+  get_recent_books: { count: 1 },
+  download_book_to_file: {
+    book_details: { id: '1', hash: 'offline' }, output_dir: './downloads',
+    process_for_rag: false, processed_output_format: 'txt',
+  },
+  process_document_for_rag: { file_path_str: '/offline/book.pdf', output_format: 'txt' },
+  get_book_metadata: { book_id: '1', book_hash: 'offline' },
+  search_by_term: { term: 'offline', languages: [], extensions: [], limit: 25 },
+  search_by_author: {
+    author: 'offline', exact: false, languages: [], extensions: [], limit: 25,
+  },
+  fetch_booklist: { booklist_id: '1', booklist_hash: 'offline', topic: 'offline', page: 1 },
+  search_advanced: { query: 'offline', exact: false, count: 10 },
+  search_multi_source: { query: 'offline', source: 'libgen', count: 10 },
+};
+
+// Non-default values make dropped optional fields observable even where the
+// facade would otherwise reconstruct a missing field's default value.
+const forwardingCases = [
+  {
+    name: 'search_books',
+    args: {
+      query: 'filtered books', exact: true, fromYear: 1900, toYear: 1950,
+      languages: ['english'], extensions: ['pdf'], content_types: ['book'], count: 3,
+    },
+    expectedArgs: {
+      query: 'filtered books', exact: true, from_year: 1900, to_year: 1950,
+      languages: ['english'], extensions: ['pdf'], content_types: ['book'], count: 3,
+    },
+  },
+  {
+    name: 'full_text_search',
+    args: {
+      query: 'filtered phrase', exact: true, phrase: false, words: true,
+      languages: ['french'], extensions: ['epub'], content_types: ['article'], count: 4,
+    },
+    expectedArgs: {
+      query: 'filtered phrase', exact: true, phrase: false, words: true,
+      languages: ['french'], extensions: ['epub'], content_types: ['article'], count: 4,
+    },
+  },
+  {
+    name: 'download_book_to_file',
+    args: {
+      bookDetails: { id: '2', hash: 'other', title: 'Preserved details' },
+      outputDir: '/offline/downloads', process_for_rag: true,
+      processed_output_format: 'markdown',
+    },
+    expectedArgs: {
+      book_details: { id: '2', hash: 'other', title: 'Preserved details' },
+      output_dir: '/offline/downloads', process_for_rag: true,
+      processed_output_format: 'markdown',
+    },
+    payload: { file_path: '/offline/book.pdf', processed_file_path: '/offline/book.md' },
+  },
+  {
+    name: 'process_document_for_rag',
+    args: { file_path: '/offline/other.pdf', output_format: 'markdown' },
+    expectedArgs: { file_path_str: '/offline/other.pdf', output_format: 'markdown' },
+  },
+  {
+    name: 'search_by_term',
+    args: {
+      term: 'filtered term', yearFrom: 1800, yearTo: 1899,
+      languages: ['german'], extensions: ['pdf'], count: 2,
+    },
+    expectedArgs: {
+      term: 'filtered term', year_from: 1800, year_to: 1899,
+      languages: ['german'], extensions: ['pdf'], limit: 2,
+    },
+  },
+  {
+    name: 'search_by_author',
+    args: {
+      author: 'Filtered Author', exact: true, yearFrom: 1980, yearTo: 2020,
+      languages: ['english'], extensions: ['epub'], count: 3,
+    },
+    expectedArgs: {
+      author: 'Filtered Author', exact: true, year_from: 1980, year_to: 2020,
+      languages: ['english'], extensions: ['epub'], limit: 3,
+    },
+  },
+  {
+    name: 'fetch_booklist',
+    args: { booklistId: '2', booklistHash: 'other', topic: 'other topic', page: 2 },
+    expectedArgs: { booklist_id: '2', booklist_hash: 'other', topic: 'other topic', page: 2 },
+  },
+  {
+    name: 'search_advanced',
+    args: { query: 'filtered advanced', exact: true, yearFrom: 2001, yearTo: 2021, count: 4 },
+    expectedArgs: { query: 'filtered advanced', exact: true, from_year: 2001, to_year: 2021, count: 4 },
+  },
+  {
+    name: 'search_multi_source',
+    args: { query: 'other sources', source: 'auto', count: 5 },
+    expectedArgs: { query: 'other sources', source: 'auto', count: 5 },
+  },
+];
+
 // Measured at ec91a32 with SDK 1.30.0; each tool gets 10% headroom.
 const characterBaselines = {
   search_books: 1588,
@@ -116,27 +228,44 @@ test('tools/list has a fixture for every advertised tool and bounded schema cost
   }
 });
 
-async function callAdvertised(name, payloadOverride) {
+async function callAdvertised(name, payloadOverride, fixtureOverride) {
   // A missing or miswired registration must not pass merely because an error
   // envelope is schema-valid: require successful dispatch to the real facade.
   expect(advertised.tools.some((tool) => tool.name === name)).toBe(true);
-  const [args, operation, defaultPayload] = cases[name];
+  const [defaultArgs, operation, defaultPayload] = cases[name];
+  const args = fixtureOverride?.args ?? defaultArgs;
+  const expectedArgs = fixtureOverride?.expectedArgs ?? expectedBridgeArgs[name];
   const payload = payloadOverride ?? defaultPayload;
   runBridge.mockResolvedValue([
     JSON.stringify({ content: [{ type: 'text', text: JSON.stringify(payload) }] }),
   ]);
-  const result = await client.callTool({ name, arguments: args });
+  const request = new AbortController();
+  const result = await client.callTool(
+    { name, arguments: args }, CallToolResultSchema, { signal: request.signal },
+  );
   expect(CallToolResultSchema.safeParse(result).success).toBe(true);
   expect(result.isError).not.toBe(true);
   expect(result.content).toEqual([{ type: 'text', text: JSON.stringify(payload) }]);
   expect(runBridge).toHaveBeenCalledTimes(1);
   expect(runBridge.mock.calls[0][1].args[0]).toBe(operation);
+  expect(JSON.parse(runBridge.mock.calls[0][1].args[1])).toEqual(expectedArgs);
+  // The SDK creates a server-side request signal across the transport. It must
+  // reach the real runner options; it is not the client's object identity.
+  expect(runBridge.mock.calls[0][2]).toEqual(
+    expect.objectContaining({ signal: expect.any(AbortSignal) }),
+  );
+  expect(runBridge.mock.calls[0][2].signal.aborted).toBe(false);
 }
 
 for (const name of Object.keys(cases)) {
   if (name !== 'get_recent_books' && name !== 'get_download_history') {
     test(`${name} dispatches and returns an SDK-valid result`, () => callAdvertised(name));
   }
+}
+
+for (const fixture of forwardingCases) {
+  test(`${fixture.name} forwards non-default fields`, () =>
+    callAdvertised(fixture.name, fixture.payload, fixture));
 }
 
 test('get_recent_books registration reaches the intended handler exactly once', async () => {

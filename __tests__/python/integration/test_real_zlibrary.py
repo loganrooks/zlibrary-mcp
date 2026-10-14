@@ -98,12 +98,13 @@ class TestRealAuthentication:
         client = EAPIClient(EAPI_DOMAIN)
         try:
             login_result = await client.login("invalid@example.com", "wrongpassword")
-            # If we get here, check the result
-            assert login_result.get("success") != 1
         except Exception:
-            pass  # Any exception means auth failed, which is expected
-
-        await client.close()
+            pass  # A login exception is an expected authentication failure.
+        else:
+            # Keep this assertion outside the login exception handler.
+            assert login_result.get("success") != 1
+        finally:
+            await client.close()
 
     async def test_session_persistence(self, credentials):
         """Should maintain session across multiple operations."""

@@ -89,16 +89,17 @@ async def probe_eapi_domain(
 ) -> bool:
     """Cheaply check whether a domain serves real EAPI JSON.
 
-    Issues an unauthenticated GET /eapi/info/domains — never /eapi/user/login,
-    which is rate-limited (~10/hour/IP) and would lock out real credentials.
-    Healthy means HTTP 200 with a parseable JSON object containing a domains
-    payload. Redirects are NOT followed: DiamWall's 307 self-redirect is
-    itself the walled signal.
+    Issues an unauthenticated one-row POST /eapi/book/search. DiamWall leaves
+    /eapi/info/domains open even when it blocks search (#125). Never probes
+    /eapi/user/login, which is rate-limited and would lock out real credentials.
+    Healthy means HTTP 200 with a search-shaped JSON object (books or success,
+    including an unauthenticated API error). Redirects are NOT followed:
+    DiamWall's 307 self-redirect is itself the walled signal.
 
     The `transport` parameter exists for tests (httpx.MockTransport); it is
     None in production.
     """
-    url = f"https://{domain.strip().rstrip('/')}/eapi/info/domains"
+    url = f"https://{domain.strip().rstrip('/')}/eapi/book/search"
     try:
         async with httpx.AsyncClient(
             headers=EAPI_HEADERS,
@@ -106,7 +107,9 @@ async def probe_eapi_domain(
             follow_redirects=False,
             transport=transport,
         ) as client:
-            resp = await client.get(url)
+            resp = await client.post(
+                url, data={"message": "philosophy", "limit": "1", "page": "1"}
+            )
     except Exception as exc:  # noqa: BLE001 - any network failure means unusable
         logger.debug(f"EAPI probe failed for {domain}: {type(exc).__name__}: {exc}")
         return False
@@ -121,7 +124,7 @@ async def probe_eapi_domain(
     except ValueError:
         logger.debug(f"EAPI probe: {domain} returned non-JSON")
         return False
-    return isinstance(payload, dict) and "domains" in payload
+    return isinstance(payload, dict) and ("books" in payload or "success" in payload)
 
 
 async def resolve_eapi_domain(

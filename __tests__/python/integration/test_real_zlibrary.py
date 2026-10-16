@@ -98,12 +98,13 @@ class TestRealAuthentication:
         client = EAPIClient(EAPI_DOMAIN)
         try:
             login_result = await client.login("invalid@example.com", "wrongpassword")
-            # If we get here, check the result
-            assert login_result.get("success") != 1
         except Exception:
-            pass  # Any exception means auth failed, which is expected
-
-        await client.close()
+            pass  # A login exception is an expected authentication failure.
+        else:
+            # Keep this assertion outside the login exception handler.
+            assert login_result.get("success") != 1
+        finally:
+            await client.close()
 
     async def test_session_persistence(self, credentials):
         """Should maintain session across multiple operations."""
@@ -182,6 +183,18 @@ class TestRealBasicSearch:
 
         # Should return results
         assert len(result["books"]) >= 0
+
+    async def test_recent_books_contract(self, zlib_client):
+        """Check the distinct recent endpoint using the already-authenticated fixture.
+
+        Inspect upstream shape before bridge normalization can turn a missing
+        books field into an empty list. No new client or login is created.
+        """
+        result = await zlib_client.get_recently()
+        assert isinstance(result, dict)
+        assert result.get("success", 1) == 1
+        assert isinstance(result.get("books"), list)
+        assert all(isinstance(book, dict) for book in result["books"])
 
 
 @pytest.mark.integration

@@ -78,6 +78,13 @@ Two reporting surfaces, split by what a fact costs to obtain, sharing one vocabu
 | `routing` on every `search_multi_source` response | `requested`, `served_by`, `fell_back`, and a symmetric per-source entry (`available`, `routes`, `daily_limit`, `note`) | Local only — no network call may be added here |
 | `get_download_limits` | The same entries, plus `details`, with quotas filled in for the requested sources | Z-Library alone costs an EAPI profile call; `sources` narrows the request to avoid it |
 
+`available` is route eligibility based on local configuration, refined by authentication
+outcomes actually obtained during the call. It is not live reachability, pre-login
+credential validity, successful search, or download success. `routing.served_by` records
+the observed result sources before display slicing. Initialization failure removes
+Z-Library routes; a profile-only failure keeps them eligible and makes only quota unknown.
+No health probe is added by reporting.
+
 Acquisition returns nested `provenance` (`source`, `route`, `mirror`, `host`) — nested
 because `search_multi_source` spreads `**r.extra` into each book dict, so a flat `source`
 key would collide silently.

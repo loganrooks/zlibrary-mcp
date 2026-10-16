@@ -39,7 +39,7 @@ def _dependency_name(requirement: str) -> str:
 
 def test_pyproject_keeps_heavy_dependencies_out_of_core_and_in_named_extras():
     """Moving a heavy package back to core must fail the packaging boundary."""
-    config = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text())
+    config = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     project = config["project"]
 
     core = {_dependency_name(value) for value in project["dependencies"]}
@@ -69,9 +69,10 @@ def test_import_checker_reports_module_scope_heavy_imports(tmp_path):
     lib_dir = tmp_path / "lib"
     lib_dir.mkdir()
     (lib_dir / "guarded.py").write_text(
-        "try:\n    import fitz\nexcept ImportError:\n    fitz = None\n"
+        "try:\n    import fitz\nexcept ImportError:\n    fitz = None\n",
+        encoding="utf-8",
     )
-    (lib_dir / "unguarded.py").write_text("from PIL import Image\n")
+    (lib_dir / "unguarded.py").write_text("from PIL import Image\n", encoding="utf-8")
 
     result = subprocess.run(
         [sys.executable, str(CHECKER), "--root", str(lib_dir)],
@@ -408,10 +409,10 @@ def test_rag_tier_processes_real_pdf_without_scholar_dependencies(
 
         repo_root = Path.cwd()
         baseline = json.loads(
-            (repo_root / "test_files/ground_truth/body_text_baseline.json").read_text()
+            (repo_root / "test_files/ground_truth/body_text_baseline.json").read_text(encoding="utf-8")
         )["baselines"]["sample.pdf"]
         budget = json.loads(
-            (repo_root / "test_files/performance_budgets.json").read_text()
+            (repo_root / "test_files/performance_budgets.json").read_text(encoding="utf-8")
         )["quality_gates"]["pre_commit"]["max_single_test_time_seconds"]
 
         started = time.perf_counter()

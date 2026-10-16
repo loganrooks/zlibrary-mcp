@@ -18,7 +18,14 @@ import asyncio
 import signal
 
 from pathlib import Path
-from filename_utils import create_unified_filename, normalize_document_extension
+from filename_utils import (
+    create_unified_filename,
+    is_degraded_unified_filename,
+    is_preservable_server_filename,
+    normalize_document_extension,
+    sanitize_preserved_filename,
+    truncate_filename_stem,
+)
 import logging
 
 # Import the new RAG processing functions
@@ -302,7 +309,7 @@ async def initialize_eapi_client() -> EAPIClient:
     # ISSUE-API-002: the old single default (z-library.sk) is fronted by the
     # DiamWall anti-bot wall. resolve_eapi_domain() honours an explicit
     # ZLIBRARY_EAPI_DOMAIN override without probing; otherwise it probes the
-    # fallback list (GET /eapi/info/domains — never login, which is
+    # fallback list (one-row POST /eapi/book/search — never login, which is
     # rate-limited) and logs in on the first healthy candidate.
     domain_pinned = bool(os.environ.get("ZLIBRARY_EAPI_DOMAIN", "").strip())
     initial_domain = await resolve_eapi_domain()
@@ -763,9 +770,11 @@ async def get_download_limits(sources=None):
 
     Missing credentials and initialization/authentication failures report
     Z-Library as unavailable with no routes and a `not_applicable` limit.
-    A profile call failure after authentication preserves the usable routes
+    A profile call failure after authentication preserves the eligible routes
     and degrades only the quota to `unknown`. Neither failure blocks the
     other sources, because a credential-free LibGen setup is supported.
+    `available` is local route eligibility, refined by authentication outcomes
+    actually obtained in this call, not live reachability or transfer success.
 
     Args:
         sources: Source names to report, e.g. ["libgen"]. All of them when
@@ -1456,6 +1465,7 @@ async def download_book(
     final_file_path_str = None  # Path with enhanced filename
     processed_file_path_str = None  # Path for RAG processed file
     process_result = None
+    eapi_staging = None
 
     zlibrary_served_by = ""
 
@@ -1471,10 +1481,15 @@ async def download_book(
                 book_details, output_dir
             )
         else:
+            # Raw server names can equal a previously published identity name.
+            # Keep EAPI's replacing write in a private per-call namespace until
+            # the final no-replace publication checks have run.
+            Path(output_dir).mkdir(parents=True, exist_ok=True)
+            eapi_staging = tempfile.TemporaryDirectory(prefix=".eapi-", dir=output_dir)
             original_download_path_str = await eapi.download_file(
                 book_id=int(book_id),
                 book_hash=book_hash,
-                output_dir=output_dir,
+                output_dir=eapi_staging.name,
                 host_observer=_observe_zlibrary_host,
             )
             provenance = _provenance(
@@ -1511,7 +1526,26 @@ async def download_book(
             year=book_details.get("year", ""),
             language=book_details.get("language", ""),
         )
-        final_file_path = Path(output_dir) / unified_filename
+        final_filename = unified_filename
+        # Preserve the server's wording for sparse metadata while keeping the
+        # normalized extension and deterministic identity suffix used by RAG.
+        if is_degraded_unified_filename(unified_filename):
+            server_name = Path(original_download_path_str).name
+            if is_preservable_server_filename(server_name):
+                preserved = sanitize_preserved_filename(server_name)
+                if preserved:
+                    logger.info(
+                        "Sparse book metadata degraded the unified filename; "
+                        "keeping server-provided name %r",
+                        preserved,
+                    )
+                    stem = Path(preserved).stem
+                    identity = Path(unified_filename).stem.rsplit("_", 1)[-1]
+                    identity_suffix = f"_{identity}"
+                    ending = identity_suffix + Path(unified_filename).suffix
+                    stem = truncate_filename_stem(stem, ending)
+                    final_filename = stem + ending
+        final_file_path = Path(output_dir) / final_filename
         final_file_path_str = str(final_file_path)
 
         if process_for_rag and final_file_path.suffix.lower() not in {
@@ -1572,6 +1606,9 @@ async def download_book(
         identifier = book_details.get("id") or book_details.get("md5") or "unknown"
         logger.exception(f"Error in download_book for {identifier}")
         raise e
+    finally:
+        if eapi_staging is not None:
+            eapi_staging.cleanup()
 
 
 async def get_book_metadata_complete(book_id: str, book_hash: str = None) -> dict:
@@ -1759,7 +1796,10 @@ def _routing_report(router: SourceRouter, source: str, books: list) -> dict:
 
     All four fields are local: the source constraints come from configuration
     and the rest from the request and its results, so attaching this to every
-    search costs no round-trip. Facts that would cost one live in
+    search costs no extra round-trip. `available` is local route eligibility,
+    not live reachability, pre-login credential validity, or search/download
+    success. `served_by` records the observed result source, even when display
+    slicing hides every book. Facts that would cost a round-trip live in
     `get_download_limits` instead (#96).
 
     `fell_back` is the field this whole block exists for. `sources_used` was
@@ -1866,8 +1906,9 @@ def _requires_eapi_client(function_name: str, args_dict: dict) -> bool:
         # Per-source since #107: LibGen and Anna's answer from configuration,
         # so a caller asking only about them must not pay for a Z-Library
         # login. Z-Library's own entry logs in lazily and reports the failure
-        # as that one entry's `unknown` reason, which is why this is False
-        # even when Z-Library IS requested — an auth outage degrades one
+        # in that entry (initialization: not_applicable; profile: unknown),
+        # which is why this is False even when Z-Library IS requested — an
+        # auth outage degrades one
         # source's answer rather than the whole tool's.
         return False
     if function_name == "download_book":

@@ -344,8 +344,12 @@ class TestNodePythonDispatchContract:
         import re
 
         repo_root = Path(__file__).resolve().parents[2]
-        node_src = (repo_root / "src" / "lib" / "zlibrary-api.ts").read_text()
-        bridge_src = (repo_root / "lib" / "python_bridge.py").read_text()
+        node_src = (repo_root / "src" / "lib" / "zlibrary-api.ts").read_text(
+            encoding="utf-8"
+        )
+        bridge_src = (repo_root / "lib" / "python_bridge.py").read_text(
+            encoding="utf-8"
+        )
 
         node_names = set(re.findall(r"callPythonFunction\(\s*'([^']+)'", node_src))
         assert node_names, "no callPythonFunction() names found — regex drifted?"
@@ -1368,6 +1372,72 @@ class TestDownloadBook:
         assert not owned.exists()
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize("matching_content", [True, False])
+    async def test_eapi_staging_preserves_published_artifact_and_host_provenance(
+        self, tmp_path, monkeypatch, matching_content
+    ):
+        """Catch raw EAPI overwrite before publication and lost host observation."""
+        filename = "Author_Title_123.pdf"
+        body = b"%PDF-1.7 downloaded content"
+        previous = body if matching_content else b"%PDF-1.7 previous artifact"
+        published = tmp_path / filename
+        published.write_bytes(previous)
+        staging_paths = []
+
+        async def download_file(*, book_id, book_hash, output_dir, host_observer):
+            assert book_id == 123
+            assert book_hash == "hash123"
+            staging = Path(output_dir)
+            staging_paths.append(staging)
+            assert staging.parent == tmp_path
+            assert staging != tmp_path
+            # EAPI replaces raw server filenames. Use the already published
+            # name to expose bypassing the private per-call staging directory.
+            raw = staging / filename
+            raw.write_bytes(body)
+            host_observer("synthetic-transfer-host")
+            return str(raw)
+
+        client = SimpleNamespace(
+            domain="synthetic-eapi-mirror",
+            download_file=AsyncMock(side_effect=download_file),
+        )
+        monkeypatch.setattr(
+            python_bridge, "get_eapi_client", AsyncMock(return_value=client)
+        )
+        monkeypatch.setattr(
+            python_bridge, "create_unified_filename", lambda *_args, **_kwargs: filename
+        )
+        args = {
+            "book_details": {
+                "id": "123",
+                "hash": "hash123",
+                "title": "Title",
+                "author": "Author",
+                "extension": "pdf",
+            },
+            "output_dir": str(tmp_path),
+        }
+
+        if matching_content:
+            result = await download_book(**args)
+            assert result["file_path"] == str(published)
+            assert result["provenance"] == {
+                "source": "zlibrary",
+                "route": "eapi",
+                "mirror": "synthetic-eapi-mirror",
+                "host": "synthetic-transfer-host",
+            }
+        else:
+            with pytest.raises(FileExistsError):
+                await download_book(**args)
+
+        client.download_file.assert_awaited_once()
+        assert published.read_bytes() == previous
+        assert staging_paths and all(not path.exists() for path in staging_paths)
+        assert list(tmp_path.iterdir()) == [published]
+
+    @pytest.mark.asyncio
     async def test_repeat_acquisition_without_catalog_md5_rejects_same_size_different_content(
         self, tmp_path, mocker, mock_eapi_download, patch_eapi_client
     ):
@@ -1555,7 +1625,7 @@ class SignalResponse:
 
     async def aiter_bytes(self):
         yield b'partial'
-        ready.write_text('ready')
+        ready.write_text('ready', encoding='utf-8')
         await asyncio.sleep(600)
 
 class SignalStream:
@@ -1605,9 +1675,7 @@ asyncio.run(python_bridge.main())
                 time.sleep(0.02)
             assert ready.exists()
             assert not partial.exists()
-            staging_files = [
-                path for path in tmp_path.iterdir() if path.name.endswith(".part")
-            ]
+            staging_files = [path for path in tmp_path.rglob("*.part")]
             assert len(staging_files) == 1
 
             process.send_signal(signal.SIGTERM)
@@ -1615,9 +1683,8 @@ asyncio.run(python_bridge.main())
             stdout, _stderr = process.communicate()
 
             assert not partial.exists()
-            assert not [
-                path for path in tmp_path.iterdir() if path.name.endswith(".part")
-            ]
+            assert not [path for path in tmp_path.rglob("*.part")]
+            assert not list(tmp_path.glob(".eapi-*"))
             assert stdout == ""
         finally:
             if process.poll() is None:
@@ -2254,7 +2321,7 @@ asyncio.run(python_bridge.main())
 
         mock_eapi_download.download_file.return_value = original_path
         Path(output_dir_mock).mkdir(parents=True)
-        Path(original_path).write_text("EAPI text fixture")
+        Path(original_path).write_text("EAPI text fixture", encoding="utf-8")
         mocker.patch(
             "python_bridge.create_unified_filename", return_value=expected_filename
         )

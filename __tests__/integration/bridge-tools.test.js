@@ -49,8 +49,8 @@ describe('Bridge Integration Tests', () => {
 
   if (!IS_LIVE) {
     // ── Recorded mode ──
-    // Mock PythonShell so callPythonFunction returns fixture data
-    let mockPythonShellRun;
+    // Mock the Python runner so callPythonFunction returns fixture data.
+    let mockRunPythonBridge;
     let mockGetManagedPythonPath;
 
     beforeEach(async () => {
@@ -58,14 +58,15 @@ describe('Bridge Integration Tests', () => {
       jest.clearAllMocks();
 
       mockGetManagedPythonPath = jest.fn().mockResolvedValue('/usr/bin/python3');
-      mockPythonShellRun = jest.fn();
+      mockRunPythonBridge = jest.fn();
 
       jest.unstable_mockModule('../../dist/lib/venv-manager.js', () => ({
         getManagedPythonPath: mockGetManagedPythonPath,
       }));
 
-      jest.unstable_mockModule('python-shell', () => ({
-        PythonShell: { run: mockPythonShellRun },
+      jest.unstable_mockModule('../../dist/lib/python-runner.js', () => ({
+        runPythonBridge: mockRunPythonBridge,
+        LONG_BRIDGE_TIMEOUT_MS: 2400000,
       }));
     });
 
@@ -74,10 +75,9 @@ describe('Bridge Integration Tests', () => {
         const spec = TOOL_BRIDGE_MAP[toolName];
         const fixture = loadFixture(spec.fixture);
 
-        // PythonShell.run returns array of strings (stdout lines)
-        // The fixture is the full MCP response object; callPythonFunction
-        // joins lines and parses, so we return the stringified fixture as a single line.
-        mockPythonShellRun.mockResolvedValue([JSON.stringify(fixture)]);
+        // The fixture is a full MCP response object. The runner mock returns
+        // its stdout lines without starting a Python process.
+        mockRunPythonBridge.mockResolvedValue([JSON.stringify(fixture)]);
 
         // Dynamic import after mocking
         const zlibApi = await import('../../dist/lib/zlibrary-api.js');
@@ -132,6 +132,10 @@ describe('Bridge Integration Tests', () => {
           expect(result).not.toBeNull();
 
           if (toolName === 'download_book_to_file') {
+            // The contract fixture is offline synthetic data, not a provider recording.
+            expect(result.provenance).toEqual({
+              source: 'zlibrary', route: 'eapi', mirror: null, host: 'synthetic-transfer-host',
+            });
             expect(result).toEqual(expect.objectContaining({
               processed_file_path: expect.any(String),
               metadata_file_path: expect.any(String),
@@ -140,6 +144,20 @@ describe('Bridge Integration Tests', () => {
                 metadata: expect.any(String),
               }),
             }));
+          }
+
+          if (toolName === 'get_download_limits') {
+            expect(result).toEqual(JSON.parse(fixture.content[0].text));
+            expect(result.requested).toEqual(['annas_archive', 'libgen', 'zlibrary']);
+            expect(Object.keys(result.sources)).toEqual(result.requested);
+            expect(result.sources.annas_archive.routes).toEqual(['search']);
+            expect(result.sources.annas_archive.daily_limit.state).toBe('not_applicable');
+            expect(result.sources.libgen.daily_limit.state).toBe('none');
+            expect(result.sources.zlibrary.available).toBe(true);
+            expect(result.sources.zlibrary.daily_limit).toEqual({
+              state: 'known', total: 10, used: 2, remaining: 8, note: '',
+            });
+            expect(result.sources.zlibrary.details).toEqual({ is_premium: false });
           }
 
           if (toolName === 'process_document_for_rag') {
@@ -153,10 +171,10 @@ describe('Bridge Integration Tests', () => {
             }));
           }
 
-          // Verify PythonShell.run was called with correct function name
-          expect(mockPythonShellRun).toHaveBeenCalledTimes(1);
-          const callArgs = mockPythonShellRun.mock.calls[0][1]; // options
-          expect(callArgs.args[0]).toBe(spec.fn);
+          expect(mockRunPythonBridge).toHaveBeenCalledTimes(1);
+          const [, options] = mockRunPythonBridge.mock.calls[0];
+          expect(options.args[0]).toBe(spec.fn);
+          expect(JSON.parse(options.args[1])).toMatchObject(spec.minArgs);
 
           results.push({ tool: toolName, mode: 'recorded', status: 'PASS', error: null });
         } catch (err) {

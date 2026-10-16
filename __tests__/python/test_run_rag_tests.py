@@ -173,7 +173,7 @@ def test_load_manifest_invalid_json():
     """
     # Create a temporary invalid JSON file
     invalid_json_path = "scripts/invalid_manifest.json"
-    with open(invalid_json_path, "w") as f:
+    with open(invalid_json_path, "w", encoding="utf-8") as f:
         f.write("{invalid json content")
 
     with pytest.raises(json.JSONDecodeError):
@@ -856,7 +856,8 @@ async def test_run_single_test_downloads_file_from_manifest(mocker, tmp_path):
         "EAPIClient.download_file should be called for download"
     )
     # Check processing uses downloaded path for both text and markdown
-    # Note: download_book() renames file to standardized format (UnknownAuthor_UntitledBook_12345.pdf)
+    # Note: sparse manifest metadata degrades the unified filename, so the
+    # server-provided wording is kept with the required _12345.pdf suffix
     assert mock_process.call_count == 2
     # Verify both text and markdown output formats were processed (actual path will be renamed)
     # Check evaluate is called twice (for text and markdown)
@@ -871,10 +872,10 @@ async def test_run_single_test_downloads_file_from_manifest(mocker, tmp_path):
     # Assert the expected keys are present and 'status' is absent at call time
     assert "id" in actual_arg_dict and actual_arg_dict["id"] == "12345"
     assert "format" in actual_arg_dict and actual_arg_dict["format"] == "pdf"
-    # Note: download_book() renames file to standardized format, so path will differ from mock_downloaded_path
-    assert "downloaded_path" in actual_arg_dict and actual_arg_dict[
-        "downloaded_path"
-    ].endswith("_12345.pdf")
+    # Note: with sparse manifest metadata download_book keeps the
+    # server-provided wording plus ID rather than collapsing to a placeholder
+    assert "downloaded_path" in actual_arg_dict
+    assert Path(actual_arg_dict["downloaded_path"]).name == "downloaded_book_12345.pdf"
     assert "text_eval" in actual_arg_dict and actual_arg_dict["text_eval"] == {
         "text_length": 100,
         "word_count": 20,
@@ -891,8 +892,7 @@ async def test_run_single_test_downloads_file_from_manifest(mocker, tmp_path):
 
     # Assert the final result dictionary contains the status string returned by the mock
     assert result["status"] == "PASS"  # Expect simple string
-    # Note: download_book() renames file, so check that downloaded_path ends with correct ID
-    assert result["downloaded_path"].endswith("_12345.pdf")
+    assert Path(result["downloaded_path"]).name == "downloaded_book_12345.pdf"
     assert (
         result["processed_text_preview"] == "Processed PDF text"[:100]
     )  # Check preview uses processed text

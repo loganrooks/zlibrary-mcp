@@ -154,8 +154,12 @@ capabilities.
 
 The server reports these constraints rather than choosing between them. Every
 `search_multi_source` response carries a `routing` block naming which source you asked
-for, which one answered, whether a substitution happened, and what each source can
-currently do. Every download response carries a `provenance` block naming the source,
+for, which one answered, whether a substitution happened, and each source's locally
+eligible routes. `available` means route eligibility based on local configuration,
+refined by any authentication outcome actually obtained during that call. It does not
+mean live reachability, credential validity before login, successful search, or download
+success. `routing.served_by` names the observed result sources, before display slicing.
+Every download response carries a `provenance` block naming the source,
 route, mirror, and host that served the file. Neither ranks the sources: the calling
 agent decides. See [API Reference](docs/api.md) for the field shapes.
 

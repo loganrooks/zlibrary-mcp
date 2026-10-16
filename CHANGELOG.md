@@ -12,8 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The source/route reporting contract** decided on #96, in three surfaces
   (#101, #107). `search_multi_source` now returns a `routing` block naming what
   was requested, what served it, whether a fallback happened, and each source's
-  current routes and daily limit — every field read from configuration, so it
-  costs no extra request. `download_book_to_file` returns nested `provenance`
+  locally eligible routes and daily limit — constraints come from configuration
+  and `routing.served_by` from observed results, so reporting costs no extra
+  request. `available` is local route eligibility, refined by authentication
+  outcomes actually obtained in the call, not live reachability, pre-login
+  credential validity, successful search, or download success.
+  `download_book_to_file` returns nested `provenance`
   with the source, route, mirror, and host that actually served the file;
   before this those went to `logger.warning` on stderr and never reached the
   caller. `get_download_limits` reports every source rather than Z-Library
@@ -69,6 +73,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The release audit distinguishes explicit patch milestones from minor slots, so an
+  untagged `v1.4.1` is not treated as already shipped by `v1.4.0`. Exact patch milestones
+  own matching tags; legacy minor-only records still work. The PR-age rule is unchanged.
 - **`search_multi_source` could hang forever, and leave the Python process
   behind when it did.** Three defects compounded: the vendored
   `libgen_api_enhanced` calls `requests.get` with no `timeout=` (and catches a
@@ -114,8 +121,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `sources.zlibrary`, whose numbers live under `daily_limit` and whose
   `is_premium` lives under `details`. A tool whose name never named a source
   was answering as though it had (#107). A Z-Library outage now degrades that
-  one entry to `unknown` with the reason attached rather than failing the whole
-  call, so a credential-free Library Genesis setup still gets an answer.
+  one entry rather than failing the whole call: initialization/authentication
+  failure removes its routes and makes the quota `not_applicable`; a profile-only
+  failure keeps routes eligible and makes quota `unknown`, with the reason attached.
+  A credential-free Library Genesis setup still gets an answer.
 
 - `CONTEXT.md` added as the terminology glossary, splitting the overloaded term
   "keyless" into *keyed fast_download*, *operator-cookie slow_download*, and

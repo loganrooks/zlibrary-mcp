@@ -48,7 +48,11 @@ carries `route`, `mirror`, and `host` for the adapters to fill in; before #101 i
 
 The discovery-time counterpart is the `routing` block on every `search_multi_source`
 response: `requested`, `served_by`, `fell_back`, and a symmetric per-source entry naming
-each source's routes and daily limit. Both shapes were decided on #96.
+each source's routes and daily limit. `available` means local configuration makes at
+least one route eligible, refined by authentication outcomes actually obtained during
+the call. It does not mean live reachability, credential validity before login,
+successful search, or download success. `routing.served_by` records the observed result
+sources before display slicing, not configured eligibility. Both shapes were decided on #96.
 
 ### Anna's Archive routes
 

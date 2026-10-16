@@ -11,6 +11,7 @@
 import os
 import sys
 from unittest.mock import AsyncMock, MagicMock
+from urllib.parse import parse_qs
 
 import httpx
 import pytest
@@ -44,7 +45,7 @@ DIAMWALL_HTML = (
 
 
 def healthy_response(request: httpx.Request) -> httpx.Response:
-    return httpx.Response(200, json={"domains": ["z-library.ec", "z-library.sk"]})
+    return httpx.Response(200, json={"success": 1, "books": []})
 
 
 def diamwall_redirect(request: httpx.Request) -> httpx.Response:
@@ -133,22 +134,48 @@ class TestProbeEAPIDomain:
         transport = transport_by_host({})  # every host unreachable
         assert await probe_eapi_domain("z-library.sk", transport=transport) is False
 
-    async def test_json_without_domains_payload_fails(self):
+    @pytest.mark.parametrize("payload", [{}, [], None, {"domains": ["z-library.sk"]}])
+    async def test_json_without_search_payload_fails(self, payload):
         transport = transport_by_host(
-            {"z-library.sk": lambda r: httpx.Response(200, json={"success": 0})}
+            {"z-library.sk": lambda r: httpx.Response(200, json=payload)}
         )
         assert await probe_eapi_domain("z-library.sk", transport=transport) is False
 
-    async def test_probe_targets_info_domains_not_login(self):
-        """Probing must never touch /eapi/user/login (rate-limited ~10/hour/IP)."""
+    async def test_authentication_error_json_is_reachable_without_login(self):
+        transport = transport_by_host(
+            {
+                "z-library.ec": lambda r: httpx.Response(
+                    200, json={"success": 0, "error": "Authentication required"}
+                )
+            }
+        )
+        assert await probe_eapi_domain("z-library.ec", transport=transport) is True
+
+    async def test_probe_is_an_unauthenticated_one_row_search_not_login(self):
+        """Exercise the guarded endpoint without credentials or a login attempt."""
         seen = []
 
         def handler(request: httpx.Request) -> httpx.Response:
-            seen.append(request.url.path)
+            seen.append(request)
             return healthy_response(request)
 
-        await probe_eapi_domain("z-library.ec", transport=httpx.MockTransport(handler))
-        assert seen == ["/eapi/info/domains"]
+        assert (
+            await probe_eapi_domain(
+                "z-library.ec", transport=httpx.MockTransport(handler)
+            )
+            is True
+        )
+        assert len(seen) == 1
+        request = seen[0]
+        assert request.method == "POST"
+        assert request.url.path == "/eapi/book/search"
+        assert parse_qs(request.content.decode()) == {
+            "message": ["philosophy"],
+            "limit": ["1"],
+            "page": ["1"],
+        }
+        assert "cookie" not in request.headers
+        assert "authorization" not in request.headers
 
 
 # --- Fallback ordering at login --------------------------------------------
@@ -209,6 +236,47 @@ class TestResolveEAPIDomain:
 
 
 class TestSelectAdvertisedDomain:
+    @pytest.mark.parametrize("wall_status", [307, 513, 200])
+    async def test_open_domain_listing_does_not_hide_a_guarded_search_wall(
+        self, wall_status
+    ):
+        requests = []
+
+        def handler(request):
+            requests.append((request.url.host, request.method, request.url.path))
+            if request.url.path == "/eapi/info/domains":
+                return httpx.Response(200, json={"domains": ["z-library.sk"]})
+            if request.url.host == "z-library.sk":
+                return httpx.Response(
+                    wall_status,
+                    headers={"location": "https://z-library.sk/eapi/book/search"},
+                    text=DIAMWALL_HTML if wall_status == 200 else "Access Denied",
+                )
+            return healthy_response(request)
+
+        picked = await select_advertised_domain(
+            ["z-library.sk", "article.sk"],
+            "z-library.ec",
+            transport=httpx.MockTransport(handler),
+        )
+        assert picked == "article.sk"
+        # One request per candidate: in particular the 307 must not be followed.
+        assert requests == [
+            ("z-library.sk", "POST", "/eapi/book/search"),
+            ("article.sk", "POST", "/eapi/book/search"),
+        ]
+
+    async def test_open_listing_with_walled_search_keeps_the_working_domain(self):
+        def handler(request):
+            if request.url.path == "/eapi/info/domains":
+                return httpx.Response(200, json={"domains": ["z-library.sk"]})
+            return httpx.Response(513, text="Access Denied")
+
+        picked = await select_advertised_domain(
+            ["z-library.sk"], "z-library.ec", transport=httpx.MockTransport(handler)
+        )
+        assert picked is None  # caller retains its working authenticated client
+
     async def test_skips_walled_advertised_domain(self):
         """/eapi/info/domains advertises the walled z-library.sk first; the
         discovery step must skip it instead of switching onto it."""

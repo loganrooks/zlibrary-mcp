@@ -264,18 +264,18 @@ Results from this tool can be downloaded. Pass a result to `download_book_to_fil
 
 `books` is an array of book objects with the fields `md5`, `title`, `author`, `year`, `extension`, `size`, and `source`.
 
-`routing` reports what you asked for, what answered, and what each source can currently do. Every fact in it is read from configuration, so it costs no extra network request. Facts that would cost one live in `get_download_limits` instead.
+`routing` reports what you asked for, the observed result sources in `served_by`, whether a fallback occurred, and each source's configured route eligibility and limits. Eligibility comes from local configuration; `served_by` comes from the search results before display slicing. Reporting adds no health request. Quota information that requires an extra request lives in `get_download_limits` instead.
 
 | Field | Meaning |
 |-------|---------|
 | `requested` | The `source` value you passed, verbatim (`"auto"`, `"annas"`, or `"libgen"`) |
-| `served_by` | Canonical names of the sources that supplied the returned books |
+| `served_by` | Canonical names of the observed result sources, before display slicing (including zero or negative count) |
 | `fell_back` | `true` when the source that answered is not the one the server meant to try first |
 | `sources` | One entry per source, with the same fields for every source |
 
 `fell_back` is the reason this block exists. Ask for one source, receive another, and nothing else in the response tells you the substitution happened.
 
-Each entry in `routing.sources` has `available` (at least one route is usable now), `routes` (which of `search` and `download`), `note` (a sentence naming the constraint), and `daily_limit`. A `daily_limit` is never a bare `null`: its `state` says which of four situations you are in.
+Each entry in `routing.sources` has `available` (at least one route is eligible under local configuration), `routes` (which of `search` and `download`), `note` (a sentence naming the constraint), and `daily_limit`. `available` is refined by any authentication outcome actually obtained during the call; it is not live reachability, credential validity before login, successful search, or download success. `routing.served_by` records the observed result sources instead. Reporting adds no health probe. A `daily_limit` is never a bare `null`: its `state` says which of four situations you are in.
 
 | `state` | Meaning |
 |---------|---------|
@@ -351,10 +351,10 @@ Each entry in `routing.sources` has `available` (at least one route is usable no
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
-| count | integer | No | `10` | Number of books to return |
+| count | positive integer | No | `10` | Number of books to return |
 | format | string | No | -- | Filter by file format (e.g., `"pdf"`, `"epub"`) |
 
-**Returns:** JSON array of recently added book objects with standard metadata fields.
+**Returns:** JSON object `{"books": [...]}` containing recently added book objects with standard metadata fields. `count` sets the size of the recent-book window; `format` filters that window by file extension and may return fewer than `count` books when other formats are present.
 
 **Example Usage:**
 
@@ -618,7 +618,7 @@ Each entry has the same fields as an entry in `search_multi_source`'s `routing.s
 | Z-Library | `state: "known"` with `total` / `used` / `remaining` from the account profile. Without credentials, `state: "not_applicable"` and `available: false` |
 | Anna's Archive | With `ANNAS_SECRET_KEY`, `state: "unknown"` — Anna's reports the keyed quota only in a fast-download response, so it cannot be read without spending a download. Without a key, `state: "not_applicable"` and search-only routes |
 
-Missing Z-Library credentials, or a refused login while initializing the EAPI client, make that source unavailable: `available: false`, no routes, and `daily_limit.state: "not_applicable"`. A profile lookup failure *after* authentication leaves the usable routes advertised and degrades only the quota to `state: "unknown"` with the reason in `note`. The other sources still answer, because a credential-free Library Genesis setup is supported.
+Missing Z-Library credentials, or a refused login while initializing the EAPI client, make that source ineligible: `available: false`, no routes, and `daily_limit.state: "not_applicable"`. A profile lookup failure *after* authentication leaves the eligible routes advertised and degrades only the quota to `state: "unknown"` with the reason in `note`. This uses the same `available` eligibility meaning as `routing.sources`, not a reachability or success claim. The other sources still answer, because a credential-free Library Genesis setup is supported.
 
 **Example Usage:**
 

@@ -1,5 +1,11 @@
 # Version Control & Git Workflow Guide
 
+> **Precedence:** [AGENTS.md](../AGENTS.md#working-agreements) controls current merge,
+> destructive-operation and connector-review rules. Merge or auto-merge requires an
+> instruction in the current session; destructive operations require prior approval.
+> Older direct-master, force-push and review examples below are historical reference,
+> not authority to perform them.
+
 <!-- Last Verified: 2026-02-01 -->
 
 ## Overview

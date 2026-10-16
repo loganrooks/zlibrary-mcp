@@ -97,7 +97,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   read `downloads_today_limit` / `downloads_today_left` from the EAPI profile;
   the endpoint sends `downloads_limit` / `downloads_today`. The unit test
   passed throughout because its fixture had been written to match the code
-  rather than the service. The response now also carries `downloads_today`.
+  rather than the service. The parser now reads `downloads_today`; the current
+  per-source response exposes it as `sources.zlibrary.daily_limit.used` (see Changed).
 - `SourceRouter` honours an explicit `source="annas"` and Anna's search extracts full
   metadata — authors, publisher, year, language, format, size, and upstream provenance —
   parsed by pattern rather than position, since year is absent from roughly 9% of

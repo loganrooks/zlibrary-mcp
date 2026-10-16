@@ -76,7 +76,7 @@ Two reporting surfaces, split by what a fact costs to obtain, sharing one vocabu
 | Surface | Carries | Cost |
 |---|---|---|
 | `routing` on every `search_multi_source` response | `requested`, `served_by`, `fell_back`, and a symmetric per-source entry (`available`, `routes`, `daily_limit`, `note`) | Local only — no network call may be added here |
-| `get_download_limits` | The same entries, plus `details`, with quotas filled in for the requested sources | Z-Library alone costs an EAPI profile call; `sources` narrows the request to avoid it |
+| `get_download_limits` | The same entries, plus `details`, with quotas filled in for the requested sources | Z-Library may require initialization/domain discovery, login and a profile lookup; narrowing `sources` to configuration-only entries avoids that work |
 
 `available` is route eligibility based on local configuration, refined by authentication
 outcomes actually obtained during the call. It is not live reachability, pre-login

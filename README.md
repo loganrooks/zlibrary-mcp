@@ -198,8 +198,9 @@ tools continue to work.
 
 Z-Library applies a daily download limit of approximately 10 books. Call
 `get_download_limits` to check your remaining quota. That tool reports every source, not
-only Z-Library; Z-Library is the one whose answer costs a round-trip, so pass
-`sources: ["libgen"]` when Z-Library is not the source you are asking about.
+only Z-Library. A Z-Library quota lookup may require initialization/domain discovery,
+login and a profile lookup. Pass `sources: ["libgen"]` to avoid that work when
+Z-Library is not the source you are asking about.
 
 ### Anna's Archive
 

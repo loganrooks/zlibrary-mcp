@@ -538,10 +538,15 @@ class TestProvenance:
                 return_value=SimpleNamespace(iter_download_candidates=candidates)
             ),
         )
+
+        async def transfer(*_args, host_observer, **_kwargs):
+            host_observer("synthetic-redirected-host")
+            return str(raw)
+
         monkeypatch.setattr(
             python_bridge,
             "_download_url_to_file",
-            AsyncMock(return_value=str(raw)),
+            AsyncMock(side_effect=transfer),
         )
 
         _path, provenance = await python_bridge._fetch_from_source(
@@ -552,7 +557,7 @@ class TestProvenance:
             "source": "libgen",
             "route": "get.php",
             "mirror": "vg",
-            "host": "libgen.vg",
+            "host": "synthetic-redirected-host",
         }
 
     @pytest.mark.asyncio

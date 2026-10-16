@@ -113,6 +113,21 @@ const expectedBridgeArgs = {
 // facade would otherwise reconstruct a missing field's default value.
 const forwardingCases = [
   {
+    name: 'get_download_limits',
+    args: { sources: ['libgen'] },
+    expectedArgs: { sources: ['libgen'] },
+    payload: {
+      requested: ['libgen'],
+      sources: {
+        libgen: {
+          available: true, routes: ['search', 'download'],
+          daily_limit: { state: 'none', total: null, used: null, remaining: null, note: 'synthetic unlimited source' },
+          note: 'synthetic unlimited source', details: {},
+        },
+      },
+    },
+  },
+  {
     name: 'search_books',
     args: {
       query: 'filtered books', exact: true, fromYear: 1900, toYear: 1950,
@@ -273,12 +288,18 @@ async function callAdvertised(name, payloadOverride, fixtureOverride) {
   expect(result.isError).not.toBe(true);
   expect(result.content).toEqual([{ type: 'text', text: JSON.stringify(payload) }]);
   if (name === 'get_download_limits') {
-    expect(result.structuredContent).toEqual(syntheticLimits);
     expect(result.structuredContent.sources.libgen.daily_limit.state).toBe('none');
-    expect(result.structuredContent.sources.annas_archive.daily_limit.state).toBe('not_applicable');
-    expect(result.structuredContent.sources.zlibrary.daily_limit).toEqual({
-      state: 'known', total: 10, used: 2, remaining: 8, note: '',
-    });
+    if (args.sources) {
+      expect(result.structuredContent).toEqual(payload);
+      expect(result.structuredContent.requested).toEqual(['libgen']);
+      expect(Object.keys(result.structuredContent.sources)).toEqual(['libgen']);
+    } else {
+      expect(result.structuredContent).toEqual(syntheticLimits);
+      expect(result.structuredContent.sources.annas_archive.daily_limit.state).toBe('not_applicable');
+      expect(result.structuredContent.sources.zlibrary.daily_limit).toEqual({
+        state: 'known', total: 10, used: 2, remaining: 8, note: '',
+      });
+    }
   }
   expect(runBridge).toHaveBeenCalledTimes(1);
   expect(runBridge.mock.calls[0][1].args[0]).toBe(operation);

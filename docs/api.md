@@ -600,7 +600,7 @@ Provenance describes the transfer, never the document. No file content travels i
 
 **Description:** Report each source's daily download limit. Not Z-Library only: the tool's name never named a source, and answering it with one source's numbers privileged that source in a surface that must not.
 
-Z-Library is the only source whose answer costs a network round-trip, because it is read from the authenticated account profile. Library Genesis and Anna's Archive are answered from configuration. Pass `sources` to ask about those without paying for the Z-Library call.
+Z-Library's quota is read from the authenticated account profile and may require initialization/domain discovery, login and a profile lookup. Library Genesis and Anna's Archive are answered from configuration. Pass `sources` to ask only about those and avoid that Z-Library work; no fixed network request count is implied.
 
 **Parameters:**
 

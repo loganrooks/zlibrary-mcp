@@ -384,6 +384,15 @@ missing, the operation returns the exact `uv sync` command to install it.
 
 Use `download_book_to_file` with `process_for_rag: true` for combined download and processing, or `process_document_for_rag` to process an existing file.
 
+The MCP `process_document_for_rag` tool does not run optical strikethrough/X-mark
+detection. For direct Python callers of the legacy `process_pdf` function,
+detection is off by default, even with OpenCV installed. To opt in on that path,
+set `RAG_DETECT_STRIKETHROUGH=true` (OpenCV is required).
+`RAG_XMARK_DETECTION_MODE` further filters documents: `always` allows all,
+`never` disables detection, and the default `auto` allows unknown documents.
+Setting a document mode alone does not enable detection; explicitly setting
+`RAG_DETECT_STRIKETHROUGH=false` keeps it off.
+
 ## Configuration
 
 The server requires Z-Library credentials, set as environment variables:

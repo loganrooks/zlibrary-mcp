@@ -160,7 +160,8 @@ def process_pdf(
         preserve_linebreaks: If True, preserve original line breaks from PDF for citation accuracy.
                            If False, join lines intelligently for readability (default).
         detect_footnotes: If True, detect and format footnotes/endnotes (default: False)
-        enable_quality_pipeline: If True, run OCR quality pipeline for sous-rature detection (default: True).
+        enable_quality_pipeline: If True, run the quality pipeline (default: True).
+                               Optical strikethrough detection requires RAG_DETECT_STRIKETHROUGH=true.
                                Set to False for footnote-only processing to achieve 95% speedup.
                                Footnote detection doesn't require OCR text recovery.
 
@@ -226,11 +227,15 @@ def process_pdf(
 
     if not enable_xmark_for_doc:
         logging.info(
-            "X-mark detection DISABLED for this document (not philosophy corpus)"
+            "X-mark detection DISABLED by document selection mode"
         )
         # Disable strikethrough detection in config for this document
         quality_config.detect_strikethrough = False
-    elif parallel_xmark and quality_config.detect_strikethrough and _XMARK_AVAILABLE:
+    elif not quality_config.detect_strikethrough:
+        logging.info("X-mark detection DISABLED in quality pipeline configuration")
+    elif not _XMARK_AVAILABLE:
+        logging.info("X-mark detection requested but OpenCV is unavailable")
+    elif parallel_xmark:
         logging.info(
             f"X-mark detection ENABLED with PARALLEL mode ({xmark_workers} workers)"
         )

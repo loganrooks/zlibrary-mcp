@@ -75,7 +75,7 @@ class QualityPipelineConfig:
     # Feature toggles
     enable_pipeline: bool = True
     detect_garbled: bool = True
-    detect_strikethrough: bool = True
+    detect_strikethrough: bool = False
     enable_ocr_recovery: bool = True
 
     # Strategy
@@ -97,7 +97,7 @@ class QualityPipelineConfig:
         return cls(
             enable_pipeline=os.getenv('RAG_ENABLE_QUALITY_PIPELINE', 'true').lower() == 'true',
             detect_garbled=os.getenv('RAG_DETECT_GARBLED', 'true').lower() == 'true',
-            detect_strikethrough=os.getenv('RAG_DETECT_STRIKETHROUGH', 'true').lower() == 'true',
+            detect_strikethrough=os.getenv('RAG_DETECT_STRIKETHROUGH', 'false').lower() == 'true',
             enable_ocr_recovery=os.getenv('RAG_ENABLE_OCR_RECOVERY', 'true').lower() == 'true',
             strategy=strategy_name,
             garbled_threshold=strategy['garbled_threshold'],

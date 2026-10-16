@@ -4,7 +4,8 @@ Unit tests for lib/strikethrough_detection.py
 Targets uncovered lines: 45-48, 54-56, 84-92, 107, 111, 147,
 177-200, 215-234, 255-279, 298-343, 384-484, 510-519, 528, 530.
 
-Uses mocks — no real PDFs, opencv, or numpy.
+Uses mocks — no real PDFs or native opencv. Added ndarray coverage uses
+optional NumPy; list-only regression cases do not require it.
 """
 
 import pytest
@@ -626,6 +627,74 @@ class TestRenderPageToImage:
 
 
 class TestDetectLinesLsd:
+    @pytest.mark.parametrize("nested", [False, True], ids=["flat", "legacy"])
+    @pytest.mark.parametrize("as_array", [False, True], ids=["list", "ndarray"])
+    def test_coordinate_layouts_preserve_all_geometry(self, nested, as_array):
+        coordinates = [[0.0, 0.0, 3.0, 4.0], [10.0, 10.0, 13.0, 6.0],
+                       [8.0, 2.0, 2.0, 2.0]]
+        rows = [[row] for row in coordinates] if nested else coordinates
+        if as_array:
+            np = pytest.importorskip("numpy", exc_type=ModuleNotFoundError)
+            rows = np.array(rows, dtype=np.float32)
+        mock_lsd = MagicMock()
+        mock_lsd.detect.return_value = (rows, None, None, None)
+
+        with (
+            patch("lib.strikethrough_detection.OPENCV_AVAILABLE", True),
+            patch("lib.strikethrough_detection.cv2") as mock_cv2,
+        ):
+            mock_cv2.createLineSegmentDetector.return_value = mock_lsd
+            from lib.strikethrough_detection import _detect_lines_lsd
+
+            lines = _detect_lines_lsd(MagicMock())
+
+        assert len(lines) == len(coordinates)
+        for line, expected, length, angle in zip(
+            lines, coordinates, [5.0, 5.0, 6.0],
+            [53.13010235415598, -53.13010235415598, 180.0],
+        ):
+            assert (line.x1, line.y1, line.x2, line.y2) == pytest.approx(expected)
+            assert line.length == pytest.approx(length)
+            assert line.angle == pytest.approx(angle)
+            assert line.x_center == pytest.approx((expected[0] + expected[2]) / 2)
+            assert line.y_center == pytest.approx((expected[1] + expected[3]) / 2)
+
+    @pytest.mark.parametrize("row", [
+        [0.0, 0.0, 1.0],
+        [0.0, 0.0, 1.0, 1.0, 2.0],
+        [[0.0, 0.0], [1.0, 1.0]],
+        [[0.0, 0.0, 1.0, 1.0, 2.0]],
+    ])
+    def test_malformed_coordinate_rows_raise(self, row):
+        mock_lsd = MagicMock()
+        mock_lsd.detect.return_value = ([row], None, None, None)
+        with (
+            patch("lib.strikethrough_detection.OPENCV_AVAILABLE", True),
+            patch("lib.strikethrough_detection.cv2") as mock_cv2,
+        ):
+            mock_cv2.createLineSegmentDetector.return_value = mock_lsd
+            from lib.strikethrough_detection import _detect_lines_lsd
+
+            with pytest.raises((TypeError, ValueError)):
+                _detect_lines_lsd(MagicMock())
+
+    @pytest.mark.parametrize("shape", [None, (0, 4), (0, 1, 4)])
+    def test_empty_coordinate_rows(self, shape):
+        rows = []
+        if shape is not None:
+            np = pytest.importorskip("numpy", exc_type=ModuleNotFoundError)
+            rows = np.empty(shape, dtype=np.float32)
+        mock_lsd = MagicMock()
+        mock_lsd.detect.return_value = (rows, None, None, None)
+        with (
+            patch("lib.strikethrough_detection.OPENCV_AVAILABLE", True),
+            patch("lib.strikethrough_detection.cv2") as mock_cv2,
+        ):
+            mock_cv2.createLineSegmentDetector.return_value = mock_lsd
+            from lib.strikethrough_detection import _detect_lines_lsd
+
+            assert _detect_lines_lsd(MagicMock()) == []
+
     def test_opencv_not_available(self):
         with patch("lib.strikethrough_detection.OPENCV_AVAILABLE", False):
             from lib.strikethrough_detection import _detect_lines_lsd

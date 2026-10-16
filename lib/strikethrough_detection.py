@@ -222,7 +222,8 @@ def _detect_lines_lsd(img: 'np.ndarray') -> List[DetectedLine]:
     detected = []
     if lines is not None:
         for line in lines:
-            x1, y1, x2, y2 = line[0]
+            # OpenCV returns (N, 4) or legacy (N, 1, 4) coordinates.
+            x1, y1, x2, y2 = line[0] if len(line) == 1 else line
             angle = math.degrees(math.atan2(y2 - y1, x2 - x1))
             length = math.sqrt((x2 - x1)**2 + (y2 - y1)**2)
 

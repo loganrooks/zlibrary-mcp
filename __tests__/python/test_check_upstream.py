@@ -871,11 +871,9 @@ def test_run_probes_starts_the_article_search_only_after_book_search_finishes(
     check_upstream,
 ):
     """The article canary starts only after the book canary returns."""
+    from types import SimpleNamespace
     from unittest.mock import patch
 
-    book_started = asyncio.Event()
-    allow_book_finish = asyncio.Event()
-    article_started = asyncio.Event()
     order = []
 
     async def zlibrary(_client):
@@ -887,31 +885,48 @@ def test_run_probes_starts_the_article_search_only_after_book_search_finishes(
     async def download(_client):
         return check_upstream.ProbeResult("libgen:download", True, "ok")
 
-    async def libgen_canaries(_client):
-        order.append("book:start")
-        book_started.set()
-        await allow_book_finish.wait()
-        order.append("book:end")
-        order.append("article:start")
-        article_started.set()
-        return (
-            check_upstream.ProbeResult("libgen:search", True, "ok"),
-            check_upstream.ProbeResult("libgen:article-search", True, "ok"),
-        )
-
     async def go():
+        book_started = asyncio.Event()
+        allow_book_finish = asyncio.Event()
+        article_started = asyncio.Event()
+
+        async def search(_adapter, query, **_kwargs):
+            if query == "Pride and Prejudice":
+                order.append("book:start")
+                book_started.set()
+                await allow_book_finish.wait()
+                order.append("book:end")
+                return [
+                    SimpleNamespace(
+                        md5="3b516fa296c861195bc94fad9bddda9e",
+                        title="Pride and Prejudice",
+                    )
+                ]
+            assert query == "The Inner Citadel Meditations Marcus Aurelius"
+            order.append("article:start")
+            article_started.set()
+            return [
+                SimpleNamespace(
+                    md5="e3f85ebc6faa062bceb95b349f369672",
+                    title="The Inner Citadel P Hadot",
+                    extra={"id": "76430726", "content_type": "article"},
+                )
+            ]
+
         with (
             patch.object(check_upstream, "probe_zlibrary_eapi", zlibrary),
             patch.object(check_upstream, "probe_annas", annas),
             patch.object(check_upstream, "probe_libgen_download", download),
-            patch.object(check_upstream, "probe_libgen_canaries", libgen_canaries),
+            patch("lib.sources.libgen.LibgenAdapter.search", new=search),
         ):
             probes = asyncio.create_task(check_upstream.run_probes())
-            await book_started.wait()
-            await asyncio.sleep(0)
-            assert article_started.is_set() is False
-            allow_book_finish.set()
-            results = await probes
+            try:
+                await asyncio.wait_for(book_started.wait(), timeout=5.0)
+                await asyncio.sleep(0)
+                assert article_started.is_set() is False
+            finally:
+                allow_book_finish.set()
+                results = await asyncio.wait_for(probes, timeout=5.0)
         return results
 
     results = asyncio.run(go())
@@ -924,6 +939,7 @@ def test_run_probes_starts_the_article_search_only_after_book_search_finishes(
         "libgen:download",
     ]
     assert order == ["book:start", "book:end", "article:start"]
+    assert all(result.ok for result in results)
 
 
 def test_run_probes_reuses_the_adapter_so_article_search_is_rate_limited(

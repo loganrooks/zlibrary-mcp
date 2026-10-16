@@ -46,6 +46,10 @@ skip those tests with a stated reason. Locally, `git lfs pull` hydrates them. Do
 run `git lfs install` — it writes hooks that conflict with the repo's Husky-managed
 `core.hooksPath`.
 
+For an optional preliminary Codex development manifest and its required owning brief,
+see [development lane instructions](tools/lanes/README.md). The template is not task
+authority and does not ship a launcher.
+
 ## Invariants that break silently
 
 These are the ones where a plausible-looking change passes every test and breaks
@@ -91,7 +95,7 @@ Two behavioural decisions that are easy to reverse by accident:
   detail-page scraping described in [ADR-002](docs/adr/ADR-002-Download-Workflow-Redesign.md)
   predates the Phase 7 EAPI migration and no longer exists in the code. The part of
   ADR-002 that still holds is the search-result-first workflow, not the mechanism.
-- **`get_book_by_id` is deprecated** as unreliable ([ADR-003](docs/adr/ADR-003-Book-ID-Lookup-Deprecation.md)).
+- **`get_book_by_id` is deprecated** as unreliable ([ADR-003](docs/adr/ADR-003-Handle-ID-Lookup-Failure.md)).
   Find books with `search_books`.
 
 The full tool list lives in `README.md` and is checked against the code by
@@ -140,9 +144,18 @@ Do not merge and do not enable auto-merge without an instruction in the current 
 Auto-merge being available repo-wide is not permission to use it.
 
 **Pull request review is automated and app-side.** The Codex code review connector
-(`chatgpt-codex-connector`) runs on the first push to a PR. Subsequent pushes do **not**
-re-trigger it — re-request by commenting `@codex review`. Reviews take a while; an empty
-review list minutes after opening means *not posted yet*, never *not configured*.
+(`chatgpt-codex-connector`) is documented here to review the first push to a PR: that
+automatic review is **round one**. Do **not** also comment `@codex review` when opening
+the PR. Request another round only after commits change the content that was reviewed,
+by commenting `@codex review`; do not duplicate a request for the same head. Record the
+request owner/lane, exact head SHA, previous result (including pending/unknown), and
+reason for the changed-content re-review in the PR receipt.
+
+An empty review list or empty output is **pending/unknown**, not evidence that review is
+unconfigured. [Official connector guidance](https://learn.chatgpt.com/docs/third-party/github)
+describes configurable app-side automatic triggers; it does not establish this account's
+settings. Those settings are external and have not been checked here. The documented
+first-push rule is the repository workflow, not an account-settings attestation.
 CodeRabbit was retired 2026-08-11; its comments on older PRs are historical.
 
 **Commits follow conventional-commit format**, and carry no AI attribution — no

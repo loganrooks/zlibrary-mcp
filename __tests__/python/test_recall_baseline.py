@@ -26,7 +26,7 @@ def load_baseline():
         pytest.skip(
             "Baseline JSON not found; run scripts/generate_recall_baseline.py first"
         )
-    with open(BASELINE_PATH) as f:
+    with open(BASELINE_PATH, encoding="utf-8") as f:
         data = json.load(f)
     return list(data["baselines"].items())
 
@@ -61,7 +61,7 @@ def get_pdf_ids():
     """Return list of (pdf_name, info) for parametrize, or empty if no baseline."""
     if not BASELINE_PATH.exists():
         return []
-    with open(BASELINE_PATH) as f:
+    with open(BASELINE_PATH, encoding="utf-8") as f:
         data = json.load(f)
     return list(data["baselines"].items())
 

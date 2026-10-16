@@ -56,6 +56,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The release audit distinguishes explicit patch milestones from minor slots, so an
+  untagged `v1.4.1` is not treated as already shipped by `v1.4.0`. Exact patch milestones
+  own matching tags; legacy minor-only records still work. The PR-age rule is unchanged.
 - **`search_multi_source` could hang forever, and leave the Python process
   behind when it did.** Three defects compounded: the vendored
   `libgen_api_enhanced` calls `requests.get` with no `timeout=` (and catches a

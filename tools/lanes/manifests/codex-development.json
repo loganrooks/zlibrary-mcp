@@ -1,0 +1,67 @@
+{
+  "format": "preliminary v0-trial",
+  "name": "codex-development",
+  "harness": "codex",
+  "model": "gpt-6.1-sol",
+  "effort": "high",
+  "pragmatic_default": true,
+  "decision": {
+    "by": "setup template author",
+    "why": "Optional starting point for bounded offline development, not an adopted profile or task authorization.",
+    "source": "tools/lanes/README.md:1; replace with the current owning BRIEF.md:<line> before launch",
+    "authorship": "agent_generated_delegation",
+    "ratification": "unratified"
+  },
+  "collaboration": {
+    "mode": "async",
+    "why": "Return through owned status artifacts without contacting other panes; a contract, not a messaging firewall.",
+    "decided_by": "setup template author"
+  },
+  "sequencing": {
+    "source": "tools/lanes/README.md:1; replace with the current owning BRIEF.md:<line> before launch",
+    "standing": "Template only: no work is authorized. Require a current owning BRIEF with source locator, sequence or hold, owned files, side-effect limits and return/check contract. Resolve holds before implementation. Revisit before the next real development wave or deeper profile review, whichever comes first."
+  },
+  "levers": {
+    "settings": {
+      "value": {"web_search": "disabled"},
+      "why": "Offline source inspection is the default; web access is not needed for this template.",
+      "decided_by": "setup template author"
+    },
+    "mcp_servers": {
+      "value": {"zlibrary": {"enabled": false}},
+      "why": "No acquisition MCP or other enabled server; the external launcher disables discovered configured identifiers. Managed or uninspected layers still require review.",
+      "decided_by": "setup template author"
+    },
+    "tools": {
+      "value": "shell",
+      "why": "Shell supports local edits and deterministic offline checks; it is not a universal tool allowlist or permission to start clients.",
+      "decided_by": "setup template author"
+    },
+    "skills_plugins": {
+      "value": "disabled",
+      "why": "No catalog, bundled skills, plugins or apps are requested; invocation overrides do not delete discovered files or exclude all managed instructions.",
+      "decided_by": "setup template author"
+    },
+    "hooks": {
+      "value": "disabled",
+      "why": "Disable invocation hooks without installing or editing hook configuration; managed policy remains above this template.",
+      "decided_by": "setup template author"
+    },
+    "system_prompt_additions": {
+      "value": "Read the current owning BRIEF.md and applicable AGENTS.md and VISION.md before editing. This manifest does not authorize work. Require the BRIEF's source locator, current sequence/hold, owned files, limits and return/check procedure; if absent, ambiguous or held, write the brief-designated blocked artifact (or BLOCKED.txt) and stop. Work only in the owned checkout and files, preserving unrelated edits. Offline development only: no live/provider tests, acquisition, credential-bearing configuration or auth-file reads, library clients, installs, global configuration, hooks, services, descendants or other-pane contact. Do not commit, push, write to GitHub, merge or enable auto-merge from this template; the owning parent handles integration under AGENTS.md. Run only authorized deterministic offline checks. Return changed files, commands and exit results, source locators, assumptions, unresolved limits and unexpected writes/rework in the brief-designated artifacts. Requested model/effort and compiled argv are not evidence of served identity or runtime tool exposure.",
+      "why": "Keep ownership, invariants, offline boundaries and the return protocol explicit without replacing the canonical repository contract.",
+      "decided_by": "setup template author"
+    },
+    "compaction": {
+      "value": {},
+      "why": "Inherit harness compaction defaults; no situation-specific override has been justified.",
+      "decided_by": "setup template author"
+    },
+    "permissions": {
+      "value": {"sandbox": "workspace-write", "approval": "on-request", "network_access": false},
+      "why": "Allow bounded local edits with approval on request and no sandbox network by default; an approval prompt is not new task authority.",
+      "decided_by": "setup template author"
+    }
+  },
+  "task": "Read BRIEF.md in this lane. Implement only its currently authorized offline development slice after confirming its source, sequence/holds, owned files and return/check contract. This template grants no authority by itself. If the brief is missing or incomplete, write BLOCKED.txt with the exact missing input and do not implement. Preserve unrelated work. No acquisition, credential-bearing configuration or auth-file reads, installs, external writes, descendants or other panes. Return only through the brief's owned status artifacts."
+}

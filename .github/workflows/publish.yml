@@ -102,7 +102,9 @@ jobs:
   # would derive zero tags and the push step would fail.
   publish-docker:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [validate-release-notes]
+    # The npm job runs both test suites before publishing. Requiring its
+    # success also keeps GHCR untouched when tests or npm publication fail.
+    needs: [validate-release-notes, publish-npm]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7

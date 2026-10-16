@@ -10,10 +10,13 @@
 FROM node:22-alpine AS builder
 
 # UV configuration for portable Python installation
+# Keep Python on 3.14 until compiled dependencies ship 3.15 wheels (#230).
+# Bump UV_PYTHON here when validating the next Python minor version.
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
     UV_PYTHON_INSTALL_DIR=/app/python-bin \
-    UV_PYTHON_PREFERENCE=only-managed
+    UV_PYTHON_PREFERENCE=only-managed \
+    UV_PYTHON=3.14
 
 WORKDIR /app
 

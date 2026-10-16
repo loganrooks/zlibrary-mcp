@@ -129,8 +129,8 @@ optional failures usually mean a secondary source is unreachable.
   `z-library.sk` and `1lib.sk` since 2026-07) block programmatic `/eapi` access with
   the DiamWall wall — a 307 self-redirect, then 513/517 "Access Denied". The server
   handles this automatically: it probes its candidate list (`z-library.ec` first)
-  with an unauthenticated `GET /eapi/info/domains` and logs in on the first healthy
-  domain, and hydra-mode discovery skips advertised domains that fail the same
+  with an unauthenticated one-row `POST /eapi/book/search` and logs in on the first
+  healthy domain, and hydra-mode discovery skips advertised domains that fail the same
   probe. If every built-in candidate is walled on your network, pin a domain you
   know works:
   ```bash

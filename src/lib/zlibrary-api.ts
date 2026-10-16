@@ -7,7 +7,7 @@ import { appendFile as appendFileAsyncFS, mkdir as mkdirAsyncFS } from 'fs/promi
 import { fileURLToPath } from 'url';
 import { withRetry, isRetryableError } from './retry-manager.js';
 import { CircuitBreaker } from './circuit-breaker.js';
-import { ZLibraryError, PythonBridgeError } from './errors.js';
+import { BridgeSpawnError, ZLibraryError, PythonBridgeError } from './errors.js';
 import { logger } from './logger.js';
 import { runPythonBridge, LONG_BRIDGE_TIMEOUT_MS } from './python-runner.js';
 import {
@@ -39,6 +39,7 @@ const pythonBridgeCircuitBreaker = new CircuitBreaker({
   // turning a user's own impatience into an outage.
   isFailure: (error) =>
     error?.context?.reason !== 'aborted' &&
+    !(error instanceof BridgeSpawnError && error.errnoCode === 'ENOENT') &&
     !isPermanentBridgeDetail(error?.context?.details),
 });
 
@@ -250,6 +251,11 @@ interface GetDownloadHistoryArgs {
     count?: number;
 }
 
+export interface GetRecentBooksArgs {
+    count?: number;
+    format?: string;
+}
+
 interface DownloadBookToFileArgs {
     // id: string; // Replaced by bookDetails
     // format?: string | null; // Replaced by bookDetails
@@ -430,6 +436,43 @@ export async function getDownloadLimits(options: CallOptions = {}): Promise<any>
   return await callPythonFunction('get_download_limits', {}, options);
 }
 
+/**
+ * Get recently added books from Z-Library.
+ *
+ * Calls the Python bridge `get_recent_books` operation with the requested count
+ * (default 10) and optional cancellation signal. When format filtering is specified,
+ * filters the returned books by file extension in TypeScript to preserve the advertised
+ * format contract while respecting Python's single-argument `count` signature.
+ */
+export async function getRecentBooks(
+  args: GetRecentBooksArgs = {},
+  options: CallOptions = {},
+): Promise<any> {
+  const count = args.count ?? 10;
+  // Keep direct facade consumers aligned with the MCP schema. Broader limits
+  // across tools remain #173; this only prevents invalid Python slice counts.
+  if (!Number.isInteger(count) || count <= 0) {
+    throw new RangeError('count must be a positive integer');
+  }
+  const format = args.format;
+
+  const result = await callPythonFunction('get_recent_books', { count }, options);
+
+  if (format && result && Array.isArray(result.books)) {
+    const targetFormat = format.trim().toLowerCase().replace(/^\./, '');
+    const filtered = result.books.filter((book: any) => {
+      const ext = (book.extension || '').trim().toLowerCase().replace(/^\./, '');
+      return ext === targetFormat;
+    });
+    return {
+      ...result,
+      books: filtered,
+    };
+  }
+
+  return result;
+}
+
 
 /**
  * Process a downloaded document for RAG
@@ -513,11 +556,8 @@ export async function downloadBookToFile({
     // Error with details hidden under cause made every direct consumer invent
     // its own traversal rule and dropped structuredContent at the handler.
     if (error instanceof ZLibraryError) {
-      throw new PythonBridgeError(
-        `Failed to download book: ${error.message || 'Unknown error'}`,
-        error.context,
-        error.retryable,
-      );
+      error.message = `Failed to download book: ${error.message || 'Unknown error'}`;
+      throw error;
     }
     throw new Error(
       `Failed to download book: ${error.message || 'Unknown error'}`,

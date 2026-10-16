@@ -137,3 +137,20 @@ export class BridgeTimeoutError extends ZLibraryError {
     this.name = 'BridgeTimeoutError';
   }
 }
+
+/** Error raised when the operating system cannot start the Python bridge. */
+export class BridgeSpawnError extends ZLibraryError {
+  constructor(message: string, public readonly errnoCode: string, context?: ErrorContext) {
+    const missingInterpreter = errnoCode === 'ENOENT';
+    super(message, 'BRIDGE_SPAWN', { ...context, errnoCode }, !missingInterpreter, missingInterpreter);
+    this.name = 'BridgeSpawnError';
+  }
+}
+
+/** Error raised when the operating system terminates the Python bridge by signal. */
+export class BridgeKilledError extends ZLibraryError {
+  constructor(message: string, public readonly signal: string, context?: ErrorContext) {
+    super(message, 'BRIDGE_KILLED', context, false, false);
+    this.name = 'BridgeKilledError';
+  }
+}

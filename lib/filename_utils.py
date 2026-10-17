@@ -317,6 +317,8 @@ def sanitize_preserved_filename(filename: str, max_total_length: int = 200) -> s
     if not name:
         return ""
     stem, ext = os.path.splitext(name)
+    if len(ext.encode("utf-8")) >= max_total_length:
+        return ""
     device = stem.split(".", 1)[0].rstrip(" ").upper()
     if device in {"CON", "PRN", "AUX", "NUL"} or re.fullmatch(
         r"(?:COM|LPT)[1-9]", device
@@ -334,7 +336,7 @@ def is_preservable_server_filename(filename: str) -> bool:
     source adapters stage under the content hash. Anything that sanitizes to
     nothing is not a name either.
     """
-    name = str(filename).strip()
+    name = str(filename).strip().rstrip(" .")
     if not name or name.startswith("."):
         return False
     stem = Path(name).stem
@@ -342,6 +344,8 @@ def is_preservable_server_filename(filename: str) -> bool:
         return False
     # URL fallbacks such as book456.epub contribute no wording and should not
     # replace the real title/author components that partial metadata provides.
+    # Treat all-digit stems as generic IDs too, even real titles such as 1984,
+    # to avoid replacing known metadata with an ambiguous numeric response name.
     if re.fullmatch(r"(?:book|file|document|download)(?:[-_ ]?\d+)?|\d+", stem, re.IGNORECASE):
         return False
     if not normalize_document_extension(Path(name).suffix):

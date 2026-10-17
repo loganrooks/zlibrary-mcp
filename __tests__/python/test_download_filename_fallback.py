@@ -104,8 +104,74 @@ class TestFilenameHelpers:
     def test_is_preservable(self, filename, expected):
         assert is_preservable_server_filename(filename) is expected
 
+    @pytest.mark.parametrize(
+        "filename", ["Title.pdf.", "Title.pdf ."], ids=["dot", "space-dot"]
+    )
+    def test_trailing_dots_and_spaces_preserve_supported_extension(self, filename):
+        assert is_preservable_server_filename(filename) is True
+        assert sanitize_preserved_filename(filename) == "Title.pdf"
+
+    @pytest.mark.parametrize(
+        "filename",
+        [
+            ".Title.pdf.",
+            ".source-abc123.part.",
+            f"{STAGING_MD5}.download.",
+            f"{STAGING_MD5}.pdf.",
+            "download.pdf.",
+            "book123.pdf .",
+            "Title.bin.",
+        ],
+        ids=[
+            "hidden", "staging", "hash-staging", "hash", "generic", "generic-id",
+            "unsupported",
+        ],
+    )
+    def test_trailing_cleanup_does_not_admit_rejected_names(self, filename):
+        assert is_preservable_server_filename(filename) is False
+
+    def test_all_digit_title_remains_generic(self):
+        assert is_preservable_server_filename("1984.epub") is False
+
+    @pytest.mark.parametrize(
+        "filename,max_total_length",
+        [
+            ("Title.pdf", 4),
+            ("Title.pdf", 3),
+            ("x." + "a" * 199, 200),
+            ("x." + "é" * 100, 200),
+        ],
+        ids=[
+            "ending-fills-budget", "ending-exceeds-budget", "long-unsupported",
+            "utf8-unsupported",
+        ],
+    )
+    def test_unusable_ending_returns_empty_fallback(self, filename, max_total_length):
+        assert sanitize_preserved_filename(filename, max_total_length) == ""
+
 
 class TestDownloadBookFilenameFallback:
+    @pytest.mark.parametrize(
+        "metadata_extension", ["pdf", None], ids=["declared", "missing"]
+    )
+    @pytest.mark.parametrize(
+        "server_name", ["Title.pdf.", "Title.pdf ."], ids=["dot", "space-dot"]
+    )
+    async def test_trailing_server_name_publishes_preserved_wording(
+        self, tmp_path, server_name, metadata_extension
+    ):
+        python_bridge._eapi_client = FakeEAPIDownloader(server_name)
+        book_details = {"id": 10, "hash": "h"}
+        if metadata_extension is not None:
+            book_details["extension"] = metadata_extension
+
+        result = await download_book(book_details, str(tmp_path))
+
+        path = Path(result["file_path"])
+        assert path == tmp_path / "Title_10.pdf"
+        assert path.read_bytes() == b"%PDF-1.4 unit test stand-in"
+        assert list(tmp_path.iterdir()) == [path]
+
     async def test_sparse_metadata_keeps_server_filename(self, tmp_path):
         python_bridge._eapi_client = FakeEAPIDownloader(SERVER_NAME)
         sparse = {

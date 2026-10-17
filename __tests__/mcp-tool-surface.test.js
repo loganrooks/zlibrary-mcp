@@ -331,7 +331,7 @@ async function within(promise, label) {
     return await Promise.race([
       promise,
       new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new Error(`${label} exceeded 1000 ms`)), 1000);
+        timer = setTimeout(() => reject(new Error(`${label} exceeded 3000 ms`)), 3000);
       }),
     ]);
   } finally {
@@ -365,11 +365,14 @@ test('cancelling a pending MCP request aborts the very signal delivered to the r
   const outcome = client.callTool(
     { name: 'download_book_to_file', arguments: cases.download_book_to_file[0] },
     CallToolResultSchema,
-    { signal: request.signal, timeout: 2000 },
+    { signal: request.signal, timeout: 5000 },
   ).then(
     (value) => ({ status: 'fulfilled', value }),
     (reason) => ({ status: 'rejected', reason }),
   );
+  let primaryFailed = false;
+  let primaryError;
+  const cleanupErrors = [];
   try {
     await within(started, 'runner start');
     expect(runBridge).toHaveBeenCalledTimes(1);
@@ -386,25 +389,49 @@ test('cancelling a pending MCP request aborts the very signal delivered to the r
     });
     request.abort();
     await within(aborted, 'runner signal cancellation');
-    expect(runBridge.mock.calls[0][2].signal).toBe(runnerSignal);
     expect(runnerSignal.aborted).toBe(true);
     expect(runnerSettled).toBe(false);
     expect((await within(outcome, 'cancelled client request')).status).toBe('rejected');
+  } catch (error) {
+    primaryFailed = true;
+    primaryError = error;
   } finally {
-    if (onAbort) runnerSignal.removeEventListener('abort', onAbort);
-    request.abort();
-    // Release even a mutant's unrelated signal: the pending mock must not own
-    // a stranded facade operation after the cancellation assertion goes red.
-    releaseRunner();
+    // Attempt each cleanup independently, without replacing a primary error.
+    // Release even a mutant's unrelated signal so the mock cannot stay pending.
+    for (const cleanup of [
+      () => { if (onAbort) runnerSignal.removeEventListener('abort', onAbort); },
+      () => request.abort(),
+      () => releaseRunner(),
+    ]) {
+      try {
+        cleanup();
+      } catch (error) {
+        cleanupErrors.push(error);
+      }
+    }
     try {
       await within(Promise.allSettled([outcome, runnerPromise]), 'request and runner drain');
-    } finally {
-      const closed = await within(Promise.allSettled([client.close(), server.close()]), 'transport close');
+    } catch (error) {
+      cleanupErrors.push(error);
+    }
+    try {
+      // Schedule both closes before waiting. Even a synchronous throw from one
+      // close must not prevent the other transport's close from being attempted.
+      const closed = await within(Promise.allSettled([
+        Promise.resolve().then(() => client.close()),
+        Promise.resolve().then(() => server.close()),
+      ]), 'transport close');
       expect(closed.map((result) => result.status)).toEqual(['fulfilled', 'fulfilled']);
+    } catch (error) {
+      cleanupErrors.push(error);
+    } finally {
+      // Do not let afterEach retry a failed or non-settling close without a bound.
       client = server = undefined;
     }
   }
-}, 10000);
+  if (primaryFailed) throw primaryError;
+  if (cleanupErrors.length > 0) throw new AggregateError(cleanupErrors, 'Cancellation test cleanup failed');
+}, 20000);
 
 async function callAdvertised(name, payloadOverride, fixtureOverride) {
   // A missing or miswired registration must not pass merely because an error

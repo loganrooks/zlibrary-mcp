@@ -373,6 +373,96 @@ def test_rag_fixture_files_exist():
     )
 
 
+@pytest.mark.parametrize(
+    "opt_in, mode",
+    [
+        (None, None), (None, "always"), ("false", "always"), ("true", "never"),
+        ("true", "always"), ("true", None),
+    ],
+)
+def test_pdf_extraction_without_optical_detection(monkeypatch, tmp_path, opt_in, mode):
+    """Exercise optical configuration gates, not detection accuracy or corpus quality."""
+    from lib.strikethrough_detection import XMarkDetectionResult
+
+    pdf_path = tmp_path / "optical_configuration_gate.pdf"
+    text = (
+        "Ordinary books contain useful information for curious readers. "
+        "This paragraph describes a quiet afternoon spent reading in the library. "
+        "Readers compare clear explanations and keep notes about important ideas. "
+        "The text should remain available when optional optical analysis is disabled. "
+        "These sentences provide enough ordinary words to exercise document extraction."
+    )
+    with fitz.open() as doc:
+        page = doc.new_page(width=1000, height=595)
+        for line_index, sentence in enumerate(text.removesuffix(".").split(". ")):
+            page.insert_text(
+                (72, 120 + 24 * line_index), sentence + ".", fontsize=11
+            )
+        doc.save(str(pdf_path))
+    enabled = opt_in == "true" and mode != "never"
+    for key, value in (
+        ("RAG_DETECT_STRIKETHROUGH", opt_in),
+        ("RAG_XMARK_DETECTION_MODE", mode),
+    ):
+        if value is None:
+            monkeypatch.delenv(key, raising=False)
+        else:
+            monkeypatch.setenv(key, value)
+    monkeypatch.setenv("RAG_ENABLE_QUALITY_PIPELINE", "true")
+    monkeypatch.setenv("RAG_PARALLEL_XMARK_DETECTION", "true")
+
+    with (
+        patch("lib.rag_processing.XMARK_AVAILABLE", True),
+        patch(
+            "lib.rag.orchestrator_pdf._page_needs_xmark_detection_fast",
+            return_value=True,
+            side_effect=(
+                None if enabled else AssertionError("Unexpected optical prefilter call")
+            ),
+        ) as prefilter,
+        patch(
+            "lib.rag.orchestrator_pdf._detect_xmarks_parallel",
+            return_value={},
+            side_effect=(
+                None if enabled
+                else AssertionError("Unexpected parallel optical detection call")
+            ),
+        ) as parallel,
+        patch(
+            "lib.strikethrough_detection.detect_strikethrough_enhanced",
+            return_value=XMarkDetectionResult(
+                has_xmarks=False, xmark_count=0, confidence=0.0
+            ),
+            side_effect=(
+                None if enabled else AssertionError("Unexpected optical detector call")
+            ),
+        ) as detect,
+    ):
+        result = process_pdf(pdf_path, output_format="markdown")
+        if enabled:
+            prefilter.assert_called_once()
+            parallel.assert_called_once()
+            assert parallel.call_args.args == (pdf_path, 1)
+            assert parallel.call_args.kwargs["pages_to_check"] == [0]
+            detect.assert_called_once()
+            assert detect.call_args.args == (pdf_path, 0)
+        else:
+            prefilter.assert_not_called()
+            parallel.assert_not_called()
+            detect.assert_not_called()
+
+    assert len(result) > 100
+    normalized_output = " ".join(result.split())
+    assert (
+        "Ordinary books contain useful information for curious readers."
+        in normalized_output
+    )
+    assert (
+        "Readers compare clear explanations and keep notes about important ideas."
+        in normalized_output
+    )
+
+
 def test_load_fixture_content_helper():
     """Test the hypothetical helper function to load fixture content."""
     # This test will fail initially because load_fixture_content doesn't exist

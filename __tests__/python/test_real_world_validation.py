@@ -27,7 +27,7 @@ from ground_truth_loader import load_ground_truth, list_ground_truth_tests
 class TestRealWorldSousRature:
     """Real-world tests for sous-rature (X-mark) detection and recovery."""
 
-    def test_derrida_xmark_detection_real(self):
+    def test_derrida_xmark_detection_real(self, monkeypatch):
         """
         Test X-mark detection with REAL Derrida PDF - END-TO-END pipeline test.
 
@@ -35,6 +35,9 @@ class TestRealWorldSousRature:
         NOTE: Does NOT validate text recovery (that's a separate hard ML problem)
         NO MOCKS - tests complete pipeline
         """
+        monkeypatch.setenv("RAG_DETECT_STRIKETHROUGH", "true")
+        monkeypatch.setenv("RAG_XMARK_DETECTION_MODE", "always")
+
         # Load ground truth
         gt = load_ground_truth("derrida_of_grammatology")
 
@@ -137,12 +140,14 @@ class TestRealWorldSousRature:
                 f"✅ Detected sous-rature of '{word_under_erasure}' (distance: {min_distance:.1f}px)"
             )
 
-    def test_heidegger_durchkreuzung_real(self):
+    def test_heidegger_durchkreuzung_real(self, monkeypatch):
         """
         Test Heidegger's Durchkreuzung (crossing-out) detection.
 
         Ground truth: 2 X-marks on pages 1-2 ("Being", "Sein")
         """
+        monkeypatch.setenv("RAG_DETECT_STRIKETHROUGH", "true")
+        monkeypatch.setenv("RAG_XMARK_DETECTION_MODE", "always")
         gt = load_ground_truth("heidegger_being_time")
         result = process_pdf(Path(gt["pdf_file"]), output_format="markdown")
 

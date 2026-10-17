@@ -80,7 +80,7 @@ def garbled_page_region():
 
 @pytest.fixture
 def quality_config():
-    """Default quality pipeline configuration."""
+    """Explicit detector-enabled configuration for stage integration tests."""
     return QualityPipelineConfig(
         enable_pipeline=True,
         detect_garbled=True,
@@ -457,24 +457,70 @@ def test_pipeline_proceeds_to_stage_3(garbled_page_region, quality_config):
 # =============================================================================
 
 
-def test_config_from_env_defaults():
-    """Test QualityPipelineConfig.from_env() with default environment."""
-    import os
+@pytest.mark.parametrize("opt_in", [None, "true", "false", "TRUE", "invalid"])
+def test_optical_detection_requires_explicit_opt_in(
+    monkeypatch, clean_page_region, opt_in
+):
+    """Exercise the real pipeline gate with OpenCV available, not a fake gate."""
+    if opt_in is None:
+        monkeypatch.delenv("RAG_DETECT_STRIKETHROUGH", raising=False)
+    else:
+        monkeypatch.setenv("RAG_DETECT_STRIKETHROUGH", opt_in)
+    monkeypatch.setenv("RAG_ENABLE_QUALITY_PIPELINE", "true")
+    monkeypatch.setenv("RAG_QUALITY_STRATEGY", "philosophy")
+    config = QualityPipelineConfig.from_env()
 
+    from lib.strikethrough_detection import XMarkDetectionResult
+
+    with (
+        patch("lib.rag_processing.XMARK_AVAILABLE", True),
+        patch(
+            "lib.strikethrough_detection.detect_strikethrough_enhanced",
+            return_value=XMarkDetectionResult(
+                has_xmarks=False, xmark_count=0, confidence=0.0
+            ),
+        ) as detect,
+    ):
+        original_text = clean_page_region.get_text()
+        result = _apply_quality_pipeline(
+            clean_page_region, Path("fake.pdf"), 0, config
+        )
+        if opt_in in ("true", "TRUE"):
+            detect.assert_called_once()
+        else:
+            detect.assert_not_called()
+        assert result.get_text() == original_text
+        assert not result.is_strikethrough()
+
+
+def test_constructor_default_skips_optical_detector(clean_page_region):
+    config = QualityPipelineConfig()
+    assert config.detect_strikethrough is False
+    with patch("lib.rag.quality.pipeline._stage_2_visual_analysis") as visual:
+        result = _apply_quality_pipeline(
+            clean_page_region, Path("fake.pdf"), 0, config
+        )
+        visual.assert_not_called()
+    assert result.get_text() == clean_page_region.get_text()
+
+
+def test_config_from_env_defaults(monkeypatch):
+    """Test QualityPipelineConfig.from_env() with default environment."""
     # Clear environment
     for key in [
         "RAG_ENABLE_QUALITY_PIPELINE",
         "RAG_DETECT_GARBLED",
+        "RAG_DETECT_STRIKETHROUGH",
         "RAG_QUALITY_STRATEGY",
     ]:
-        os.environ.pop(key, None)
+        monkeypatch.delenv(key, raising=False)
 
     config = QualityPipelineConfig.from_env()
 
     # Verify defaults
     assert config.enable_pipeline is True  # Default 'true'
     assert config.detect_garbled is True
-    assert config.detect_strikethrough is True
+    assert config.detect_strikethrough is False
     assert config.strategy == "hybrid"
     assert config.garbled_threshold == 0.75  # Hybrid strategy
     assert config.recovery_threshold == 0.8

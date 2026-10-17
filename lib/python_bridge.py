@@ -1517,7 +1517,9 @@ async def download_book(
         if original_download_path_str and (
             not declared_extension or strong_response_extension
         ):
-            _, ext_from_path = os.path.splitext(original_download_path_str)
+            _, ext_from_path = os.path.splitext(
+                str(original_download_path_str).rstrip(" .")
+            )
             book_details["extension"] = ext_from_path.lstrip(".")
 
         # Use unified filename generation with disambiguation fields

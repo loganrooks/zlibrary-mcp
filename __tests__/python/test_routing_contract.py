@@ -9,8 +9,8 @@ Three surfaces, one contract:
 
 The test that matters most is
 `test_a_fallback_to_another_source_is_visible_in_the_response`. #74 fixed the
-routing half of that bug and left the reporting half open: a caller could ask
-for Anna's, receive LibGen, and have nothing in the response say so.
+routing half of that bug and left the reporting half open: an auto request could
+prefer Anna's, receive LibGen, and have nothing in the response say so.
 """
 
 import os
@@ -79,18 +79,22 @@ class TestRoutingBlock:
     async def test_a_fallback_to_another_source_is_visible_in_the_response(
         self, monkeypatch
     ):
-        """Asking for Anna's and receiving LibGen must show up in `routing`.
+        """An auto request preferring Anna's must report LibGen fallback.
 
         This is the bug the whole contract exists to prevent. `sources_used`
         was derived from results, so a substitution was indistinguishable from
         a direct hit — the reporting half of #74.
         """
-        install_router(monkeypatch, [book("a" * 32, SourceType.LIBGEN)])
+        install_router(
+            monkeypatch,
+            [book("a" * 32, SourceType.LIBGEN)],
+            SourceConfig(annas_secret_key="synthetic-key", fallback_enabled=True),
+        )
 
-        result = await python_bridge.search_multi_source("hegel", source="annas")
+        result = await python_bridge.search_multi_source("hegel", source="auto")
 
         routing = result["routing"]
-        assert routing["requested"] == "annas"
+        assert routing["requested"] == "auto"
         assert routing["served_by"] == ["libgen"]
         assert routing["fell_back"] is True
 
@@ -149,10 +153,14 @@ class TestRoutingBlock:
         self, monkeypatch, count
     ):
         """A successful fallback stays visible even when no book is returned."""
-        install_router(monkeypatch, [book("e" * 32, SourceType.LIBGEN)])
+        install_router(
+            monkeypatch,
+            [book("e" * 32, SourceType.LIBGEN)],
+            SourceConfig(annas_secret_key="synthetic-key", fallback_enabled=True),
+        )
 
         result = await python_bridge.search_multi_source(
-            "hegel", source="annas", count=count
+            "hegel", source="auto", count=count
         )
 
         assert result["books"] == []

@@ -284,7 +284,7 @@ Each entry in `routing.sources` has `available` (at least one route is eligible 
 | `unknown` | A limit exists and its value is not available here. `note` says what would answer it. |
 | `not_applicable` | The source has no download route right now, so there is no quota |
 
-**Example routing block:** `source: "auto"`, `ANNAS_SECRET_KEY` configured on the default trusted Anna's base URL, and `BOOK_SOURCE_FALLBACK_ENABLED=true`. Anna's is primary; LibGen supplies the results after fallback.
+**Example routing block:** `source: "auto"`, `ANNAS_SECRET_KEY` configured on the default trusted Anna's base URL, `BOOK_SOURCE_FALLBACK_ENABLED=true`, and Z-Library credentials configured. Anna's is primary; LibGen supplies the results after fallback.
 
 ```json
 {

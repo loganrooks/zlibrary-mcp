@@ -273,7 +273,7 @@ Results from this tool can be downloaded. Pass a result to `download_book_to_fil
 | `fell_back` | `true` when the source that answered is not the one the server meant to try first |
 | `sources` | One entry per source, with the same fields for every source |
 
-`fell_back` is the reason this block exists. Ask for one source, receive another, and nothing else in the response tells you the substitution happened.
+`fell_back` makes an auto fallback visible: with `source: "auto"` and fallback enabled, another provider may supply results instead of the configured primary. Explicit `"annas"` or `"libgen"` selections use only that provider and are not silently substituted.
 
 Each entry in `routing.sources` has `available` (at least one route is eligible under local configuration), `routes` (which of `search` and `download`), `note` (a sentence naming the constraint), and `daily_limit`. `available` is refined by any authentication outcome actually obtained during the call; it is not live reachability, credential validity before login, successful search, or download success. `routing.served_by` records the observed result sources instead. Reporting adds no health probe. A `daily_limit` is never a bare `null`: its `state` says which of four situations you are in.
 
@@ -284,20 +284,20 @@ Each entry in `routing.sources` has `available` (at least one route is eligible 
 | `unknown` | A limit exists and its value is not available here. `note` says what would answer it. |
 | `not_applicable` | The source has no download route right now, so there is no quota |
 
-**Example routing block:**
+**Example routing block:** `source: "auto"`, `ANNAS_SECRET_KEY` configured on the default trusted Anna's base URL, and `BOOK_SOURCE_FALLBACK_ENABLED=true`. Anna's is primary; LibGen supplies the results after fallback.
 
 ```json
 {
-  "requested": "annas",
+  "requested": "auto",
   "served_by": ["libgen"],
   "fell_back": true,
   "sources": {
     "annas_archive": {
       "available": true,
-      "routes": ["search"],
-      "note": "no ANNAS_SECRET_KEY; search only, download unavailable",
-      "daily_limit": { "state": "not_applicable", "total": null, "used": null,
-                       "remaining": null, "note": "no download route without ANNAS_SECRET_KEY" }
+      "routes": ["search", "download"],
+      "note": "ANNAS_SECRET_KEY configured; keyed fast download available",
+      "daily_limit": { "state": "unknown", "total": null, "used": null,
+                       "remaining": null, "note": "Anna's reports the keyed quota with each fast download; it cannot be read without spending one" }
     },
     "libgen": {
       "available": true,

@@ -150,16 +150,20 @@ class TestFilenameHelpers:
 
 class TestDownloadBookFilenameFallback:
     @pytest.mark.parametrize(
+        "metadata_extension", ["pdf", None], ids=["declared", "missing"]
+    )
+    @pytest.mark.parametrize(
         "server_name", ["Title.pdf.", "Title.pdf ."], ids=["dot", "space-dot"]
     )
     async def test_trailing_server_name_publishes_preserved_wording(
-        self, tmp_path, server_name
+        self, tmp_path, server_name, metadata_extension
     ):
         python_bridge._eapi_client = FakeEAPIDownloader(server_name)
+        book_details = {"id": 10, "hash": "h"}
+        if metadata_extension is not None:
+            book_details["extension"] = metadata_extension
 
-        result = await download_book(
-            {"id": 10, "hash": "h", "extension": "pdf"}, str(tmp_path)
-        )
+        result = await download_book(book_details, str(tmp_path))
 
         path = Path(result["file_path"])
         assert path == tmp_path / "Title_10.pdf"

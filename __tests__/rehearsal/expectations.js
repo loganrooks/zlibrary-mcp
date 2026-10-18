@@ -12,12 +12,15 @@ for (const fix of expectedFixes) {
     throw new Error('Unknown rehearsal expectation switch');
 }
 export function expectedOutcome(name) {
+  if (/survives authentication failures/.test(name)) {
+    return expectedFixes.has('reuse') || expectedFixes.has('breaker')
+      ? 'ordinary pass'
+      : 'expected assertion failure';
+  }
   const feature = /session reuse:|single-flight:|zero additional login attempts/.test(name)
     ? 'reuse'
     : /known cookie-ID log finding is absent/.test(name)
       ? 'redaction'
-      : /independent of EAPI breaker/.test(name)
-        ? 'breaker'
-        : null;
+      : null;
   return feature && !expectedFixes.has(feature) ? 'expected assertion failure' : 'ordinary pass';
 }

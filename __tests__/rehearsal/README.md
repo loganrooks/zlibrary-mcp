@@ -26,7 +26,8 @@ REHEARSAL_EXPECT=reuse,redaction,breaker npm run test:rehearsal
 
 Omit a name until that feature's fix is expected:
 
-- `reuse`: cold reuse, rejection single-flight, no additional login after ambiguity.
+- `reuse`: cold reuse, rejection single-flight, no additional login after ambiguity;
+  S4 authentication cooldown with local processing and Library Genesis search working.
 - `redaction`: no occurrence of the known cookie-ID authentication message in
   captured stderr or `client-N/logs/zlibrary_debug.log`.
 - `breaker`: local document processing and Library Genesis search succeed while
@@ -69,8 +70,15 @@ skipped, duplicate and failed cases cannot produce a green aggregate.
   distinct titles catch swapped responses, and fake max-inflight must exceed one.
 - S3: two independent Node processes and isolated state, not several chats sharing
   one backend.
-- S4: EAPI outage opens its breaker; protocol listing survives. Independent
-  assertions require local document processing and Library Genesis search to work.
+- S4 without `reuse`: EAPI outage opens the shared breaker after five failures;
+  the sixth call dispatches nothing upstream and protocol listing survives.
+  With `reuse`: all six replies name authentication as the cause, at most one
+  upstream login is attempted, subsequent upstream counters stay unchanged, and
+  local processing works. The observation must finish within the first 30-second
+  cooldown; expiry and later windows are not tested. Local processing and Library
+  Genesis survival assertions are ordinary passes with either `reuse` or `breaker`,
+  otherwise isolated expected failures. Reuse-mode success does not establish
+  independence from an open breaker, because auth backoff need not open it.
 - S5: names/argument names equal `tools-surface.json`, an observed baseline, not an
   approved 2.0 surface. A deliberate surface change must update the snapshot.
 - S6: healthy Library Genesis search goes through the real third-party parser,

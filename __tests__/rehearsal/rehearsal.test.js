@@ -57,7 +57,8 @@ test('S2 five concurrent slow/fast calls correlate; count logins independently',
 
 const loginTest = expectedFixes.has('reuse') ? test : test.failing;
 const redactionTest = expectedFixes.has('redaction') ? test : test.failing;
-const breakerTest = expectedFixes.has('breaker') ? test : test.failing;
+const sourceSurvivalTest =
+  expectedFixes.has('reuse') || expectedFixes.has('breaker') ? test : test.failing;
 let localResult;
 let alternateResult;
 loginTest('S2 session reuse: exactly one login (expected failure on master)', () => {
@@ -75,24 +76,43 @@ test('S3 two independent server processes each return their own results', async 
   });
 });
 
-test('S4 EAPI outage opens EAPI breaker after five failures; listing survives', async () => {
+test('S4 authentication outage respects the selected login policy; listing survives', async () => {
   await h.scenario(
     'S4',
     async (connect) => {
       const c = await connect();
       await h.mode({ mode: 'unauthorized' });
+      const reuse = expectedFixes.has('reuse');
+      const started = Date.now();
+      let cooldownStart;
       for (let i = 0; i < 5; i++) {
         const reply = await h.call(c, 'get_download_limits', {}, true);
-        expect(reply.error.message).toMatch(/401|authentication/i);
+        expect(reply.error.message).toMatch(
+          reuse ? /rejected the login|authentication/i : /401|authentication/i,
+        );
+        if (reuse) {
+          const stats = await h.stats();
+          expect(stats.logins).toBeGreaterThan(0);
+          expect(stats.logins).toBeLessThanOrEqual(1);
+          expect(stats.loginSuccesses).toBe(0);
+          if (cooldownStart) expect(stats).toEqual(cooldownStart);
+          else cooldownStart = stats;
+        }
       }
       const before = await h.stats();
       const blocked = await h.call(c, 'get_download_limits', {}, true);
-      expect(blocked.error.message).toMatch(/circuit breaker.*open/i);
+      expect(blocked.error.message).toMatch(
+        reuse ? /rejected the login|authentication/i : /circuit breaker.*open/i,
+      );
       expect(await h.stats()).toEqual(before);
+      const cooldownObservedMs = Date.now() - started;
+      // v3's first failed-login window is 30 seconds; do not cross its expiry.
+      if (reuse) expect(cooldownObservedMs).toBeLessThan(30000);
       const file = path.join(h.downloads, 'local.txt');
       await writeFile(file, 'local reader survives');
       const local = await h.call(c, 'process_document_for_rag', { file_path: file }, true);
       localResult = local;
+      if (reuse) expect(local.error).toBeUndefined();
       h.scan(await c.listTools());
       expect((await c.listTools()).tools.length).toBeGreaterThan(0);
       alternateResult = await h.call(
@@ -102,7 +122,18 @@ test('S4 EAPI outage opens EAPI breaker after five failures; listing survives', 
         true,
       );
       h.note('S4', {
-        breaker: 'OPEN after five failures',
+        loginPolicy: reuse ? 'authentication cooldown' : 'master shared breaker',
+        breaker: reuse
+          ? 'not required to open on authentication failures'
+          : 'OPEN after five failures',
+        ...(reuse
+          ? {
+              cooldownUpstreamBefore: cooldownStart,
+              cooldownUpstreamAfter: before,
+              cooldownObservedMs,
+              authenticationRepliesChecked: 6,
+            }
+          : {}),
         localBridge: local.error ? 'blocked' : 'works',
         toolsList: 'works',
         alternateSources: alternateResult.error
@@ -139,7 +170,7 @@ test('Base scans have zero unexpected sentinel findings', () => {
 redactionTest('Base known cookie-ID log finding is absent', () => {
   expect(h.knownFindings).toBe(0);
 });
-breakerTest('S4 local document processing is independent of EAPI breaker', () => {
+sourceSurvivalTest('S4 local document processing survives authentication failures', () => {
   expect(localResult.error).toBeUndefined();
 });
 test('C5 fake rejects a search without cookies', async () => {
@@ -147,7 +178,7 @@ test('C5 fake rejects a search without cookies', async () => {
   expect((await h.request('/eapi/book/search', { message: 'no-cookie' }, true)).status).toBe(401);
 });
 
-breakerTest('S4 Library Genesis search is independent of EAPI breaker', () => {
+sourceSurvivalTest('S4 Library Genesis search survives authentication failures', () => {
   expect(alternateResult.error).toBeUndefined();
   expect(alternateResult.books[0]).toMatchObject({
     title: 'Rehearsal LibGen fixture',

@@ -24,7 +24,10 @@ seconds plus a two-second shutdown grace. The manifest defaults to ignored
 REHEARSAL_EXPECT=reuse,redaction,breaker npm run test:rehearsal
 ```
 
-Omit a name until that feature's fix is expected:
+Omit a name until that feature's fix is expected. Unset, the default is what
+master has fixed: `reuse,redaction` since #248. `REHEARSAL_EXPECT=` (empty)
+rehearses a tree from before it.
+
 
 - `reuse`: cold reuse, rejection single-flight, no additional login after ambiguity;
   S4 authentication cooldown with local processing and Library Genesis search working.

@@ -1,6 +1,9 @@
+// Default: what master has fixed. Session reuse and redaction landed in #248;
+// set REHEARSAL_EXPECT='' to rehearse a tree from before it.
+const MASTER_FIXES = 'reuse,redaction';
 const requested =
   process.env.REHEARSAL_EXPECT ??
-  (process.env.REHEARSAL_EXPECT_REUSE === '1' ? 'reuse,redaction' : '');
+  (process.env.REHEARSAL_EXPECT_REUSE === '1' ? 'reuse,redaction' : MASTER_FIXES);
 export const expectedFixes = new Set(
   requested
     .split(',')

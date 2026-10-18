@@ -4,10 +4,62 @@ import { snapshotSource } from './source-identity.js';
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
+import { execFileSync, spawn } from 'node:child_process';
+import { once } from 'node:events';
+import { waitForFakeReady } from './fake-startup.js';
 
 const caKey = 'synthetic-private-key-material-not-a-real-key';
 const log = 'client-0/logs/zlibrary_debug.log';
 const knownLine = 'INFO - EAPI client authenticated (userid=rehearsal-cookie-id)';
+test('C8 fake binds and loads TLS without hostname resolution', () => {
+  const root = process.env.REHEARSAL_SERVER_ROOT || process.cwd();
+  expect(
+    execFileSync(path.join(root, '.venv/bin/python'), ['__tests__/rehearsal/startup_contract.py'], {
+      encoding: 'utf8',
+      env: { PATH: process.env.PATH, PYTHONDONTWRITEBYTECODE: '1' },
+      timeout: 5000,
+    }),
+  ).toContain('succeeded without hostname resolution');
+});
+test('C9 startup deadline reports captured stderr and live process status', async () => {
+  const child = spawn(
+    process.execPath,
+    ['-e', "process.stderr.write('startup-control marker\\n'); process.stdin.resume()"],
+    { stdio: ['pipe', 'pipe', 'pipe'] },
+  );
+  let stderr = '';
+  child.stderr.on('data', (data) => {
+    stderr += data;
+  });
+  try {
+    await once(child.stderr, 'data');
+    await expect(waitForFakeReady(child, { timeoutMs: 25, stderr: () => stderr })).rejects.toThrow(
+      /fake startup deadline exceeded.*exitCode=null.*signalCode=null.*startup-control marker/s,
+    );
+  } finally {
+    const exited = once(child, 'exit');
+    child.kill();
+    await exited;
+  }
+});
+test('C10 startup exit and spawn errors retain stderr and status', async () => {
+  const child = spawn(
+    process.execPath,
+    ['-e', "process.stderr.write('startup-exit marker\\n'); process.exitCode=7"],
+    { stdio: ['pipe', 'pipe', 'pipe'] },
+  );
+  let stderr = '';
+  child.stderr.on('data', (data) => {
+    stderr += data;
+  });
+  await expect(waitForFakeReady(child, { stderr: () => stderr })).rejects.toThrow(
+    /fake exited before readiness.*exitCode=7.*signalCode=null.*startup-exit marker/s,
+  );
+  const missing = spawn('/nonexistent-rehearsal-python', [], { stdio: ['pipe', 'pipe', 'pipe'] });
+  await expect(waitForFakeReady(missing)).rejects.toThrow(
+    /fake spawn failed.*ENOENT.*exitCode=.*stderr=/s,
+  );
+});
 test('C1 known cookie-ID log cannot hide password key or CA leaks', () => {
   for (const source of [log, 'stderr']) {
     const found = classifySentinels(

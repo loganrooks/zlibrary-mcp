@@ -7,10 +7,29 @@ import json
 from pathlib import Path
 import re
 import ssl
+import socketserver
 import sys
 import threading
 import time
 from urllib.parse import parse_qs, urlsplit
+
+STARTED = time.monotonic()
+
+
+def startup_stage(phase):
+    if __name__ == "__main__":
+        print(
+            json.dumps(
+                {
+                    "fakeStartup": phase,
+                    "python": sys.version.split()[0],
+                    "elapsedMs": round((time.monotonic() - STARTED) * 1000, 3),
+                }
+            ),
+            file=sys.stderr,
+            flush=True,
+        )
+
 
 USER_ID = "rehearsal-cookie-id"
 USER_KEY = "rehearsal-cookie-key"
@@ -31,8 +50,16 @@ MODES = {
 class Fake(ThreadingHTTPServer):
     daemon_threads = True
 
+    def server_bind(self):
+        # HTTPServer.server_bind calls getfqdn even for a numeric loopback bind.
+        # This fake has no need for DNS; resolver availability must not gate it.
+        socketserver.TCPServer.server_bind(self)
+        self.server_name, self.server_port = self.server_address[:2]
+
     def __init__(self, cert, key):
+        startup_stage("binding")
         super().__init__(("127.0.0.1", 0), Handler)
+        startup_stage("bound")
         self.lock = threading.Lock()
         self.calls = Counter()
         self.mode = "healthy"
@@ -42,8 +69,10 @@ class Fake(ThreadingHTTPServer):
         self.max_inflight = 0
         self.drop_cookies = False
         context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        startup_stage("loading-certificate")
         context.load_cert_chain(cert, key)
         self.socket = context.wrap_socket(self.socket, server_side=True)
+        startup_stage("tls-ready")
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -221,6 +250,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
+    startup_stage("imports-ready")
     server = Fake(*sys.argv[1:])
     print(server.server_port, flush=True)
 

@@ -8,6 +8,7 @@ import https from 'node:https';
 import { fileURLToPath } from 'node:url';
 import { classifySentinels } from './sentinels.js';
 import { expectedFixes } from './expectations.js';
+import { waitForFakeReady } from './fake-startup.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '../..');
@@ -51,6 +52,7 @@ export class Rehearsal {
         { stdio: 'ignore' },
       );
       h.keyText = await readFile(h.key, 'utf8');
+      const fakeStarted = Date.now();
       h.fake = spawn(
         path.join(serverRoot, '.venv/bin/python'),
         [path.join(here, 'fake_eapi.py'), h.cert, h.key],
@@ -63,21 +65,12 @@ export class Rehearsal {
       h.fake.stderr.on('data', (d) => {
         h.fakeStderr += d;
       });
-      const port = await new Promise((resolve, reject) => {
-        const timer = setTimeout(() => reject(new Error('fake startup deadline exceeded')), 5000);
-        h.fake.once('error', (e) => {
-          clearTimeout(timer);
-          reject(e);
-        });
-        h.fake.once('exit', () => {
-          clearTimeout(timer);
-          reject(new Error('fake exited before readiness'));
-        });
-        h.fake.stdout.once('data', (d) => {
-          clearTimeout(timer);
-          resolve(Number(String(d).trim()));
-        });
-      });
+      const port = await waitForFakeReady(h.fake, { stderr: () => h.fakeStderr });
+      h.fakeStartup = {
+        elapsedMs: Date.now() - fakeStarted,
+        deadlineMs: 5000,
+        phases: h.fakeStderr,
+      };
       if (!Number.isInteger(port) || port < 1) throw new Error('invalid fake port');
       h.origin = `https://127.0.0.1:${port}`;
       h.domain = `127.0.0.1:${port}`;
@@ -311,6 +304,7 @@ export class Rehearsal {
           JSON.stringify(
             {
               serverRoot,
+              fakeStartup: this.fakeStartup,
               records: this.records,
               sentinelFindings: this.leaks,
               knownCookieIdFindings: this.knownFindings,

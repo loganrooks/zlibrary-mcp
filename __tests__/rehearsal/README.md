@@ -59,7 +59,7 @@ not a continuous filesystem lock or an atomic snapshot.
 
 ## Cases and receipts
 
-There are 32 mandatory cases, including scanner/source-identity contracts. The
+There are 35 mandatory cases, including scanner/source-identity/startup contracts. The
 manifest records expected/executed counts, ordinary versus per-fix expected
 outcomes, endpoint/login-attempt/login-success counts, fake cookie epochs, stable
 Node PIDs, and categorized sentinel findings without their values. Missing,
@@ -88,7 +88,9 @@ skipped, duplicate and failed cases cannot produce a green aggregate.
   per-call logins; they do not isolate retry-after-failure behavior.
 - TLS: removing `SSL_CERT_FILE` rejects the certificate before EAPI dispatch.
 - Contracts: a no-cookie search must get 401, stdin EOF must terminate the fake,
-  and a PID mismatch must not prevent remaining client cleanup.
+  and a PID mismatch must not prevent remaining client cleanup. A real bind/TLS
+  contract forbids hostname resolution; startup deadline, early-exit and missing
+  interpreter controls require captured stderr and exit/signal status.
 
 ## Negative controls
 
@@ -107,6 +109,16 @@ The focused scanner contract combines the known ID log with password, cookie-key
 and CA-key mutations. All three remain unexpected even in master mode.
 
 ## Isolation and cleanup
+
+Fake startup retains its five-second deadline. Its numeric loopback bind bypasses
+`HTTPServer.server_bind`'s unnecessary `getfqdn` lookup, so resolver availability
+cannot gate readiness. Certificate generation precedes that deadline. Captured
+stderr includes fixed phase markers (imports ready, binding/bound, certificate
+loading, TLS ready), Python version and elapsed constructor time; the manifest
+also records spawn-to-ready duration. Failures include the command, captured
+stderr and exit/signal status (`null` means not exited/signalled at observation).
+An early exit is reported after stderr drains. No global timeout increase or
+unmeasured cold-start-only workaround is applied.
 
 The runner owns one temporary root for records, fake certificates and all child
 state. It removes that root after normal execution, timeout, or handled termination.
@@ -133,7 +145,9 @@ checked separately. The generated CA/key and these intentional private stores ar
 not called secret-free output. No product TLS verification is disabled.
 
 The CI matrix adds Ubuntu/macOS with Node 22 and uploads the manifest even on
-failure. Hosted execution is pending the lead's draft PR. No local Node-22/Linux,
+failure. The lead reports Ubuntu passed on PR 247; the supplied macOS log showed
+fake startup timeouts before this correction. Hosted confirmation of the startup
+fix is pending. No local Node-22/Linux,
 real tunnel, hosted connector, packed-install, live quota, identity-rotation, or
 memory-only/no-disk acceptance is implied by a local run.
 

@@ -1,4 +1,7 @@
 export const requiredCases = [
+  'C8 fake binds and loads TLS without hostname resolution',
+  'C9 startup deadline reports captured stderr and live process status',
+  'C10 startup exit and spawn errors retain stderr and status',
   'S4 Library Genesis search survives authentication failures',
   'S6 healthy Library Genesis search reaches the real parser and fixture',
   'C1 known cookie-ID log cannot hide password key or CA leaks',

@@ -408,45 +408,39 @@ Missing credentials produce a startup warning, not a fatal server error.
 
 ### Z-Library session reuse
 
-By default, successful EAPI logins are reused across Python bridge processes.
-The cache is bound to the exact configured email; changing accounts never sends
-cookies from the previous identity. No account pooling is performed.
+The Node server owns one identity-bound EAPI session **in memory** for its
+lifetime. No session key is written to disk. A restart costs one login. Python
+children receive cookies over stdin and return updates on a separate private
+pipe (fd 3), never command arguments, tool-result stdout, or diagnostic stderr.
+The private output descriptor is not inherited by grandchildren.
+
+EAPI calls are serialized inside one server, with each caller's own deadline and
+abort signal. Concurrent cold calls share one acquisition. Node accepts updates
+and rejections only for the current account and generation. Changing the email
+never reuses the previous account's cookies; changing only the password leaves
+an accepted session valid. Alternative-source and local-processing calls do not
+join the queue or receive the session. Explicit domain pins always win.
+
+The profile is checked on acquisition and after an idle gap, not every call.
+Explicit operation authentication rejection, or any well-formed profile
+`success:0`, permits one refresh and one operation retry, subject to the login
+cooldown. Network failures, timeouts, walls, and malformed/non-JSON responses do
+not cause login. An unpinned unavailable domain gets one same-cookie recovery,
+validated against the profile before adoption. Other operation error envelopes
+keep their per-call semantics.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `ZLIBRARY_SESSION_CACHE` | `on` | Set to `off` to bypass persistent state and log in for each EAPI bridge call |
-| `ZLIBRARY_SESSION_DIR` | `$XDG_STATE_HOME/zlibrary-mcp`, otherwise `~/.local/state/zlibrary-mcp` | Private local state directory; also useful for isolated tests |
-| `ZLIBRARY_EAPI_DOMAIN` | Automatic discovery | Explicit pin; cached sessions honor it and never switch away from it |
+| `ZLIBRARY_SESSION_MODE` | `memory` | `memory` or `per-call`; unknown values fail at startup |
+| `ZLIBRARY_SESSION_LOGIN_COOLDOWN_MS` | `180000` | Minimum interval between login attempts per account, including failed attempts |
+| `ZLIBRARY_SESSION_IDLE_MS` | `300000` | Idle gap before profile validation |
 
-The directory must be owned by the current user and private (0700 on POSIX).
-`eapi-session.json` and its persistent lock file are private regular files (0600).
-Writes use a temporary file, file fsync and atomic replacement. A cross-process
-lock serializes validation, cold login and refresh; lock waits time out after
-30 seconds. Use local storage shared by the bridge processes, not independent
-container filesystems or a network filesystem. Windows uses a byte-range lock;
-Unix uses flock. POSIX modes do not establish Windows ACL protection.
-
-The JSON holds the email, cookie pair, domain and creation time, **never a password
-or password-derived fingerprint**. Treat it as a credential: do not upload it or
-include it in diagnostic reports. The cookies have no invented local expiry;
-the upstream determines their lifetime. Each bridge restores them only after an
-authenticated profile check. Unknown responses, timeouts and upstream walls keep
-the cache and fail the call without another login. An unpinned unavailable domain
-gets at most one rediscovery using the same cookies; only a successful profile
-check saves the replacement domain.
-
-Only explicit authentication rejection permits one fresh login. If a JSON EAPI
-operation rejects a restored session after initialization, it is retried once
-following serialized refresh; uncertain operation outcomes are not replayed by
-this mechanism. The explicit rejection forms currently recognized are HTTP 401,
-or `success: 0` with `error` equal to `Please login` or `Authentication required`
-(on HTTP 200 or 400). Other shapes fail conservatively without reauthentication.
-
-Changing only the password intentionally does **not** invalidate a still-valid
-cookie pair. To force reauthentication after credential rotation, stop clients
-using this state directory, remove only `eapi-session.json`, then restart them.
-The next EAPI call logs in with the current credentials. Setting the cache off
-does not erase the saved session; turning it back on resumes validation of it.
+Timing overrides must be positive integers no greater than 2147483647; invalid
+values use the defaults. In `per-call` mode each EAPI invocation logs in normally,
+without session reuse or the memory carrier's cooldown. Disk/keychain modes are
+not implemented. Separate servers do not share sessions or cooldowns: if upstream
+invalidates older sessions, each server can be rejected until its cooldown allows
+another login. That provider behavior has not been measured.
 
 ### Logging
 

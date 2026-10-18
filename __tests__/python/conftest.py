@@ -81,7 +81,7 @@ def _no_preflight_probes(request, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
-def _isolated_eapi_session_cache(monkeypatch, tmp_path):
-    """Legacy tests bypass persistence; session tests explicitly opt in privately."""
-    monkeypatch.setenv("ZLIBRARY_SESSION_CACHE", "off")
-    monkeypatch.setenv("ZLIBRARY_SESSION_DIR", str(tmp_path / "eapi-session-state"))
+def _isolated_eapi_session_environment(monkeypatch):
+    """Never inherit a real parent's bearer session into offline tests."""
+    monkeypatch.setenv("ZLIBRARY_SESSION_MODE", "per-call")
+    monkeypatch.delenv("ZLIBRARY_EAPI_SESSION", raising=False)

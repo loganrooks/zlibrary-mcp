@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { getSessionMode } from './lib/eapi-session.js';
 
 import type { ZodObject, ZodRawShape } from 'zod';
 import { z } from 'zod';
@@ -704,6 +705,7 @@ interface StartOptions {
 }
 
 export function createServer(): McpServer {
+  getSessionMode(); // Reject unknown privacy modes before accepting any requests.
   // Instantiate the McpServer
   const server = new McpServer({
     name: 'zlibrary-mcp',

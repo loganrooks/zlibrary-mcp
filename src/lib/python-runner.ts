@@ -21,6 +21,7 @@
  * preempts a legitimate slow provider walk instead of catching a hang.
  */
 
+import type { Readable } from 'stream';
 import { PythonShell } from 'python-shell';
 import type { Options as PythonShellOptions } from 'python-shell';
 import { spawnSync } from 'child_process';
@@ -356,6 +357,9 @@ export interface RunBridgeOptions {
   signal?: AbortSignal;
   /** Short label used in log lines and error messages. */
   label?: string;
+  /** Internal stdin input / fd 3 output. Never included in argv or diagnostics. */
+  sessionInput?: Record<string, unknown>;
+  onSession?: (update: unknown) => void;
 }
 
 /**
@@ -382,7 +386,9 @@ export function runPythonBridge(
   installExitHooks();
 
   if (shutdownSignal) {
-    return Promise.reject(new Error(`${label} rejected because the bridge runner is shutting down`));
+    return Promise.reject(
+      new Error(`${label} rejected because the bridge runner is shutting down`),
+    );
   }
 
   // Never spawn work the caller has already given up on.
@@ -420,6 +426,7 @@ export function runPythonBridge(
 
     const shell = new PythonShell(scriptName, {
       ...options,
+      ...(runOptions.sessionInput ? { stdio: ['pipe', 'pipe', 'pipe', 'pipe'] } : {}),
       // On POSIX this creates a new session/process group whose id is the
       // Python pid. OCR and other grandchildren inherit it, making the whole
       // bridge-owned tree addressable without walking /proc.
@@ -436,6 +443,42 @@ export function runPythonBridge(
       // handler, because Node emits an error when spawn cannot create a child.
       return;
     }
+    let privateDone = Promise.resolve();
+    if (runOptions.sessionInput) {
+      const channel = shell.childProcess.stdio[3] as Readable;
+      privateDone = new Promise<void>((done) => {
+        let pending = '';
+        let delivered = false;
+        channel.setEncoding('utf8');
+        channel.on('data', (chunk: string) => {
+          pending += chunk;
+          if (pending.length > 8192) {
+            failWith(new Error('Invalid private session response'), 'private channel');
+            return;
+          }
+          if (!pending.includes('\n')) return;
+          try {
+            if (delivered || pending.trim().split('\n').length !== 1) throw new Error();
+            delivered = true;
+            runOptions.onSession?.(JSON.parse(pending.trim()));
+            pending = '';
+          } catch {
+            failWith(new Error('Invalid private session response'), 'private channel');
+          }
+        });
+        channel.on('end', () => {
+          if (pending) failWith(new Error('Invalid private session response'), 'private channel');
+          done();
+        });
+        channel.on('error', () => {
+          done();
+          failWith(new Error('Private session channel closed'), 'private channel');
+        });
+      });
+      shell.stdin.on('error', () => {}); // A dying leader may close stdin before reading.
+      shell.stdin.write(JSON.stringify(runOptions.sessionInput) + '\n');
+    }
+
     const treeRecord: ProcessTreeRecord = { shell, pid, label };
     processState.tree = treeRecord;
     liveTrees.add(treeRecord);
@@ -487,10 +530,11 @@ export function runPythonBridge(
 
     function onAbort() {
       failWith(
-        new BridgeTimeoutError(
-          `${label} was aborted by the caller; the subprocess was killed.`,
-          { label, reason: 'aborted', stderr: stderrLines.join('\n') },
-        ),
+        new BridgeTimeoutError(`${label} was aborted by the caller; the subprocess was killed.`, {
+          label,
+          reason: 'aborted',
+          stderr: stderrLines.join('\n'),
+        }),
         'abort',
       );
     }
@@ -508,7 +552,8 @@ export function runPythonBridge(
       if (stderrLines.length > MAX_STDERR_LINES) stderrLines.shift();
     });
 
-    shell.end((err: any) => {
+    shell.end(async (err: any) => {
+      if (runOptions.sessionInput) await privateDone;
       if (settled) {
         cleanupCall();
         monitorTree(treeRecord);
@@ -524,7 +569,8 @@ export function runPythonBridge(
 
       const signal = shell.childProcess.signalCode;
       if (signal) {
-        const oomHint = signal === 'SIGKILL' ? ' SIGKILL may indicate an out-of-memory (OOM) kill.' : '';
+        const oomHint =
+          signal === 'SIGKILL' ? ' SIGKILL may indicate an out-of-memory (OOM) kill.' : '';
         reject(
           new BridgeKilledError(`${label} was terminated by ${signal}.${oomHint}`, signal, {
             label,

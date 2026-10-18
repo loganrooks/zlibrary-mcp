@@ -1,5 +1,16 @@
 import { afterEach, beforeEach, describe, expect, jest, test } from '@jest/globals';
 
+// These fixtures describe a single per-call subprocess, not private acquisition.
+let previousSessionMode;
+beforeEach(() => {
+  previousSessionMode = process.env.ZLIBRARY_SESSION_MODE;
+  process.env.ZLIBRARY_SESSION_MODE = 'per-call';
+});
+afterEach(() => {
+  if (previousSessionMode === undefined) delete process.env.ZLIBRARY_SESSION_MODE;
+  else process.env.ZLIBRARY_SESSION_MODE = previousSessionMode;
+});
+
 const runPythonBridge = jest.fn();
 let api;
 let errors;

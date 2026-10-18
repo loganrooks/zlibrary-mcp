@@ -1,34 +1,34 @@
-"""Single-account session contract against real EAPI JSON decoding, offline only.
+"""In-memory parent/child EAPI contract, real JSON client over fake HTTP only."""
 
-Breaks caught: unconditional login, wrong-account reuse, refresh on uncertainty,
-blind failure-envelope acceptance, missing lock/re-read, non-private/torn writes.
-"""
-
-import asyncio
 import json
-import os
-from pathlib import Path
 import sys
 
 import httpx
 import pytest
-
 import python_bridge
 from zlibrary import eapi
 
 
 @pytest.fixture
 def service(monkeypatch, tmp_path):
-    monkeypatch.setenv("ZLIBRARY_SESSION_CACHE", "on")
-    monkeypatch.setenv("ZLIBRARY_SESSION_DIR", str(tmp_path / "state"))
+    monkeypatch.setenv("ZLIBRARY_SESSION_MODE", "memory")
+    monkeypatch.setattr(python_bridge, "_session_input", None)
+    updates = []
+    monkeypatch.setattr(
+        python_bridge.os,
+        "write",
+        lambda fd, data: updates.append(json.loads(data)) or len(data),
+    )
     monkeypatch.setenv("ZLIBRARY_EMAIL", "reader@example.test")
     monkeypatch.setenv("ZLIBRARY_PASSWORD", "fake-password-marker")
     monkeypatch.setenv("ZLIBRARY_EAPI_DOMAIN", "a.example.test")
+    monkeypatch.delenv("ZLIBRARY_EAPI_SESSION", raising=False)
     monkeypatch.setattr(
         eapi, "DEFAULT_EAPI_DOMAINS", ["a.example.test", "b.example.test"]
     )
     monkeypatch.setattr(python_bridge, "_eapi_client", None)
     state = {
+        "updates": updates,
         "logins": 0,
         "requests": [],
         "profile": None,
@@ -36,18 +36,20 @@ def service(monkeypatch, tmp_path):
         "failures": {},
         "clients": [],
         "login_result": None,
+        "directory": tmp_path,
     }
 
     def handle(request):
         host, path = request.url.host, request.url.path
         state["requests"].append((host, path, request.headers.get("cookie", "")))
         failure = state["failures"].get(host)
-        if failure == "network":
-            raise httpx.ConnectError("offline", request=request)
-        if failure == "timeout":
-            raise httpx.ReadTimeout("offline", request=request)
+        if failure in ("network", "timeout"):
+            cls = httpx.ConnectError if failure == "network" else httpx.ReadTimeout
+            raise cls("offline", request=request)
         if failure == "wall":
             return httpx.Response(513, text="DiamWall")
+        if failure == "html":
+            return httpx.Response(200, text="<html>Challenge</html>")
         if failure == "http":
             return httpx.Response(503, text="unavailable")
         if path == "/eapi/user/login":
@@ -75,11 +77,11 @@ def service(monkeypatch, tmp_path):
         if isinstance(payload, httpx.Response):
             return payload
         if payload is None:
-            if path == "/eapi/user/profile":
-                # Independent server view of the authenticated identity.
-                payload = {"success": 1, "user": {"id": str(state["logins"])}}
-            else:
-                payload = {"success": 1, "books": []}
+            payload = (
+                {"success": 1, "user": {"id": str(state["logins"])}}
+                if path == "/eapi/user/profile"
+                else {"success": 1, "books": []}
+            )
         return httpx.Response(200, json=payload)
 
     transport = httpx.MockTransport(handle)
@@ -95,432 +97,353 @@ def service(monkeypatch, tmp_path):
 
     monkeypatch.setattr(eapi.EAPIClient, "_get_client", get_client)
     monkeypatch.setattr(python_bridge, "resolve_eapi_domain", resolve)
-    state["root"] = tmp_path / "state"
     return state
 
 
-async def initialize_and_close():
+def session(
+    action="operation",
+    identity="reader@example.test",
+    domain="a.example.test",
+    key="fake-cookie-marker-1",
+):
+    return {
+        "generation": 12,
+        "identity": identity,
+        "action": action,
+        "domain": domain,
+        "remix_userid": "1",
+        "remix_userkey": key,
+    }
+
+
+async def seed(service, monkeypatch):
+    monkeypatch.setattr(python_bridge, "_session_input", session("login"))
     client = await python_bridge.initialize_eapi_client()
     await client.close()
-    python_bridge._eapi_client = None
-    return client
+    monkeypatch.setattr(python_bridge, "_session_input", session())
+    monkeypatch.setattr(python_bridge, "_eapi_client", None)
 
 
-def record(service):
-    return next(service["root"].glob("*.json"))
-
-
-async def test_sequential_calls_reuse_cookies(service):
-    await initialize_and_close()
-    await initialize_and_close()
-    assert service["logins"] == 1
-    profiles = [r for r in service["requests"] if r[1] == "/eapi/user/profile"]
-    assert len(profiles) == 1
-    assert "remix_userkey=fake-cookie-marker-1" in profiles[0][2]
-
-
-async def test_identity_change_never_sends_previous_cookies(service, monkeypatch):
-    await initialize_and_close()
+async def test_warm_operation_needs_no_login_or_profile(service, monkeypatch):
+    await seed(service, monkeypatch)
     service["requests"].clear()
-    monkeypatch.setenv("ZLIBRARY_EMAIL", "other@example.test")
-    await initialize_and_close()
-    assert service["logins"] == 2
-    assert all(
-        "fake-cookie-marker-1" not in cookies for _, _, cookies in service["requests"]
-    )
+    client = await python_bridge.initialize_eapi_client()
+    assert (await client.search("offline"))["books"] == []
+    await client.close()
+    assert service["logins"] == 1
+    assert [r[1] for r in service["requests"]] == ["/eapi/book/search"]
+    assert list(service["directory"].iterdir()) == []
 
 
-async def test_password_change_is_password_free_and_manual_removal_refreshes(
+async def test_acquisition_and_idle_actions_validate_profile(service, monkeypatch):
+    await seed(service, monkeypatch)
+    assert [r[1] for r in service["requests"]].count("/eapi/user/profile") == 1
+    monkeypatch.setattr(python_bridge, "_session_input", session("validate"))
+    client = await python_bridge.initialize_eapi_client()
+    await client.close()
+    assert [r[1] for r in service["requests"]].count("/eapi/user/profile") == 2
+    assert service["logins"] == 1
+
+
+async def test_changed_identity_rejects_carrier_without_sending_it(
     service, monkeypatch
 ):
-    await initialize_and_close()
-    original = record(service).read_bytes()
-    monkeypatch.setenv("ZLIBRARY_PASSWORD", "replacement-fake-password")
-    await initialize_and_close()
-    assert service["logins"] == 1
-    assert record(service).read_bytes() == original
-    record(service).unlink()
-    await initialize_and_close()
-    assert service["logins"] == 2
-
-
-async def test_private_atomic_record_allowlist(service, monkeypatch):
-    import hashlib
-
-    await initialize_and_close()
-    path = record(service)
-    data = json.loads(path.read_text())
-    assert set(data) == {
-        "identity",
-        "domain",
-        "remix_userid",
-        "remix_userkey",
-        "created_at",
-    }
-    assert data["identity"] == "reader@example.test"
-    assert isinstance(data["created_at"], (int, float))
-    assert service["root"].stat().st_mode & 0o777 == 0o700
-    assert path.stat().st_mode & 0o777 == 0o600
-    assert all(p.stat().st_mode & 0o777 == 0o600 for p in service["root"].iterdir())
-    assert "fake-password-marker" not in path.read_text()
-    assert hashlib.sha256(b"fake-password-marker").hexdigest() not in path.read_text()
-
-    # Interrupted replace must leave the complete previous record, no partial file.
-    from lib import eapi_session
-
-    original = path.read_bytes()
     monkeypatch.setattr(
-        eapi_session.os,
-        "replace",
-        lambda *_: (_ for _ in ()).throw(OSError("fake replace failure")),
+        python_bridge, "_session_input", session(identity="other@example.test")
     )
-    with pytest.raises(OSError):
-        eapi_session._write(path, {**data, "remix_userkey": "replacement"})
-    assert path.read_bytes() == original
-    assert sorted(p.name for p in service["root"].iterdir()) == [
-        "eapi-session.json",
-        "eapi-session.lock",
-    ]
+    with pytest.raises(ValueError, match="identity"):
+        await python_bridge.initialize_eapi_client()
+    assert service["requests"] == []
 
 
 @pytest.mark.parametrize(
     "payload",
     [
         {"success": 0, "error": "Please login"},
-        {"success": 0, "error": "Please login", "user": {"id": "1"}},
+        {"success": 0, "error": "Authentication required", "user": {"id": "1"}},
         httpx.Response(401, json={"error": "rejected"}),
-        httpx.Response(400, json={"success": 0, "error": "Please login"}),
+        httpx.Response(400, json={"success": 0, "error": "Authentication required"}),
     ],
 )
-async def test_explicit_profile_rejection_refreshes_once(service, payload):
-    await initialize_and_close()
-    service["profile"] = payload
-    await initialize_and_close()
-    assert service["logins"] == 2
-    assert (
-        json.loads(record(service).read_text())["remix_userkey"]
-        == "fake-cookie-marker-2"
-    )
+async def test_child_never_refreshes_after_explicit_operation_rejection(
+    service, monkeypatch, payload
+):
+    await seed(service, monkeypatch)
+    client = await python_bridge.initialize_eapi_client()
+    service["requests"].clear()
+    service["operation"] = payload
+    with pytest.raises(eapi.EAPIAuthenticationError):
+        await client.search("offline")
+    await client.close()
+    assert service["logins"] == 1
+    assert len(service["requests"]) == 1
 
 
 @pytest.mark.parametrize(
     "payload",
-    [
-        {"success": 0, "user": {"id": "1"}},
-        {"success": 0, "error": "maintenance", "user": {"id": "1"}},
-        {"success": 1, "user": {"id": "different"}},
-        {},
-        [],
-    ],
+    [{"success": 0, "error": "Daily limit #1"}, {"success": 0, "user": {"id": "1"}}],
 )
-async def test_ambiguous_profile_never_logs_in_or_changes_cache(service, payload):
-    await initialize_and_close()
-    original = record(service).read_bytes()
-    service["profile"] = payload
-    with pytest.raises(RuntimeError):
-        await initialize_and_close()
+async def test_business_envelopes_same_as_per_call(service, monkeypatch, payload):
+    await seed(service, monkeypatch)
+    client = await python_bridge.initialize_eapi_client()
+    service["operation"] = payload
+    assert await client.search("offline") == payload
+    await client.close()
     assert service["logins"] == 1
-    assert record(service).read_bytes() == original
-    assert all(c.is_closed for c in service["clients"])
 
 
-@pytest.mark.parametrize("failure", ["network", "timeout", "wall", "http"])
-async def test_pinned_transport_failure_preserves_cache(service, failure):
-    await initialize_and_close()
-    original = record(service).read_bytes()
-    service["failures"]["a.example.test"] = failure
-    with pytest.raises((httpx.HTTPError, eapi.DiamWallError)):
-        await initialize_and_close()
-    assert service["logins"] == 1
-    assert record(service).read_bytes() == original
-    assert all(host == "a.example.test" for host, _, _ in service["requests"])
-
-
-@pytest.mark.parametrize("failure", ["network", "timeout", "wall", "http"])
-async def test_domain_recovery_uses_same_cookies_without_login(
+@pytest.mark.parametrize("failure", ["network", "timeout", "wall", "http", "html"])
+async def test_operation_uncertainty_never_refreshes_and_honours_pin(
     service, monkeypatch, failure
 ):
-    monkeypatch.delenv("ZLIBRARY_EAPI_DOMAIN")
-    await initialize_and_close()
+    await seed(service, monkeypatch)
+    client = await python_bridge.initialize_eapi_client()
     service["failures"]["a.example.test"] = failure
-    client = await initialize_and_close()
-    assert client.domain == "b.example.test"
+    with pytest.raises(
+        (httpx.HTTPError, eapi.DiamWallError, eapi.NonJSONResponseError)
+    ):
+        await client.search("offline")
+    await client.close()
     assert service["logins"] == 1
-    data = json.loads(record(service).read_text())
-    assert data["domain"] == "b.example.test"
-    assert data["remix_userkey"] == "fake-cookie-marker-1"
+    assert client.remix_userkey == "fake-cookie-marker-1"
+    assert {r[0] for r in service["requests"]} == {"a.example.test"}
+
+
+@pytest.mark.parametrize("failure", ["network", "timeout", "wall", "http", "html"])
+async def test_domain_recovery_same_cookies_validates_and_publishes(
+    service, monkeypatch, failure
+):
+    await seed(service, monkeypatch)
+    monkeypatch.delenv("ZLIBRARY_EAPI_DOMAIN")
+    client = await python_bridge.initialize_eapi_client()
+    service["failures"]["a.example.test"] = failure
+    assert (await client.search("offline"))["books"] == []
+    python_bridge._publish_eapi_session()
+    assert service["updates"][0]["domain"] == "b.example.test"
+    assert service["updates"][0]["generation"] == 12
+    assert client.remix_userkey == "fake-cookie-marker-1"
+    assert service["logins"] == 1
+    await client.close()
     assert all(c.is_closed for c in service["clients"])
 
 
-async def test_failed_domain_recovery_keeps_cache(service, monkeypatch):
+@pytest.mark.parametrize(
+    "payload,token",
+    [
+        (
+            {"success": 0, "error": "New expiry #2", "user": {"id": "1"}},
+            "New expiry #2",
+        ),
+        ({"success": 0, "user": {"id": "1"}}, "<redacted>"),
+        ({"success": 0, "error": "unsafe / value"}, "<redacted>"),
+        ({"success": 0, "error": "x" * 65}, "<redacted>"),
+    ],
+)
+async def test_any_profile_success_zero_is_typed_rejection(
+    service, monkeypatch, payload, token
+):
+    await seed(service, monkeypatch)
+    monkeypatch.setattr(python_bridge, "_session_input", session("validate"))
+    service["profile"] = payload
+    with pytest.raises(eapi.EAPIAuthenticationError, match=token):
+        await python_bridge.initialize_eapi_client()
+    await python_bridge._eapi_client.close()
+    assert service["logins"] == 1
+
+
+async def test_profile_user_id_must_match(service, monkeypatch):
+    await seed(service, monkeypatch)
+    service["profile"] = {"success": 1, "user": {"id": "other"}}
+    monkeypatch.setattr(python_bridge, "_session_input", session("validate"))
+    with pytest.raises(RuntimeError, match="Unexpected EAPI profile"):
+        await python_bridge.initialize_eapi_client()
+    await python_bridge._eapi_client.close()
+    assert service["logins"] == 1
+
+
+async def test_recovery_rejection_reaches_parent_without_child_login(
+    service, monkeypatch
+):
+    await seed(service, monkeypatch)
     monkeypatch.delenv("ZLIBRARY_EAPI_DOMAIN")
-    await initialize_and_close()
-    original = record(service).read_bytes()
-    service["failures"] = {"a.example.test": "network", "b.example.test": "wall"}
-    with pytest.raises(httpx.ConnectError):
-        await initialize_and_close()
-    assert service["logins"] == 1
-    assert record(service).read_bytes() == original
-
-
-async def test_changed_pin_is_honored_without_login(service, monkeypatch):
-    await initialize_and_close()
-    monkeypatch.setenv("ZLIBRARY_EAPI_DOMAIN", "b.example.test")
-    service["requests"].clear()
-    await initialize_and_close()
-    assert service["logins"] == 1
-    assert {r[0] for r in service["requests"]} == {"b.example.test"}
-
-
-async def test_rejection_during_operation_refreshes_and_retries_only_once(service):
-    await initialize_and_close()
     client = await python_bridge.initialize_eapi_client()
-    service["requests"].clear()
-    service["operation"] = {"success": 0, "error": "Please login"}
-    with pytest.raises(RuntimeError):
+    service["failures"]["a.example.test"] = "network"
+    service["profile"] = {"success": 0, "error": "Expiry #2"}
+    with pytest.raises(eapi.EAPIAuthenticationError):
         await client.search("offline")
     await client.close()
-    assert service["logins"] == 2
-    assert len([r for r in service["requests"] if r[1] == "/eapi/book/search"]) == 2
+    assert service["logins"] == 1
+    assert client.domain == "a.example.test"
 
 
-async def test_operation_refresh_reuses_another_process_new_session(service):
-    await initialize_and_close()
-    stale = await python_bridge.initialize_eapi_client()
-    record(service).unlink()
-    await initialize_and_close()  # emulate another bridge replacing the session
-    service["operation"] = lambda request: (
-        {"success": 0, "error": "Please login"}
-        if "fake-cookie-marker-1" in request.headers.get("cookie", "")
-        else {"success": 1, "books": [{"id": "offline-result"}]}
+async def test_failed_recovery_retains_pair(service, monkeypatch):
+    await seed(service, monkeypatch)
+    monkeypatch.delenv("ZLIBRARY_EAPI_DOMAIN")
+    client = await python_bridge.initialize_eapi_client()
+    service["failures"] = {"a.example.test": "network", "b.example.test": "wall"}
+    with pytest.raises(httpx.ConnectError):
+        await client.search("offline")
+    await client.close()
+    assert client.domain == "a.example.test"
+    assert service["logins"] == 1
+
+
+async def test_per_call_and_restart_login_again(service, monkeypatch):
+    await seed(service, monkeypatch)
+    monkeypatch.setattr(python_bridge, "_session_input", None)
+    for _ in range(2):
+        client = await python_bridge.initialize_eapi_client()
+        await client.close()
+    assert service["logins"] == 3
+
+
+async def test_main_bearer_only_on_fd3_not_stdout_stderr(
+    service, monkeypatch, capsys, caplog
+):
+    monkeypatch.setattr(python_bridge, "_session_input", session("login"))
+    monkeypatch.setattr(
+        sys, "argv", ["python_bridge.py", "search", '{"query":"offline"}']
     )
-    result = await stale.search("offline")
-    await stale.close()
-    assert result["books"] == [{"id": "offline-result"}]
-    assert service["logins"] == 2
+    await python_bridge.main()
+    captured = capsys.readouterr()
+    assert service["updates"][0]["remix_userkey"] == "fake-cookie-marker-1"
+    assert json.loads(json.loads(captured.out)["content"][0]["text"]) == {
+        "authenticated": True
+    }
+    assert "fake-cookie-marker" not in captured.out + captured.err + caplog.text
+    assert list(service["directory"].iterdir()) == []
 
 
-async def test_off_switch_does_not_create_state(service, monkeypatch):
-    monkeypatch.setenv("ZLIBRARY_SESSION_CACHE", "off")
-    await initialize_and_close()
-    await initialize_and_close()
-    assert service["logins"] == 2
-    assert not service["root"].exists()
+async def test_main_typed_rejection_has_generation_no_carrier(
+    service, monkeypatch, capsys
+):
+    await seed(service, monkeypatch)
+    service["operation"] = {"success": 0, "error": "Please login"}
+    monkeypatch.setattr(
+        sys, "argv", ["python_bridge.py", "search", '{"query":"offline"}']
+    )
+    await python_bridge.main()
+    captured = capsys.readouterr()
+    result = json.loads(json.loads(captured.out)["content"][0]["text"])
+    assert result["auth_rejected"] == {"generation": 12}
+    assert service["updates"] == []
+    assert "fake-cookie-marker" not in captured.out + captured.err
+    assert service["logins"] == 1
 
 
-async def test_login_failure_never_leaks_response_or_credentials(service, caplog):
+async def test_main_transport_error_diagnostic_scrubs_bearer(
+    service, monkeypatch, capsys
+):
+    await seed(service, monkeypatch)
+    service["operation"] = RuntimeError(
+        "fake-password-marker fake-cookie-marker-1 reader@example.test"
+    )
+    monkeypatch.setattr(
+        sys, "argv", ["python_bridge.py", "search", '{"query":"offline"}']
+    )
+    with pytest.raises(SystemExit):
+        await python_bridge.main()
+    captured = capsys.readouterr()
+    for secret in [
+        "fake-cookie-marker-1",
+        "fake-password-marker",
+        "reader@example.test",
+    ]:
+        assert secret not in captured.out + captured.err
+
+
+async def test_login_failure_has_no_secret(service, caplog):
     service["login_result"] = {
         "success": 0,
         "user": {"remix_userkey": "fake-cookie-marker"},
         "error": "fake-password-marker reader@example.test",
     }
     with pytest.raises(RuntimeError) as caught:
-        await initialize_and_close()
-    diagnostic = str(caught.value) + caplog.text
+        await python_bridge.initialize_eapi_client()
     for value in ("fake-cookie-marker", "fake-password-marker", "reader@example.test"):
-        assert value not in diagnostic
-    assert not list(service["root"].glob("*.json"))
+        assert value not in str(caught.value) + caplog.text
     assert all(c.is_closed for c in service["clients"])
 
 
-async def test_concurrent_cold_processes_login_once(service, tmp_path):
-    """Falsifier: removing lock or locked re-read causes two login counter lines.
-
-    Both children reach initialize together; the fake login waits for the other
-    login for one second. Correct serialization lets only one reach it; unlocked
-    code deterministically overlaps, not merely when the scheduler gets lucky.
-    """
-    script = r"""
-import asyncio, os, sys, time
-from pathlib import Path
-import httpx
-sys.path.insert(0, "lib")
-import python_bridge
-from zlibrary.eapi import EAPIClient
-root = Path(os.environ["TEST_BARRIER"])
-async def handle(request):
-    if request.url.path == "/eapi/user/login":
-        with (root / "login-count").open("a") as out:
-            out.write("login\n")
-        deadline = time.monotonic() + 1
-        while len((root / "login-count").read_text().splitlines()) < 2 and time.monotonic() < deadline:
-            await asyncio.sleep(.02)
-        return httpx.Response(200, json={"success":1,"user":{"id":"1","remix_userkey":"offline-cookie"}})
-    assert request.url.path == "/eapi/user/profile"
-    assert "remix_userkey=offline-cookie" in request.headers["cookie"]
-    return httpx.Response(200, json={"success":1,"user":{"id":"1"}})
-async def get_client(self):
-    if self._client is None or self._client.is_closed:
-        self._client = httpx.AsyncClient(transport=httpx.MockTransport(handle), cookies=self._cookies)
-    return self._client
-EAPIClient._get_client = get_client
-async def run():
-    (root / ("ready-" + str(os.getpid()))).touch()
-    deadline = time.monotonic() + 10
-    while len(list(root.glob("ready-*"))) < 2:
-        if time.monotonic() > deadline:
-            raise TimeoutError("test barrier")
-        await asyncio.sleep(.02)
+async def test_wall_401_does_not_refresh(service, monkeypatch):
+    await seed(service, monkeypatch)
     client = await python_bridge.initialize_eapi_client()
+    service["operation"] = httpx.Response(401, text="DiamWall challenge")
+    with pytest.raises(eapi.DiamWallError):
+        await client.search("offline")
     await client.close()
-asyncio.run(run())
-"""
+    assert service["logins"] == 1
 
-    async def child():
-        proc = await asyncio.create_subprocess_exec(
-            sys.executable,
-            "-c",
-            script,
-            cwd=Path(__file__).resolve().parents[2],
-            env={**os.environ, "TEST_BARRIER": str(tmp_path)},
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        try:
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), 20)
-        finally:
-            if proc.returncode is None:
-                proc.kill()
-                await proc.wait()
-        assert proc.returncode == 0, stderr.decode()
-        assert stdout == b""
 
-    await asyncio.gather(child(), child())
-    assert (tmp_path / "login-count").read_text().splitlines() == ["login"]
+async def test_success_without_pair_is_not_session(service):
+    service["login_result"] = {"success": 1, "user": {}}
+    with pytest.raises(RuntimeError):
+        await python_bridge.initialize_eapi_client()
+    assert all(c.is_closed for c in service["clients"])
+
+
+def test_bridge_debug_suppresses_wire_cookie_logs(service, monkeypatch, caplog):
+    import logging
+
+    names = ("zlibrary", "httpx", "httpcore")
+    previous = {name: logging.getLogger(name).level for name in names}
+    try:
+        monkeypatch.setattr(python_bridge, "DEBUG_MODE", True)
+        caplog.set_level(logging.DEBUG)
+        python_bridge._configure_debug_logging()
+        logging.getLogger("httpcore.http11").debug("Set-Cookie: fake-cookie-marker-1")
+        logging.getLogger("httpx").info("fake-cookie-marker-1")
+        assert "fake-cookie-marker-1" not in caplog.text
+    finally:
+        for name, level in previous.items():
+            logging.getLogger(name).setLevel(level)
 
 
 @pytest.mark.parametrize(
-    "kind", ["directory", "symlink", "public-file", "symlink-file"]
+    "function,args",
+    [
+        ("full_text_search", {"query": "offline", "phrase": True}),
+        ("get_book_metadata_complete", {"book_id": "1", "book_hash": "fake"}),
+        ("eapi_health_check", {}),
+    ],
 )
-async def test_nonprivate_state_rejected_before_login(service, tmp_path, kind):
-    root = service["root"]
-    if kind == "directory":
-        root.mkdir(mode=0o755)
-        root.chmod(0o755)
-    elif kind == "symlink":
-        target = tmp_path / "target"
-        target.mkdir(mode=0o700)
-        root.symlink_to(target, target_is_directory=True)
-    else:
-        root.mkdir(mode=0o700)
-        path = root / "eapi-session.json"
-        if kind == "public-file":
-            path.write_text("{}")
-            path.chmod(0o644)
-        else:
-            target = tmp_path / "target.json"
-            target.write_text("{}")
-            target.chmod(0o600)
-            path.symlink_to(target)
-    with pytest.raises((RuntimeError, OSError)):
-        await initialize_and_close()
-    assert service["logins"] == 0
-
-
-async def test_cancelled_lock_releases_for_next_caller(service):
-    from lib.eapi_session import _locked, _private_directory
-
-    path = _private_directory() / "eapi-session.lock"
-    entered = asyncio.Event()
-
-    async def hold():
-        async with _locked(path):
-            entered.set()
-            await asyncio.Event().wait()
-
-    task = asyncio.create_task(hold())
-    await entered.wait()
-    task.cancel()
-    with pytest.raises(asyncio.CancelledError):
-        await task
-    await asyncio.wait_for(initialize_and_close(), 2)
-    assert service["logins"] == 1
-
-
-@pytest.mark.parametrize("failure", ["network", "wall", "http"])
-async def test_recovered_domain_validation_failure_preserves_bytes(
-    service, monkeypatch, failure
+async def test_wrappers_preserve_typed_rejection_for_parent(
+    service, monkeypatch, capsys, function, args
 ):
-    monkeypatch.delenv("ZLIBRARY_EAPI_DOMAIN")
-    await initialize_and_close()
-    original = record(service).read_bytes()
-    service["failures"]["a.example.test"] = "network"
-
-    def bad_profile(request):
-        if failure == "network":
-            return httpx.ConnectError("offline", request=request)
-        return httpx.Response(513 if failure == "wall" else 503, text="unavailable")
-
-    service["profile"] = bad_profile
-    with pytest.raises((httpx.HTTPError, eapi.DiamWallError)):
-        await initialize_and_close()
-    assert record(service).read_bytes() == original
+    await seed(service, monkeypatch)
+    service["requests"].clear()
+    service["operation"] = {"success": 0, "error": "Please login"}
+    monkeypatch.setattr(sys, "argv", ["python_bridge.py", function, json.dumps(args)])
+    await python_bridge.main()
+    output = capsys.readouterr()
+    result = json.loads(json.loads(output.out)["content"][0]["text"])
+    assert result["auth_rejected"] == {"generation": 12}
     assert service["logins"] == 1
-    assert all(c.is_closed for c in service["clients"])
+    assert len(service["requests"]) == 1
 
 
-async def test_successful_operation_retry_returns_new_result(service):
-    await initialize_and_close()
-    client = await python_bridge.initialize_eapi_client()
+async def test_booklist_enrichment_preserves_auth_rejection(
+    service, monkeypatch, capsys
+):
+    await seed(service, monkeypatch)
     service["operation"] = lambda request: (
-        {"success": 0, "error": "Please login"}
-        if "fake-cookie-marker-1" in request.headers.get("cookie", "")
-        else {"success": 1, "books": [{"id": "new-session-result"}]}
+        {"success": 1, "books": [{"id": "1", "hash": "fake", "title": "Offline"}]}
+        if request.url.path == "/eapi/book/search"
+        else {"success": 0, "error": "Please login"}
     )
-    assert (await client.search("offline"))["books"] == [{"id": "new-session-result"}]
-    await client.close()
-    assert service["logins"] == 2
-
-
-async def test_operation_transport_uncertainty_never_refreshes(service):
-    await initialize_and_close()
-    client = await python_bridge.initialize_eapi_client()
-    original = record(service).read_bytes()
-    service["operation"] = httpx.ReadTimeout("offline")
-    with pytest.raises(httpx.ReadTimeout):
-        await client.search("offline")
-    await client.close()
-    assert record(service).read_bytes() == original
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "python_bridge.py",
+            "fetch_booklist_bridge",
+            json.dumps(
+                {"booklist_id": "1", "booklist_hash": "fake", "topic": "offline"}
+            ),
+        ],
+    )
+    await python_bridge.main()
+    output = capsys.readouterr()
+    result = json.loads(json.loads(output.out)["content"][0]["text"])
+    assert result["auth_rejected"] == {"generation": 12}
     assert service["logins"] == 1
-
-
-async def test_xdg_default_and_corrupt_cache_recovery(service, monkeypatch, tmp_path):
-    monkeypatch.delenv("ZLIBRARY_SESSION_DIR")
-    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "xdg"))
-    service["root"] = tmp_path / "xdg" / "zlibrary-mcp"
-    await initialize_and_close()
-    path = record(service)
-    path.write_text("not-json")
-    await initialize_and_close()
-    assert service["logins"] == 2
-    assert json.loads(path.read_text())["identity"] == "reader@example.test"
-
-
-async def test_wall_marker_on_401_is_not_auth_rejection(service):
-    """An upstream wall's status must not become a fresh login."""
-    await initialize_and_close()
-    original = record(service).read_bytes()
-    service["profile"] = httpx.Response(401, text="<html>DiamWall challenge</html>")
-    with pytest.raises(eapi.DiamWallError):
-        await initialize_and_close()
-    assert service["logins"] == 1
-    assert record(service).read_bytes() == original
-
-
-async def test_ambiguous_operation_envelope_fails_without_refresh_or_secret_leak(
-    service, caplog
-):
-    await initialize_and_close()
-    client = await python_bridge.initialize_eapi_client()
-    original = record(service).read_bytes()
-    service["operation"] = {
-        "success": 0,
-        "error": "fake-cookie-marker-1 fake-password-marker",
-    }
-    with pytest.raises(RuntimeError) as caught:
-        await client.search("offline")
-    await client.close()
-    assert service["logins"] == 1
-    assert record(service).read_bytes() == original
-    assert "fake-cookie-marker" not in str(caught.value) + caplog.text
-    assert "fake-password-marker" not in str(caught.value) + caplog.text

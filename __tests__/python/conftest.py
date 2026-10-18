@@ -78,3 +78,10 @@ def _no_preflight_probes(request, monkeypatch):
         if module is not None and hasattr(module, "probe_host"):
             monkeypatch.setattr(module, "probe_host", _skip)
     net.reset_probe_cache()
+
+
+@pytest.fixture(autouse=True)
+def _isolated_eapi_session_environment(monkeypatch):
+    """Never inherit a real parent's bearer session into offline tests."""
+    monkeypatch.setenv("ZLIBRARY_SESSION_MODE", "per-call")
+    monkeypatch.delenv("ZLIBRARY_EAPI_SESSION", raising=False)

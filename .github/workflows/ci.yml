@@ -74,7 +74,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      # Pinned: on macos-latest uv otherwise picks CPython 3.15, for which
+      # pi-heif has no wheel and its source build fails.
       - uses: astral-sh/setup-uv@v7
+        with:
+          python-version: '3.13'
       - run: npm ci
       - run: uv sync --all-extras
       - run: uv run python -m nltk.downloader -q punkt punkt_tab

@@ -271,25 +271,30 @@ async def get_eapi_client() -> EAPIClient:
 
 
 async def initialize_eapi_client() -> EAPIClient:
-    """
-    Initialize the shared EAPI client using environment credentials.
-
-    Creates an EAPIClient, logs in, discovers domains, and stores
-    the client for reuse by all tool functions.
-
-    Returns:
-        Authenticated EAPIClient instance
-    """
+    """Restore the configured account's cookies, or serialize one login."""
     global _eapi_client
-
     email = os.environ.get("ZLIBRARY_EMAIL")
     password = os.environ.get("ZLIBRARY_PASSWORD")
-
     if not email or not password:
         raise ValueError(
             "ZLIBRARY_EMAIL and ZLIBRARY_PASSWORD environment variables required"
         )
+    if os.environ.get("ZLIBRARY_SESSION_CACHE", "on").lower() == "off":
+        _eapi_client = await _login_eapi_client(email, password)
+    else:
+        from lib.eapi_session import authenticated_client
 
+        _eapi_client = await authenticated_client(
+            email,
+            lambda: _login_eapi_client(email, password),
+            EAPIClient,
+            resolve_eapi_domain,
+        )
+    return _eapi_client
+
+
+async def _login_eapi_client(email: str, password: str) -> EAPIClient:
+    """Perform the existing login/domain discovery without logging auth data."""
     # ISSUE-API-002: the old single default (z-library.sk) is fronted by the
     # DiamWall anti-bot wall. resolve_eapi_domain() honours an explicit
     # ZLIBRARY_EAPI_DOMAIN override without probing; otherwise it probes the
@@ -299,12 +304,15 @@ async def initialize_eapi_client() -> EAPIClient:
     initial_domain = await resolve_eapi_domain()
 
     client = EAPIClient(initial_domain)
-    login_result = await client.login(email, password)
+    try:
+        login_result = await client.login(email, password)
+        if not isinstance(login_result, dict) or login_result.get("success") != 1:
+            raise RuntimeError("EAPI login failed")
+    except BaseException:
+        await client.close()
+        raise
 
-    if login_result.get("success") != 1:
-        raise RuntimeError(f"EAPI login failed: {login_result}")
-
-    logger.info(f"EAPI client authenticated (userid={client.remix_userid})")
+    logger.info("EAPI client authenticated")
 
     # Discover optimal domain — skipped entirely when ZLIBRARY_EAPI_DOMAIN is
     # set (an explicit override means no silent switching, ever). Advertised
@@ -330,11 +338,10 @@ async def initialize_eapi_client() -> EAPIClient:
                     "No advertised EAPI domain passed the health probe; "
                     f"keeping working domain {initial_domain}"
                 )
-        except Exception as e:
-            logger.warning(f"Domain discovery failed, using initial domain: {e}")
+        except Exception:
+            logger.warning("Domain discovery failed, using initial domain")
 
-    _eapi_client = client
-    return _eapi_client
+    return client
 
 
 def _classify_health_error(error: Exception) -> str:

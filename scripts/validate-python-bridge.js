@@ -20,6 +20,7 @@ const projectRoot = resolve(__dirname, '..');
 
 // Required Python bridge files
 const requiredPythonFiles = [
+  { path: 'lib/eapi_session.py', critical: true, description: 'Single-account EAPI session cache' },
   { path: 'lib/python_bridge.py', critical: true, description: 'Main Python bridge script' },
   { path: 'lib/rag_processing.py', critical: true, description: 'RAG document processing' },
   { path: 'lib/enhanced_metadata.py', critical: true, description: 'Enhanced metadata extraction' },

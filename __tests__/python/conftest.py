@@ -78,3 +78,10 @@ def _no_preflight_probes(request, monkeypatch):
         if module is not None and hasattr(module, "probe_host"):
             monkeypatch.setattr(module, "probe_host", _skip)
     net.reset_probe_cache()
+
+
+@pytest.fixture(autouse=True)
+def _isolated_eapi_session_cache(monkeypatch, tmp_path):
+    """Legacy tests bypass persistence; session tests explicitly opt in privately."""
+    monkeypatch.setenv("ZLIBRARY_SESSION_CACHE", "off")
+    monkeypatch.setenv("ZLIBRARY_SESSION_DIR", str(tmp_path / "eapi-session-state"))

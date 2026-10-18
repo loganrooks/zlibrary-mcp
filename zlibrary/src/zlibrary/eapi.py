@@ -56,6 +56,18 @@ def _diamwall_error(domain: str, detail: str) -> DiamWallError:
     )
 
 
+class EAPIAuthenticationError(RuntimeError):
+    """An explicit rejection, not a transport failure or a generic error."""
+
+
+def _auth_rejected(payload):
+    return (
+        isinstance(payload, dict)
+        and payload.get("success") == 0
+        and payload.get("error") in ("Please login", "Authentication required")
+    )
+
+
 def decode_eapi_json(resp: httpx.Response, domain: str) -> dict:
     """Parse an /eapi response as JSON, classifying anti-bot walls explicitly.
 
@@ -66,12 +78,23 @@ def decode_eapi_json(resp: httpx.Response, domain: str) -> dict:
     """
     if resp.status_code == 200:
         try:
-            return resp.json()
+            payload = resp.json()
+            if _auth_rejected(payload):
+                raise EAPIAuthenticationError("EAPI authentication rejected")
+            return payload
         except ValueError:
             pass  # fall through to wall classification
     body = resp.text
     if "diamwall" in body.lower():
         raise _diamwall_error(domain, f"HTTP {resp.status_code} DiamWall block page")
+    if resp.status_code == 401:
+        raise EAPIAuthenticationError("EAPI authentication rejected")
+    if resp.status_code == 400:
+        try:
+            if _auth_rejected(resp.json()):
+                raise EAPIAuthenticationError("EAPI authentication rejected")
+        except ValueError:
+            pass
     if resp.status_code in WALLED_STATUS_CODES:
         raise _diamwall_error(domain, f"HTTP {resp.status_code}")
     resp.raise_for_status()
@@ -261,6 +284,8 @@ class EAPIClient:
         self.remix_userid = remix_userid
         self.remix_userkey = remix_userkey
         self._client: Optional[httpx.AsyncClient] = None
+        # Installed only by the bridge's single-account session owner.
+        self.on_auth_rejected = None
 
     @property
     def _cookies(self) -> Dict[str, str]:
@@ -289,17 +314,37 @@ class EAPIClient:
         if self._client and not self._client.is_closed:
             await self._client.aclose()
 
+    async def _request_json(self, method, path, **kwargs):
+        for attempt in range(2):
+            client = await self._get_client()
+            resp = await client.request(method, f"{self.base_url}{path}", **kwargs)
+            try:
+                result = decode_eapi_json(resp, self.domain)
+                # Cached bridge operations must fail on uncertainty without
+                # refresh. Standalone/off clients keep their envelope contract.
+                if (
+                    self.on_auth_rejected is not None
+                    and isinstance(result, dict)
+                    and result.get("success") == 0
+                ):
+                    raise RuntimeError(
+                        "EAPI request failed without explicit authentication rejection"
+                    )
+                return result
+            except EAPIAuthenticationError:
+                if (
+                    attempt
+                    or self.on_auth_rejected is None
+                    or path == "/eapi/user/login"
+                ):
+                    raise
+                await self.on_auth_rejected()
+
     async def _post(self, path: str, data: Optional[Dict[str, Any]] = None) -> dict:
-        client = await self._get_client()
-        url = f"{self.base_url}{path}"
-        resp = await client.post(url, data=data or {})
-        return decode_eapi_json(resp, self.domain)
+        return await self._request_json("POST", path, data=data or {})
 
     async def _get(self, path: str, params: Optional[Dict[str, Any]] = None) -> dict:
-        client = await self._get_client()
-        url = f"{self.base_url}{path}"
-        resp = await client.get(url, params=params)
-        return decode_eapi_json(resp, self.domain)
+        return await self._request_json("GET", path, params=params)
 
     # --- Auth ---
 

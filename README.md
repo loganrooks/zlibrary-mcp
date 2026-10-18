@@ -395,15 +395,58 @@ Setting a document mode alone does not enable detection; explicitly setting
 
 ## Configuration
 
-The server requires Z-Library credentials, set as environment variables:
+Z-Library operations require credentials set as environment variables.
+Credential-free sources and local processing remain available without them:
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `ZLIBRARY_EMAIL` | Yes | Z-Library account email |
-| `ZLIBRARY_PASSWORD` | Yes | Z-Library account password |
+| `ZLIBRARY_EMAIL` | For Z-Library | Z-Library account email |
+| `ZLIBRARY_PASSWORD` | For Z-Library | Z-Library account password |
 | `ZLIBRARY_MIRROR` | No | Custom Z-Library mirror URL |
 
-The server validates credentials at startup and emits a clear error if they are missing.
+Missing credentials produce a startup warning, not a fatal server error.
+
+### Z-Library session reuse
+
+By default, successful EAPI logins are reused across Python bridge processes.
+The cache is bound to the exact configured email; changing accounts never sends
+cookies from the previous identity. No account pooling is performed.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ZLIBRARY_SESSION_CACHE` | `on` | Set to `off` to bypass persistent state and log in for each EAPI bridge call |
+| `ZLIBRARY_SESSION_DIR` | `$XDG_STATE_HOME/zlibrary-mcp`, otherwise `~/.local/state/zlibrary-mcp` | Private local state directory; also useful for isolated tests |
+| `ZLIBRARY_EAPI_DOMAIN` | Automatic discovery | Explicit pin; cached sessions honor it and never switch away from it |
+
+The directory must be owned by the current user and private (0700 on POSIX).
+`eapi-session.json` and its persistent lock file are private regular files (0600).
+Writes use a temporary file, file fsync and atomic replacement. A cross-process
+lock serializes validation, cold login and refresh; lock waits time out after
+30 seconds. Use local storage shared by the bridge processes, not independent
+container filesystems or a network filesystem. Windows uses a byte-range lock;
+Unix uses flock. POSIX modes do not establish Windows ACL protection.
+
+The JSON holds the email, cookie pair, domain and creation time, **never a password
+or password-derived fingerprint**. Treat it as a credential: do not upload it or
+include it in diagnostic reports. The cookies have no invented local expiry;
+the upstream determines their lifetime. Each bridge restores them only after an
+authenticated profile check. Unknown responses, timeouts and upstream walls keep
+the cache and fail the call without another login. An unpinned unavailable domain
+gets at most one rediscovery using the same cookies; only a successful profile
+check saves the replacement domain.
+
+Only explicit authentication rejection permits one fresh login. If a JSON EAPI
+operation rejects a restored session after initialization, it is retried once
+following serialized refresh; uncertain operation outcomes are not replayed by
+this mechanism. The explicit rejection forms currently recognized are HTTP 401,
+or `success: 0` with `error` equal to `Please login` or `Authentication required`
+(on HTTP 200 or 400). Other shapes fail conservatively without reauthentication.
+
+Changing only the password intentionally does **not** invalidate a still-valid
+cookie pair. To force reauthentication after credential rotation, stop clients
+using this state directory, remove only `eapi-session.json`, then restart them.
+The next EAPI call logs in with the current credentials. Setting the cache off
+does not erase the saved session; turning it back on resumes validation of it.
 
 ### Logging
 

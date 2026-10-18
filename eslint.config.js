@@ -7,6 +7,12 @@ export default tseslint.config(
   tseslint.configs.recommended,
   eslintConfigPrettier,
   {
+    files: ['__tests__/rehearsal/**/*.{js,mjs}'],
+    languageOptions: {
+      globals: { process: 'readonly', setTimeout: 'readonly', clearTimeout: 'readonly', URL: 'readonly' },
+    },
+  },
+  {
     rules: {
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
       '@typescript-eslint/consistent-type-imports': 'error',
@@ -14,6 +20,6 @@ export default tseslint.config(
     },
   },
   {
-    ignores: ['dist/', 'node_modules/', 'coverage/', '__tests__/', '__mocks__/', 'scripts/', 'lib/', 'zlibrary/'],
+    ignores: ['dist/', 'node_modules/', 'coverage/', '__tests__/**/*', '!__tests__/**/', '!__tests__/rehearsal/**/*', '__mocks__/', 'scripts/', 'lib/', 'zlibrary/'],
   },
 );

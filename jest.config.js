@@ -12,6 +12,7 @@ export default {
     '/node_modules/',
     '/dist/', // Ignore compiled output for test discovery
     '/__tests__/e2e/', // E2E tests require running Docker container
+    '/__tests__/rehearsal/', // Dedicated HTTPS/process harness has its own runner and budget.
     '/__tests__/integration/', // Integration tests require live services
     // Agent worktrees check out a full copy of the repo under the project
     // root, so Jest discovers a second copy of every test file and runs it

@@ -9,7 +9,7 @@
  *   npm run test:integration          # recorded mode
  *   npm run test:integration:live     # live mode (requires credentials)
  */
-import { jest, describe, beforeEach, test, expect, afterAll } from '@jest/globals';
+import { jest, describe, beforeEach, test, expect, afterEach, afterAll } from '@jest/globals';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import path from 'path';
@@ -53,7 +53,15 @@ describe('Bridge Integration Tests', () => {
     let mockRunPythonBridge;
     let mockGetManagedPythonPath;
 
+    let previousSessionMode;
+    afterEach(() => {
+      if (previousSessionMode === undefined) delete process.env.ZLIBRARY_SESSION_MODE;
+      else process.env.ZLIBRARY_SESSION_MODE = previousSessionMode;
+    });
     beforeEach(async () => {
+      // Recorded fixtures contain tool results, not private acquisition frames.
+      previousSessionMode = process.env.ZLIBRARY_SESSION_MODE;
+      process.env.ZLIBRARY_SESSION_MODE = 'per-call';
       jest.resetModules();
       jest.clearAllMocks();
 

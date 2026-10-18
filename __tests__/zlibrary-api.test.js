@@ -29,7 +29,11 @@ describe('Z-Library API', () => {
   let args;
   let mockWriteStream; // For fs.createWriteStream mock
 
+  let previousSessionMode;
   beforeEach(async () => {
+    // Parser/error tests use the established per-call boundary; carrier tests live separately.
+    previousSessionMode = process.env.ZLIBRARY_SESSION_MODE;
+    process.env.ZLIBRARY_SESSION_MODE = 'per-call';
     // Reset modules and clear mocks before each test
     jest.resetModules();
     jest.clearAllMocks();
@@ -55,23 +59,23 @@ describe('Z-Library API', () => {
     }));
 
     // Mock fs, http, https selectively
-    mockWriteStream = { // Mock write stream instance
-        on: jest.fn((event, cb) => {
-            // Simulate finish immediately for simple cases, or allow manual trigger
-            if (event === 'finish') {
-                // Store the callback to potentially call later in tests
-                mockWriteStream._finishCallback = cb;
-            }
-            return mockWriteStream; // Allow chaining
-        }),
-        close: jest.fn((cb) => {
-             if (cb) cb(); // Simulate successful close
-        }),
-        _finishCallback: null, // To store the finish callback
-        _errorCallback: null, // To store potential error callback
+    mockWriteStream = {
+      // Mock write stream instance
+      on: jest.fn((event, cb) => {
+        // Simulate finish immediately for simple cases, or allow manual trigger
+        if (event === 'finish') {
+          // Store the callback to potentially call later in tests
+          mockWriteStream._finishCallback = cb;
+        }
+        return mockWriteStream; // Allow chaining
+      }),
+      close: jest.fn((cb) => {
+        if (cb) cb(); // Simulate successful close
+      }),
+      _finishCallback: null, // To store the finish callback
+      _errorCallback: null, // To store potential error callback
     };
     jest.unstable_mockModule('fs', () => ({
-
       existsSync: mockFsExistsSync,
       mkdirSync: mockFsMkdirSync,
       createWriteStream: mockFsCreateWriteStream.mockReturnValue(mockWriteStream), // Return the mock stream instance
@@ -91,6 +95,11 @@ describe('Z-Library API', () => {
     // --- Import Actual Module ---
     // Import the *compiled* JS file containing the actual implementation
     zlibApi = await import('../dist/lib/zlibrary-api.js');
+  });
+
+  afterEach(() => {
+    if (previousSessionMode === undefined) delete process.env.ZLIBRARY_SESSION_MODE;
+    else process.env.ZLIBRARY_SESSION_MODE = previousSessionMode;
   });
 
   describe('searchBooks', () => {
@@ -200,8 +209,8 @@ describe('Z-Library API', () => {
       // Act & Assert
       await expect(zlibApi.searchBooks({ query: 'test' }))
         .rejects
-        // Expect the error from the first parse attempt
-        .toThrow(/Failed to parse initial JSON output from Python script: Unexpected token/);
+        // Raw parse snippets can contain the internal session; keep diagnostics fixed.
+        .toThrow('Failed to parse initial JSON output from Python script.');
 
       // Verify mocks
       expect(mockGetManagedPythonPath).toHaveBeenCalled();

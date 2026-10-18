@@ -6,6 +6,19 @@ import hashlib
 import re
 import tempfile
 import traceback
+
+# Read the private pipe before importing code that could spawn grandchildren.
+os.environ.pop("ZLIBRARY_EAPI_SESSION", None)  # Retired env carrier is never trusted.
+_session_input = None
+if __name__ == "__main__" and os.environ.pop("ZLIBRARY_EAPI_CHANNEL", "") == "1":
+    os.set_inheritable(3, False)
+    try:
+        _session_input = json.loads(sys.stdin.readline(8193))
+        if not isinstance(_session_input, dict):
+            raise ValueError()
+    except (ValueError, OSError):
+        raise SystemExit("Invalid private session input")
+import httpx
 from typing import Optional
 from email.message import Message
 from urllib.parse import unquote, urlsplit
@@ -57,6 +70,9 @@ if zlibrary_src_path not in sys.path:
     sys.path.insert(0, zlibrary_src_path)
 from zlibrary.eapi import (
     EAPIClient,
+    EAPIAuthenticationError,
+    NonJSONResponseError,
+    sanitized_auth_token,
     normalize_eapi_book,
     normalize_eapi_search_response,
     resolve_eapi_domain,
@@ -115,6 +131,9 @@ DEBUG_MODE = os.environ.get("ZLIBRARY_DEBUG", os.environ.get("DEBUG", "")).lower
 
 def _configure_debug_logging():
     """Configure logging based on debug mode setting."""
+    # Wire-level response headers may contain bearer cookies even in debug mode.
+    for name in ("httpx", "httpcore"):
+        logging.getLogger(name).setLevel(logging.WARNING)
     if DEBUG_MODE:
         # Set up detailed debug logging
         logging.basicConfig(
@@ -270,26 +289,157 @@ async def get_eapi_client() -> EAPIClient:
     return _eapi_client
 
 
+async def _validate_eapi_profile(client):
+    profile = await client.get_profile()
+    if isinstance(profile, dict) and profile.get("success") == 0:
+        token = sanitized_auth_token(profile.get("error"))
+        if any(
+            secret and secret in token
+            for secret in (
+                os.environ.get("ZLIBRARY_EMAIL"),
+                os.environ.get("ZLIBRARY_PASSWORD"),
+                client.remix_userkey,
+            )
+        ):
+            token = "<redacted>"
+        raise EAPIAuthenticationError(
+            f"EAPI authentication rejected: {token}", status_code=200, token=token
+        )
+    if (
+        not isinstance(profile, dict)
+        or profile.get("success") != 1
+        or not isinstance(profile.get("user"), dict)
+        or str(profile["user"].get("id", "")) != client.remix_userid
+    ):
+        raise RuntimeError("Unexpected EAPI profile response; session retained")
+
+
 async def initialize_eapi_client() -> EAPIClient:
-    """
-    Initialize the shared EAPI client using environment credentials.
-
-    Creates an EAPIClient, logs in, discovers domains, and stores
-    the client for reuse by all tool functions.
-
-    Returns:
-        Authenticated EAPIClient instance
-    """
+    """Use the parent generation, or log in only for a parent acquisition/per-call."""
     global _eapi_client
-
     email = os.environ.get("ZLIBRARY_EMAIL")
     password = os.environ.get("ZLIBRARY_PASSWORD")
-
     if not email or not password:
         raise ValueError(
             "ZLIBRARY_EMAIL and ZLIBRARY_PASSWORD environment variables required"
         )
+    record = _session_input
+    if record is not None:
+        if record.get("identity") != email or record.get("action") not in (
+            "login",
+            "validate",
+            "operation",
+        ):
+            raise ValueError("Invalid private session identity or action")
+        if record["action"] != "login":
+            if not all(
+                isinstance(record.get(k), str) and record[k]
+                for k in ("domain", "remix_userid", "remix_userkey")
+            ):
+                raise ValueError("Invalid private session record")
+            domain = (
+                os.environ.get("ZLIBRARY_EAPI_DOMAIN", "").strip() or record["domain"]
+            )
+            _eapi_client = EAPIClient(
+                domain,
+                remix_userid=record["remix_userid"],
+                remix_userkey=record["remix_userkey"],
+            )
+        else:
+            _eapi_client = await _login_eapi_client(email, password)
+        _attach_eapi_session(_eapi_client)
+        if record["action"] in ("login", "validate"):
+            await _validate_eapi_profile(_eapi_client)
+    else:
+        _eapi_client = await _login_eapi_client(email, password)
+    return _eapi_client
 
+
+def _publish_eapi_session():
+    """Only fd 3 carries bearer material; stdout/stderr remain public."""
+    if _session_input is None or _eapi_client is None:
+        return
+    client = _eapi_client
+    payload = {
+        "generation": _session_input["generation"],
+        "identity": _session_input["identity"],
+        "domain": client.domain,
+        "remix_userid": client.remix_userid,
+        "remix_userkey": client.remix_userkey,
+    }
+    if client.needs_profile_validation:
+        payload["validate_next"] = True
+    os.write(3, (json.dumps(payload) + "\n").encode())
+
+
+def _attach_eapi_session(client):
+    async def recover():
+        from zlibrary.eapi import DiamWallError
+
+        # Defence in depth: resolver also honours the pin, never switch it here.
+        if os.environ.get("ZLIBRARY_EAPI_DOMAIN", "").strip():
+            return False
+        target = await resolve_eapi_domain()
+        if target == client.domain:
+            return False
+        replacement = EAPIClient(
+            target, remix_userid=client.remix_userid, remix_userkey=client.remix_userkey
+        )
+        try:
+            try:
+                await _validate_eapi_profile(replacement)
+            except (
+                httpx.RequestError,
+                httpx.HTTPStatusError,
+                DiamWallError,
+                NonJSONResponseError,
+            ):
+                return False
+            await client.close()
+            client.domain = replacement.domain
+            client._recovered_domain = True
+            return True
+        finally:
+            await replacement.close()
+
+    client.on_domain_failed = recover
+
+
+def _safe_diagnostic(value):
+    """Scrub diagnostic values, never schema keys, fixed codes or tool results."""
+    secrets = [
+        os.environ.get("ZLIBRARY_EMAIL", ""),
+        os.environ.get("ZLIBRARY_PASSWORD", ""),
+    ]
+    if _session_input:
+        secrets.append(_session_input.get("remix_userkey", ""))
+    if _eapi_client:
+        secrets.append(_eapi_client.remix_userkey or "")
+
+    def visit(item):
+        if isinstance(item, str):
+            for secret in filter(None, secrets):
+                item = item.replace(secret, "<redacted>")
+                escaped = json.dumps(secret)[1:-1]
+                if escaped != secret:
+                    item = item.replace(escaped, "<redacted>")
+            return item
+        if isinstance(item, dict):
+            return {
+                key: val
+                if key in ("type", "reason", "code", "provider")
+                else visit(val)
+                for key, val in item.items()
+            }
+        if isinstance(item, list):
+            return [visit(val) for val in item]
+        return item
+
+    return visit(value)
+
+
+async def _login_eapi_client(email: str, password: str) -> EAPIClient:
+    """Perform the existing login/domain discovery without logging auth data."""
     # ISSUE-API-002: the old single default (z-library.sk) is fronted by the
     # DiamWall anti-bot wall. resolve_eapi_domain() honours an explicit
     # ZLIBRARY_EAPI_DOMAIN override without probing; otherwise it probes the
@@ -299,12 +449,28 @@ async def initialize_eapi_client() -> EAPIClient:
     initial_domain = await resolve_eapi_domain()
 
     client = EAPIClient(initial_domain)
-    login_result = await client.login(email, password)
+    try:
+        login_result = await client.login(email, password)
+        if (
+            not isinstance(login_result, dict)
+            or login_result.get("success") != 1
+            or not client.remix_userid
+            or not client.remix_userkey
+        ):
+            raise EAPIAuthenticationError(
+                "EAPI login failed",
+                status_code=200,
+                token=sanitized_auth_token(
+                    login_result.get("error")
+                    if isinstance(login_result, dict)
+                    else None
+                ),
+            )
+    except BaseException:
+        await client.close()
+        raise
 
-    if login_result.get("success") != 1:
-        raise RuntimeError(f"EAPI login failed: {login_result}")
-
-    logger.info(f"EAPI client authenticated (userid={client.remix_userid})")
+    logger.info("EAPI client authenticated")
 
     # Discover optimal domain — skipped entirely when ZLIBRARY_EAPI_DOMAIN is
     # set (an explicit override means no silent switching, ever). Advertised
@@ -330,11 +496,10 @@ async def initialize_eapi_client() -> EAPIClient:
                     "No advertised EAPI domain passed the health probe; "
                     f"keeping working domain {initial_domain}"
                 )
-        except Exception as e:
-            logger.warning(f"Domain discovery failed, using initial domain: {e}")
+        except Exception:
+            logger.warning("Domain discovery failed, using initial domain")
 
-    _eapi_client = client
-    return _eapi_client
+    return client
 
 
 def _classify_health_error(error: Exception) -> str:
@@ -395,6 +560,15 @@ async def eapi_health_check() -> dict:
                 "error": f"Unexpected response: success={response.get('success')}",
                 "error_code": "malformed_response",
             }
+    except EAPIAuthenticationError:
+        if _session_input is not None:
+            raise
+        return {
+            "status": "unhealthy",
+            "transport": "eapi",
+            "error": "EAPI authentication rejected",
+            "error_code": "unknown_error",
+        }
     except Exception as e:
         return {
             "status": "unhealthy",
@@ -513,6 +687,8 @@ async def full_text_search(
                 logger.info(
                     "full_text_search: exact phrase returned %d results", len(books)
                 )
+        except EAPIAuthenticationError:
+            raise  # Only the parent can refresh; do not try another search strategy.
         except Exception as e:
             logger.debug("full_text_search: exact phrase failed: %s", e)
 
@@ -534,6 +710,8 @@ async def full_text_search(
                 logger.info(
                     "full_text_search: quoted query returned %d results", len(books)
                 )
+        except EAPIAuthenticationError:
+            raise  # Only the parent can refresh; do not try another search strategy.
         except Exception as e:
             logger.debug("full_text_search: quoted query failed: %s", e)
 
@@ -1453,6 +1631,8 @@ async def get_book_metadata_complete(book_id: str, book_hash: str = None) -> dic
 
         return metadata
 
+    except EAPIAuthenticationError:
+        raise  # Preserve the typed verdict across the metadata wrapper.
     except Exception as e:
         logger.exception(f"Error fetching complete metadata for book {book_id}")
         raise RuntimeError(
@@ -1669,6 +1849,35 @@ def _requires_eapi_client(function_name: str, args_dict: dict) -> bool:
     return True
 
 
+def _login_failure_info(error):
+    """Only allowlisted cause metadata crosses the failed-acquisition boundary."""
+    response = getattr(error, "response", None)
+    status = getattr(error, "status_code", None) or getattr(
+        response, "status_code", None
+    )
+    token = getattr(error, "token", None)
+    if token is None and response is not None:
+        try:
+            payload = response.json()
+            token = payload.get("error") if isinstance(payload, dict) else None
+        except ValueError:
+            pass
+    if token is None:
+        if "certificate" in str(error).lower() or "ssl" in str(error).lower():
+            token = "TLS certificate verification failed"
+        elif isinstance(error, httpx.TimeoutException):
+            token = "Upstream timeout"
+        elif isinstance(error, httpx.RequestError):
+            token = "Upstream connection failed"
+        elif isinstance(error, ValueError) and "environment variables required" in str(
+            error
+        ):
+            token = "Missing configured credentials"
+    return _safe_diagnostic(
+        {"status_code": status, "token": sanitized_auth_token(token)}
+    )
+
+
 async def main():
     parser = argparse.ArgumentParser(description="Z-Library Python Bridge")
     parser.add_argument("function_name", help="Name of the function to call")
@@ -1696,6 +1905,7 @@ async def main():
         )
         sys.exit(1)
 
+    needs_eapi = False
     try:
         # Decide before dispatch whether this call needs Z-Library
         # authentication at all — see _requires_eapi_client (#106, #129).
@@ -1717,10 +1927,15 @@ async def main():
                     args_dict["languages"] = []
                 if not args_dict.get("content_types"):
                     args_dict["content_types"] = []
-            result = await _dispatch_bridge_function(function_name, args_dict)
+            if _session_input and _session_input["action"] in ("login", "validate"):
+                result = {"authenticated": True}
+            else:
+                result = await _dispatch_bridge_function(function_name, args_dict)
 
         # Print only confirmation and path to stdout to avoid large content
         mcp_style_response = {"content": [{"type": "text", "text": json.dumps(result)}]}
+        if needs_eapi:
+            _publish_eapi_session()
         print(json.dumps(mcp_style_response))
 
     except asyncio.CancelledError:
@@ -1728,6 +1943,12 @@ async def main():
         logger.info(f"python_bridge.main: received signal {signum}; cancelling")
         raise SystemExit(128 + int(signum))
     except Exception as e:
+        # Recovery was profile-validated even when the subsequent operation failed.
+        if _eapi_client and (
+            getattr(_eapi_client, "_recovered_domain", False)
+            or _eapi_client.needs_profile_validation
+        ):
+            _publish_eapi_session()
         # Print error as JSON to stderr
         error_info = {
             "error": str(e),
@@ -1747,8 +1968,41 @@ async def main():
                 else function_name
             )
             error_info["details"].setdefault("operation", operation)
-        print(json.dumps(error_info), file=sys.stderr)
-        sys.exit(1)
+        error_info = _safe_diagnostic(error_info)
+        if _session_input is not None and _session_input["action"] == "login":
+            failure = _login_failure_info(e)
+            status = failure["status_code"]
+            cause = (
+                "Z-Library rejected the login"
+                if status in (200, 400, 401, 403)
+                else "Z-Library login failed"
+            )
+            if status:
+                cause += f" (HTTP {status})"
+            if failure["token"] != "<redacted>":
+                cause += f": {failure['token']}"
+            error_info = {
+                "error": cause,
+                "type": type(e).__name__,
+                "login_failed": failure,
+            }
+            print(
+                json.dumps(
+                    {"content": [{"type": "text", "text": json.dumps(error_info)}]}
+                )
+            )
+        elif isinstance(e, EAPIAuthenticationError) and _session_input is not None:
+            # The parent alone refreshes, with generation CAS and a login cooldown.
+            error_info.pop("traceback", None)
+            error_info["auth_rejected"] = {"generation": _session_input["generation"]}
+            print(
+                json.dumps(
+                    {"content": [{"type": "text", "text": json.dumps(error_info)}]}
+                )
+            )
+        else:
+            print(json.dumps(error_info), file=sys.stderr)
+            sys.exit(1)
     finally:
         try:
             # Clean up EAPI client

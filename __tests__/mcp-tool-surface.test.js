@@ -1,4 +1,15 @@
 import { jest, beforeEach, afterEach, test, expect } from '@jest/globals';
+
+// These fixtures describe a single per-call subprocess, not private acquisition.
+let previousSessionMode;
+beforeEach(() => {
+  previousSessionMode = process.env.ZLIBRARY_SESSION_MODE;
+  process.env.ZLIBRARY_SESSION_MODE = 'per-call';
+});
+afterEach(() => {
+  if (previousSessionMode === undefined) delete process.env.ZLIBRARY_SESSION_MODE;
+  else process.env.ZLIBRARY_SESSION_MODE = previousSessionMode;
+});
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { CallToolResultSchema } from '@modelcontextprotocol/sdk/types.js';

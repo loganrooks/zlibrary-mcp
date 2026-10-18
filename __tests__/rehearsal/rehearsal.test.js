@@ -2,12 +2,12 @@ import { afterAll, beforeAll, expect, test } from '@jest/globals';
 import { readFile, realpath, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { Rehearsal } from './harness.js';
+import { expectedFixes } from './expectations.js';
 
 let h;
 let concurrentLogins;
 beforeAll(async () => {
   h = await Rehearsal.start();
-  h.collectLeaks = true;
 });
 afterAll(async () => {
   await h?.close();
@@ -55,7 +55,11 @@ test('S2 five concurrent slow/fast calls correlate; count logins independently',
   });
 });
 
-const loginTest = process.env.REHEARSAL_EXPECT_REUSE === '1' ? test : test.failing;
+const loginTest = expectedFixes.has('reuse') ? test : test.failing;
+const redactionTest = expectedFixes.has('redaction') ? test : test.failing;
+const breakerTest = expectedFixes.has('breaker') ? test : test.failing;
+let localResult;
+let alternateResult;
 loginTest('S2 session reuse: exactly one login (expected failure on master)', () => {
   expect(concurrentLogins).toBe(1);
 });
@@ -71,30 +75,43 @@ test('S3 two independent server processes each return their own results', async 
   });
 });
 
-test('S4 EAPI outage opens shared breaker after five failures; local bridge shares breaker; listing survives', async () => {
-  await h.scenario('S4', async (connect) => {
-    const c = await connect();
-    await h.mode({ mode: 'unauthorized' });
-    for (let i = 0; i < 5; i++) {
-      const reply = await h.call(c, 'get_download_limits', {}, true);
-      expect(reply.error.message).toMatch(/401|authentication/i);
-    }
-    const before = await h.stats();
-    const blocked = await h.call(c, 'get_download_limits', {}, true);
-    expect(blocked.error.message).toMatch(/circuit breaker.*open/i);
-    expect(await h.stats()).toEqual(before);
-    const file = path.join(h.downloads, 'local.txt');
-    await writeFile(file, 'local reader survives');
-    const local = await h.call(c, 'process_document_for_rag', { file_path: file }, true);
-    expect(local.error.message).toMatch(/circuit breaker.*open/i);
-    expect((await c.listTools()).tools.length).toBeGreaterThan(0);
-    h.note('S4', {
-      breaker: 'OPEN after five failures',
-      localBridge: 'also blocked',
-      toolsList: 'works',
-      alternateSources: 'not exercised',
-    });
-  });
+test('S4 EAPI outage opens EAPI breaker after five failures; listing survives', async () => {
+  await h.scenario(
+    'S4',
+    async (connect) => {
+      const c = await connect();
+      await h.mode({ mode: 'unauthorized' });
+      for (let i = 0; i < 5; i++) {
+        const reply = await h.call(c, 'get_download_limits', {}, true);
+        expect(reply.error.message).toMatch(/401|authentication/i);
+      }
+      const before = await h.stats();
+      const blocked = await h.call(c, 'get_download_limits', {}, true);
+      expect(blocked.error.message).toMatch(/circuit breaker.*open/i);
+      expect(await h.stats()).toEqual(before);
+      const file = path.join(h.downloads, 'local.txt');
+      await writeFile(file, 'local reader survives');
+      const local = await h.call(c, 'process_document_for_rag', { file_path: file }, true);
+      localResult = local;
+      h.scan(await c.listTools());
+      expect((await c.listTools()).tools.length).toBeGreaterThan(0);
+      alternateResult = await h.call(
+        c,
+        'search_multi_source',
+        { query: 'fixture', source: 'libgen', count: 1 },
+        true,
+      );
+      h.note('S4', {
+        breaker: 'OPEN after five failures',
+        localBridge: local.error ? 'blocked' : 'works',
+        toolsList: 'works',
+        alternateSources: alternateResult.error
+          ? 'Library Genesis blocked'
+          : 'Library Genesis works',
+      });
+    },
+    { libgen: true },
+  );
 });
 
 test('S5 capture observed tool names and argument names (not an approved surface)', async () => {
@@ -108,10 +125,54 @@ test('S5 capture observed tool names and argument names (not an approved surface
     expect(surface.some((t) => t.name === 'search_books' && t.arguments.includes('query'))).toBe(
       true,
     );
+    expect(surface).toEqual(
+      JSON.parse(await readFile(new URL('./tools-surface.json', import.meta.url), 'utf8')),
+    );
     await h.captureSurface(surface);
   });
 });
 
-loginTest('Base reply stderr and output-file sentinel scan has no unprotected findings', () => {
+test('Base scans have zero unexpected sentinel findings', () => {
   expect(h.leaks).toBe(0);
+});
+
+redactionTest('Base known cookie-ID log finding is absent', () => {
+  expect(h.knownFindings).toBe(0);
+});
+breakerTest('S4 local document processing is independent of EAPI breaker', () => {
+  expect(localResult.error).toBeUndefined();
+});
+test('C5 fake rejects a search without cookies', async () => {
+  await h.mode({ mode: 'healthy', reset: true });
+  expect((await h.request('/eapi/book/search', { message: 'no-cookie' }, true)).status).toBe(401);
+});
+
+breakerTest('S4 Library Genesis search is independent of EAPI breaker', () => {
+  expect(alternateResult.error).toBeUndefined();
+  expect(alternateResult.books[0]).toMatchObject({
+    title: 'Rehearsal LibGen fixture',
+    source: 'libgen',
+    md5: '0123456789abcdef0123456789abcdef',
+  });
+});
+test('S6 healthy Library Genesis search reaches the real parser and fixture', async () => {
+  await h.scenario(
+    'S6',
+    async (connect) => {
+      const c = await connect();
+      const result = await h.call(c, 'search_multi_source', {
+        query: 'fixture',
+        source: 'libgen',
+        count: 1,
+      });
+      expect(result.books[0]).toMatchObject({
+        title: 'Rehearsal LibGen fixture',
+        source: 'libgen',
+        md5: '0123456789abcdef0123456789abcdef',
+      });
+      expect((await h.stats()).calls['/libgen/index.php']).toBe(1);
+      expect((await h.stats()).logins).toBe(0);
+    },
+    { libgen: true },
+  );
 });

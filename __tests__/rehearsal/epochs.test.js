@@ -1,11 +1,12 @@
 import { afterAll, beforeAll, expect, test } from '@jest/globals';
 import { Rehearsal } from './harness.js';
+import { expectedFixes } from './expectations.js';
 let h;
 const observations = {};
-const reuseTest = process.env.REHEARSAL_EXPECT_REUSE === '1' ? test : test.failing;
+const reuseTest = expectedFixes.has('reuse') ? test : test.failing;
+const redactionTest = expectedFixes.has('redaction') ? test : test.failing;
 beforeAll(async () => {
   h = await Rehearsal.start('epochs');
-  h.collectLeaks = true;
 });
 afterAll(async () => {
   await h?.close();
@@ -81,6 +82,10 @@ test('TLS control rejects the disposable certificate when trust is not passed', 
   );
 });
 
-reuseTest('Epoch reply stderr and output-file sentinel scan has no unprotected findings', () => {
+test('Epoch scans have zero unexpected sentinel findings', () => {
   expect(h.leaks).toBe(0);
+});
+
+redactionTest('Epoch known cookie-ID log finding is absent', () => {
+  expect(h.knownFindings).toBe(0);
 });

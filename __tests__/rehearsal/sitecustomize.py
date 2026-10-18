@@ -41,3 +41,22 @@ def _getaddrinfo(host, port, *args, **kwargs):
 socket.socket.connect = _connect
 socket.socket.connect_ex = _connect_ex
 socket.getaddrinfo = _getaddrinfo
+
+# URL-only seam for the real LibGen library's internally constructed domain.
+# Keep requests, TLS, parsing and the production bridge real. No other URL is rewritten.
+if os.environ.get("REHEARSAL_LIBGEN_ORIGIN"):
+    from urllib.parse import urlsplit
+    import requests
+
+    _request = requests.Session.request
+
+    def _fixture_request(self, method, url, *args, **kwargs):
+        parsed = urlsplit(url)
+        if parsed.hostname in {"libgen.li", "libgen.vg", "libgen.la"}:
+            url = os.environ["REHEARSAL_LIBGEN_ORIGIN"] + "/libgen" + parsed.path
+            if parsed.query:
+                url += "?" + parsed.query
+            kwargs["verify"] = os.environ["SSL_CERT_FILE"]
+        return _request(self, method, url, *args, **kwargs)
+
+    requests.Session.request = _fixture_request

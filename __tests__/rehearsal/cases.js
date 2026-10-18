@@ -1,11 +1,23 @@
 export const requiredCases = [
+  'S4 Library Genesis search is independent of EAPI breaker',
+  'S6 healthy Library Genesis search reaches the real parser and fixture',
+  'C1 known cookie-ID log cannot hide password key or CA leaks',
+  'C2 only known authentication output may contain the cookie ID',
+  'C3 redaction expectation forbids even the known cookie-ID log',
+  'C4 source snapshot detects dist lib and porcelain changes',
+  'C5 fake rejects a search without cookies',
+  'C6 fake exits when its owner closes stdin',
+  'C7 PID mismatch still closes every client',
+  'Base known cookie-ID log finding is absent',
+  'Epoch known cookie-ID log finding is absent',
+  'S4 local document processing is independent of EAPI breaker',
   'S1 sequential calls preserve identity and download exact bytes inside temp storage',
   'S2 five concurrent slow/fast calls correlate; count logins independently',
   'S2 session reuse: exactly one login (expected failure on master)',
   'S3 two independent server processes each return their own results',
-  'S4 EAPI outage opens shared breaker after five failures; local bridge shares breaker; listing survives',
+  'S4 EAPI outage opens EAPI breaker after five failures; listing survives',
   'S5 capture observed tool names and argument names (not an approved surface)',
-  'Base reply stderr and output-file sentinel scan has no unprotected findings',
+  'Base scans have zero unexpected sentinel findings',
   'E1 explicit cookie rejection with overlapping callers records one new epoch',
   'E1 rejection refresh is single-flight: exactly one successful new login',
   ...['timeout', 'wall', 'ambiguous400', 'success0'].flatMap((mode) => [
@@ -14,7 +26,7 @@ export const requiredCases = [
   ]),
   'E3 invalid login stops at the configured zero-retry budget',
   'TLS control rejects the disposable certificate when trust is not passed',
-  'Epoch reply stderr and output-file sentinel scan has no unprotected findings',
+  'Epoch scans have zero unexpected sentinel findings',
 ];
 
 export function assess(assertions) {

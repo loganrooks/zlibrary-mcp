@@ -6,6 +6,8 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import https from 'node:https';
 import { fileURLToPath } from 'node:url';
+import { classifySentinels } from './sentinels.js';
+import { expectedFixes } from './expectations.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '../..');
@@ -15,10 +17,14 @@ const fakePassword = 'rehearsal-password-canary';
 export class Rehearsal {
   static async start(suite = 'base') {
     const h = new Rehearsal();
-    h.temp = await mkdtemp(path.join(tmpdir(), 'zlib-rehearsal-'));
+    h.temp = await mkdtemp(
+      path.join(process.env.REHEARSAL_TEMP_ROOT || tmpdir(), 'zlib-rehearsal-'),
+    );
     h.records = {};
     h.suite = suite;
     h.leaks = 0;
+    h.knownFindings = 0;
+    h.findings = [];
 
     try {
       h.cert = path.join(h.temp, 'ca.crt');
@@ -50,7 +56,7 @@ export class Rehearsal {
         [path.join(here, 'fake_eapi.py'), h.cert, h.key],
         {
           env: { PATH: process.env.PATH, PYTHONDONTWRITEBYTECODE: '1' },
-          stdio: ['ignore', 'pipe', 'pipe'],
+          stdio: ['pipe', 'pipe', 'pipe'],
         },
       );
       h.fakeStderr = '';
@@ -75,6 +81,10 @@ export class Rehearsal {
       if (!Number.isInteger(port) || port < 1) throw new Error('invalid fake port');
       h.origin = `https://127.0.0.1:${port}`;
       h.domain = `127.0.0.1:${port}`;
+      await writeFile(
+        path.join(h.temp, 'fake-lifetime.json'),
+        JSON.stringify({ pid: h.fake.pid, port }),
+      );
       h.agent = new https.Agent({ ca: await readFile(h.cert) });
       return h;
     } catch (e) {
@@ -82,7 +92,7 @@ export class Rehearsal {
       throw e;
     }
   }
-  request(route, body) {
+  request(route, body, includeStatus = false) {
     return new Promise((resolve, reject) => {
       const r = https.request(
         this.origin + route,
@@ -98,7 +108,11 @@ export class Rehearsal {
           });
           res.on('end', () => {
             try {
-              resolve(JSON.parse(data));
+              resolve(
+                includeStatus
+                  ? { status: res.statusCode, body: JSON.parse(data) }
+                  : JSON.parse(data),
+              );
             } catch {
               reject(new Error('invalid fake response'));
             }
@@ -116,24 +130,24 @@ export class Rehearsal {
   mode(body) {
     return this.request('/__mode', body);
   }
-  scan(value) {
+  scan(value, source = 'reply') {
     const text = typeof value === 'string' ? value : JSON.stringify(value);
-    const forbidden = [
-      fakeEmail,
-      fakePassword,
-      'rehearsal-cookie-id',
-      'rehearsal-cookie-key',
-      this.keyText,
-      ...this.keyText.split('\n').filter((l) => l.length > 50),
-    ];
-    if (forbidden.some((s) => text.includes(s))) {
-      this.leaks++;
-      if (!this.collectLeaks) throw new Error('secret canary found in output (value suppressed)');
-    }
+    const found = classifySentinels(text, source, this.keyText, {
+      redaction: expectedFixes.has('redaction'),
+    });
+    this.leaks += found.unexpected.length;
+    this.knownFindings += found.knownLogCount;
+    this.findings.push(
+      ...found.unexpected.map((f) => ({ ...f, expected: false })),
+      ...found.expected.map((f) => ({ ...f, expected: true })),
+    );
   }
   async call(c, name, args = {}, allowError = false) {
     const reply = await c.callTool({ name, arguments: args }, undefined, { timeout: 25000 });
+    const previousLeaks = this.leaks;
     this.scan(reply);
+    if (this.leaks !== previousLeaks)
+      throw new Error('Unexpected reply sentinel finding (value suppressed)');
     const data = reply.isError
       ? (reply.structuredContent ?? { error: { message: reply.content[0].text } })
       : JSON.parse(reply.content[0].text);
@@ -180,6 +194,13 @@ export class Rehearsal {
           REHEARSAL_ALLOWED_PORT: String(new URL(this.origin).port),
           REHEARSAL_EGRESS_TRAP: path.join(home, 'egress-trap.txt'),
           ZLIBRARY_EAPI_DOMAIN: this.domain,
+          ...(options.libgen
+            ? {
+                REHEARSAL_LIBGEN_ORIGIN: this.origin,
+                BOOK_SOURCE_PREFLIGHT: 'false',
+                BOOK_SOURCE_FALLBACK_ENABLED: 'false',
+              }
+            : {}),
           ZLIBRARY_EMAIL: fakeEmail,
           ZLIBRARY_PASSWORD: fakePassword,
           ZLIBRARY_SESSION_DIR: path.join(home, 'session'),
@@ -214,17 +235,25 @@ export class Rehearsal {
       failure = error;
     }
     {
-      for (const s of sessions) {
-        if (s.transport.pid !== s.pid) throw new Error('Node child PID changed');
-        await s.c.close();
-        await s.transport.close();
-      }
+      const changedPid = sessions.some((s) => s.pid !== undefined && s.transport.pid !== s.pid);
+      const closed = await Promise.allSettled(
+        sessions.map(async (s) => {
+          try {
+            await s.c.close();
+          } finally {
+            await s.transport.close();
+          }
+        }),
+      );
+      if (changedPid) failure ??= new Error('Node child PID changed');
+      if (closed.some((r) => r.status === 'rejected'))
+        failure ??= new Error('One or more client cleanup operations failed');
       const stats = await this.stats();
       Object.assign(this.records[name], stats, {
         childPids: sessions.map((s) => s.pid),
         childCount: sessions.length,
       });
-      for (const s of sessions) this.scan(s.stderr);
+      for (const s of sessions) this.scan(s.stderr, 'stderr');
       const beforeLeaks = this.leaks;
       this.records[name].protectedSessionFiles = 0;
       const visit = async (dir) => {
@@ -233,13 +262,27 @@ export class Rehearsal {
           if (entry.isDirectory()) await visit(file);
           else if (entry.isFile()) {
             const data = await readFile(file, 'utf8');
-            if (entry.name === 'eapi-session.json') {
+            if (
+              entry.name === 'eapi-session.json' &&
+              path.basename(path.dirname(file)) === 'session'
+            ) {
               if ((await stat(file)).mode & 0o077)
                 throw new Error('synthetic session cache is not private');
-              if (data.includes(fakePassword)) throw new Error('password sentinel persisted');
+              const cache = JSON.parse(data);
+              if (
+                cache.identity !== fakeEmail ||
+                cache.remix_userid !== 'rehearsal-cookie-id' ||
+                !/^rehearsal-cookie-key-epoch-\d+$/.test(cache.remix_userkey)
+              )
+                throw new Error('Unexpected synthetic cache fields');
+              const rest = { ...cache };
+              delete rest.identity;
+              delete rest.remix_userid;
+              delete rest.remix_userkey;
+              this.scan(rest, 'protected-cache-other-fields');
               this.records[name].protectedSessionFiles++;
             } else {
-              this.scan(data);
+              this.scan(data, path.relative(state, file).split(path.sep).join('/'));
               if (entry.name === 'egress-trap.txt' && data)
                 throw new Error('unintended egress attempt detected');
             }
@@ -251,7 +294,7 @@ export class Rehearsal {
       this.records[name].sentinelFindings = this.leaks - initialLeaks;
       this.records[name].secretScan =
         this.leaks - initialLeaks ? 'sentinel finding (value suppressed)' : 'passed';
-      this.scan(this.fakeStderr);
+      this.scan(this.fakeStderr, 'fake-stderr');
     }
     if (failure) throw failure;
   }
@@ -261,21 +304,49 @@ export class Rehearsal {
     this.records.S5.surface = surface;
   }
   async close() {
-    if (process.env.REHEARSAL_RECORD_DIR && this.records)
-      await writeFile(
-        path.join(process.env.REHEARSAL_RECORD_DIR, `${this.suite}.json`),
-        JSON.stringify(
-          { serverRoot, records: this.records, sentinelFindings: this.leaks },
-          null,
-          2,
-        ) + '\n',
-      );
-    this.agent?.destroy();
-    if (this.fake && this.fake.exitCode === null) {
-      const exited = new Promise((resolve) => this.fake.once('exit', resolve));
-      this.fake.kill('SIGTERM');
-      await exited;
+    try {
+      if (process.env.REHEARSAL_RECORD_DIR && this.records) {
+        await writeFile(
+          path.join(process.env.REHEARSAL_RECORD_DIR, `${this.suite}.json`),
+          JSON.stringify(
+            {
+              serverRoot,
+              records: this.records,
+              sentinelFindings: this.leaks,
+              knownCookieIdFindings: this.knownFindings,
+              findings: this.findings,
+            },
+            null,
+            2,
+          ) + '\n',
+        );
+      }
+    } finally {
+      this.agent?.destroy();
+      try {
+        if (this.fake?.pid && this.fake.exitCode === null && this.fake.signalCode === null) {
+          const exited = new Promise((resolve) => this.fake.once('exit', resolve));
+          this.fake.stdin.end();
+          const killTimer = setTimeout(() => this.fake.kill('SIGKILL'), 2000);
+          let deadline;
+          try {
+            await Promise.race([
+              exited,
+              new Promise((_, reject) => {
+                deadline = setTimeout(
+                  () => reject(new Error('fake did not exit during cleanup')),
+                  3000,
+                );
+              }),
+            ]);
+          } finally {
+            clearTimeout(killTimer);
+            clearTimeout(deadline);
+          }
+        }
+      } finally {
+        if (this.temp) await rm(this.temp, { recursive: true, force: true });
+      }
     }
-    if (this.temp) await rm(this.temp, { recursive: true, force: true });
   }
 }

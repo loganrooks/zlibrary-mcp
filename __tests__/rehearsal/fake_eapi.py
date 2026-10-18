@@ -4,6 +4,7 @@ from collections import Counter
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
+from pathlib import Path
 import re
 import ssl
 import sys
@@ -24,7 +25,6 @@ MODES = {
     "wall",
     "slow",
     "ambiguous400",
-    "reject_epoch",
 }
 
 
@@ -119,6 +119,13 @@ class Handler(BaseHTTPRequestHandler):
             self.server.calls[route] += 1
             mode = self.server.mode
             drop_cookies = self.server.drop_cookies
+        if route == "/libgen/index.php":
+            return self.reply(
+                (
+                    Path(__file__).parent / "fixtures" / "libgen-search.html"
+                ).read_bytes(),
+                content_type="text/html",
+            )
         login = route == "/eapi/user/login"
         profile = route == "/eapi/user/profile"
         if (
@@ -216,4 +223,13 @@ class Handler(BaseHTTPRequestHandler):
 if __name__ == "__main__":
     server = Fake(*sys.argv[1:])
     print(server.server_port, flush=True)
-    server.serve_forever()
+
+    def stop_at_eof():
+        sys.stdin.buffer.read()
+        server.shutdown()
+
+    threading.Thread(target=stop_at_eof, daemon=True).start()
+    try:
+        server.serve_forever(poll_interval=0.05)
+    finally:
+        server.server_close()

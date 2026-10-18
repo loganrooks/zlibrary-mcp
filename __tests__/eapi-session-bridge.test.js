@@ -40,8 +40,10 @@ def handle(request):
     assert not os.get_inheritable(3)
     assert 'ZLIBRARY_EAPI_SESSION' not in os.environ
     route=request.url.path
+    with open(${JSON.stringify(modeFile)}) as record: mode=record.read()
     if route=='/eapi/user/login':
         with open(${JSON.stringify(countFile)},'a') as record: record.write('login\\n')
+        if mode=='login-failure': return httpx.Response(401,json={'success':0,'error':'Invalid credentials #1'})
         return httpx.Response(200,json={'success':1,'user':{'id':'7','remix_userkey':'fake-end-to-end-bearer'}})
     if route=='/eapi/user/profile': return httpx.Response(200,json={'success':1,'user':{'id':'7'}})
     with open(${JSON.stringify(modeFile)}) as record: mode=record.read()
@@ -93,8 +95,18 @@ runpy.run_path(${JSON.stringify(path.join(root, 'lib/python_bridge.py'))},run_na
   const failure = await api.searchBooks({ query: 'offline' }).catch((error) => error);
   expect(failure).toBeInstanceOf(Error);
   fs.writeFileSync(modeFile, 'rejected');
-  await expect(api.searchBooks({ query: 'offline' })).rejects.toThrow(/cooldown/i);
-  expect(fs.readFileSync(countFile, 'utf8')).toBe('login\n');
+  await expect(api.searchBooks({ query: 'offline' })).rejects.toThrow(/authentication/i);
+  expect(fs.readFileSync(countFile, 'utf8')).toBe('login\nlogin\n');
+  fs.writeFileSync(modeFile, 'login-failure');
+  jest.resetModules();
+  const failedApi = await import('../lib/zlibrary-api.js');
+  await expect(failedApi.searchBooks({ query: 'offline' })).rejects.toThrow(
+    /HTTP 401.*Invalid credentials #1/,
+  );
+  await expect(failedApi.searchBooks({ query: 'offline' })).rejects.toThrow(
+    /HTTP 401.*Invalid credentials #1.*next attempt allowed in/,
+  );
+  expect(fs.readFileSync(countFile, 'utf8')).toBe('login\nlogin\nlogin\n');
   const publicValues =
     JSON.stringify(outputs) +
     JSON.stringify(failure) +

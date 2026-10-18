@@ -109,6 +109,13 @@ async function callPythonFunction(
       async () => {
         const execute = async () => {
           const session = reuse ? eapiSessions.get(identity) : undefined;
+          let sessionUpdate: unknown;
+          const adoptUpdate = () => {
+            if (transport && sessionUpdate && !signal?.aborted) {
+              eapiSessions.consume(sessionUpdate, identity, transport.generation);
+              sessionUpdate = undefined;
+            }
+          };
           try {
             // Get the python path asynchronously INSIDE the try block
             const venvPythonPath = await getManagedPythonPath();
@@ -137,8 +144,7 @@ async function callPythonFunction(
               sessionInput: transport ? { ...transport } : undefined,
               onSession: transport
                 ? (update) => {
-                    if (!signal?.aborted)
-                      eapiSessions.consume(update, identity, transport.generation);
+                    if (!signal?.aborted) sessionUpdate = update;
                   }
                 : undefined,
             });
@@ -196,6 +202,18 @@ async function callPythonFunction(
               );
             }
 
+            if (transport?.action === 'login' && resultData?.login_failed) {
+              const failure = resultData.login_failed;
+              throw new PythonBridgeError(
+                String(resultData.error || 'Z-Library login failed'),
+                {
+                  reason: 'login_failed',
+                  loginStatus: failure.status_code,
+                  loginToken: failure.token,
+                },
+                false,
+              );
+            }
             if (transport && resultData?.auth_rejected?.generation === transport.generation) {
               throw authRejected(
                 transport.generation,
@@ -221,13 +239,16 @@ async function callPythonFunction(
               );
             }
 
-            // Return the successful result object from Python
+            // Accept private metadata only after excluding a matching auth rejection.
+            adoptUpdate();
             return resultData;
           } catch (err: any) {
+            if (!['auth_rejected', 'login_failed'].includes(err?.context?.reason)) adoptUpdate();
             // Never log or retain subprocess environments or internal bearer output.
             sanitizeSessionError(err, [
               configuredEnv.ZLIBRARY_EMAIL || '',
               configuredEnv.ZLIBRARY_PASSWORD || '',
+              transport?.remix_userkey || '',
               session?.remix_userkey || '',
               eapiSessions.get(identity)?.remix_userkey || '',
             ]);

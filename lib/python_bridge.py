@@ -302,7 +302,9 @@ async def _validate_eapi_profile(client):
             )
         ):
             token = "<redacted>"
-        raise EAPIAuthenticationError(f"EAPI authentication rejected: {token}")
+        raise EAPIAuthenticationError(
+            f"EAPI authentication rejected: {token}", status_code=200, token=token
+        )
     if (
         not isinstance(profile, dict)
         or profile.get("success") != 1
@@ -365,6 +367,8 @@ def _publish_eapi_session():
         "remix_userid": client.remix_userid,
         "remix_userkey": client.remix_userkey,
     }
+    if client.needs_profile_validation:
+        payload["validate_next"] = True
     os.write(3, (json.dumps(payload) + "\n").encode())
 
 
@@ -393,6 +397,7 @@ def _attach_eapi_session(client):
                 return False
             await client.close()
             client.domain = replacement.domain
+            client._recovered_domain = True
             return True
         finally:
             await replacement.close()
@@ -401,7 +406,7 @@ def _attach_eapi_session(client):
 
 
 def _safe_diagnostic(value):
-    text = json.dumps(value)
+    """Scrub diagnostic values, never schema keys, fixed codes or tool results."""
     secrets = [
         os.environ.get("ZLIBRARY_EMAIL", ""),
         os.environ.get("ZLIBRARY_PASSWORD", ""),
@@ -410,10 +415,27 @@ def _safe_diagnostic(value):
         secrets.append(_session_input.get("remix_userkey", ""))
     if _eapi_client:
         secrets.append(_eapi_client.remix_userkey or "")
-    for secret in filter(None, secrets):
-        # Replace JSON-escaped forms as well as plain strings.
-        text = text.replace(json.dumps(secret)[1:-1], "<redacted>")
-    return json.loads(text)
+
+    def visit(item):
+        if isinstance(item, str):
+            for secret in filter(None, secrets):
+                item = item.replace(secret, "<redacted>")
+                escaped = json.dumps(secret)[1:-1]
+                if escaped != secret:
+                    item = item.replace(escaped, "<redacted>")
+            return item
+        if isinstance(item, dict):
+            return {
+                key: val
+                if key in ("type", "reason", "code", "provider")
+                else visit(val)
+                for key, val in item.items()
+            }
+        if isinstance(item, list):
+            return [visit(val) for val in item]
+        return item
+
+    return visit(value)
 
 
 async def _login_eapi_client(email: str, password: str) -> EAPIClient:
@@ -435,7 +457,15 @@ async def _login_eapi_client(email: str, password: str) -> EAPIClient:
             or not client.remix_userid
             or not client.remix_userkey
         ):
-            raise RuntimeError("EAPI login failed")
+            raise EAPIAuthenticationError(
+                "EAPI login failed",
+                status_code=200,
+                token=sanitized_auth_token(
+                    login_result.get("error")
+                    if isinstance(login_result, dict)
+                    else None
+                ),
+            )
     except BaseException:
         await client.close()
         raise
@@ -1819,6 +1849,35 @@ def _requires_eapi_client(function_name: str, args_dict: dict) -> bool:
     return True
 
 
+def _login_failure_info(error):
+    """Only allowlisted cause metadata crosses the failed-acquisition boundary."""
+    response = getattr(error, "response", None)
+    status = getattr(error, "status_code", None) or getattr(
+        response, "status_code", None
+    )
+    token = getattr(error, "token", None)
+    if token is None and response is not None:
+        try:
+            payload = response.json()
+            token = payload.get("error") if isinstance(payload, dict) else None
+        except ValueError:
+            pass
+    if token is None:
+        if "certificate" in str(error).lower() or "ssl" in str(error).lower():
+            token = "TLS certificate verification failed"
+        elif isinstance(error, httpx.TimeoutException):
+            token = "Upstream timeout"
+        elif isinstance(error, httpx.RequestError):
+            token = "Upstream connection failed"
+        elif isinstance(error, ValueError) and "environment variables required" in str(
+            error
+        ):
+            token = "Missing configured credentials"
+    return _safe_diagnostic(
+        {"status_code": status, "token": sanitized_auth_token(token)}
+    )
+
+
 async def main():
     parser = argparse.ArgumentParser(description="Z-Library Python Bridge")
     parser.add_argument("function_name", help="Name of the function to call")
@@ -1874,9 +1933,7 @@ async def main():
                 result = await _dispatch_bridge_function(function_name, args_dict)
 
         # Print only confirmation and path to stdout to avoid large content
-        mcp_style_response = {
-            "content": [{"type": "text", "text": json.dumps(_safe_diagnostic(result))}]
-        }
+        mcp_style_response = {"content": [{"type": "text", "text": json.dumps(result)}]}
         if needs_eapi:
             _publish_eapi_session()
         print(json.dumps(mcp_style_response))
@@ -1886,6 +1943,12 @@ async def main():
         logger.info(f"python_bridge.main: received signal {signum}; cancelling")
         raise SystemExit(128 + int(signum))
     except Exception as e:
+        # Recovery was profile-validated even when the subsequent operation failed.
+        if _eapi_client and (
+            getattr(_eapi_client, "_recovered_domain", False)
+            or _eapi_client.needs_profile_validation
+        ):
+            _publish_eapi_session()
         # Print error as JSON to stderr
         error_info = {
             "error": str(e),
@@ -1906,7 +1969,29 @@ async def main():
             )
             error_info["details"].setdefault("operation", operation)
         error_info = _safe_diagnostic(error_info)
-        if isinstance(e, EAPIAuthenticationError) and _session_input is not None:
+        if _session_input is not None and _session_input["action"] == "login":
+            failure = _login_failure_info(e)
+            status = failure["status_code"]
+            cause = (
+                "Z-Library rejected the login"
+                if status in (200, 400, 401, 403)
+                else "Z-Library login failed"
+            )
+            if status:
+                cause += f" (HTTP {status})"
+            if failure["token"] != "<redacted>":
+                cause += f": {failure['token']}"
+            error_info = {
+                "error": cause,
+                "type": type(e).__name__,
+                "login_failed": failure,
+            }
+            print(
+                json.dumps(
+                    {"content": [{"type": "text", "text": json.dumps(error_info)}]}
+                )
+            )
+        elif isinstance(e, EAPIAuthenticationError) and _session_input is not None:
             # The parent alone refreshes, with generation CAS and a login cooldown.
             error_info.pop("traceback", None)
             error_info["auth_rejected"] = {"generation": _session_input["generation"]}

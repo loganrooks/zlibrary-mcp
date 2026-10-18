@@ -59,6 +59,11 @@ def _diamwall_error(domain: str, detail: str) -> DiamWallError:
 class EAPIAuthenticationError(RuntimeError):
     """An explicit rejection, not a transport failure or a generic error."""
 
+    def __init__(self, message, *, status_code=None, token=None):
+        super().__init__(message)
+        self.status_code = status_code
+        self.token = token
+
 
 class NonJSONResponseError(RuntimeError):
     """Wall-like reply without JSON; eligible for same-cookie domain recovery."""
@@ -92,7 +97,11 @@ def decode_eapi_json(resp: httpx.Response, domain: str) -> dict:
         try:
             payload = resp.json()
             if _auth_rejected(payload):
-                raise EAPIAuthenticationError("EAPI authentication rejected")
+                raise EAPIAuthenticationError(
+                    "EAPI authentication rejected",
+                    status_code=resp.status_code,
+                    token=sanitized_auth_token(payload.get("error")),
+                )
             return payload
         except ValueError:
             pass  # fall through to wall classification
@@ -100,11 +109,25 @@ def decode_eapi_json(resp: httpx.Response, domain: str) -> dict:
     if "diamwall" in body.lower():
         raise _diamwall_error(domain, f"HTTP {resp.status_code} DiamWall block page")
     if resp.status_code == 401:
-        raise EAPIAuthenticationError("EAPI authentication rejected")
+        try:
+            payload = resp.json()
+        except ValueError:
+            payload = None
+        token = sanitized_auth_token(
+            payload.get("error") if isinstance(payload, dict) else None
+        )
+        raise EAPIAuthenticationError(
+            "EAPI authentication rejected", status_code=401, token=token
+        )
     if resp.status_code == 400:
         try:
-            if _auth_rejected(resp.json()):
-                raise EAPIAuthenticationError("EAPI authentication rejected")
+            payload = resp.json()
+            if _auth_rejected(payload):
+                raise EAPIAuthenticationError(
+                    "EAPI authentication rejected",
+                    status_code=400,
+                    token=sanitized_auth_token(payload.get("error")),
+                )
         except ValueError:
             pass
     if resp.status_code in WALLED_STATUS_CODES:
@@ -298,6 +321,7 @@ class EAPIClient:
         self._client: Optional[httpx.AsyncClient] = None
         # Only same-cookie domain recovery is allowed inside a child.
         self.on_domain_failed = None
+        self.needs_profile_validation = False
 
     @property
     def _cookies(self) -> Dict[str, str]:
@@ -332,10 +356,13 @@ class EAPIClient:
             try:
                 resp = await client.request(method, f"{self.base_url}{path}", **kwargs)
                 # Explicit auth replies raise for all clients; business envelopes return unchanged.
-                return decode_eapi_json(resp, self.domain)
+                result = decode_eapi_json(resp, self.domain)
+                if isinstance(result, dict) and result.get("success") == 0:
+                    self.needs_profile_validation = True
+                return result
             except (
-                httpx.RequestError,
-                httpx.HTTPStatusError,
+                httpx.ConnectError,
+                httpx.ConnectTimeout,
                 DiamWallError,
                 NonJSONResponseError,
             ):

@@ -414,33 +414,49 @@ children receive cookies over stdin and return updates on a separate private
 pipe (fd 3), never command arguments, tool-result stdout, or diagnostic stderr.
 The private output descriptor is not inherited by grandchildren.
 
-EAPI calls are serialized inside one server, with each caller's own deadline and
-abort signal. Concurrent cold calls share one acquisition. Node accepts updates
-and rejections only for the current account and generation. Changing the email
-never reuses the previous account's cookies; changing only the password leaves
-an accepted session valid. Alternative-source and local-processing calls do not
-join the queue or receive the session. Explicit domain pins always win.
+Only session acquisition (cold login or refresh) is single-flight. Once a
+session exists, EAPI operations run concurrently with their own immutable
+session/generation snapshots: a long download does not block a search. Each
+acquisition waiter has its own deadline/abort signal; an operation's budget starts
+when it holds a session. Node accepts updates and rejections only for the current
+account and generation. An abort cannot invalidate other warm callers. Changing
+the email never reuses the previous account's cookies; changing only the password
+leaves an accepted session valid. Alternative-source and local-processing calls
+receive no session. Explicit domain pins always win.
 
-The profile is checked on acquisition and after an idle gap, not every call.
-Explicit operation authentication rejection, or any well-formed profile
-`success:0`, permits one refresh and one operation retry, subject to the login
-cooldown. Network failures, timeouts, walls, and malformed/non-JSON responses do
-not cause login. An unpinned unavailable domain gets one same-cookie recovery,
-validated against the profile before adoption. Other operation error envelopes
-keep their per-call semantics.
+The profile is checked on acquisition, after an idle gap, and on the call after
+an operation returns `success:0` (even when the tool normalizes it to empty
+results). A profile `success:0` is an authentication verdict. The first explicit
+rejection of a successfully acquired session permits one immediate refresh and
+one operation retry. A second rejection before the refreshed session survives
+the cooldown window triggers backoff, as do failed login attempts.
+
+Backoff grows **30, 60, 120, then 180 seconds** by default, measured from the last
+failed attempt or the last refresh. It resets once a session survives the window.
+Calls during backoff name the last sanitized authentication/login cause and the
+time remaining; they do not make another login attempt. Separate servers do not
+share this state. If they invalidate each other's sessions, each gets one
+immediate refresh, then repeated rejection is bounded by its own backoff. That
+provider behavior has not been measured.
+
+Transport uncertainty never causes login. An unpinned domain gets at most one
+same-cookie cross-domain recovery, with profile validation before adoption, only
+for connect errors/timeouts, walls or non-JSON replies. **Read timeouts, protocol
+errors and 5xx replies are not replayed on another domain.** A validated recovered
+domain is reported privately even if the operation then fails. Other operation
+error envelopes retain their per-call behavior. Tool results are not rewritten
+for password redaction; credential scrubbing applies to diagnostics.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `ZLIBRARY_SESSION_MODE` | `memory` | `memory` or `per-call`; unknown values fail at startup |
-| `ZLIBRARY_SESSION_LOGIN_COOLDOWN_MS` | `180000` | Minimum interval between login attempts per account, including failed attempts |
+| `ZLIBRARY_SESSION_LOGIN_COOLDOWN_MS` | `180000` | Backoff cap and session-survival window, in milliseconds |
 | `ZLIBRARY_SESSION_IDLE_MS` | `300000` | Idle gap before profile validation |
 
 Timing overrides must be positive integers no greater than 2147483647; invalid
-values use the defaults. In `per-call` mode each EAPI invocation logs in normally,
-without session reuse or the memory carrier's cooldown. Disk/keychain modes are
-not implemented. Separate servers do not share sessions or cooldowns: if upstream
-invalidates older sessions, each server can be rejected until its cooldown allows
-another login. That provider behavior has not been measured.
+values use the defaults. A cap below 30000 also caps the initial backoff. In
+`per-call` mode each EAPI invocation logs in normally, without memory reuse or
+its backoff. Disk/keychain modes are not implemented.
 
 ### Logging
 

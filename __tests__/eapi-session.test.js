@@ -120,7 +120,7 @@ test('repeated rejection has no third operation or second refresh', async () => 
   expect(actions).toEqual(['operation', 'login', 'operation']);
 });
 
-test('cooldown bounds two server owners sharing an invalidating fake', async () => {
+test('two owners get one immediate refresh each then bounded ping-pong backoff', async () => {
   const first = new ownerModule.EapiSessionOwner(),
     second = new ownerModule.EapiSessionOwner();
   let current = '',
@@ -137,18 +137,21 @@ test('cooldown bounds two server owners sharing an invalidating fake', async () 
   };
   await first.run(identity, backend(first));
   await second.run(identity, backend(second));
-  await expect(first.run(identity, backend(first))).rejects.toThrow(/cooldown/i);
-  for (let n = 0; n < 4; n++)
-    await expect(first.run(identity, backend(first))).rejects.toThrow(/cooldown/i);
-  expect(logins).toBe(2);
-  expect(await second.run(identity, backend(second))).toBe('ok');
-  now += 180001;
-  expect(await first.run(identity, backend(first))).toBe('ok');
-  expect(logins).toBe(3);
-  // The second owner can now invalidate the first again, but each pays its own cooldown.
-  expect(await second.run(identity, backend(second))).toBe('ok');
-  await expect(first.run(identity, backend(first))).rejects.toThrow(/cooldown/i);
+  await expect(first.run(identity, backend(first))).resolves.toBe('ok');
+  await expect(second.run(identity, backend(second))).resolves.toBe('ok');
   expect(logins).toBe(4);
+  await expect(first.run(identity, backend(first))).rejects.toThrow(/30 s/);
+  for (let n = 0; n < 4; n++)
+    await expect(first.run(identity, backend(first))).rejects.toMatchObject({
+      context: { reason: 'auth_backoff' },
+    });
+  expect(logins).toBe(4);
+  await expect(second.run(identity, backend(second))).resolves.toBe('ok');
+  now += 30001;
+  await expect(first.run(identity, backend(first))).resolves.toBe('ok');
+  await expect(second.run(identity, backend(second))).resolves.toBe('ok');
+  await expect(first.run(identity, backend(first))).rejects.toThrow(/60 s/);
+  expect(logins).toBe(6);
 });
 
 test('stale generation cannot overwrite or clear a newer session', () => {
@@ -238,7 +241,7 @@ test('queued waiter has its own deadline and never spawns', async () => {
   expect(runPythonBridge).toHaveBeenCalledTimes(2);
 });
 
-test('dead acquisition leader releases the flight and next waiter can lead', async () => {
+test('failed acquisition rejects its waiters and can lead again after backoff', async () => {
   process.env.ZLIBRARY_SESSION_LOGIN_COOLDOWN_MS = '1';
   let attempts = 0;
   runPythonBridge.mockImplementation(async (_s, _opts, ro) => {
@@ -253,7 +256,10 @@ test('dead acquisition leader releases the flight and next waiter can lead', asy
     return envelope([]);
   });
   const results = await Promise.allSettled([call(), call()]);
-  expect(results.map((r) => r.status)).toEqual(['rejected', 'fulfilled']);
+  expect(results.map((r) => r.status)).toEqual(['rejected', 'rejected']);
+  expect(attempts).toBe(1);
+  now += 1;
+  await expect(call()).resolves.toEqual([]);
   expect(attempts).toBe(2);
 });
 
@@ -403,4 +409,58 @@ test.each([
   expect(
     String(error.stack) + JSON.stringify(error) + JSON.stringify(consoleSpy.mock.calls),
   ).not.toContain(token);
+});
+
+test('private business-failure metadata forces validation after normalized results', async () => {
+  const counts = fakeBackend();
+  await call();
+  let operations = 0,
+    profiles = 0;
+  runPythonBridge.mockImplementation(async (_s, _opts, ro) => {
+    const input = ro.sessionInput;
+    if (input.action === 'validate') {
+      profiles++;
+      return envelope({ authenticated: true });
+    }
+    operations++;
+    if (operations === 1) ro.onSession({ ...session(input.generation), validate_next: true });
+    return envelope([]);
+  });
+  await call();
+  await call();
+  expect(profiles).toBe(1);
+  expect(counts.login).toBe(1);
+});
+
+test('a rejected recovered-domain update cannot hide the input generation rejection', async () => {
+  const counts = fakeBackend();
+  await call();
+  runPythonBridge.mockImplementation(async (_s, _opts, ro) => {
+    const input = ro.sessionInput;
+    if (input.action === 'login') {
+      counts.login++;
+      ro.onSession(session(input.generation, 'new-cookie', 'fresh.example.test'));
+      return envelope({ authenticated: true });
+    }
+    if (input.remix_userkey === token) {
+      ro.onSession(session(input.generation, token, 'recovered.example.test'));
+      return rejectReply(input.generation);
+    }
+    expect(input.remix_userkey).toBe('new-cookie');
+    return envelope(['fresh']);
+  });
+  await expect(call()).resolves.toEqual(['fresh']);
+  expect(counts.login).toBe(2);
+});
+
+test('short password cannot corrupt authentication reason codes or backoff', async () => {
+  process.env.ZLIBRARY_PASSWORD = 'a';
+  runPythonBridge.mockResolvedValue(
+    envelope({
+      error: 'Z-Library rejected the login (HTTP 401)',
+      login_failed: { status_code: 401, token: 'Invalid credentials' },
+    }),
+  );
+  await expect(call()).rejects.toMatchObject({ context: { reason: 'login_failed' } });
+  await expect(call()).rejects.toMatchObject({ context: { reason: 'auth_backoff' } });
 });

@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, expect, test } from '@jest/globals';
 import { readFile, realpath, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { performance } from 'node:perf_hooks';
 import { Rehearsal } from './harness.js';
 import { expectedFixes } from './expectations.js';
 
@@ -215,15 +216,21 @@ breakerTest(
     await h.scenario(
       'S7',
       async (connect) => {
+        const started = performance.now();
         const c = await connect();
         await h.call(c, 'search_books', { query: 'warm-session' });
         expect((await h.stats()).logins).toBe(1);
         await h.mode({ mode: 'server503' });
-        for (let i = 0; i < 5; i++) {
-          const reply = await h.call(c, 'search_books', { query: 'outage' }, true);
+        const warmed = performance.now();
+        // Independent warmed failures can overlap; await all five before probing OPEN.
+        const replies = await Promise.all(
+          Array.from({ length: 5 }, () => h.call(c, 'search_books', { query: 'outage' }, true)),
+        );
+        for (const reply of replies) {
           expect(reply.error.message).toMatch(/503/);
           expect(reply.error.message).not.toMatch(/authentication|rejected the login/i);
         }
+        const failed = performance.now();
         const before = await h.stats();
         expect(before.logins).toBe(1);
         expect(before.calls['/eapi/book/search']).toBe(6); // warm call + five outages
@@ -257,6 +264,11 @@ breakerTest(
           localBridge: 'works',
           alternateSources: 'Library Genesis works',
           toolsList: 'works',
+          timingMs: {
+            connectAndWarm: Math.round(warmed - started),
+            fiveOutages: Math.round(failed - warmed),
+            blockedProbeAndFallback: Math.round(performance.now() - failed),
+          },
         });
       },
       { libgen: true },

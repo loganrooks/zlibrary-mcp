@@ -14,9 +14,19 @@ npm run test:rehearsal
 ```
 
 Rehearsal is excluded from default Jest discovery. Its dedicated configuration has
-a 30-second case deadline and serial suites; the runner bounds execution to 115
-seconds plus a two-second shutdown grace. The manifest defaults to ignored
+a 30-second case deadline and serial suites; the runner bounds Jest execution to
+180 seconds plus a two-second shutdown grace. `REHEARSAL_DEADLINE_MS` accepts a
+positive integer up to 600000 ms (10 minutes); invalid values use 180000 ms. This
+leaves headroom within the CI job's existing 15-minute timeout. The manifest defaults to ignored
 `test_output/rehearsal-manifest.json`; override with `REHEARSAL_RESULT_FILE`.
+
+A deadline stop exits nonzero and reports `deadline_exceeded`, elapsed execution
+time and configured budget on stderr and in the manifest. It does not describe
+an absent Jest result file as "0/36 executed" in the summary. External SIGINT or
+SIGTERM is instead labeled `interrupted`. `resultsAvailable` and `resultsComplete`
+separate missing/partial results from completed test failures; the executed count
+is `null` when the Jest result file is unavailable, not an invented zero. Successful runs
+retain per-suite and per-case durations so CI time can be attributed.
 
 ### Independent feature expectations
 
@@ -87,6 +97,7 @@ skipped, duplicate and failed cases cannot produce a green aggregate.
 - S6: healthy Library Genesis search goes through the real third-party parser,
   returns a hand-authored HTML record, and makes zero EAPI login attempts.
 - S7: a warmed session receives five HTTP 503 operation failures (not auth); the
+  independent outage calls overlap, and all five replies are checked before the
   sixth call is blocked with no upstream dispatch. The same server then searches
   Library Genesis and processes a real local TXT while EAPI remains OPEN. One
   login and six EAPI searches (warm + five outages) must remain unchanged.
@@ -106,6 +117,10 @@ skipped, duplicate and failed cases cannot produce a green aggregate.
 npm run test:rehearsal -- --self-test-skipped
 npm run test:rehearsal -- --self-test-source-drift
 
+# Real controller timer against an inert Node child, not provider traffic; exits 1.
+# This control defaults to 25 ms unless REHEARSAL_DEADLINE_MS overrides it.
+npm run test:rehearsal -- --self-test-deadline
+
 # Selected S1 must itself fail after usable cookies are removed.
 REHEARSAL_DROP_COOKIES=1 node --experimental-vm-modules \
   node_modules/jest/bin/jest.js --config __tests__/rehearsal/jest.config.js \
@@ -114,6 +129,8 @@ REHEARSAL_DROP_COOKIES=1 node --experimental-vm-modules \
 
 The focused scanner contract combines the known ID log with password, cookie-key
 and CA-key mutations. All three remain unexpected even in master mode.
+`__tests__/rehearsal-runner.test.js` exercises the real deadline-stop path and
+invalid-budget fallback in default Jest, outside the 36 provider rehearsal cases.
 
 ## Isolation and cleanup
 

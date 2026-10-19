@@ -320,12 +320,24 @@ maybe('python-runner', () => {
     if (process.platform === 'win32') return;
 
     const pidFile = path.join(tmpDir, 'successful-parent-descendant.pid');
+    const readyFile = path.join(tmpDir, 'successful-parent-descendant.ready');
+    const childCode = [
+      'import pathlib, signal, sys, time',
+      'signal.signal(signal.SIGTERM, signal.SIG_IGN)',
+      'pathlib.Path(sys.argv[1]).write_text("ready")',
+      'time.sleep(600)',
+    ].join('; ');
     const name = script(
       'successful-parent-with-descendant.py',
       [
-        'import pathlib, subprocess, sys',
-        'child = subprocess.Popen([sys.executable, "-c", "import signal, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(600)"], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True)',
+        'import pathlib, subprocess, sys, time',
+        `child = subprocess.Popen([sys.executable, "-c", ${JSON.stringify(childCode)}, ${JSON.stringify(readyFile)}], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True)`,
         `pathlib.Path(${JSON.stringify(pidFile)}).write_text(str(child.pid))`,
+        // Exercise grace-period cleanup, not a race with installing SIGTERM-ignore.
+        `ready = pathlib.Path(${JSON.stringify(readyFile)})`,
+        'deadline = time.monotonic() + 5',
+        'while not ready.exists() and time.monotonic() < deadline: time.sleep(0.005)',
+        'assert ready.exists(), "descendant readiness deadline exceeded"',
         'print("complete")',
         '',
       ].join('\n'),

@@ -223,7 +223,7 @@ export async function scoreTask({
         task.id === 'T10' &&
         b &&
         (path.basename(actual) !== 'seneca.pdf' ||
-          path.dirname(actual) !== path.resolve(downloads, 'inbox'))
+          path.dirname(actual) !== (await realpath(path.resolve(downloads, 'inbox'))))
       )
         throw new Error('wrong materialized filename/destination');
       const bytes = await readFile(actual);

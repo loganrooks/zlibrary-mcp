@@ -351,6 +351,33 @@ export function installExitHooks(): void {
   }
 }
 
+export interface ProtocolDiagnostic {
+  phase:
+    | 'request-data'
+    | 'request-end'
+    | 'request-close'
+    | 'request-error'
+    | 'request-accepted'
+    | 'grant'
+    | 'deny'
+    | 'child-exit'
+    | 'child-close'
+    | 'stdin-end'
+    | 'stdin-finish'
+    | 'stdin-close'
+    | 'stdin-error'
+    | 'failure'
+    | 'completion';
+  sequence: number;
+  elapsedMs: number;
+  demanded: boolean;
+  granted: boolean;
+  settled: boolean;
+  count?: number;
+  code?: string;
+  errno?: number;
+}
+
 export interface RunBridgeOptions {
   /** Wall-clock budget in ms. Defaults to DEFAULT_BRIDGE_TIMEOUT_MS. */
   timeoutMs?: number;
@@ -361,6 +388,8 @@ export interface RunBridgeOptions {
   /** Internal stdin input / fd 3 output. Never included in argv or diagnostics. */
   sessionInput?: Record<string, unknown>;
   onSession?: (update: unknown) => void;
+  /** Opt-in synthetic metadata only, no streams/private frames/exception text. */
+  onProtocolDiagnostic?: (event: Readonly<ProtocolDiagnostic>) => void;
   /** Internal post-admission demand, never a public tool/session snapshot. */
   onSessionNeeded?: (channel: {
     grant(input: Record<string, unknown>): void;
@@ -418,6 +447,47 @@ export function runPythonBridge(
     let childClosed = false;
     let demanded = false;
     let granted = false;
+    let diagnosticSequence = 0;
+    const diagnosticStart = performance.now();
+    const diagnostic = (phase: ProtocolDiagnostic['phase'], count?: number, error?: any) => {
+      if (!runOptions.onProtocolDiagnostic || diagnosticSequence >= 256) return;
+      try {
+        const event: ProtocolDiagnostic = {
+          phase,
+          sequence: ++diagnosticSequence,
+          elapsedMs: Math.max(0, Math.round(performance.now() - diagnosticStart)),
+          demanded,
+          granted,
+          settled,
+        };
+        if (Number.isSafeInteger(count)) event.count = Math.min(8193, Math.max(0, count!));
+        const code = error?.code;
+        if (typeof code === 'string')
+          event.code = [
+            'EPIPE',
+            'ECONNRESET',
+            'ECONNABORTED',
+            'ERR_STREAM_DESTROYED',
+            'ETIMEDOUT',
+            'ENOENT',
+            'SIGTERM',
+            'SIGKILL',
+            'SIGINT',
+            'SIGQUIT',
+          ].includes(code)
+            ? code
+            : 'OTHER';
+        if (
+          Number.isSafeInteger(error?.errno) &&
+          error.errno >= -(2 ** 31) &&
+          error.errno < 2 ** 32
+        )
+          event.errno = error.errno;
+        runOptions.onProtocolDiagnostic(Object.freeze(event));
+      } catch {
+        /* observational only */
+      }
+    };
     const privateSecrets: string[] =
       typeof runOptions.sessionInput?.remix_userkey === 'string'
         ? [runOptions.sessionInput.remix_userkey]
@@ -462,7 +532,16 @@ export function runPythonBridge(
     shell.on('error', onShellError);
     shell.childProcess.once('close', () => {
       childClosed = true;
+      diagnostic('child-close');
     });
+    if (runOptions.onProtocolDiagnostic) {
+      shell.childProcess.once('exit', (code, signal) =>
+        diagnostic('child-exit', code ?? undefined, { code: signal }),
+      );
+      shell.stdin.on('finish', () => diagnostic('stdin-finish'));
+      shell.stdin.on('close', () => diagnostic('stdin-close'));
+      shell.stdin.on('error', (error) => diagnostic('stdin-error', undefined, error));
+    }
 
     const pid = shell.childProcess?.pid;
     if (!pid) {
@@ -524,6 +603,7 @@ export function runPythonBridge(
       requestDone = new Promise<void>((done) => {
         let pending = Buffer.alloc(0);
         request.on('data', (chunk: Buffer) => {
+          diagnostic('request-data', chunk.length);
           if (settled) return;
           pending = Buffer.concat([pending, chunk]);
           if (pending.length > 128) {
@@ -532,6 +612,7 @@ export function runPythonBridge(
           }
         });
         request.on('end', () => {
+          diagnostic('request-end', pending.length);
           try {
             if (!pending.length) return; // receipt hit: no authentication or stdin read
             const frame = JSON.parse(pending.toString('utf8'));
@@ -544,6 +625,7 @@ export function runPythonBridge(
             )
               throw new Error();
             demanded = true;
+            diagnostic('request-accepted');
             if (settled) return;
             runOptions.onSessionNeeded!({
               grant(input) {
@@ -558,13 +640,17 @@ export function runPythonBridge(
                   return;
                 }
                 granted = true;
+                diagnostic('grant');
                 if (typeof input.remix_userkey === 'string')
                   privateSecrets.push(input.remix_userkey);
-                shell.stdin.end(frame);
+                shell.stdin.end(frame, () => diagnostic('stdin-end'));
               },
               deny(error) {
                 if (settled) return;
-                shell.stdin.end('{"v":1,"type":"denied","code":"auth_unavailable"}\n');
+                diagnostic('deny');
+                shell.stdin.end('{"v":1,"type":"denied","code":"auth_unavailable"}\n', () =>
+                  diagnostic('stdin-end'),
+                );
                 failWith(error, 'private session denied');
               },
             });
@@ -575,7 +661,9 @@ export function runPythonBridge(
             done();
           }
         });
-        request.on('error', () => {
+        request.on('close', () => diagnostic('request-close'));
+        request.on('error', (error) => {
+          diagnostic('request-error', undefined, error);
           done();
           failWith(new Error('Private session request channel closed'), 'private request');
         });
@@ -623,6 +711,7 @@ export function runPythonBridge(
     failWith = (error: Error, why: string) => {
       if (settled) return;
       settled = true;
+      diagnostic('failure', undefined, error);
       terminate(why);
       // Leave the shell registered until terminate's grace window elapses so
       // a shutdown in the meantime still SIGKILLs it.
@@ -678,6 +767,7 @@ export function runPythonBridge(
         return;
       }
       settled = true;
+      diagnostic('completion');
       cleanupCall();
       // A successful direct child can leave detached-stdio descendants in its
       // process group. Preserve its output/result, but bound ownership of the

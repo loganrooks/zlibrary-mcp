@@ -6,11 +6,12 @@ import os
 from pathlib import Path
 import signal
 import sys
+import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "lib"))
 from acquisition import AcquisitionError, DestinationLease, acquire
-from eapi_session_protocol import SessionProtocolError, request_session
+from eapi_session_protocol import SessionProtocolError, request_session, _emit
 
 mode, directory = sys.argv[1:3]
 for descriptor in (3,) if mode == "control" else (3, 4):
@@ -18,6 +19,30 @@ for descriptor in (3,) if mode == "control" else (3, 4):
 root = Path(directory)
 root.mkdir(parents=True, exist_ok=True)
 (root / "pid").write_text(str(os.getpid()))
+
+diagnostic_enabled = os.environ.get("LAZY_PROTOCOL_DIAGNOSTICS") == "1"
+diagnostic_sequence = 0
+diagnostic_started = time.monotonic()
+
+
+def trace(event):
+    global diagnostic_sequence
+    if not diagnostic_enabled or diagnostic_sequence >= 256:
+        return
+    diagnostic_sequence += 1
+    event = {
+        **event,
+        "sequence": diagnostic_sequence,
+        "elapsedMs": max(0, round((time.monotonic() - diagnostic_started) * 1000)),
+    }
+    with (root / "protocol-diagnostic.jsonl").open("a", encoding="utf8") as stream:
+        stream.write(json.dumps(event) + "\n")
+
+
+def session_trace(event):
+    trace(event)
+    if mode == "probe-reply" and event == {"phase": "input-connect", "state": "done"}:
+        print('{"reader_connected":true}', flush=True)
 
 
 async def main():
@@ -46,17 +71,26 @@ async def main():
         for byte in payload:
             os.write(4, bytes([byte]))
             await asyncio.sleep(0.001)
+        _emit(trace, "request-close", "start")
         os.close(4)
+        _emit(trace, "request-close", "done")
         if mode.endswith("fragmented"):
-            # This mode tests the parent's incremental request parser only.
-            await asyncio.sleep(0.03)
+            # The demand must be observed while this child is still alive,
+            # not only when process exit finally closes every inherited handle.
+            deadline = asyncio.get_running_loop().time() + 2
+            while not (root / "parent-observed-demand").exists():
+                if asyncio.get_running_loop().time() >= deadline:
+                    raise AssertionError("Demand was not observed before child exit")
+                await asyncio.sleep(0.01)
             print("{}")
         else:
             await asyncio.sleep(30)
         return
-    if mode == "reply":
+    if mode in {"reply", "probe-reply"}:
         try:
-            await request_session(timeout=0.3)
+            await request_session(
+                timeout=1 if mode == "probe-reply" else 0.3, diagnostic=session_trace
+            )
             print(json.dumps({"ok": True}))
         except SessionProtocolError as error:
             print(json.dumps({"error": str(error)}))
@@ -73,7 +107,7 @@ async def main():
         except AcquisitionError as error:
             assert error.reason == "breaker_open"
         (root / "admitted").write_text("intent+lease")
-        private = await request_session(timeout=10)
+        private = await request_session(timeout=10, diagnostic=session_trace)
         with (root / "transfers").open("a") as stream:
             stream.write("1\n")
         (root / "granted").write_text("yes")
@@ -115,13 +149,20 @@ async def main():
 
 async def run():
     task = asyncio.current_task()
+    if diagnostic_enabled:
+        asyncio.get_running_loop().set_exception_handler(
+            lambda loop, context: _emit(
+                trace, "loop", "error", error=context.get("exception")
+            )
+        )
     if os.name == "posix":
         asyncio.get_running_loop().add_signal_handler(signal.SIGTERM, task.cancel)
     try:
         await main()
     except asyncio.CancelledError:
         pass
-    except Exception:
+    except Exception as error:
+        _emit(trace, "primary", "error", error=error)
         print("Synthetic private worker failed", file=sys.stderr)
         sys.exit(1)
 

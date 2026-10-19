@@ -257,6 +257,16 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: npm run build
       - name: Verify lazy protocol on actual Windows Node and Python pipes
+        env:
+          LAZY_PROTOCOL_DIAGNOSTICS: '1'
         run: node --experimental-vm-modules node_modules/jest/bin/jest.js __tests__/lazy-eapi-session.test.js --testNamePattern="native protocol" --runInBand --coverage=false
       - name: Verify bounded Python session framing and deferred initialization
+        if: always()
         run: uv run pytest __tests__/python/test_lazy_eapi_session.py --no-cov -rs
+      - name: Upload bounded synthetic native protocol diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-protocol-python-${{ matrix.python }}
+          path: test_output/native-protocol/*.json
+          if-no-files-found: warn

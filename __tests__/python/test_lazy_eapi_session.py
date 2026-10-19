@@ -116,3 +116,340 @@ async def test_lazy_grant_recovers_domain_and_publishes_exactly_once(monkeypatch
     finally:
         if python_bridge._eapi_client:
             await python_bridge._eapi_client.close()
+
+
+def test_protocol_diagnostic_never_copies_untrusted_values():
+    from eapi_session_protocol import _emit
+
+    events = []
+    error = OSError(5, "private-message-canary")
+    error.winerror = 6
+    _emit(events.append, "input-read", "error", error=error, count=999999)
+    assert events == [
+        {
+            "phase": "input-read",
+            "state": "error",
+            "error_type": "OSError",
+            "errno": 5,
+            "winerror": 6,
+            "count": 8193,
+        }
+    ]
+    _emit(
+        events.append,
+        "private-phase-canary",
+        "private-state-canary",
+        error=type("PrivateClassCanary", (Exception,), {})("private-message-canary"),
+    )
+    assert events[-1] == {
+        "phase": "unknown",
+        "state": "unknown",
+        "error_type": "OtherError",
+    }
+    assert "canary" not in json.dumps(events).lower()
+
+
+def test_protocol_diagnostic_callback_failure_does_not_change_control_flow():
+    from eapi_session_protocol import _emit
+
+    def broken(_event):
+        raise RuntimeError("private-callback-canary")
+
+    _emit(broken, "input-read", "start")
+
+
+def test_windows_input_adapter_owns_crt_duplicate_not_original(monkeypatch):
+    import os
+    import sys
+    import types
+    import weakref
+    from eapi_session_protocol import _WindowsReadPipe
+
+    closed, converted = [], []
+    monkeypatch.setattr(
+        os, "dup", lambda fd: 404 if fd == 0 else pytest.fail("wrong original")
+    )
+    monkeypatch.setattr(os, "close", closed.append)
+    monkeypatch.setitem(
+        sys.modules,
+        "msvcrt",
+        types.SimpleNamespace(get_osfhandle=lambda fd: converted.append(fd) or 9004),
+    )
+    pipe = _WindowsReadPipe(0)
+    assert weakref.ref(pipe)() is pipe
+    assert pipe.fileno() == 9004
+    assert converted == [404]
+    pipe.close()
+    pipe.close()
+    assert closed == [404]  # Never CloseHandle/close original stdin.
+    with pytest.raises(ValueError, match="Closed private session pipe"):
+        pipe.fileno()
+
+
+def test_windows_input_adapter_detaches_even_when_close_fails(monkeypatch):
+    import os
+    from eapi_session_protocol import _WindowsReadPipe
+
+    closed = []
+    monkeypatch.setattr(os, "dup", lambda fd: 404)
+
+    def fail(fd):
+        closed.append(fd)
+        raise OSError(5, "private-close-canary")
+
+    monkeypatch.setattr(os, "close", fail)
+    pipe = _WindowsReadPipe(0)
+    with pytest.raises(OSError):
+        pipe.close()
+    pipe.close()
+    assert closed == [404]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "kind", ["connect", "primary-and-cleanup", "valid-and-cleanup"]
+)
+async def test_owned_pipe_cleanup_and_primary_precedence(monkeypatch, kind):
+    import eapi_session_protocol as protocol
+
+    events, closes = [], []
+
+    class Pipe:
+        def close(self):
+            closes.append("pipe")
+
+    class Transport:
+        def close(self):
+            closes.append("transport")
+            raise OSError(5, "private-cleanup-canary")
+
+    monkeypatch.setattr(
+        protocol, "_open_input_pipe", lambda fd, diagnostic=None: Pipe()
+    )
+    real_write, real_close = protocol.os.write, protocol.os.close
+    monkeypatch.setattr(
+        protocol.os,
+        "write",
+        lambda fd, data: len(data) if fd == 404 else real_write(fd, data),
+    )
+    monkeypatch.setattr(
+        protocol.os, "close", lambda fd: None if fd == 404 else real_close(fd)
+    )
+
+    async def connect(factory, pipe):
+        if kind == "connect":
+            raise OSError(6, "private-connect-canary")
+        p = factory()
+        if kind == "valid-and-cleanup":
+            p.data_received(frame({"v": 1, "type": "session", "input": PRIVATE}))
+        p.eof_received()
+        return Transport(), p
+
+    monkeypatch.setattr(asyncio.get_running_loop(), "connect_read_pipe", connect)
+    with pytest.raises(SessionProtocolError) as error:
+        await protocol.request_session(request_fd=404, diagnostic=events.append)
+    assert (
+        str(error.value)
+        == {
+            "connect": "Asynchronous private session pipe unavailable",
+            "primary-and-cleanup": "Invalid private session reply",
+            "valid-and-cleanup": "Private session cleanup failed",
+        }[kind]
+    )
+    assert closes == ["pipe" if kind == "connect" else "transport"]
+    assert "canary" not in json.dumps(events).lower()
+    if kind != "connect":
+        assert any(e["phase"] == "cleanup" and e["state"] == "error" for e in events)
+        assert any(
+            e["phase"] == "primary"
+            and e["state"] == ("done" if kind == "valid-and-cleanup" else "error")
+            for e in events
+        )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("kind", ["success", "connect", "handle", "duplicate"])
+async def test_windows_wrapper_contract_at_async_connect_boundary(monkeypatch, kind):
+    import sys
+    import types
+    import weakref
+    import eapi_session_protocol as protocol
+
+    events, closed = [], []
+    original_write, original_close = protocol.os.write, protocol.os.close
+
+    def duplicate(fd):
+        assert fd == 0
+        if kind == "duplicate":
+            raise OSError(24, "private-duplicate-canary")
+        return 606
+
+    def convert(fd):
+        assert fd == 606
+        if kind == "handle":
+            raise OSError(6, "private-handle-canary")
+        return 9004
+
+    def close(fd):
+        if fd in (404, 606):
+            closed.append(fd)
+        else:
+            original_close(fd)
+
+    monkeypatch.setattr(protocol.os, "dup", duplicate)
+    monkeypatch.setattr(protocol.os, "close", close)
+    monkeypatch.setattr(
+        protocol.os,
+        "write",
+        lambda fd, data: len(data) if fd == 404 else original_write(fd, data),
+    )
+    monkeypatch.setitem(
+        sys.modules, "msvcrt", types.SimpleNamespace(get_osfhandle=convert)
+    )
+    monkeypatch.setattr(
+        protocol,
+        "_open_input_pipe",
+        lambda fd, diagnostic=None: protocol._WindowsReadPipe(fd, diagnostic),
+    )
+
+    async def connect(factory, pipe):
+        registry = weakref.WeakSet()
+        registry.add(pipe)
+        assert pipe.fileno() == 9004  # IOCP receives a HANDLE, never CRT606.
+        if kind == "connect":
+            raise OSError(6, "private-connect-canary")
+        p = factory()
+        p.data_received(frame({"v": 1, "type": "session", "input": PRIVATE}))
+        p.eof_received()
+
+        class Transport:
+            def close(self):
+                pipe.close()
+                pipe.close()
+                p.connection_lost(None)
+
+        return Transport(), p
+
+    monkeypatch.setattr(asyncio.get_running_loop(), "connect_read_pipe", connect)
+    if kind == "success":
+        assert (
+            await protocol.request_session(request_fd=404, diagnostic=events.append)
+            == PRIVATE
+        )
+    else:
+        with pytest.raises(SessionProtocolError) as error:
+            await protocol.request_session(request_fd=404, diagnostic=events.append)
+        assert str(error.value) == (
+            "Private session parent unavailable"
+            if kind == "duplicate"
+            else "Asynchronous private session pipe unavailable"
+        )
+    assert closed == ([404] if kind == "duplicate" else [404, 606])
+    assert "canary" not in json.dumps(events).lower()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("valid", [False, True])
+async def test_connection_lost_wait_failure_does_not_mask_primary(monkeypatch, valid):
+    import eapi_session_protocol as protocol
+
+    events = []
+
+    class Pipe:
+        def close(self):
+            pass
+
+    monkeypatch.setattr(
+        protocol, "_open_input_pipe", lambda fd, diagnostic=None: Pipe()
+    )
+    real_write, real_close = protocol.os.write, protocol.os.close
+    monkeypatch.setattr(
+        protocol.os,
+        "write",
+        lambda fd, data: len(data) if fd == 404 else real_write(fd, data),
+    )
+    monkeypatch.setattr(
+        protocol.os, "close", lambda fd: None if fd == 404 else real_close(fd)
+    )
+
+    async def connect(factory, pipe):
+        p = factory()
+        if valid:
+            p.data_received(frame({"v": 1, "type": "session", "input": PRIVATE}))
+        p.eof_received()
+
+        class Transport:
+            def close(self):
+                pass  # Missing connection_lost completion is the failure seam.
+
+        return Transport(), p
+
+    monkeypatch.setattr(asyncio.get_running_loop(), "connect_read_pipe", connect)
+    wait = asyncio.wait_for
+
+    async def bounded(awaitable, timeout):
+        if timeout == 1:
+            raise asyncio.TimeoutError()
+        return await wait(awaitable, timeout)
+
+    monkeypatch.setattr(protocol.asyncio, "wait_for", bounded)
+    with pytest.raises(SessionProtocolError) as error:
+        await protocol.request_session(request_fd=404, diagnostic=events.append)
+    assert str(error.value) == (
+        "Private session cleanup failed" if valid else "Invalid private session reply"
+    )
+    assert any(
+        e["phase"] == "cleanup" and e["error_type"] == "TimeoutError"
+        for e in events
+        if e.get("state") == "error"
+    )
+
+
+@pytest.mark.asyncio
+async def test_cancellation_remains_primary_when_transport_cleanup_fails(monkeypatch):
+    import eapi_session_protocol as protocol
+
+    events = []
+    connected = asyncio.Event()
+
+    class Pipe:
+        def close(self):
+            pass
+
+    class Transport:
+        def close(self):
+            raise OSError(5, "private-cleanup-canary")
+
+    monkeypatch.setattr(
+        protocol, "_open_input_pipe", lambda fd, diagnostic=None: Pipe()
+    )
+    real_write, real_close = protocol.os.write, protocol.os.close
+    monkeypatch.setattr(
+        protocol.os,
+        "write",
+        lambda fd, data: len(data) if fd == 404 else real_write(fd, data),
+    )
+    monkeypatch.setattr(
+        protocol.os, "close", lambda fd: None if fd == 404 else real_close(fd)
+    )
+
+    async def connect(factory, pipe):
+        connected.set()
+        return Transport(), factory()
+
+    monkeypatch.setattr(asyncio.get_running_loop(), "connect_read_pipe", connect)
+    task = asyncio.create_task(
+        protocol.request_session(request_fd=404, diagnostic=events.append)
+    )
+    await connected.wait()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert any(
+        event["phase"] == "primary" and event["state"] == "cancelled"
+        for event in events
+    )
+    assert any(
+        event["phase"] == "cleanup" and event["state"] == "error" for event in events
+    )
+    assert "canary" not in json.dumps(events)

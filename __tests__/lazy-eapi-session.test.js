@@ -236,7 +236,11 @@ describe('SDK lazy acquisition with real bridge and query-sensitive loopback fak
 
 // These cases run unchanged on hosted Windows with Python3.10/3.13.
 describe('native protocol real Node/Python pipes', () => {
-  let directory, runner;
+  let directory,
+    runner,
+    diagnosticEvents,
+    diagnosticCase = 0;
+  const diagnostics = process.env.LAZY_PROTOCOL_DIAGNOSTICS === '1';
   const input = {
     identity: 'offline@example.invalid',
     generation: 0,
@@ -259,7 +263,46 @@ describe('native protocol real Node/Python pipes', () => {
       timeoutMs: 4000,
       onSessionNeeded: (c) => c.grant(input),
       ...extra,
+      onProtocolDiagnostic:
+        diagnostics || extra.onProtocolDiagnostic
+          ? (event) => {
+              if (diagnostics && diagnosticEvents.length < 768) diagnosticEvents.push(event);
+              extra.onProtocolDiagnostic?.(event);
+            }
+          : undefined,
     });
+  const observe = (child) => {
+    if (!diagnostics) return;
+    const started = performance.now();
+    let sequence = 0;
+    const mark = (phase, count, error) => {
+      if (diagnosticEvents.length >= 768) return;
+      diagnosticEvents.push({
+        phase,
+        sequence: ++sequence,
+        elapsedMs: Math.max(0, Math.round(performance.now() - started)),
+        ...(count === undefined ? {} : { count: Math.min(8193, count) }),
+        ...(error
+          ? {
+              code: ['EPIPE', 'ECONNRESET', 'ERR_STREAM_DESTROYED'].includes(error.code)
+                ? error.code
+                : 'OTHER',
+            }
+          : {}),
+      });
+    };
+    child.stdio[4].on('data', (chunk) => mark('request-data', chunk.length));
+    for (const event of ['end', 'close', 'error'])
+      child.stdio[4].on(event, (error) =>
+        mark(`request-${event}`, undefined, event === 'error' ? error : undefined),
+      );
+    for (const event of ['finish', 'close', 'error'])
+      child.stdin.on(event, (error) =>
+        mark(`stdin-${event}`, undefined, event === 'error' ? error : undefined),
+      );
+    child.on('exit', () => mark('child-exit'));
+    child.on('close', () => mark('child-close'));
+  };
   const waitFile = async (name) => {
     const end = Date.now() + 3000;
     while (Date.now() < end) {
@@ -274,9 +317,39 @@ describe('native protocol real Node/Python pipes', () => {
   };
   beforeEach(async () => {
     directory = await fs.mkdtemp(path.join(os.tmpdir(), 'native-lazy-'));
+    diagnosticEvents = [];
+    diagnosticCase++;
     runner = await import('../dist/lib/python-runner.js');
   });
   afterEach(async () => {
+    if (diagnostics) {
+      let python = [];
+      try {
+        python = (await fs.readFile(path.join(directory, 'protocol-diagnostic.jsonl'), 'utf8'))
+          .trim()
+          .split('\n')
+          .filter(Boolean)
+          .slice(-768)
+          .map((line) => JSON.parse(line));
+      } catch (error) {
+        if (error.code !== 'ENOENT') python = [{ phase: 'diagnostic-file', state: 'invalid' }];
+      }
+      const artifact = {
+        case: diagnosticCase,
+        parent: diagnosticEvents,
+        python,
+        liveChildren: runner.liveChildCount(),
+      };
+      const serialized = JSON.stringify(artifact, null, 2);
+      expect(serialized).not.toContain(input.remix_userkey);
+      expect(serialized).not.toContain('recovered-private-canary');
+      expect(serialized).not.toContain('canary-not-public');
+      await fs.mkdir('test_output/native-protocol', { recursive: true });
+      await fs.writeFile(
+        `test_output/native-protocol/case-${diagnosticCase}.json`,
+        serialized + '\n',
+      );
+    }
     expect(runner.liveChildCount()).toBe(0);
     await fs.rm(directory, { recursive: true, force: true });
   });
@@ -313,15 +386,65 @@ describe('native protocol real Node/Python pipes', () => {
     expect(updates).toHaveLength(1);
     expect(await fs.readFile(path.join(directory, 'transfers'), 'utf8')).toBe('1\n');
   });
+  test('diagnostic callback observes only bounded protocol metadata', async () => {
+    const events = [];
+    await run('operation', {
+      onProtocolDiagnostic(event) {
+        events.push(event);
+      },
+    });
+    expect(events.some((event) => event.phase === 'request-data')).toBe(true);
+    expect(events.some((event) => event.phase === 'request-end')).toBe(true);
+    // Observational close can follow the already-decoded successful result.
+    // Await that event in this test; do not change product completion semantics.
+    const closeDeadline = performance.now() + 1000;
+    while (
+      !events.some((event) => event.phase === 'child-close') &&
+      performance.now() < closeDeadline
+    )
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    expect(events.some((event) => event.phase === 'child-close')).toBe(true);
+    expect(JSON.stringify(events)).not.toContain(input.remix_userkey);
+    const fields = new Set([
+      'phase',
+      'sequence',
+      'elapsedMs',
+      'demanded',
+      'granted',
+      'settled',
+      'count',
+      'code',
+      'errno',
+    ]);
+    expect(events.length).toBeLessThanOrEqual(256);
+    expect(events.every((event) => Object.keys(event).every((field) => fields.has(field)))).toBe(
+      true,
+    );
+    expect(
+      events.every(
+        (event) => Number.isInteger(event.sequence) && event.sequence > 0 && event.elapsedMs >= 0,
+      ),
+    ).toBe(true);
+  });
+  test('diagnostic callback failure cannot change the real private handoff outcome', async () => {
+    const result = await run('operation', {
+      onProtocolDiagnostic() {
+        throw new Error('private-observer-canary');
+      },
+    });
+    expect(JSON.parse(result[0]).transfer_skipped).toBe(false);
+  });
   test('fragmented request is accepted once', async () => {
     let demands = 0;
     await run('request-fragmented', {
       onSessionNeeded: (c) => {
         demands++;
+        nativeFs.writeFileSync(path.join(directory, 'parent-observed-demand'), 'yes');
         c.grant(input);
       },
     });
     expect(demands).toBe(1);
+    expect(await fs.readFile(path.join(directory, 'parent-observed-demand'), 'utf8')).toBe('yes');
   });
   test.each(['duplicate', 'oversize', 'malformed', 'version', 'partial'])(
     'rejects %s request before grant and reaps child',
@@ -439,6 +562,7 @@ describe('native protocol real Node/Python pipes', () => {
         [path.resolve('__tests__/fixtures/lazy-session-worker.py'), 'reply', directory],
         { stdio: ['overlapped', 'pipe', 'pipe', 'pipe', 'pipe'] },
       );
+      observe(child);
       let stdout = '',
         stderr = '',
         demand = '';
@@ -475,9 +599,114 @@ describe('native protocol real Node/Python pipes', () => {
       expect(await closed).toBe(0);
       const result = JSON.parse(stdout);
       if (kind === 'fragmented') expect(result).toEqual({ ok: true });
-      else expect(result.error).toMatch(/private session/i);
+      else
+        expect(result.error).toBe(
+          kind === 'denied'
+            ? 'Private session request denied'
+            : kind === 'timeout'
+              ? 'Private session reply deadline exceeded'
+              : 'Invalid private session reply',
+        );
       expect(stdout + stderr).not.toContain(input.remix_userkey);
       expect(stdout + stderr).not.toContain('private-canary');
     },
   );
+  test.each([
+    'valid',
+    'without-eof',
+    'empty',
+    'duplicate',
+    'denied',
+    'partial',
+    'abort',
+    'read-abort',
+  ])('diagnostic reader-connected stdin independent of fd4 EOF: %s', async (kind) => {
+    const { spawn } = await import('node:child_process');
+    const child = spawn(
+      pythonPath,
+      [path.resolve('__tests__/fixtures/lazy-session-worker.py'), 'probe-reply', directory],
+      {
+        stdio: ['overlapped', 'pipe', 'pipe', 'pipe', 'pipe'],
+        env: { ...process.env, LAZY_PROTOCOL_DIAGNOSTICS: '1' },
+      },
+    );
+    observe(child);
+    child.stdio[4].resume();
+    child.stdio[3].resume();
+    let stderr = '';
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk;
+    });
+    child.stdin.on('error', () => {});
+    let output = '',
+      firstLine;
+    const ready = new Promise((resolve) => {
+      firstLine = resolve;
+    });
+    child.stdout.on('data', (chunk) => {
+      output += chunk;
+      if (output.includes('\n')) firstLine(JSON.parse(output.split('\n')[0]));
+    });
+    const closed = new Promise((resolve, reject) => {
+      child.on('error', reject);
+      child.on('close', (code) => {
+        firstLine(undefined);
+        resolve(code);
+      });
+    });
+    try {
+      // Test-only rendezvous after connect. Never used by the runner/owner:
+      // product demand still requires the entire fd4 frame AND EOF.
+      expect(await ready).toEqual({ reader_connected: true });
+      const frame = JSON.stringify({ v: 1, type: 'session', input }) + '\n';
+      if (kind === 'abort') child.kill('SIGTERM');
+      else if (kind === 'read-abort') {
+        child.stdin.write(frame.slice(0, 7));
+        const deadline = performance.now() + 750;
+        let received = false;
+        while (!received && performance.now() < deadline) {
+          const trace = await fs.readFile(
+            path.join(directory, 'protocol-diagnostic.jsonl'),
+            'utf8',
+          );
+          received = trace
+            .trim()
+            .split('\n')
+            .map((line) => JSON.parse(line))
+            .some((event) => event.phase === 'input-read' && event.state === 'done');
+          if (!received) await new Promise((resolve) => setTimeout(resolve, 5));
+        }
+        expect(received).toBe(true);
+        child.kill('SIGTERM');
+      } else if (kind === 'valid') {
+        for (const char of frame) child.stdin.write(char);
+        child.stdin.end();
+      } else if (kind === 'without-eof') child.stdin.write(frame);
+      else if (kind === 'duplicate') child.stdin.end(frame + frame);
+      else if (kind === 'partial') child.stdin.end(frame.trim());
+      else if (kind === 'empty') child.stdin.end();
+      else child.stdin.end('{"v":1,"type":"denied","code":"auth_unavailable"}\n');
+      const code = await closed;
+      if (kind !== 'abort' && kind !== 'read-abort') {
+        expect(code).toBe(0);
+        const reply = JSON.parse(output.trim().split('\n')[1]);
+        expect(reply).toEqual(
+          kind === 'valid'
+            ? { ok: true }
+            : {
+                error:
+                  kind === 'denied'
+                    ? 'Private session request denied'
+                    : kind === 'without-eof'
+                      ? 'Private session reply deadline exceeded'
+                      : 'Invalid private session reply',
+              },
+        );
+      }
+      expect(output + stderr).not.toContain(input.remix_userkey);
+    } finally {
+      if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM');
+      await closed;
+    }
+  });
 });

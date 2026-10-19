@@ -143,7 +143,8 @@ other permanent spawn errors and signal death neither count nor retry. A full
 bridge deadline counts in its scope but never retries; caller abort does neither.
 Bare Python `ConnectError` is ambiguous (transport versus TLS/config), so it does
 not count or retry without a more specific reason. Auth refresh/cooldown remains
-owned by the in-memory session policy, not Node retry.
+owned by the in-memory session policy. Its intentional auth-refresh retry runs
+outside both Node retry multiplication and circuit-breaker accounting.
 
 ### Composed Node waiting budgets (defaults)
 

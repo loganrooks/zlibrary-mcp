@@ -292,7 +292,7 @@ async function callPythonFunction(
             );
           }
         };
-        return breaker.execute(execute);
+        return transport?.authRetry ? execute() : breaker.execute(execute);
       },
       {
         signal,

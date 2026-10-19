@@ -236,6 +236,7 @@ test('a typed login transport timeout counts as health evidence without an HTTP 
         'upstream uncertainty',
         {
           reason: 'login_failed',
+          loginStatus: null,
           pythonErrorType: 'ReadTimeout',
         },
         false,
@@ -265,4 +266,33 @@ test('bare Python ConnectError is ambiguous (including TLS/config) and cannot po
   runner.mockResolvedValue(envelope({ ok: true }));
   await expect(api.getDownloadLimits()).resolves.toEqual({ ok: true });
   expect(runner).toHaveBeenCalledTimes(6);
+});
+
+test.each([
+  [503, true],
+  [401, false],
+])('login HTTP %i has health verdict %s', (loginStatus, health) => {
+  expect(
+    retry.isTransientDependencyError(
+      new errors.PythonBridgeError(
+        'login failed',
+        {
+          reason: 'login_failed',
+          loginStatus,
+          pythonErrorType: 'HTTPStatusError',
+        },
+        false,
+      ),
+    ),
+  ).toBe(health);
+});
+
+test('typed RemoteProtocolError is transient and retryable', () => {
+  expect(
+    retry.isRetryableError(
+      new errors.PythonBridgeError('upstream protocol failure', {
+        pythonErrorType: 'RemoteProtocolError',
+      }),
+    ),
+  ).toBe(true);
 });

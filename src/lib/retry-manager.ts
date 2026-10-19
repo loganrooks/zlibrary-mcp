@@ -118,7 +118,7 @@ export function isTransientDependencyError(error: any): boolean {
   if (error.context?.details !== undefined) return transientDetail(error.context.details);
   if (
     error.context?.pythonErrorType === 'HTTPStatusError' ||
-    (error.context?.reason === 'login_failed' && error.context.loginStatus !== undefined)
+    (error.context?.reason === 'login_failed' && Number.isInteger(error.context.loginStatus))
   )
     return transientStatus(error.context.httpStatus ?? error.context.loginStatus);
   const code = error.code === 'PYTHON_ERROR' ? error.context?.originalError?.code : error.code;
@@ -141,6 +141,7 @@ export function isTransientDependencyError(error: any): boolean {
       'ConnectTimeout',
       'PoolTimeout',
       'TimeoutException',
+      'RemoteProtocolError',
       'ReadError',
       'WriteError',
       'ConnectionError',

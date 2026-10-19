@@ -377,6 +377,7 @@ test('intentional auth retry bypasses retry multiplication and breaker accountin
   // Re-import so the threshold applies to this server owner.
   jest.resetModules();
   api = await import('../lib/zlibrary-api.js');
+  const { PythonBridgeError } = await import('../lib/errors.js');
   fakeBackend();
   await call();
   now += 180001;
@@ -389,12 +390,17 @@ test('intentional auth retry bypasses retry multiplication and breaker accountin
       return envelope({ authenticated: true });
     }
     if (input.remix_userkey === token) return rejectReply(input.generation);
-    throw new Error('network retry must not multiply this operation');
+    throw new PythonBridgeError('network retry must not multiply this operation', {
+      pythonErrorType: 'HTTPStatusError',
+      httpStatus: 503,
+    });
   });
   await expect(call()).rejects.toThrow(/network/);
   expect(actions).toEqual(['operation', 'login', 'operation']);
+  const callsBefore = runPythonBridge.mock.calls.length;
   runPythonBridge.mockResolvedValue(envelope([]));
   await expect(call()).resolves.toEqual([]);
+  expect(runPythonBridge).toHaveBeenCalledTimes(callsBefore + 1);
 });
 
 test.each([

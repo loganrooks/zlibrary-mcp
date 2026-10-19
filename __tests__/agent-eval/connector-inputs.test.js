@@ -41,6 +41,8 @@ beforeEach(async () => {
     'tsconfig.json',
     'package.json',
     'package-lock.json',
+    'pyproject.toml',
+    'uv.lock',
     'dist',
     '.gitignore',
   ])
@@ -52,7 +54,14 @@ beforeEach(async () => {
 afterEach(async () => {
   await rm(scratch, { recursive: true, force: true });
 });
-for (const name of ['src/index.ts', 'tsconfig.json', 'package.json', 'package-lock.json'])
+for (const name of [
+  'src/index.ts',
+  'tsconfig.json',
+  'package.json',
+  'package-lock.json',
+  'pyproject.toml',
+  'uv.lock',
+])
   test(`EVAL-C1-01 rejects dirty ${name} before compilation`, async () => {
     await writeFile(path.join(scratch, name), 'dirty source/config');
     await expect(verifyBuildArtifacts({ buildRoot: scratch })).rejects.toThrow(/dirty/);
@@ -82,7 +91,7 @@ test('EVAL-C1-01 source changes during actual clean compilation fail closed', as
   await expect(verifyBuildArtifacts({ buildRoot: scratch })).rejects.toThrow(
     /dirty|identity changed/,
   );
-});
+}, 30000);
 test('EVAL-C1-02 default baseline refuses incompatible source before any launch', async () => {
   await writeFile(
     path.join(scratch, 'src/index.ts'),
@@ -109,6 +118,8 @@ test('EVAL-C1-02 clean but historically different production cannot silently bec
       'tsconfig.json',
       'package.json',
       'package-lock.json',
+      'pyproject.toml',
+      'uv.lock',
     ],
     { maxBuffer: 16 * 1024 * 1024 },
   );

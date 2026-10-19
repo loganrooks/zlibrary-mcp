@@ -15,7 +15,17 @@ import os from 'node:os';
 import path from 'node:path';
 import { baselinePin } from './tasks.js';
 
-const scopes = ['src', 'lib', 'zlibrary', 'tsconfig.json', 'package.json', 'package-lock.json'];
+const scopes = [
+  'src',
+  'lib',
+  'zlibrary',
+  'tsconfig.json',
+  'package.json',
+  'package-lock.json',
+  'pyproject.toml',
+  'uv.lock',
+];
+const pythonConfigs = ['pyproject.toml', 'uv.lock'];
 const configs = ['tsconfig.json', 'package.json', 'package-lock.json'];
 export const artifactProofMethod = 'clean-pinned-tsc-runtime-byte-comparison';
 const sha256 = (value) => createHash('sha256').update(value).digest('hex');
@@ -53,7 +63,7 @@ export async function pinnedInputs(buildRoot, pin) {
     contents.set(name, bytes);
   }
   files.sort((a, b) => a.path.localeCompare(b.path));
-  for (const name of [...configs, 'src/index.ts'])
+  for (const name of [...configs, ...pythonConfigs, 'src/index.ts'])
     if (!contents.has(name)) throw new Error('missing pinned input: ' + name);
   return { sha, inputs: { sha256: manifestDigest(files), files }, contents };
 }
@@ -256,7 +266,9 @@ export function artifactProofErrors(proof, build) {
     fail('missing/unverified or inconsistent revision/identity');
   if (
     !manifest(proof?.inputs) ||
-    ![...configs, 'src/index.ts'].every((n) => proof?.inputs?.files?.some((f) => f.path === n))
+    ![...configs, ...pythonConfigs, 'src/index.ts'].every((n) =>
+      proof?.inputs?.files?.some((f) => f.path === n),
+    )
   )
     fail('missing/inconsistent pinned inputs/config/lock');
   if (

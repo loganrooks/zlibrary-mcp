@@ -33,6 +33,8 @@ for (const arm of arms)
             : '<B-WORKTREE>',
         '--a-pin',
         baseline.pin,
+        '--a-root',
+        baseline.root,
         '--runs',
         '5',
         '--warm-runs',

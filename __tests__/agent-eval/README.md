@@ -68,8 +68,9 @@ MD5 for compatibility; it is **not an evaluation download target**. All five
 evaluation LibGen downloads advertise the actual synthetic payload MD5.
 
 The server receives only fake credentials and an allowlisted environment. Its PYTHONPATH
-forces the selected build’s vendored Z-Library before any editable dependency
-installation, so sharing a uv environment cannot silently select another checkout. The
+selects the build’s vendored Z-Library. Schema 5 additionally rejects foreign editable
+metadata even if that PYTHONPATH would shadow it; a shared foreign environment is not
+accepted. The
 rehearsal Python/Node fences reject non-fixture networking. Evaluation's Python
 sitecustomize redirects LibGen httpx resolution/transfer URLs to the same TLS
 fake; the real production HTTP clients, parsers, acquisition and digest checks
@@ -226,7 +227,7 @@ acquisition tasks still require their real artifact and decision checks.
 
 ### Evidence admission and bars (EVAL-R1-02/03/05)
 
-`admission.js` now requires receipt schema 3 (schema 2 is legacy diagnostic), the exact completed measured status,
+`admission.js` now requires receipt schema 5 (schemas 2/3/4 are legacy diagnostic), the exact completed measured status,
 `sourceStable:true`, `fencePassed:true`, no receipt/task driver/fence/source/cleanup
 failure, fixed model/CLI/build/settings, complete nonnegative usage and decision
 metrics, and the exact unique `(run, phaseIndex, task)` grid. There must be five
@@ -348,13 +349,13 @@ package-content digest, pinned input manifests and both runtime manifests are
 retained as `build.artifactProof`. Existing installed dependencies are used;
 this is not a package-registry or dependency-supply-chain attestation.
 
-Schema 3 requires that concrete, internally consistent build proof and its source/
+Schema 5 retains that concrete, internally consistent build proof and its source/
 full-dist bindings at admission. Legacy/unproven/malformed receipts stay diagnostic,
 even if they contain an arbitrary syntactically valid dist hash. Receipt JSON is
 not a cryptographic signature; the trusted local producer performs the actual
 comparison. Startup failures after pin resolution persist failed receipts with
 no completed cell. Matrix generation resolves one exact A identity from `--a-root`
-and writes that same `--a-pin` into **every** generated A/B command. Copy that SHA
+and writes that same `--a-pin` and absolute `--a-root` into **every** generated A/B command. Copy that SHA
 into all manually written paid commands too; do not independently infer A from B.
 
 **EVAL-C1-03:** T9 requires three distinct successful same-task search calls,
@@ -370,7 +371,7 @@ stdout/stderr. A five-minute invocation deadline, two-second TERM→KILL grace a
 two-second post-exit/post-KILL drain deadline bound failures. Timeout, spawn error,
 signal and never-closing inherited pipes cannot become successful measured usage.
 Each attempt retains unique stdout, stderr and `.capture.json` telemetry before
-usage parsing; incomplete output is retained but not promoted. Schema 3 requires
+usage parsing; incomplete output is retained but not promoted. Schema 5 requires
 complete, closed, successful capture for every row. The synthetic child tests
 exercise this real path without launching either model CLI and retain their raw
 attempts at the temporary evidence directory printed by Jest.
@@ -379,3 +380,196 @@ Original six round-1 scoring/usage/attempt controls, the canonical inbox alias
 positive/strict negatives, and strict-cold **inconclusive** behavior remain in
 the focused suite. No new cross-vendor, B model, strict-cold or merge acceptance
 follows from these local controls. Lead owns clean B preflight and connector round 2.
+
+## Connector round-2 common evaluator, Python metadata and process-group proof
+
+Schema **5** additionally requires all three stable identities: production/build
+inputs, the actual **executing** common evaluator, and the selected Python runtime
+metadata. Schemas 2/3/4 remain diagnostic only. Different production A/B HEADs are
+expected; compatibility uses the common evaluator manifest and normalized Python
+metadata digests, not equality of those HEAD locators.
+
+`evaluator-identity.js` enumerates **all** files in `__tests__/agent-eval/` and
+`__tests__/rehearsal/` from its own module root (not `--server-root`). Actual bytes
+must match committed Git blobs; tracked dirt hidden by status, missing files,
+symlinks and ignored/untracked additions fail. Only generated CPython-named `.pyc`
+files under `__pycache__` are excluded, not code placed inside that directory.
+Prompts, scorers, fences, fixtures, tests and docs are conservatively included.
+Schema5 also binds root `package.json` and `package-lock.json` as clean committed
+common evaluator bytes; selected-build manifests remain independently bound.
+The check runs before any fake/model, immediately before MCP, and at evaluation
+end. Relocated identical manifests compare equally even with different HEADs;
+different scorers and end drift are ineligible. During implementation an
+uncommitted harness correctly refuses self-test; the final committed-head positive
+control belongs to the lead, not a cleanliness waiver.
+
+Pinned production inputs and default-A source equivalence now include
+`pyproject.toml` and `uv.lock`. Scratch TypeScript compilation remains independent
+of Python/uv/environment readiness. `python-runtime.js` separately executes the
+selected **project-local** `.venv/bin/python` launcher (`Scripts/python.exe` on
+Windows), never its resolved base binary in place of the launcher. It records
+that binary's hash and interpreter/version/platform/cache tag, uv binary/version,
+manifest hashes, import selection and a canonical distribution metadata inventory.
+The inventory includes selected site packages and the validated local zlibrary
+source metadata exposed by the declared PYTHONPATH; that source record cannot
+substitute for the installed editable's direct URL. Origins are validated before
+root normalization. A foreign editable is refused even with local import shadowing.
+
+Readiness invokes only bounded, read-only:
+
+```text
+uv sync --check --frozen --offline --no-default-groups --group dev --no-config --project /selected/root
+```
+
+No extras, default groups, install fallback or silent sync. UV/Python redirection
+and config environment variables are not inherited; the project environment and
+launcher are explicit, user site is disabled, and probe HOME/config/cache/log
+working directories are disposable. The same explicit Python descriptor is
+passed to the fake through a backward-compatible optional rehearsal argument and
+to the evaluator's MCP environment. Production routing is unchanged. Metadata is
+rechecked before MCP/end; missing, failed, foreign or drifting proof is ineligible.
+Root paths normalize only after validation, so A/B relocation remains compatible.
+
+**Scope limit:** this is selected interpreter and resolved dependency **metadata**
+proof, not installed package payload/.pth/stdlib/shared-library identity,
+hermeticity, supply-chain attestation, or independent attestation of every Python
+process. Change-and-restore between checks is not established by these snapshots.
+Receipt JSON is structural evidence from a trusted local producer, not a signature.
+
+Model-driver capture is POSIX-only and refuses unsupported platforms **before**
+CLI version/model invocation; this does not alter product Windows support.
+Detached `ChildProcess.pid` is the sole trusted owned PGID. Normal drained zero-exit
+leaders are checked for residual members too. Timeout, drain timeout or residual
+groups trigger one idempotent bounded TERM → KILL → observation sequence;
+leader exit never cancels escalation. ESRCH is gone; EPERM/error or a group still
+observable after the deadline is unknown/failed. Signals stop once gone. Readers
+stay attached through bounded drain/cleanup; unique raw streams and capture JSON
+are retained before parsing. Successful admission requires drained close and
+proven group cleanup; timeout/residual capture remains incomplete even if cleanup
+succeeds. This contains ordinary same-PGID descendants only, not deliberate setsid
+escape or numerical PGID reuse; no broad process scans, stdout-derived signal
+PIDs or unref-based escape are used by capture.
+
+T1/T8 now require a successful corresponding current-task search before each
+download, matching title/source/identity and B ref, with no literal query rule.
+T3/T10 retain intended prior-task reuse. T11 requires successful limits followed
+by successful LibGen search returning nonempty source/title plus A id or md5 /
+B ref and identity. Empty Anna's or LibGen, errors, and unusable rows do not pass;
+no URL/hash/format requirement or actual download is added. T9's distinct-search
+matching and valid interleaving remain unchanged.
+
+Only real compiler tests/hooks have a 30-second Jest deadline; the runtime
+compiler's 60-second limit and every assertion remain unchanged. These local
+repairs are not connector-3, hosted-CI, model/bar, merge or release acceptance.
+
+## Connector round-3 selected Node runtime-code/data proof (schema5)
+
+Comment **4318878598**: `node-runtime.js` is one builtin-only producer for the
+executing common evaluator **and** selected `--server-root`. `node`/`nodeEnd`
+and `build.node`/`build.nodeEnd` must be verified/stable and bind their own
+common Git or selected artifact input manifest hashes. Common Node digest is
+comparison identity; selected-build Node digest is per-cell identity only, so
+intentionally different A/B installations are not conflated with common code.
+Missing, legacy, malformed, failed or drifting proof is diagnostic, not measured.
+
+The helper binds the actual `process.execPath` binary/version/platform/arch/ABI,
+root manifests, canonical logical production dependency/active-peer/optional
+edges and nested package locators. Every selected package's `package.json` and
+classified executable/runtime-data bytes are hashed, including both SDK ESM and
+CJS exports, transitives, JSON, native/WASM assets and declared extensionless bins.
+Docs/tests/examples/fixtures/maps/declarations/cache and dev runtime are skipped
+BEFORE payload reads; dev package metadata may be needed by npm inventory.
+No `.env`, `.npmrc`/builtin npmrc, credentials, key or auth-fixture payload is
+read. Unknown required assets, missing/invalid edges, local/file/workspace/link
+deps, interior links, outside-install resolutions and unsupported mappings refuse.
+This is a bounded selected graph, not a whole-install content scan.
+
+### Exact inventory/read boundary
+
+The recorded method is guarded npm-bundled **Arborist.loadActual at the actual
+selected root**, not npm CLI config loading, a custom resolver or root-view npm
+ls. Explicit options: offline, ignoreScripts, no audit/fund/global/workspaces,
+packageLock enabled and owned scratch cache. Minimal environment sets selected
+Node PATH and owned scratch HOME/TMPDIR/XDG_CONFIG_HOME/cache, without inherited
+npm/Node overrides. Owned copies of the two pinned manifests and empty config
+files are scratch support only, not graph-selection evidence. Tool identity
+records npm/Arborist versions, CLI/entry/guard hashes and hashes of observed
+allowlisted npm tool code/metadata content reads. The selection policy and
+normalized recipe are part of the digest. Diagnostics are bounded error codes
+and graph locators, never raw config/error contents.
+
+`node-inventory-guard.cjs` preloads path-content guards for fs readFileSync,
+readFile, openSync, open, createReadStream and promises.readFile/open; numeric
+content handles and raw read/readSync/readv/readvSync APIs fail closed. Metadata
+ancestor traversal is permitted, not ancestor content. Allowlisted content is
+only pinned root manifests, installed package/hidden-lock metadata, npm runtime
+code/metadata and owned scratch. Writes outside scratch, child/lifecycle/worker
+launch and net/tls/dns/dgram entry points are denied and audited; any observed
+write/network/child/unsupported-fd attempt makes proof fail. The trace retains
+paths/operation/allowed, not contents. Synthetic original-config sentinel reads
+exercise all seven supported path methods and deny before bytes. Native Node
+ESM and CJS resolution anchors known SDK imports from the real evaluator/build
+contexts; it executes no dependency code during inventory.
+
+This is **observed-tool JavaScript API instrumentation**, not adversarial OS
+isolation; native internal module resolution is not a complete content-read
+trace. No OS-sandbox/hermetic guarantee follows. The Node permission-mode
+ancestor-lstat failure and isolated-root-view mixed physical/logical graph
+failures remain retained evidence, not silently retried by weakening controls.
+
+### Supported shared topology and sampling limits
+
+Ordinary hidden-lock-absent installs are supported. The sole permitted install
+symlink is the top-level node_modules mapping to a physical directory whose
+basename is **node_modules**, with an **existing npm-accepted hidden lock**.
+Arborist shared/hidden-lock-absent topology is unsupported and fails closed
+(lead ruling 2026-10-19T21:37:43Z); there is no fsParent mutation/resolver patch.
+Interior links and arbitrary shared-install basenames are refused. Physical
+roots are retained locally for drift, normalized only after bounds checks;
+portable logical locators/edges/bytes determine identity. Shared fixture controls
+also actually import SDK + nested/transitive/peer dependencies with default
+Node realpath behavior. No real installation is changed to manufacture support.
+
+Checks run before fake, before MCP, immediately before model-child spawn and at
+end; each helper takes two samples. The owned MCP fence preload is bound by
+common source identity. NODE_OPTIONS/NODE_PATH and loaders/preloads/conditions/
+preserve-symlinks overrides refuse; only runner vm-modules/input-type flags
+are supported. Scratch TypeScript compiler checks never require Node inventory.
+
+Qualification: sampled installed runtime-code/classified-data + graph consistency,
+**not** full package/tarball/registry/supply-chain trust, OS/shared-library,
+hermeticity or loaded-memory identity. Static SDK imports precede startup; races
+and change-and-restore between samples are not excluded. Receipt JSON is
+structural evidence from the trusted local producer, not a signature. The lead
+owns clean committed-head startup, independent full/severe checks, exact-head
+hosted CI and post-cap/model admission; no model was launched for these controls.
+
+### Reopened declaration/classification guard
+
+The initial19-file handoff missed a transitive package whose `main` pointed to
+`docs/runtime.cjs`: the real import marker changed while that excluded payload
+was not in the digest. The revised helper preflights **all selected package
+metadata before any runtime payload read**, including root declarations, and
+refuses excluded/forbidden/unclassified/escaping runtime `main`, applicable
+conditional `exports`, and local `imports` targets. Literal target components
+are checked with metadata only; directory/interior-link targets refuse.
+This never reads an excluded target to classify it and does not resolve imports.
+
+Applicable branches are default Node `node`, `node-addons`, `import`, `require`,
+`default`, plus `module-sync` when the selected Node supports require_module.
+Types/typings metadata and types-only branches are nonruntime, not exceptions
+for `.d.ts` files placed in a runtime branch. Inactive custom branches (such as
+source/@zod/source) stay inactive: custom `--conditions` is already refused.
+Only local imports mappings are supported; unsupported target forms fail closed.
+Conservative wildcard checks require one wildcard in the final target segment,
+with safe static prefixes/roles and no escape syntax. They do **not** enumerate
+or resolve arbitrary substitutions. Existing real-root native SDK anchors bind
+the known requested paths; this is not full dynamic import/dataflow closure.
+Legacy extensionless main declarations receive static role/topology checks;
+classified runtime files remain byte-bound by the existing package walk, without
+a new extension/fallback resolver. Policy identity includes this guard.
+
+The initial READY, hashes and lead's old excluded-entry control are retained as
+history; the revised READY identifies final bytes and new red/green/full checks.
+The same guarded-read, unsupported shared-no-hidden-lock, no OS/hermetic/memory/
+supply-chain claim and lead-owned committed startup/CI boundaries still apply.

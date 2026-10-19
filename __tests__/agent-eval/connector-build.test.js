@@ -1,5 +1,5 @@
 import { beforeAll, afterAll, test, expect } from '@jest/globals';
-import { cp, mkdtemp, mkdir, rm, symlink, writeFile, readFile } from 'node:fs/promises';
+import { cp, mkdtemp, rm, symlink, writeFile, readFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
@@ -31,7 +31,7 @@ beforeAll(async () => {
     ],
     { encoding: 'utf8' },
   );
-});
+}, 30000);
 afterAll(async () => {
   await rm(scratch, { recursive: true, force: true });
 });
@@ -49,9 +49,16 @@ test('EVAL-C1-01 independent clean compiled control proves exact executable arti
   expect(proof.compiledRuntime).toEqual(proof.selectedRuntime);
   expect(proof.selectedRuntime.files.some((f) => f.path === 'index.js')).toBe(true);
   expect(proof.inputs.files.map((f) => f.path)).toEqual(
-    expect.arrayContaining(['src/index.ts', 'tsconfig.json', 'package.json', 'package-lock.json']),
+    expect.arrayContaining([
+      'src/index.ts',
+      'tsconfig.json',
+      'package.json',
+      'package-lock.json',
+      'pyproject.toml',
+      'uv.lock',
+    ]),
   );
-});
+}, 30000);
 for (const mutation of ['wrong', 'stale', 'extra', 'missing', 'symlink'])
   test(`EVAL-C1-01 rejects actual ${mutation} runtime artifacts in disposable scratch`, async () => {
     const selected = path.join(scratch, mutation);
@@ -71,7 +78,7 @@ for (const mutation of ['wrong', 'stale', 'extra', 'missing', 'symlink'])
       await symlink(path.join(clean, 'index.js'), path.join(selected, 'index.js'));
     }
     await expect(verify(selected)).rejects.toThrow(/runtime|artifact|symlink/);
-  });
+  }, 30000);
 test('EVAL-C1-01 old unproven and malformed proof receipts remain diagnostic', () => {
   const legacy = measured(arms[0]);
   legacy.schemaVersion = 2;
@@ -184,6 +191,8 @@ test('EVAL-C1-02 default matrix resolves compatible A or rejects nonbaseline pro
     'tsconfig.json',
     'package.json',
     'package-lock.json',
+    'pyproject.toml',
+    'uv.lock',
   );
   const run = () =>
     execFileSync(process.execPath, [path.join(server.here, 'matrix.mjs')], {
@@ -200,7 +209,7 @@ test('EVAL-C1-02 default matrix resolves compatible A or rejects nonbaseline pro
     new Set([head]),
   );
 });
-test('EVAL-C1-01 startup pin failure persists a failed schema-3 receipt without launching', async () => {
+test('EVAL-C1-01 startup pin failure persists a failed schema-5 receipt without launching', async () => {
   const out = path.join(scratch, 'startup-failed.json');
   expect(() =>
     execFileSync(
@@ -218,7 +227,7 @@ test('EVAL-C1-01 startup pin failure persists a failed schema-3 receipt without 
   ).toThrow(/pinned commit/);
   const r = JSON.parse(await readFile(out, 'utf8'));
   expect(r).toMatchObject({
-    schemaVersion: 3,
+    schemaVersion: 5,
     status: 'failed',
     sourceStable: false,
     fencePassed: false,

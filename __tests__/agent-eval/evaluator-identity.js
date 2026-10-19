@@ -5,7 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gitRead, manifestDigest } from './build-proof.js';
 export const evaluatorRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-const scopes = ['__tests__/agent-eval', '__tests__/rehearsal'];
+const scopes = ['__tests__/agent-eval', '__tests__/rehearsal', 'package.json', 'package-lock.json'];
 export const canonical = (value) =>
   JSON.stringify(value, (_key, item) =>
     item && typeof item === 'object' && !Array.isArray(item)
@@ -91,11 +91,13 @@ export function evaluatorProofErrors(proof) {
       (f) =>
         !hash.test(f.sha256 ?? '') ||
         typeof f.path !== 'string' ||
-        !scopes.some((s) => f.path.startsWith(s + '/')) ||
+        !scopes.some((s) => f.path === s || f.path.startsWith(s + '/')) ||
         f.path.split('/').some((p) => !p || p === '.' || p === '..') ||
         f.path.includes('\\'),
     ) ||
     ![
+      'package.json',
+      'package-lock.json',
       '__tests__/agent-eval/run.mjs',
       '__tests__/agent-eval/oracles.js',
       '__tests__/rehearsal/harness.js',

@@ -119,12 +119,14 @@ if (!selfTest && !opts.paid) {
   try {
     plan.evaluator = s.evaluator;
     plan.python = s.python;
+    plan.node = s.node;
     plan.build = {
       root: s.buildRoot,
       sha: s.sha,
       source: s.sourceStart,
       tools: s.measurement,
       artifactProof: s.artifactProof,
+      node: s.buildNode,
     };
     if (selfTest) {
       // Falsifiers use the real running A server, not a second fake protocol server.
@@ -246,7 +248,9 @@ if (!selfTest && !opts.paid) {
                 model: opts.model,
               });
               plan.commands.push({ run, phase, task: task.id, ...command });
-              raw = await runDriver(command, prompt, directory);
+              raw = await runDriver(command, prompt, directory, {
+                beforeSpawn: () => s.assertNodeIdentity(),
+              });
               const otherTools = raw.events.filter(
                 (e) =>
                   e.type === 'item.completed' &&
@@ -354,12 +358,16 @@ if (!selfTest && !opts.paid) {
       const identities = await s.finishIdentity();
       plan.evaluatorEnd = identities.evaluator;
       plan.pythonEnd = identities.python;
+      plan.nodeEnd = identities.node;
+      plan.build.nodeEnd = identities.buildNode;
+      plan.nodeStable = true;
       plan.pythonStable = true;
       plan.evaluatorStable = plan.evaluatorEnd.sha256 === s.evaluator.sha256;
       if (!plan.evaluatorStable) throw new Error('evaluator source drift during evaluation');
     } catch (error) {
       plan.evaluatorStable = false;
       plan.pythonStable = false;
+      plan.nodeStable = false;
       plan.sourceError = error.message;
       failure ??= error;
     }

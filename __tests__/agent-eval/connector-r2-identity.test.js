@@ -6,6 +6,7 @@ import path from 'node:path';
 import * as server from './server.js';
 import { admitReceipt, comparisonSettings } from './admission.js';
 import { measured } from './receipt-controls.js';
+import { syntheticNodeProof } from './node-receipt-controls.js';
 import { arms } from './tasks.js';
 
 let temp;
@@ -16,6 +17,8 @@ afterEach(async () => {
   await rm(temp, { recursive: true, force: true });
 });
 const entries = {
+  'package.json': '{"name":"synthetic-common","version":"1.0.0"}\n',
+  'package-lock.json': '{"lockfileVersion":3}\n',
   '__tests__/agent-eval/run.mjs': 'export const prompt = "synthetic";\n',
   '__tests__/agent-eval/oracles.js': 'export const score = true;\n',
   '__tests__/rehearsal/harness.js': 'export const harness = true;\n',
@@ -33,6 +36,11 @@ async function fixture(root, head = 'a'.repeat(40), changes = {}) {
     if (args[0] === 'ls-tree')
       return (
         Object.entries(committed)
+          .filter(([name]) =>
+            args
+              .slice(args.indexOf('--') + 1)
+              .some((scope) => name === scope || name.startsWith(scope + '/')),
+          )
           .map(
             ([name, bytes]) =>
               `100644 blob ${createHash('sha1')
@@ -140,12 +148,16 @@ test('4318353602 different clean committed scorer bytes cannot share comparison 
     [b, different],
   ]) {
     receipt.evaluator = proof;
+    receipt.node = syntheticNodeProof(proof.files);
+    receipt.nodeEnd = structuredClone(receipt.node);
     receipt.evaluatorEnd = structuredClone(proof);
     expect(admitReceipt(receipt).eligible).toBe(true);
   }
   expect(comparisonSettings(a)).not.toBe(comparisonSettings(b));
   const relocated = await verify(await fixture(path.join(temp, 'relocated'), 'c'.repeat(40)));
   b.evaluator = relocated;
+  b.node = syntheticNodeProof(relocated.files);
+  b.nodeEnd = structuredClone(b.node);
   b.evaluatorEnd = structuredClone(relocated);
   expect(admitReceipt(b).eligible).toBe(true);
   expect(comparisonSettings(a)).toBe(comparisonSettings(b));
@@ -168,3 +180,18 @@ test('4318353602 actual end scorer drift and mid-check HEAD drift fail closed', 
     }),
   ).rejects.toThrow(/HEAD changed/);
 });
+
+for (const name of ['package.json', 'package-lock.json'])
+  test(`4318878598 common committed ${name} is part of actual evaluator identity`, async () => {
+    const options = await fixture(path.join(temp, 'A'));
+    const a = await verify(options),
+      b = await verify(
+        await fixture(path.join(temp, 'B'), 'b'.repeat(40), {
+          [name]: 'different committed manifest\n',
+        }),
+      );
+    expect(a.files.some((f) => f.path === name)).toBe(true);
+    expect(a.sha256).not.toBe(b.sha256);
+    await writeFile(path.join(temp, 'A', name), 'hidden dirty manifest');
+    await expect(verify(options)).rejects.toThrow(/dirty evaluator/);
+  });

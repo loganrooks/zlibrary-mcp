@@ -11,6 +11,7 @@ import { snapshotSource } from '../rehearsal/source-identity.js';
 import { dataOf, rowsOf, identity } from './oracles.js';
 import { gitRead, pinnedInputs, verifyBuildArtifacts, artifactProofErrors } from './build-proof.js';
 export { gitRead, verifyBuildArtifacts } from './build-proof.js';
+import { verifyNodeRuntime, nodeProofErrors } from './node-runtime.js';
 import { verifyPythonRuntime, pythonProofErrors } from './python-runtime.js';
 import { verifyEvaluatorIdentity } from './evaluator-identity.js';
 export { verifyEvaluatorIdentity } from './evaluator-identity.js';
@@ -80,9 +81,17 @@ export class EvaluationServer {
         source: s.sourceStart,
       });
       if (proofErrors.length) throw new Error(proofErrors.join('; '));
+      s.node = await verifyNodeRuntime({ root });
+      s.buildNode = await verifyNodeRuntime({ root: s.buildRoot });
+      const nodeErrors = [
+        ...nodeProofErrors(s.node, s.evaluator.files),
+        ...nodeProofErrors(s.buildNode, s.artifactProof.inputs.files),
+      ];
+      if (nodeErrors.length) throw new Error(nodeErrors.join('; '));
       s.python = await verifyPythonRuntime({ buildRoot: s.buildRoot });
       const pythonErrors = pythonProofErrors(s.python, { artifactProof: s.artifactProof });
       if (pythonErrors.length) throw new Error(pythonErrors.join('; '));
+      await s.assertNodeIdentity();
       s.fake = await Rehearsal.start('agent-eval', { python: s.python.descriptor });
       s.home = path.join(s.fake.temp, 'server');
       s.downloads = path.join(s.home, 'downloads');
@@ -133,6 +142,7 @@ export class EvaluationServer {
         JSON.stringify(launchSnapshot.trees) !== JSON.stringify(s.sourceStart.trees)
       )
         throw new Error('source/runtime identity changed before server launch');
+      await s.assertNodeIdentity();
       s.transport = new StdioClientTransport({
         command: process.execPath,
         args: [
@@ -195,7 +205,22 @@ export class EvaluationServer {
       throw e;
     }
   }
+  async assertNodeIdentity() {
+    const evaluator = await verifyEvaluatorIdentity(),
+      node = await verifyNodeRuntime({ root }),
+      buildNode = await verifyNodeRuntime({ root: this.buildRoot });
+    if (
+      evaluator.sha256 !== this.evaluator.sha256 ||
+      node.sha256 !== this.node.sha256 ||
+      buildNode.sha256 !== this.buildNode.sha256 ||
+      JSON.stringify(node.local) !== JSON.stringify(this.node.local) ||
+      JSON.stringify(buildNode.local) !== JSON.stringify(this.buildNode.local)
+    )
+      throw new Error('Node common/selected runtime identity drift');
+    return { node, buildNode };
+  }
   async finishIdentity() {
+    const nodes = await this.assertNodeIdentity();
     const evaluator = await verifyEvaluatorIdentity(),
       python = await verifyPythonRuntime({ buildRoot: this.buildRoot });
     if (
@@ -204,7 +229,7 @@ export class EvaluationServer {
       JSON.stringify(python.descriptor) !== JSON.stringify(this.python.descriptor)
     )
       throw new Error('evaluator/Python metadata drift during evaluation');
-    return { evaluator, python };
+    return { evaluator, python, ...nodes };
   }
   async call(name, args = {}) {
     const c = { name, args: structuredClone(args), origin: 'broker', forwarded: false };

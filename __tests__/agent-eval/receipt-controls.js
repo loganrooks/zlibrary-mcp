@@ -1,4 +1,5 @@
 // Synthetic complete receipts for deterministic gate tests; never model evidence.
+import { syntheticNodeProof } from './node-receipt-controls.js';
 import { digest } from './evaluator-identity.js';
 import { pythonPolicy } from './python-runtime.js';
 import { tasks } from './tasks.js';
@@ -52,6 +53,8 @@ export function measured(arm, input = 100) {
   const tree = { sha256: '1'.repeat(64), files: 1 };
   const artifactProof = syntheticArtifactProof(sha, tree);
   const files = [
+    'package.json',
+    'package-lock.json',
     '__tests__/agent-eval/oracles.js',
     '__tests__/agent-eval/run.mjs',
     '__tests__/rehearsal/fake_catalogue.py',
@@ -127,6 +130,9 @@ export function measured(arm, input = 100) {
     evaluator,
     evaluatorEnd: structuredClone(evaluator),
     evaluatorStable: true,
+    node: syntheticNodeProof(evaluator.files),
+    nodeEnd: syntheticNodeProof(evaluator.files),
+    nodeStable: true,
     schemaVersion: receiptSchemaVersion,
     status: 'measured; report comparison before deciding',
     sourceStable: true,
@@ -159,6 +165,8 @@ export function measured(arm, input = 100) {
         },
       },
       artifactProof,
+      node: syntheticNodeProof(artifactProof.inputs.files),
+      nodeEnd: syntheticNodeProof(artifactProof.inputs.files),
       tools: { count: arm.history ? (arm.build === 'A' ? 12 : 5) : 4, serializedCharacters: 5000 },
     },
     results: Array.from({ length: 5 }, (_, run) =>

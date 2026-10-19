@@ -3,7 +3,8 @@ import { createUsageTracker } from './drivers.js';
 import { artifactProofErrors } from './build-proof.js';
 import { pythonProofErrors } from './python-runtime.js';
 import { evaluatorProofErrors } from './evaluator-identity.js';
-export const receiptSchemaVersion = 4;
+import { nodeProofErrors } from './node-runtime.js';
+export const receiptSchemaVersion = 5;
 export const measuredStatus = 'measured; report comparison before deciding';
 export const stable = (value) =>
   JSON.stringify(value, (_k, v) =>
@@ -22,6 +23,7 @@ export function comparisonSettings(r) {
     settings: r.settings,
     baselinePin: r.baselinePin,
     evaluator: r.evaluator?.sha256,
+    node: r.node?.sha256,
     python: r.python?.sha256,
   });
 }
@@ -33,6 +35,7 @@ export function cellIdentity(r) {
     trees: r.build?.source?.trees,
     tools: r.build?.tools,
     artifactProof: r.build?.artifactProof,
+    node: r.build?.node?.sha256,
   });
 }
 export function admitReceipt(r) {
@@ -62,6 +65,21 @@ function checkReceipt(r) {
     pythonProofErrors(r.pythonEnd, r.build).length
   )
     fail('Python metadata identity not stable');
+  for (const [proof, files] of [
+    [r.node, r.evaluator?.files],
+    [r.nodeEnd, r.evaluatorEnd?.files],
+    [r.build?.node, r.build?.artifactProof?.inputs?.files],
+    [r.build?.nodeEnd, r.build?.artifactProof?.inputs?.files],
+  ])
+    for (const reason of nodeProofErrors(proof, files)) fail(reason);
+  if (
+    r.nodeStable !== true ||
+    r.node?.sha256 !== r.nodeEnd?.sha256 ||
+    r.build?.node?.sha256 !== r.build?.nodeEnd?.sha256 ||
+    stable(r.node?.local) !== stable(r.nodeEnd?.local) ||
+    stable(r.build?.node?.local) !== stable(r.build?.nodeEnd?.local)
+  )
+    fail('Node runtime identity not stable');
   if (r.fencePassed !== true) fail('network fence not established');
   if (
     r.error ||

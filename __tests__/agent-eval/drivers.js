@@ -603,6 +603,7 @@ export async function runDriver(command, prompt, directory, limits = {}) {
     throw new Error(`CLI version mismatch: ${current}; expected ${pin.version}`);
   const env = { ...process.env, ...command.env };
   for (const name of command.unsetEnv) delete env[name];
+  await limits.beforeSpawn?.();
   const { stdout, stderr, capture } = await captureChild(
     command.binary,
     [...command.args, prompt],

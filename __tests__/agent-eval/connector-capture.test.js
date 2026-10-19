@@ -172,3 +172,15 @@ test('4318353637 drained zero-exit leader cannot hide redirected-stdio residual 
   });
   assertKilledOrConservativelyUnknown(telemetry.cleanup);
 });
+test('4318878598 immediate pre-child identity rejection prevents the model-boundary spawn', async () => {
+  const before = spawned.length;
+  await expect(
+    runDriver(command, 'synthetic prompt', directory, {
+      beforeSpawn: () => {
+        throw new Error('Node selected runtime identity drift');
+      },
+    }),
+  ).rejects.toThrow(/Node selected runtime identity drift/);
+  expect(spawned).toHaveLength(before);
+  expect(await readdir(directory)).toEqual([]);
+});

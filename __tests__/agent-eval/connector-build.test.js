@@ -209,7 +209,7 @@ test('EVAL-C1-02 default matrix resolves compatible A or rejects nonbaseline pro
     new Set([head]),
   );
 });
-test('EVAL-C1-01 startup pin failure persists a failed schema-4 receipt without launching', async () => {
+test('EVAL-C1-01 startup pin failure persists a failed schema-5 receipt without launching', async () => {
   const out = path.join(scratch, 'startup-failed.json');
   expect(() =>
     execFileSync(
@@ -227,7 +227,7 @@ test('EVAL-C1-01 startup pin failure persists a failed schema-4 receipt without 
   ).toThrow(/pinned commit/);
   const r = JSON.parse(await readFile(out, 'utf8'));
   expect(r).toMatchObject({
-    schemaVersion: 4,
+    schemaVersion: 5,
     status: 'failed',
     sourceStable: false,
     fencePassed: false,

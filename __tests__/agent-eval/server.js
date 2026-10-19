@@ -177,10 +177,13 @@ export class EvaluationServer {
     }
   }
   async call(name, args = {}) {
-    if (!this.tools.some((t) => t.name === name))
-      throw new Error(`tool disabled or unknown: ${name}`);
-    const c = { name, args: structuredClone(args) };
+    const c = { name, args: structuredClone(args), origin: 'broker', forwarded: false };
     this.trace.push(c);
+    if (!this.tools.some((t) => t.name === name)) {
+      c.error = `tool disabled or unknown: ${name}`;
+      c.rejected = true;
+      throw new Error(c.error);
+    }
     const row =
       args.bookDetails ?? this.refRows.get(args.ref) ?? this.rows.get(String(args.bookId));
     c.selected = row;
@@ -200,6 +203,7 @@ export class EvaluationServer {
         ? this.observed.has(canonicalRow(args.bookDetails))
         : !!row;
     try {
+      c.forwarded = true;
       c.reply = await this.client.callTool({ name, arguments: args }, undefined, {
         timeout: 25000,
       });

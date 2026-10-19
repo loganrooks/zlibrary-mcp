@@ -1,4 +1,6 @@
-const common = (row) => !['T5', 'T6', 'T10'].includes(row.task);
+import { tasks } from './tasks.js';
+import { admitReceipt, cellIdentity, comparisonSettings } from './admission.js';
+const common = (row) => !['T5', 'T6', 'T10'].includes(row.task ?? row.id);
 export function distribution(values) {
   const v = [...values].sort((a, b) => a - b),
     n = v.length;
@@ -11,32 +13,67 @@ export function distribution(values) {
       }
     : null;
 }
+const successes = (rows) => ({
+  successes: rows.filter((x) => x.success === true).length,
+  total: rows.length,
+  fraction: rows.filter((x) => x.success === true).length / rows.length,
+});
+const atLeast = (b, a) => b.successes * a.total >= a.successes * b.total;
 export function summarize(receipts) {
-  const groups = {};
-  for (const r of receipts) {
-    if (r.status?.startsWith('self-test') || r.status?.startsWith('dry-run')) continue;
-    const key = `${r.driver}/${r.settings.toolSearch ? 'search-on' : 'search-off'}/${r.arm.id}`;
-    const g = (groups[key] ??= {
+  const groups = {},
+    diagnostics = [],
+    candidates = new Map();
+  for (const [index, raw] of receipts.entries()) {
+    const r = raw && typeof raw === 'object' ? raw : { status: 'malformed' };
+    const key = `${r.driver}/${r.settings?.toolSearch ? 'search-on' : 'search-off'}/${r.arm?.id}`;
+    const admission = admitReceipt(r);
+    diagnostics.push({ index, key, ...admission, status: r.status });
+    const list = candidates.get(key) ?? [];
+    list.push({ r, index, admission });
+    candidates.set(key, list);
+  }
+  for (const [key, list] of candidates) {
+    // One receipt is one complete cell. Never silently concatenate duplicate or
+    // incompatible cells, even if both individually look successful.
+    const identities = new Set(list.map((x) => cellIdentity(x.r)));
+    const conflict = list.length !== 1;
+    if (conflict)
+      for (const x of list) {
+        x.admission.eligible = false;
+        x.admission.reasons.push(
+          identities.size > 1
+            ? 'incompatible same-key cell receipts'
+            : 'duplicate complete cell receipt',
+        );
+        Object.assign(diagnostics[x.index], x.admission);
+      }
+    const { r, admission } = list[0];
+    const g = (groups[key] = {
       driver: r.driver,
-      toolSearch: r.settings.toolSearch,
+      toolSearch: r.settings?.toolSearch,
       arm: r.arm,
       tools: r.build?.tools,
-      warmRuns: r.settings.warmRuns,
+      eligible: admission.eligible,
+      admissionReasons: admission.reasons,
+      identity: cellIdentity(r),
+      compatibility: comparisonSettings(r),
+      warmRuns: r.settings?.warmRuns,
       phases: {},
       absoluteViolations: [],
       historyCalls: 0,
       coldEvidence: [],
     });
-    for (const x of r.results ?? []) {
+    if (!g.eligible) continue;
+    for (const x of r.results) {
       if (x.phase === 'cold' && x.task === 'T1')
         g.coldEvidence.push(
-          x.usage?.cacheFirstRequest === 0
+          x.usage.cacheFirstRequest === 0
             ? 'no first-request read observed'
-            : x.usage?.cacheFirstRequest > 0
+            : x.usage.cacheFirstRequest > 0
               ? 'cache hit'
               : 'unknown',
         );
-      g.historyCalls += (x.trace ?? []).filter((c) => c.name === 'get_history').length;
+      g.historyCalls += x.trace.filter((c) => c.name === 'get_history').length;
       if (r.arm.build === 'B') {
         if (['T2', 'T4', 'T5', 'T7', 'T11'].includes(x.task) && x.quotaSpent !== 0)
           g.absoluteViolations.push(`${x.task}: quota spent ${x.quotaSpent}`);
@@ -44,118 +81,127 @@ export function summarize(receipts) {
           g.absoluteViolations.push(
             `${x.task}: ref_unavailable (inspect arguments for hallucination)`,
           );
+        if (
+          x.task === 'T5' &&
+          (x.success !== true ||
+            x.answer.status !== 'correct' ||
+            x.wrongDecisions !== 0 ||
+            x.trace.some((c) => /^(search|full_text|download)/.test(c.name)) ||
+            x.providerEvents.some((e) =>
+              /book\/search|\/libgen\/index.php|\/annas\/search|\/file$|\/get.php/.test(e.route),
+            ))
+        )
+          g.absoluteViolations.push('T5: B-only negative guard failed');
       }
-      const phase = (g.phases[x.phase] ??= { runs: {}, perTask: {} });
+      const phase = (g.phases[x.phase] ??= { runs: {}, perTask: {}, rows: [] });
+      phase.rows.push(x);
       const run = (phase.runs[x.run] ??= {
         wrongDecisions: 0,
         inputTotal: 0,
         output: 0,
+        calls: 0,
         successes: 0,
         tasks: 0,
         quotaSpent: 0,
-        usageComplete: true,
       });
-      const list = (phase.perTask[x.task] ??= []);
-      list.push({
-        success: x.success,
-        wrongDecisions: x.wrongDecisions,
-        inputTotal: x.usage?.inputTotal,
-        quotaSpent: x.quotaSpent,
-      });
+      (phase.perTask[x.task] ??= []).push(x);
       if (common(x)) {
-        run.wrongDecisions += x.wrongDecisions;
-        run.inputTotal += x.usage?.inputTotal ?? 0;
-        run.output += x.usage?.output ?? 0;
+        for (const k of ['wrongDecisions', 'calls']) run[k] += x[k];
+        run.inputTotal += x.usage.inputTotal;
+        run.output += x.usage.output;
         run.successes += Number(x.success);
         run.tasks++;
-        run.usageComplete &&= !!x.usage;
       }
       run.quotaSpent += x.quotaSpent;
     }
-    if (r.arm.build === 'B' && !(g.tools?.serializedCharacters < 6500))
+    if (r.arm.build === 'B' && !(r.build.tools.serializedCharacters < 6500))
       g.absoluteViolations.push('tools/list is not under 6500 characters');
-  }
-  for (const g of Object.values(groups))
     for (const phase of Object.values(g.phases)) {
       phase.totals = Object.fromEntries(
-        ['wrongDecisions', 'inputTotal', 'output', 'successes', 'quotaSpent'].map((k) => [
+        ['wrongDecisions', 'calls', 'inputTotal', 'output', 'successes', 'quotaSpent'].map((k) => [
           k,
           distribution(Object.values(phase.runs).map((r) => r[k])),
         ]),
       );
+      phase.success = successes(phase.rows.filter(common));
+      phase.allTaskSuccess = successes(phase.rows);
       for (const [task, rows] of Object.entries(phase.perTask))
         phase.perTask[task] = {
-          success: distribution(rows.map((x) => Number(x.success))),
+          success: successes(rows),
           wrongDecisions: distribution(rows.map((x) => x.wrongDecisions)),
+          allWrongZero: rows.every((x) => x.wrongDecisions === 0),
         };
+      delete phase.rows;
     }
+  }
   const comparisons = [];
-  for (const [key, b] of Object.entries(groups).filter(([, g]) => g.arm.build === 'B')) {
+  for (const [key, b] of Object.entries(groups).filter(([, g]) => g.arm?.build === 'B')) {
     const a = groups[`${b.driver}/${b.toolSearch ? 'search-on' : 'search-off'}/A`];
     if (!a) {
       comparisons.push({ key, status: 'inconclusive: missing matching A' });
+      continue;
+    }
+    if (!a.eligible || !b.eligible) {
+      comparisons.push({
+        key,
+        status: 'ineligible: invalid evidence',
+        reasons: { A: a.admissionReasons, B: b.admissionReasons },
+      });
+      continue;
+    }
+    if (a.compatibility !== b.compatibility) {
+      comparisons.push({
+        key,
+        status: 'ineligible: incompatible model/CLI/settings/baseline',
+        reasons: ['A/B comparison settings differ'],
+      });
       continue;
     }
     const checks = [];
     for (const phase of ['cold', 'warm']) {
       const ap = a.phases[phase],
         bp = b.phases[phase];
-      if (!ap || !bp) {
-        checks.push({ phase, inconclusive: 'missing phase' });
-        continue;
-      }
-      const valid =
-        Object.values(ap.runs).every(
-          (x) => x.usageComplete && x.tasks === 9 * (phase === 'warm' ? a.warmRuns : 1),
-        ) &&
-        Object.values(bp.runs).every(
-          (x) => x.usageComplete && x.tasks === 9 * (phase === 'warm' ? b.warmRuns : 1),
-        );
-      const n = ap.totals.inputTotal.n >= 5 && bp.totals.inputTotal.n >= 5;
       checks.push({
         phase,
-        valid,
-        atLeastFiveRuns: n,
+        valid: true,
+        atLeastFiveRuns: true,
         wrongDecisionsAtMostHalf:
           bp.totals.wrongDecisions.median <= 0.5 * ap.totals.wrongDecisions.median,
         inputAtMost60Percent: bp.totals.inputTotal.median <= 0.6 * ap.totals.inputTotal.median,
-        successAtLeastA: bp.totals.successes.median >= ap.totals.successes.median,
+        success: { A: ap.success, B: bp.success },
+        successAtLeastA: atLeast(bp.success, ap.success),
         perTask: Object.fromEntries(
-          tasksInCommon(ap, bp).map((t) => [
-            t,
+          tasks.filter(common).map((t) => [
+            t.id,
             {
-              successAtLeastA: bp.perTask[t].success.median >= ap.perTask[t].success.median,
+              success: { A: ap.perTask[t.id].success, B: bp.perTask[t.id].success },
+              successAtLeastA: atLeast(bp.perTask[t.id].success, ap.perTask[t.id].success),
               zeroWhereAZero:
-                ap.perTask[t].wrongDecisions.median !== 0 ||
-                bp.perTask[t].wrongDecisions.median === 0,
+                ap.perTask[t.id].wrongDecisions.median !== 0 || bp.perTask[t.id].allWrongZero,
             },
           ]),
         ),
       });
     }
     const coldEligible =
-      a.coldEvidence.length >= 5 &&
-      b.coldEvidence.length >= 5 &&
+      a.coldEvidence.length === 5 &&
+      b.coldEvidence.length === 5 &&
       [...a.coldEvidence, ...b.coldEvidence].every((x) => x === 'no first-request read observed');
-    const allChecks =
-      checks.length === 2 &&
-      checks.every(
-        (c) =>
-          !c.inconclusive &&
-          c.valid &&
-          c.atLeastFiveRuns &&
-          c.wrongDecisionsAtMostHalf &&
-          c.inputAtMost60Percent &&
-          c.successAtLeastA &&
-          Object.values(c.perTask).every((t) => t.successAtLeastA && t.zeroWhereAZero),
-      );
+    const allChecks = checks.every(
+      (c) =>
+        c.wrongDecisionsAtMostHalf &&
+        c.inputAtMost60Percent &&
+        c.successAtLeastA &&
+        Object.values(c.perTask).every((t) => t.successAtLeastA && t.zeroWhereAZero),
+    );
     comparisons.push({
       key,
-      status: !coldEligible
-        ? 'inconclusive: strict cold-cache eligibility not established'
-        : allChecks && !b.absoluteViolations.length
-          ? 'bar met'
-          : 'bar not met',
+      status:
+        !allChecks || b.absoluteViolations.length
+          ? 'bar not met'
+          : !coldEligible
+            ? 'inconclusive: strict cold-cache eligibility not established'
+            : 'bar met',
       checks,
       coldEligible,
       absoluteViolations: b.absoluteViolations,
@@ -163,16 +209,15 @@ export function summarize(receipts) {
   }
   return {
     groups,
+    diagnostics,
     comparisons,
-    historyDecision: Object.values(groups)
-      .filter((g) => g.arm.build === 'B' && g.arm.history)
-      .some((g) => g.historyCalls > 0)
+    historyDecision: Object.values(groups).some(
+      (g) => g.eligible && g.arm.build === 'B' && g.arm.history && g.historyCalls > 0,
+    )
       ? 'retain: get_history used in history-enabled arm'
-      : 'not established: absence of calls is meaningful only after complete enabled matrix',
+      : 'not established: incomplete/invalid enabled evidence cannot remove history',
     exclusions: ['T5', 'T6', 'T10'],
-    note: 'Medians and min/max spread; warm totals sum all warm episodes per replicate. No fabricated token counts. Strict cold uncertainty prevents a success claim.',
+    bOnlyGuards: ['T5'],
+    note: 'Only admitted exact cells are aggregated. Empirical success counts/fractions gate overall and per task; median/min/max for calls/tokens/wrong decisions. Every B observation must be zero where A median wrong=0. Strict Codex first-request cache remains unknown.',
   };
-}
-function tasksInCommon(a, b) {
-  return Object.keys(a.perTask).filter((t) => !['T5', 'T6', 'T10'].includes(t) && b.perTask[t]);
 }

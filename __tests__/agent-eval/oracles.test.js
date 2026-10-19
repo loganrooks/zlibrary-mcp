@@ -3,6 +3,7 @@ import { tasks, arms } from './tasks.js';
 import { scoreTask, dataOf } from './oracles.js';
 import { usageFrom, commandFor } from './drivers.js';
 import { summarize } from './report.js';
+import { measured } from './receipt-controls.js';
 const arm = arms.find((a) => a.id === 'B');
 const reply = (data) => ({
   content: [{ type: 'text', text: JSON.stringify(data) }],
@@ -169,27 +170,16 @@ test('matrix carries Q1, Q2, history-disabled arms; A exclusions survive and off
 });
 
 test('bar compares five-run cold and warm totals, rejects wrong decisions where A median is zero', () => {
-  const make = (arm, input, wrong = 0) => ({
-    status: 'measured',
-    driver: 'claude',
-    arm,
-    settings: { toolSearch: false, warmRuns: 1 },
-    build: { tools: { serializedCharacters: 5000 } },
-    results: Array.from({ length: 5 }, (_, run) =>
-      ['cold', 'warm'].flatMap((phase) =>
-        tasks.map((t) => ({
-          run,
-          phase,
-          task: t.id,
-          success: true,
-          wrongDecisions: t.id === 'T1' ? wrong : 0,
-          quotaSpent: 0,
-          trace: [],
-          usage: { inputTotal: input, output: 1, cacheFirstRequest: 0 },
-        })),
-      ),
-    ).flat(),
-  });
+  const make = (arm, input, wrong = 0) => {
+    const r = measured(arm, input);
+    for (const x of r.results)
+      if (x.task === 'T1' && wrong) {
+        x.wrongDecisions = wrong;
+        x.success = false;
+        x.pathCorrect = false;
+      }
+    return r;
+  };
   const a = make(arms[0], 100),
     b = make(arms[1], 50);
   expect(summarize([a, b]).comparisons[0].status).toBe('bar met');

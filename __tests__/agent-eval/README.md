@@ -132,7 +132,8 @@ instructions. Warm turns use `exec resume UUID` with the same settings. Local
 `codex features list` shows `code_mode_tool_search` and `code_mode` available;
 legacy `tool_search` and `tool_search_always_defer_mcp_tools` are removed and are
 **not** passed. A supported provider-cache flush/off control was not found. Tool
-exposure and resume behavior still need a paid driver smoke check. Any Codex
+exposure/resume were exercised only on the lead's supplied Codex 0.162.1 smoke
+path; no new driver invocation is part of this repair. Any Codex
 command/web/file-change event invalidates the cell; fixture metrics are captured
 at the broker, not inferred from model narration.
 
@@ -153,14 +154,15 @@ ref_unavailable, per-task fake quota spend, final answers and raw tool replies
 are saved. File paths in receipts are ephemeral: the bytes are checked before
 cleanup, not promised to remain available. No provider quota is real.
 
-Tokens come only from driver usage: Codex `turn.completed.usage`; Claude's final
+Tokens come only from driver usage: Codex `turn.completed.usage` (now normalized
+from cumulative totals per the round-1 repair below); Claude's final
 `result.usage`, without double-counting streaming assistant usage blocks. Claude
 input total includes uncached + cache-read + cache-write; Codex input total
 already includes cached reads. Missing usage is an error, never zero. Input
 cache writes not exposed by Codex are null, not guessed. Neither driver exposes
 cached output; `outputCached:null` is distinct from generated `outputUncached`.
 Raw events and incremental receipts persist under `OUT.artifacts`, including
-last-driver output/stderr on driver errors. Temporary TLS credentials, servers
+uniquely named per-attempt output/stderr and a latest-output alias on driver errors. Temporary TLS credentials, servers
 and files are removed on normal completion/error.
 
 A fresh session is **not** evidence of an empty provider cache. A unique cell
@@ -178,3 +180,130 @@ call in any enabled arm means retain history. Zero observed calls in an
 incomplete matrix does not authorize removing it. Scripted/dry receipts are
 never compared as model results. Live providers, tunnels, ChatGPT rendering,
 want lists, and strict first-request Codex cache telemetry remain untested.
+
+## Round-1 repair contract (supersedes the original scoring/scope wording above)
+
+2026-10-19. Authority: `EVAL-FIXTURES-sol/FIX-EVAL-r1.md`,
+`ZLIB-EVAL-GATE-astra-r1.md` and root's `ZLIB-EVAL-GATE-DISPOSITION-r1.md`
+under campaign evidence. Root corroborated six concrete evaluator counterexamples;
+this repair does not claim a new paid matrix or a fresh review gate.
+
+### Answers are not paths (EVAL-R1-01)
+
+Every scored row now retains `pathCorrect` separately from `answer.status`.
+T2 checks translator/year associations, T4 the actual fake-side remaining quota
+and LibGen cap, T7 affirmative membership in the **observed account history**, and
+T12 the observed matching titles. T5 and the A filename/history-disabled negative
+controls also have explicit fact contracts. An unknown answer cannot pass merely
+because its tool trace is correct. `success:null` / `manual-review` means the
+prose cannot be confidently scored by this deterministic evaluator; it is not
+silently counted as success or omitted from a denominator. Such evidence is
+ineligible for an automatic comparison until resolved outside this scorer.
+
+The runner appends a JSON-only answer-shape instruction for these tasks. The
+instruction uses placeholders, never the expected translations, years, quota
+number or result titles. Arrays must contain all matching observed facts; the
+example is an item shape, not a count. `answers.js` compares exact keys/types and
+facts; swapped editions, duplicate translators, extra contradictory properties
+and duplicate JSON keys cannot pass. The original scripted control's *whole*
+canonical sentences/list grammar also remains supported. Arbitrary prose,
+including correct-looking text followed by a contradictory sentence, goes to
+manual review. This is intentionally not a general semantic judge. Other
+acquisition tasks still require their real artifact and decision checks.
+
+### Evidence admission and bars (EVAL-R1-02/03/05)
+
+`admission.js` requires receipt schema 2, the exact completed measured status,
+`sourceStable:true`, `fencePassed:true`, no receipt/task driver/fence/source/cleanup
+failure, fixed model/CLI/build/settings, complete nonnegative usage and decision
+metrics, and the exact unique `(run, phaseIndex, task)` grid. There must be five
+replicates; each has T1–T12 at cold index 0 and at every configured warm index.
+Sessions remain identical through a replicate and differ between replicates.
+CLI version/requested model fields must agree throughout. Build SHA, baseline
+pin and all production tree digests must be present and consistent.
+
+Invalid, legacy, failed, ambiguous-answer and incomplete receipts remain in
+`diagnostics`, with rejection reasons, but are never aggregated as eligible
+model evidence. Multiple same-key receipts are refused as duplicate or
+incompatible complete cells, not concatenated. A/B may have different build
+identities and the explicitly selected arm changes, but their driver/model/CLI,
+baseline and other comparison settings must agree. No receipt format can attest
+an unreported server-side model alias change; these are requested model pins.
+The runner now persists final source/fence/cleanup failures as failed status.
+
+Root settled the success-estimator interpretation: gate empirical success
+**counts/fractions** overall and per common task, not binary-success medians.
+Tokens, calls and wrong decisions retain medians and min/max spread. When A's
+median wrong decisions for a task is zero, **every** B observation for that task
+must be zero. The nine common tasks exclude T5/T6/T10 as before; B's T5 additionally
+has a B-only negative guard requiring correct inability, no forbidden
+search/download, zero wrong decisions and zero quota. A's T5 remains outside
+relative totals. Invalid evidence or a failed guard cannot become `bar met`.
+
+### Attempts, including rejected calls (EVAL-R1-04)
+
+The broker traces the attempted name/arguments before checking exposure. Unknown
+or disabled calls record rejection/error and `forwarded:false`, without invoking
+the production server. They count as calls, invalid calls and off-oracle decisions.
+The real-A scripted self-test also sends an unknown request through the actual
+proxy and checks one retained invalid/off-oracle attempt with no forwarding;
+this is not a B-runtime integration claim.
+
+`reconcileAttempts` consumes explicitly identified Codex `mcp_tool_call` events
+for server `books` and Claude `mcp__books__…` tool-use/result events. Started and
+completed forms are merged by driver call ID; completed events may use arguments
+already observed at start. Matching against broker calls is a name/argument
+multiset: each broker call can match only one driver attempt. A rejected call
+seen at both layers is counted once. A recognized CLI-side rejection with no
+broker call is added to the trace with its exposed arguments. If the name/ID is
+known but arguments are unavailable, the attempted call remains diagnostic and
+telemetry is marked incomplete; arguments are not invented. An apparently
+successful unmatched attempt invalidates the cell rather than disappearing.
+
+The drivers may suppress attempts before emitting any identifiable event. That
+signal is unavailable: zero *recognized* extra attempts is not an attestation
+that a CLI never rejected anything internally. Opaque CLI errors remain driver
+failures, not invented tool names/counts. These parsers are deterministic fixture
+tests, not a new paid confirmation of either driver's event coverage.
+
+### Usage scope is CLI/path bounded (EVAL-R1-06)
+
+Root's supplied two-turn smoke and exact-OK probe recorded Codex 0.162.1 totals:
+input/cache-read/output **39031/19328/118**, **78605/58240/236**,
+**101125/77952/241** in the same session. The +5 output for exact OK corroborated
+cumulative, not per-invocation, counters on that path. This lane reuses those
+numeric receipts only; it does not rerun models.
+
+`usageFrom('codex')` preserves raw cumulative counters/snapshots and selects the
+last total, never sums snapshots. A version-bounded tracker starts from zero for
+the first invocation, then differences the exact resumed session's counters
+before task/episode aggregation. T7 deltas are 39574 input, 38912 cache-read,
+662 uncached and 118 output; the third turn is 22520/19712/2808/5. Cache writes
+are differenced when exposed; missing writes stay null. Negative/incomplete
+counters, disappearing optional counters, derived negative uncached input,
+unexpected session IDs and uncorroborated CLI versions fail closed. Receipts
+retain the raw totals, prior totals, normalized `scope:session-delta` and source
+provenance. Admission independently recomputes the deltas in exact task order.
+
+Claude's `result.usage` remains invocation-scoped, not differenced on an assumption
+borrowed from Codex. No Claude process ran in this repair. Neither driver exposes
+a cached-output split here; outputCached stays null. **Codex first-request cache
+eligibility remains unknown**, and its aggregate cumulative counters cannot close
+the strict cold bar even after normalization.
+
+### Offline repair checks
+
+```sh
+node --experimental-vm-modules node_modules/jest/bin/jest.js __tests__/agent-eval/ --coverage=false --runInBand
+node __tests__/agent-eval/run.mjs --self-test --a-pin f9d56a04d79c6e84a087e68481db2b66b2798c65 --out /private/tmp/eval-r1-self-test.json
+```
+
+`regression-controls.json` preserves the root's actual A read-only traces and
+recorded numeric usage probe with provenance. `receipt-controls.js` constructs
+synthetic complete receipts solely for positive/negative report controls; these
+are not observations about model performance. The tests reproduce all six
+reviewer/root counterexamples plus malformed/duplicate grids, warm indices,
+CLI/model/session mismatch, missing usage, ambiguous facts, delta resets and
+cross-layer rejection deduplication. The real A positive exercise remains
+separate. No B runtime/full matrix/live-provider boundary is closed by these
+checks; root owns the fresh round-2 gate and git operations.

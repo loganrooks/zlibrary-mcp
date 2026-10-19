@@ -7,7 +7,15 @@ import assert from 'node:assert/strict';
 import { tasks, arms, baselinePin } from './tasks.js';
 import { EvaluationServer, evalSnapshot, root, here } from './server.js';
 import { dataOf, rowsOf, scoreTask } from './oracles.js';
-import { commandFor, runDriver, driverPins } from './drivers.js';
+import {
+  commandFor,
+  runDriver,
+  driverPins,
+  createUsageTracker,
+  reconcileAttempts,
+} from './drivers.js';
+import { answerInstruction } from './answers.js';
+import { receiptSchemaVersion, measuredStatus } from './admission.js';
 import { scriptedTask } from './scripted.js';
 
 const { values: opts } = parseArgs({
@@ -46,6 +54,8 @@ if (opts.paid && (opts['self-test'] || opts['dry-run']))
 const selfTest = opts['self-test'];
 if (selfTest && arm.build !== 'A') throw new Error('self-test targets A; B is not required');
 const plan = {
+  schemaVersion: receiptSchemaVersion,
+  fencePassed: false,
   date: new Date().toISOString(),
   baselinePin: opts['a-pin'],
   arm,
@@ -128,6 +138,28 @@ if (!selfTest && !opts.paid) {
       try {
         await proxy.connect(transport);
         assert.deepEqual((await proxy.listTools()).tools, s.tools);
+        const before = s.trace.length;
+        await assert.rejects(
+          () => proxy.callTool({ name: 'get_history', arguments: { limit: 10 } }),
+          /disabled or unknown/,
+        );
+        const rejected = s.trace.slice(before);
+        const scored = await scoreTask({
+          task: tasks.find((t) => t.id === 'T7'),
+          arm: arms.find((a) => !a.history),
+          trace: rejected,
+          final: 'Account history is not available in this configuration.',
+          downloads: s.downloads,
+        });
+        assert.equal(scored.calls, 1);
+        assert.equal(scored.invalidCalls, 1);
+        assert.equal(scored.success, false);
+        assert.equal(rejected[0].forwarded, false);
+        plan.invalidAttemptControl = {
+          kind: 'real A proxy unknown-call control, not B runtime',
+          trace: rejected,
+          score: scored,
+        };
       } finally {
         await proxy.close();
         await transport.close();
@@ -136,6 +168,9 @@ if (!selfTest && !opts.paid) {
     for (let run = 0; run < (selfTest ? 1 : repetitions); run++) {
       // Each replicate uses fresh session identity. Tool handles survive all turns.
       let session;
+      const usageTracker = createUsageTracker(opts.driver, {
+        version: driverPins[opts.driver].version,
+      });
       const nonce = randomUUID(),
         context = {};
       const directory = path.join(path.resolve(opts.out + '.artifacts'), `driver-${run}-${nonce}`);
@@ -169,7 +204,7 @@ if (!selfTest && !opts.paid) {
             setup = `The first ten were already shown: ${JSON.stringify(first)}. `;
           }
           await s.beginTask(task);
-          const prompt = `${setup}${task.prompt}\nUse ${s.downloads} for downloads; the inbox is ${path.join(s.downloads, 'inbox')}. Answer this task only.`;
+          const prompt = `${setup}${task.prompt}\nUse ${s.downloads} for downloads; the inbox is ${path.join(s.downloads, 'inbox')}. Answer this task only.${answerInstruction(task, arm)}`;
           let final,
             usage = null,
             raw,
@@ -205,15 +240,24 @@ if (!selfTest && !opts.paid) {
                 throw new Error(
                   'driver omitted session ID; warm continuation cannot be established',
                 );
-              session = raw.session ?? session;
+              if (plan.driverVersion && plan.driverVersion !== raw.version)
+                throw new Error('CLI changed within campaign');
+              plan.driverVersion = raw.version;
+              usage = usageTracker.consume(raw.usage, raw.session, session);
+              session = raw.session;
               final = raw.final;
-              usage = raw.usage;
             }
           } catch (error) {
             taskFailure = error;
+            raw = error.driverResult ?? raw;
             final ??= '';
           }
           const observations = await s.finishTask();
+          const attempts = reconcileAttempts(raw?.events ?? [], observations.trace);
+          observations.trace = attempts.trace;
+          observations.attemptCoverage = attempts.coverage;
+          if (attempts.coverage.unavailable.length || attempts.trace.some((c) => c.unaccounted))
+            taskFailure ??= new Error('incomplete driver attempt telemetry; cell invalid');
           if (selfTest && task.id === 'T7') {
             const visit = async (dir) => {
               for (const e of await readdir(dir, { withFileTypes: true })) {
@@ -241,7 +285,11 @@ if (!selfTest && !opts.paid) {
             run,
             phase,
             phaseIndex,
-            session: session ?? 'scripted',
+            session: session ?? raw?.session ?? 'scripted',
+            requestedModel: plan.settings.model,
+            driverVersion: raw?.version,
+            rawUsage: raw?.usage,
+            rawFiles: raw?.rawFiles,
             ...scored,
             usage,
             final,
@@ -259,9 +307,8 @@ if (!selfTest && !opts.paid) {
       }
     }
     await s.assertFence();
-    plan.status = selfTest
-      ? 'self-test pass (scripted A; NOT model performance)'
-      : 'measured; report comparison before deciding';
+    plan.fencePassed = true;
+    plan.status = selfTest ? 'self-test pass (scripted A; NOT model performance)' : measuredStatus;
     plan.falsifiers = selfTest
       ? [
           'unknown queries empty on both sources',
@@ -277,13 +324,28 @@ if (!selfTest && !opts.paid) {
     plan.status = 'failed';
     plan.error = String(e.stack);
   } finally {
-    // Compare production trees (not changing report/porcelain) before cleanup.
-    const end = await evalSnapshot(s.buildRoot);
-    plan.sourceStable =
-      JSON.stringify(s.sourceStart.trees) === JSON.stringify(end.trees) &&
-      s.sourceStart.sha === end.sha;
-    if (!plan.sourceStable) failure ??= new Error('production source drift during evaluation');
-    await s.close();
+    // Persist source/cleanup failures as failed evidence, never measured success.
+    try {
+      const end = await evalSnapshot(s.buildRoot);
+      plan.sourceStable =
+        JSON.stringify(s.sourceStart.trees) === JSON.stringify(end.trees) &&
+        s.sourceStart.sha === end.sha;
+      if (!plan.sourceStable) throw new Error('production source drift during evaluation');
+    } catch (error) {
+      plan.sourceStable = false;
+      plan.sourceError = String(error.message);
+      failure ??= error;
+    }
+    try {
+      await s.close();
+    } catch (error) {
+      plan.cleanupError = String(error.message);
+      failure ??= error;
+    }
+    if (failure) {
+      plan.status = 'failed';
+      plan.error ??= String(failure.stack);
+    }
     await writeFile(opts.out, JSON.stringify(plan, null, 2) + '\n');
   }
   if (failure) throw failure;

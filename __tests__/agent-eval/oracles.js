@@ -1,5 +1,6 @@
 import { readFile, realpath } from 'node:fs/promises';
 import path from 'node:path';
+import { evaluateAnswer } from './answers.js';
 
 export function dataOf(reply) {
   if (reply.structuredContent) {
@@ -176,37 +177,10 @@ export async function scoreTask({
       !details.some((c) => isCampbell(selected(c)))
     )
       mark('missing edition detail');
-    if (!/graver/i.test(final) || !/campbell/i.test(final)) mark('missing translator answer');
   }
-  if (
-    task.id === 'T4' &&
-    (!new RegExp(`\\b${remainingBefore}\\b`).test(final) ||
-      !/libgen[\s\S]{0,100}(no .{0,25}(cap|limit)|unlimited)|(no .{0,25}(cap|limit)|unlimited)[\s\S]{0,100}libgen/i.test(
-        final,
-      ))
-  )
-    mark('missing or guessed quota/cap answer');
-  if (
-    task.id === 'T5' &&
-    !/not (available|supported|search)|cannot|can.t|only.*metadata|metadata.*only/i.test(final)
-  )
-    mark('missing honest full-text inability');
-  if (task.id === 'T7') {
-    if (arm.history) {
-      requireKind('history');
-      if (!/being and time/i.test(final) || !/download|history/i.test(final))
-        mark('missing account-history answer');
-    } else if (
-      !/account.?history.*(not available|unavailable|not supported)|cannot.*(account.?history|download history)/i.test(
-        final,
-      )
-    )
-      mark('missing history-disabled inability');
-  }
+  if (task.id === 'T7' && arm.history) requireKind('history');
   if (['T2', 'T4', 'T5', 'T7', 'T11'].includes(task.id) && quotaSpent !== 0)
     mark('forbidden quota spend');
-  if (task.id === 'T10' && !b && !/cannot|can.t|unavailable|not support/i.test(final))
-    mark('missing baseline filename inability');
   if (task.id === 'T12') {
     const rows = trace.flatMap((c) => rowsOf(dataOf(c.reply ?? {})));
     if (
@@ -262,10 +236,30 @@ export async function scoreTask({
       mark('missing or wrong artifact', c);
     }
   }
+  const successfulTrace = trace.filter(
+    (c) => !c.error && !c.reply?.isError && !dataOf(c.reply ?? {}).error,
+  );
+  const answer = evaluateAnswer({
+    task,
+    arm,
+    final,
+    remainingBefore,
+    rows: successfulTrace.flatMap((c) => rowsOf(dataOf(c.reply ?? {}))),
+    historyRows: successfulTrace
+      .filter((c) => category(c.name) === 'history')
+      .flatMap((c) => rowsOf(dataOf(c.reply ?? {}))),
+  });
+  const pathCorrect = wrong.length === 0;
   return {
     task: task.id,
+    pathCorrect,
+    answer,
     outsideBar: arm.build === 'A' && !!task.outsideA,
-    success: wrong.length === 0,
+    success: !pathCorrect
+      ? false
+      : answer.status === 'manual-review'
+        ? null
+        : ['correct', 'not-required'].includes(answer.status),
     wrongDecisions: wrong.length,
     wrong,
     calls: trace.length,

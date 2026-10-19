@@ -1,6 +1,7 @@
 """Severe canonical receipt/process controls, independent of live acquisition."""
 
 import asyncio
+import errno
 import hashlib
 import json
 from pathlib import Path
@@ -369,3 +370,192 @@ async def test_direct_unhooked_bridge_still_publishes_original_file(
     )
     assert Path(reply["file_path"]).read_bytes() == PAYLOAD
     assert not list(tmp_path.glob(".source-*"))
+
+
+def seed_read_receipt(directory, *, alias=False):
+    book = {
+        "source": "libgen",
+        "md5": hashlib.md5(PAYLOAD).hexdigest(),
+        "title": "Chosen",
+        "author": "Fixture",
+        "extension": "epub",
+    }
+    target = directory / "chosen.pdf"
+    target.write_bytes(PAYLOAD)
+    canonical = Path(str(target) + ".acq.json")
+    record = {
+        "record_version": 1,
+        "state": "complete",
+        "path": str(target),
+        "bytes": len(PAYLOAD),
+        "sha256": hashlib.sha256(PAYLOAD).hexdigest(),
+        "source": "libgen",
+        "identifiers": {"md5": book["md5"]},
+        "provenance": {"route": "original", "mirror": "held", "host": None},
+        "reused": False,
+        "transfer_skipped": False,
+    }
+    canonical.write_text(json.dumps(record))
+    if alias:
+        (directory / "chosen.epub.acq.json").write_bytes(canonical.read_bytes())
+    return book, target, canonical
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("code", [errno.EACCES, errno.EIO])
+@pytest.mark.parametrize(
+    "phase,issued",
+    [
+        ("initial", False),
+        ("canonical_recovery", False),
+        ("checkpoint", True),
+        ("post_publication", True),
+    ],
+)
+async def test_receipt_io_failure_refuses_without_erasing_provenance_or_false_boundary(
+    tmp_path, monkeypatch, code, phase, issued
+):
+    book, target, canonical = seed_read_receipt(
+        tmp_path, alias=phase == "canonical_recovery"
+    )
+    alias = tmp_path / "chosen.epub.acq.json"
+    originals = {p: p.read_bytes() for p in tmp_path.glob("*.acq.json")}
+    filename = "chosen.pdf" if phase == "initial" else "chosen.epub"
+    if phase == "initial":
+        book["extension"] = "pdf"
+    faulty = alias if phase == "post_publication" else canonical
+    stage = tmp_path / ".source-read-failure.pdf"
+    fetches, observed = [], []
+    published = False
+    read, publish = Path.read_text, bridge._publish_or_reuse
+
+    async def fetch(*args):
+        fetches.append(True)
+        stage.write_bytes(PAYLOAD)
+        return bridge._DownloadedPath(str(stage), "signature")
+
+    def publication(*args):
+        nonlocal published
+        result = publish(*args)
+        published = True
+        return result
+
+    def failure(path, *args, **kwargs):
+        if path == faulty and (phase != "post_publication" or published):
+            observed.append(path.read_bytes())
+            raise OSError(code, "synthetic receipt read failure")
+        return read(path, *args, **kwargs)
+
+    monkeypatch.setattr(bridge, "_fetch_from_source", fetch)
+    monkeypatch.setattr(bridge, "_publish_or_reuse", publication)
+    monkeypatch.setattr(Path, "read_text", failure)
+    with pytest.raises(acq.AcquisitionError) as error:
+        await acq.acquire(
+            book, str(tmp_path), filename=filename, transfer=bridge.download_book
+        )
+    assert error.value.to_dict() == {
+        "reason": "output_refused",
+        "request_issued": issued,
+    }
+    assert len(fetches) == (1 if issued else 0)
+    assert observed and faulty.read_bytes() == observed[0]
+    for path, contents in originals.items():
+        assert path.read_bytes() == contents
+    assert target.read_bytes() == PAYLOAD
+    assert not stage.exists()
+    for name in {filename, "chosen.pdf"}:
+        with acq.DestinationLease(tmp_path / name, 0):
+            pass
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("phase", ["initial", "canonical_recovery"])
+@pytest.mark.parametrize("kind", ["external_symlink", "dangling_symlink", "directory"])
+async def test_receipt_nonregular_path_refuses_without_reading_or_following_it(
+    tmp_path, monkeypatch, phase, kind
+):
+    directory = tmp_path / "output"
+    directory.mkdir()
+    monkeypatch.setenv("ZLIBRARY_OUTPUT_ROOT", str(directory))
+    book, target, canonical = seed_read_receipt(
+        directory, alias=phase == "canonical_recovery"
+    )
+    original_record = canonical.read_bytes()
+    canonical.unlink()
+    external = tmp_path / "outside-root.json"
+    if kind == "directory":
+        canonical.mkdir()
+    else:
+        if kind == "external_symlink":
+            external.write_bytes(original_record)
+        canonical.symlink_to(external)
+    before = canonical.lstat()
+    reads = []
+    read = Path.read_text
+
+    def watch(path, *args, **kwargs):
+        if path in {canonical, external}:
+            reads.append(path)
+        return read(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", watch)
+    provider = AsyncMock(
+        side_effect=AssertionError("nonregular receipt reached provider")
+    )
+    if phase == "initial":
+        book["extension"] = "pdf"
+    with pytest.raises(acq.AcquisitionError) as error:
+        await acq.acquire(
+            book,
+            str(directory),
+            filename="chosen.pdf" if phase == "initial" else "chosen.epub",
+            transfer=provider,
+        )
+    assert error.value.to_dict() == {
+        "reason": "output_refused",
+        "request_issued": False,
+    }
+    provider.assert_not_awaited()
+    assert reads == []
+    assert (canonical.lstat().st_dev, canonical.lstat().st_ino) == (
+        before.st_dev,
+        before.st_ino,
+    )
+    assert target.read_bytes() == PAYLOAD
+    if kind == "external_symlink":
+        assert external.read_bytes() == original_record
+    elif kind == "dangling_symlink":
+        assert canonical.is_symlink() and not external.exists()
+    else:
+        assert canonical.is_dir()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("raw", [None, "{bad", "[]", "null", '"scalar"'])
+async def test_missing_or_deliberately_malformed_receipt_still_allows_fresh_acquisition(
+    tmp_path, raw
+):
+    receipt = tmp_path / "chosen.pdf.acq.json"
+    if raw is not None:
+        receipt.write_text(raw)
+    calls = []
+
+    async def transfer(book, directory, *, filename, publication_hook):
+        calls.append(True)
+        stage, target = tmp_path / ".stage-missing", tmp_path / "chosen.pdf"
+        stage.write_bytes(PAYLOAD)
+        try:
+            publication_hook(stage, target)
+            reused = bridge._publish_or_reuse(stage, target)
+            return {"file_path": str(target), "publication_reused": reused}
+        finally:
+            stage.unlink(missing_ok=True)
+
+    reply = await acq.acquire(
+        {**BOOK, "extension": "pdf"},
+        str(tmp_path),
+        filename="chosen.pdf",
+        transfer=transfer,
+    )
+    assert reply["transfer_skipped"] is False and len(calls) == 1
+    assert json.loads(receipt.read_text())["state"] == "complete"

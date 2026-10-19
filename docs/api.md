@@ -71,7 +71,16 @@ canonical target before verifying/finalizing it and rechecks its identity.
 Compatible complete canonical receipts and provenance remain authoritative and
 unchanged; verified foreign identities cannot adopt even identical bytes.
 Complete receipts are re-read and re-hashed per call, not trusted from a process
-cache.
+cache. Unreadable receipts (including permission/I/O errors), symlink sidecars
+and nonregular sidecars fail closed with `output_refused`, preserving provenance.
+Missing, malformed-JSON and nonobject receipts retain the absent-receipt policy.
+
+In memory mode, fresh Z-Library acquisitions join the same session owner and
+login/cooldown coordination as reads, only after held-lease receipt admission and
+durable intent. Receipt hits do not enter authentication, even with missing
+credentials, cooldown or a pending login. A granted transfer is at-most-once:
+authentication rejection cannot automatically refresh and replay it. Explicit
+`per-call` mode keeps per-call authentication; LibGen/Anna's paths are unchanged.
 
 Per-destination leases coalesce independent processes on local filesystems.
 POSIX uses O_EXCL creation and `flock`, reclaiming stale holders only under an
@@ -168,7 +177,10 @@ validate the closed envelope even though the SDK does not validate error outputs
 | `internal` | Other internal failure |
 
 `retry: safe` means a repeat cannot spend acquisition quota under the observed
-pre-request boundary or a matching receipt. `may_spend_quota` means a request
+pre-request boundary, a matching receipt, or the quota-free LibGen download route. `may_spend_quota` means a request
 may have counted and another transfer can count again; check disk receipts first.
 `no` means repeating unchanged arguments/configuration will not help. Cancellation
-is `safe` only when no request was issued; otherwise it is `may_spend_quota`.
+on quota-counting or unknown download routes is `safe` only when no request was
+issued; otherwise it is `may_spend_quota`. Retryable LibGen download failures are
+`safe` even after issuance. This is a quota statement, not permission to ignore
+rate limits; cancellation still requires fresh intent and no download auto-retries.

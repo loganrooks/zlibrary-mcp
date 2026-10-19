@@ -236,13 +236,27 @@ jobs:
     name: Offline acquisition leases (Windows)
     runs-on: windows-latest
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.10', '3.13']
     steps:
       - uses: actions/checkout@v7
         with:
           lfs: false
       - uses: astral-sh/setup-uv@v7
         with:
-          python-version: '3.13'
+          python-version: ${{ matrix.python }}
       - run: uv sync --frozen --group dev
       - name: Verify native leases and canonical receipt recovery
         run: uv run pytest __tests__/python/test_acquisition_locking.py __tests__/python/test_acquisition_receipts.py --no-cov -rs
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run build
+      - name: Verify lazy protocol on actual Windows Node and Python pipes
+        run: node --experimental-vm-modules node_modules/jest/bin/jest.js __tests__/lazy-eapi-session.test.js --testNamePattern="native protocol" --runInBand --coverage=false
+      - name: Verify bounded Python session framing and deferred initialization
+        run: uv run pytest __tests__/python/test_lazy_eapi_session.py --no-cov -rs

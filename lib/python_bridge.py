@@ -10,14 +10,22 @@ import traceback
 # Read the private pipe before importing code that could spawn grandchildren.
 os.environ.pop("ZLIBRARY_EAPI_SESSION", None)  # Retired env carrier is never trusted.
 _session_input = None
-if __name__ == "__main__" and os.environ.pop("ZLIBRARY_EAPI_CHANNEL", "") == "1":
-    os.set_inheritable(3, False)
-    try:
-        _session_input = json.loads(sys.stdin.readline(8193))
-        if not isinstance(_session_input, dict):
-            raise ValueError()
-    except (ValueError, OSError):
-        raise SystemExit("Invalid private session input")
+_lazy_session = False
+_session_published = None
+if __name__ == "__main__":
+    _private_mode = os.environ.pop("ZLIBRARY_EAPI_CHANNEL", "")
+    if _private_mode in {"1", "lazy-v1"}:
+        try:
+            os.set_inheritable(3, False)
+            if _private_mode == "lazy-v1":
+                os.set_inheritable(4, False)
+                _lazy_session = True
+            else:
+                _session_input = json.loads(sys.stdin.readline(8193))
+                if not isinstance(_session_input, dict):
+                    raise ValueError()
+        except (ValueError, OSError):
+            raise SystemExit("Invalid private session input") from None
 import httpx
 from typing import Optional
 from email.message import Message
@@ -314,13 +322,23 @@ async def _validate_eapi_profile(client):
 
 async def initialize_eapi_client() -> EAPIClient:
     """Use the parent generation, or log in only for a parent acquisition/per-call."""
-    global _eapi_client
+    global _eapi_client, _session_input
     email = os.environ.get("ZLIBRARY_EMAIL")
     password = os.environ.get("ZLIBRARY_PASSWORD")
     if not email or not password:
         raise ValueError(
             "ZLIBRARY_EMAIL and ZLIBRARY_PASSWORD environment variables required"
         )
+    if _lazy_session and _session_input is None:
+        from lib.eapi_session_protocol import request_session, SessionProtocolError
+
+        try:
+            budget = int(os.environ.get("ZLIBRARY_EAPI_HANDOFF_TIMEOUT_MS", "240000"))
+            if not 0 < budget <= 2147483647:
+                raise ValueError()
+        except ValueError:
+            raise SessionProtocolError("Invalid private session deadline") from None
+        _session_input = await request_session(timeout=budget / 1000)
     record = _session_input
     if record is not None:
         if record.get("identity") != email or record.get("action") not in (
@@ -355,7 +373,12 @@ async def initialize_eapi_client() -> EAPIClient:
 
 def _publish_eapi_session():
     """Only fd 3 carries bearer material; stdout/stderr remain public."""
-    if _session_input is None or _eapi_client is None:
+    global _session_published
+    if (
+        _session_input is None
+        or _eapi_client is None
+        or _session_published is _session_input
+    ):
         return
     client = _eapi_client
     payload = {
@@ -367,7 +390,11 @@ def _publish_eapi_session():
     }
     if client.needs_profile_validation:
         payload["validate_next"] = True
-    os.write(3, (json.dumps(payload) + "\n").encode())
+    encoded = (json.dumps(payload) + "\n").encode()
+    if len(encoded) > 8192:
+        raise ValueError("Invalid private session output")
+    _session_published = _session_input
+    os.write(3, encoded)
 
 
 def _attach_eapi_session(client):
@@ -1816,6 +1843,8 @@ def _login_failure_info(error):
 
 
 async def main():
+    global _session_published
+    _session_published = None
     parser = argparse.ArgumentParser(description="Z-Library Python Bridge")
     parser.add_argument("function_name", help="Name of the function to call")
     parser.add_argument("args_json", help="JSON string of arguments for the function")
@@ -1859,7 +1888,10 @@ async def main():
         # during asyncio.run() shutdown.
         resolver_timeout = get_source_config().preflight_timeout
         async with bounded_resolver(resolver_timeout):
-            if needs_eapi:
+            if needs_eapi or (
+                _session_input is not None
+                and _session_input.get("action") in ("login", "validate")
+            ):
                 await initialize_eapi_client()
 
             # Standardize 'language' key to 'languages' for search functions.
@@ -1877,7 +1909,7 @@ async def main():
 
         # Print only confirmation and path to stdout to avoid large content
         mcp_style_response = {"content": [{"type": "text", "text": json.dumps(result)}]}
-        if needs_eapi:
+        if _eapi_client:
             _publish_eapi_session()
         print(json.dumps(mcp_style_response))
 

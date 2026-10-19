@@ -277,7 +277,11 @@ export class EapiSessionOwner {
   run<T>(
     identity: string,
     invoke: (input: SessionInput, signal?: AbortSignal) => Promise<T>,
-    options: { signal?: AbortSignal; timeoutMs?: number } = {},
+    options: {
+      signal?: AbortSignal;
+      timeoutMs?: number;
+      operationMode?: 'at-most-once';
+    } = {},
   ): Promise<T> {
     const budget =
       Number.isSafeInteger(options.timeoutMs) &&
@@ -293,6 +297,7 @@ export class EapiSessionOwner {
     this.generationFor(identity);
     const execute = async (initial: EapiSession, signal: AbortSignal) => {
       let session = initial;
+      let handedOff = false;
       for (let attempt = 0; attempt < 2; attempt++) {
         try {
           if (signal.aborted) throw deadlineError(signal);
@@ -307,6 +312,7 @@ export class EapiSessionOwner {
           }
           if (signal.aborted) throw deadlineError(signal);
           // This immutable snapshot belongs to this operation, not a future generation.
+          handedOff = true;
           const result = await invoke(
             { ...session, action: 'operation', authRetry: attempt > 0 },
             signal,
@@ -331,7 +337,7 @@ export class EapiSessionOwner {
             else state.refreshed = true; // One immediate refresh per surviving-session episode.
             if (state.retryAt > Date.now()) throw this.backoffError(state);
           }
-          if (attempt) throw error;
+          if (attempt || (handedOff && options.operationMode === 'at-most-once')) throw error;
           session = await this.acquire(identity, invoke, signal, true);
         }
       }

@@ -199,7 +199,7 @@ export function classifyFailure(error: any, operation: string, source?: string):
     'cancelled',
     'outcome_unknown',
   ].includes(code)
-    ? operation === 'download' && !before
+    ? operation === 'download' && !before && source !== 'libgen'
       ? 'may_spend_quota'
       : 'safe'
     : 'no';

@@ -177,3 +177,49 @@ test.each([true, false])('download lease contention issued=%s has bounded retry/
   else expect(explicitRepeat.quota_estimate).toMatchObject({ remaining: 7, basis: 'observed' });
   expect(acquisitions).toBe(2);
 });
+
+const { classifyFailure } = await import('../dist/lib/tool-errors.js');
+const retryReasons = [
+  ['dns_failure', 'provider_unreachable'],
+  ['connect_timeout', 'provider_unreachable'],
+  ['read_timeout', 'provider_timeout'],
+  ['http_error', 'provider_error'],
+  ['integrity_mismatch', 'integrity_mismatch'],
+  ['timeout', 'outcome_unknown'],
+];
+const quotaSources = [
+  ['libgen', 'safe'], ['zlibrary', 'may_spend_quota'], ['annas', 'may_spend_quota'],
+  [undefined, 'may_spend_quota'], ['unknown-source', 'may_spend_quota'],
+];
+test.each(retryReasons.flatMap(([reason, code]) => quotaSources.flatMap(([source, after]) => [
+  { reason, code, source, issued: undefined, retry: after },
+  { reason, code, source, issued: true, retry: after },
+  { reason, code, source, issued: false, retry: 'safe' },
+])))('download retry quota contract $source/$reason/issued=$issued', ({ reason, code, source, issued, retry }) => {
+  const details = { reason, ...(issued === undefined ? {} : { request_issued: issued }) };
+  const failure = classifyFailure({ context: { details } }, 'download', source);
+  expect(failure.code).toBe(code);
+  expect(failure.info).toMatchObject({ retry });
+  expect(failure.info.detail).toEqual(details);
+});
+
+test.each(retryReasons)('actual SDK LibGen %s failure is quota-safe without boundary metadata or automatic retry', async (reason, code) => {
+  run.mockImplementation(async (_script, options) => {
+    if (options.args[0] === 'search_multi_source') return encode({ books: [{ ...book, source: 'libgen', md5: 'a'.repeat(32) }] });
+    throw Object.assign(new Error('synthetic source failure'), {
+      stderr: JSON.stringify({ error: 'synthetic source failure', type: 'SourceError', details: { provider: 'libgen', reason } }),
+    });
+  });
+  const ref = (await call('search', { query: 'Book', sources: ['libgen'] })).rows[0].ref;
+  const failed = await call('download', { ref });
+  expect(failed.error).toMatchObject({ source: 'libgen', code, retry: 'safe', detail: { reason } });
+  expect(failed.error.detail.request_issued).toBeUndefined();
+  expect(ErrorEnvelopeSchema.safeParse(failed).success).toBe(true);
+  expect(run.mock.calls.length).toBe(2); // one search, one explicit download; no automatic retry
+});
+
+test.each(['invalid_argument', 'quota_exhausted'])('LibGen %s does not become automatically retryable', reason => {
+  const failure = classifyFailure({ context: { details: { reason } } }, 'download', 'libgen');
+  expect(failure.code).toBe(reason);
+  expect(failure.info.retry).toBe('no');
+});

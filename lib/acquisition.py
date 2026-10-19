@@ -13,6 +13,7 @@ import json
 import os
 from pathlib import Path
 import re
+import stat
 import tempfile
 import time
 
@@ -107,12 +108,22 @@ def _hash(path):
     return digest.hexdigest()
 
 
-def _read(path):
+def _read(path, *, issued=False):
     try:
+        if not stat.S_ISREG(path.lstat().st_mode):
+            raise AcquisitionError(
+                "output_refused", "Receipt must be a regular file", issued=issued
+            )
         value = json.loads(path.read_text())
         return value if isinstance(value, dict) else {}
-    except (OSError, ValueError):
+    except AcquisitionError:
+        raise
+    except (FileNotFoundError, ValueError):
         return {}
+    except OSError as error:
+        raise AcquisitionError(
+            "output_refused", "Cannot read acquisition receipt", issued=issued
+        ) from error
 
 
 def _verified_artifact(record, directory):
@@ -441,7 +452,7 @@ async def acquire(
                     held.add(target)
                 return target
 
-            previous = _read(receipt_path)
+            previous = _read(receipt_path, issued=False)
             if previous.get("record_version") == 1 and isinstance(
                 previous.get("path"), str
             ):
@@ -449,7 +460,7 @@ async def acquire(
                 _refuse_foreign(previous, destination, directory, source, identifiers)
                 canonical_path = Path(str(target) + ".acq.json")
                 canonical = _read(
-                    canonical_path
+                    canonical_path, issued=False
                 )  # inspect only after acquiring its lease
                 _refuse_foreign(canonical, target, directory, source, identifiers)
                 candidate = canonical if canonical else previous
@@ -502,7 +513,7 @@ async def acquire(
                         issued=True,
                     )
                 canonical_path = Path(str(target) + ".acq.json")
-                existing = _read(canonical_path)
+                existing = _read(canonical_path, issued=True)
                 _refuse_foreign(
                     existing, target, directory, source, identifiers, issued=True
                 )
@@ -578,7 +589,10 @@ async def acquire(
                 _atomic_json(canonical_path, record)
             else:
                 record = authority
-            if canonical_path != receipt_path and _read(receipt_path) != record:
+            if (
+                canonical_path != receipt_path
+                and _read(receipt_path, issued=True) != record
+            ):
                 _atomic_json(receipt_path, record)
             reply = _reply(
                 {**record, "reused": bool(result.get("publication_reused", False))},

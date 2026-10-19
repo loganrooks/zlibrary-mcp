@@ -127,6 +127,8 @@ lock and reads the receipt from disk. A matching identity and freshly recomputed
 SHA-256 skip the transfer without quota. `transfer_skipped: true` means no
 transfer; `reused: true` means bytes were fetched and an identical existing file
 was adopted, so quota may have been spent. Both cannot be true together.
+Unreadable receipts and symlink/nonregular sidecars fail with `output_refused`;
+they are not treated as permission to overwrite provenance or start a transfer.
 
 An intent receipt precedes the request. If the acquired format corrects the
 filename, the call retains its initial lease and takes a non-waiting lease on the
@@ -156,7 +158,9 @@ are not automatically retried: `retry` is `safe`, `may_spend_quota`, or `no`, an
 cancelled calls require fresh user intent. See [errors](docs/api.md#errors).
 Corrected-target contention refuses without waiting and can occur after a
 quota-counting transfer (`request_issued: true`, `retry: "may_spend_quota"`); it
-invalidates the estimate and is never automatically retried.
+invalidates the estimate and is never automatically retried. Retryable LibGen
+download failures are quota-safe (`retry: "safe"`), including after a request;
+this does not waive provider rate limits or enable automatic retry.
 
 ## Installation
 
@@ -204,11 +208,13 @@ file-reading tool in this five-tool interface.
 | `PYTHON_BRIDGE_LONG_TIMEOUT` | Acquisition deadline in milliseconds |
 | `ZLIBRARY_SESSION_MODE` | `memory` (default) or `per-call`; unknown modes fail at startup |
 
-Read operations retain the in-memory EAPI session owner and its bounded login
-refresh/backoff. Fresh acquisition authenticates **after** the disk receipt check;
-it uses per-call authentication so even a restarted server can reuse a local
-artifact without any account request. Credentials and cookies are never written
-to acquisition records. Debug logs can include queries; inspect before sharing.
+In memory mode, reads and fresh Z-Library acquisitions share the same in-memory
+session owner, cold-login coordination and bounded refresh/backoff. Acquisition
+asks for authentication only after the held-lease receipt check and durable intent;
+a verified local receipt needs no account request, even during login cooldown or
+after restart. Once a transfer receives its session, authentication rejection does
+not replay it. Explicit `per-call` mode retains per-call authentication.
+Credentials and cookies are never written to acquisition records. Debug logs can include queries; inspect before sharing.
 See [retry configuration](docs/RETRY_CONFIGURATION.md) for read-operation retry
 and circuit-breaker settings. The acquisition call never automatically retries.
 

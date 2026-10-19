@@ -28,6 +28,7 @@ import { spawnSync } from 'child_process';
 import { readdirSync, readFileSync } from 'fs';
 import { logger } from './logger.js';
 import { BridgeKilledError, BridgeSpawnError, BridgeTimeoutError } from './errors.js';
+import { sanitizeSessionError } from './eapi-session.js';
 
 /**
  * Read a positive-integer millisecond budget within Node's timer range.
@@ -360,6 +361,11 @@ export interface RunBridgeOptions {
   /** Internal stdin input / fd 3 output. Never included in argv or diagnostics. */
   sessionInput?: Record<string, unknown>;
   onSession?: (update: unknown) => void;
+  /** Internal post-admission demand, never a public tool/session snapshot. */
+  onSessionNeeded?: (channel: {
+    grant(input: Record<string, unknown>): void;
+    deny(error: Error): void;
+  }) => void;
 }
 
 /**
@@ -382,6 +388,9 @@ export function runPythonBridge(
     DEFAULT_BRIDGE_TIMEOUT_MS,
   );
   const label = runOptions.label ?? scriptName;
+  const lazy = !!runOptions.onSessionNeeded;
+  if (lazy && runOptions.sessionInput)
+    return Promise.reject(new Error('Conflicting private session modes'));
 
   installExitHooks();
 
@@ -406,6 +415,13 @@ export function runPythonBridge(
     const processState: { tree?: ProcessTreeRecord } = {};
     let cleanupCall = () => {};
     let failWith: (error: Error, why: string) => void = () => {};
+    let childClosed = false;
+    let demanded = false;
+    let granted = false;
+    const privateSecrets: string[] =
+      typeof runOptions.sessionInput?.remix_userkey === 'string'
+        ? [runOptions.sessionInput.remix_userkey]
+        : [];
 
     const onShellError = (error: NodeJS.ErrnoException) => {
       const errnoCode = error.code ?? 'UNKNOWN_SPAWN_ERROR';
@@ -427,12 +443,26 @@ export function runPythonBridge(
     const shell = new PythonShell(scriptName, {
       ...options,
       ...(runOptions.sessionInput ? { stdio: ['pipe', 'pipe', 'pipe', 'pipe'] } : {}),
+      ...(lazy
+        ? {
+            // Windows child stdin must support IOCP, including Python3.10.
+            stdio: ['overlapped', 'pipe', 'pipe', 'pipe', 'pipe'],
+            env: {
+              ...options.env,
+              ZLIBRARY_EAPI_CHANNEL: 'lazy-v1',
+              ZLIBRARY_EAPI_HANDOFF_TIMEOUT_MS: String(timeoutMs),
+            },
+          }
+        : {}),
       // On POSIX this creates a new session/process group whose id is the
       // Python pid. OCR and other grandchildren inherit it, making the whole
       // bridge-owned tree addressable without walking /proc.
       detached: process.platform === 'win32' ? options.detached : true,
     });
     shell.on('error', onShellError);
+    shell.childProcess.once('close', () => {
+      childClosed = true;
+    });
 
     const pid = shell.childProcess?.pid;
     if (!pid) {
@@ -444,15 +474,22 @@ export function runPythonBridge(
       return;
     }
     let privateDone = Promise.resolve();
-    if (runOptions.sessionInput) {
+    let requestDone = Promise.resolve();
+    if (runOptions.sessionInput || lazy) {
       const channel = shell.childProcess.stdio[3] as Readable;
       privateDone = new Promise<void>((done) => {
         let pending = '';
         let delivered = false;
         channel.setEncoding('utf8');
         channel.on('data', (chunk: string) => {
+          if (settled) return;
+          if (lazy && !granted) {
+            failWith(new Error('Invalid private session response'), 'private channel');
+            return;
+          }
           pending += chunk;
-          if (pending.length > 8192) {
+          if (Buffer.byteLength(pending) > 8192) {
+            pending = '';
             failWith(new Error('Invalid private session response'), 'private channel');
             return;
           }
@@ -460,7 +497,10 @@ export function runPythonBridge(
           try {
             if (delivered || pending.trim().split('\n').length !== 1) throw new Error();
             delivered = true;
-            runOptions.onSession?.(JSON.parse(pending.trim()));
+            const update = JSON.parse(pending.trim());
+            if (typeof update?.remix_userkey === 'string')
+              privateSecrets.push(update.remix_userkey);
+            runOptions.onSession?.(update);
             pending = '';
           } catch {
             failWith(new Error('Invalid private session response'), 'private channel');
@@ -476,7 +516,70 @@ export function runPythonBridge(
         });
       });
       shell.stdin.on('error', () => {}); // A dying leader may close stdin before reading.
-      shell.stdin.write(JSON.stringify(runOptions.sessionInput) + '\n');
+      if (runOptions.sessionInput)
+        shell.stdin.write(JSON.stringify(runOptions.sessionInput) + '\n');
+    }
+    if (lazy) {
+      const request = shell.childProcess.stdio[4] as Readable;
+      requestDone = new Promise<void>((done) => {
+        let pending = Buffer.alloc(0);
+        request.on('data', (chunk: Buffer) => {
+          if (settled) return;
+          pending = Buffer.concat([pending, chunk]);
+          if (pending.length > 128) {
+            pending = Buffer.alloc(0);
+            failWith(new Error('Invalid private session request'), 'private request');
+          }
+        });
+        request.on('end', () => {
+          try {
+            if (!pending.length) return; // receipt hit: no authentication or stdin read
+            const frame = JSON.parse(pending.toString('utf8'));
+            if (
+              !pending.toString('utf8').endsWith('\n') ||
+              !frame ||
+              Object.keys(frame).sort().join(',') !== 'type,v' ||
+              frame.v !== 1 ||
+              frame.type !== 'session_needed'
+            )
+              throw new Error();
+            demanded = true;
+            if (settled) return;
+            runOptions.onSessionNeeded!({
+              grant(input) {
+                if (settled) return;
+                if (granted) {
+                  failWith(new Error('Invalid private session handoff'), 'private grant');
+                  return;
+                }
+                const frame = JSON.stringify({ v: 1, type: 'session', input }) + '\n';
+                if (Buffer.byteLength(frame) > 8192) {
+                  failWith(new Error('Invalid private session handoff'), 'private grant');
+                  return;
+                }
+                granted = true;
+                if (typeof input.remix_userkey === 'string')
+                  privateSecrets.push(input.remix_userkey);
+                shell.stdin.end(frame);
+              },
+              deny(error) {
+                if (settled) return;
+                shell.stdin.end('{"v":1,"type":"denied","code":"auth_unavailable"}\n');
+                failWith(error, 'private session denied');
+              },
+            });
+          } catch {
+            failWith(new Error('Invalid private session request'), 'private request');
+          } finally {
+            pending = Buffer.alloc(0);
+            done();
+          }
+        });
+        request.on('error', () => {
+          done();
+          failWith(new Error('Private session request channel closed'), 'private request');
+        });
+      });
     }
 
     const treeRecord: ProcessTreeRecord = { shell, pid, label };
@@ -525,7 +628,18 @@ export function runPythonBridge(
       // a shutdown in the meantime still SIGKILLs it.
       clearTimeout(timer);
       if (runOptions.signal) runOptions.signal.removeEventListener('abort', onAbort);
-      reject(error);
+      if (lazy || runOptions.sessionInput) {
+        sanitizeSessionError(error, privateSecrets);
+        const finishFailure = () => {
+          shell.stdin.destroy();
+          (shell.childProcess.stdio[3] as Readable)?.destroy();
+          (shell.childProcess.stdio[4] as Readable)?.destroy();
+          monitorTree(treeRecord);
+          reject(error);
+        };
+        if (childClosed) finishFailure();
+        else shell.childProcess.once('close', finishFailure);
+      } else reject(error);
     };
 
     function onAbort() {
@@ -552,11 +666,15 @@ export function runPythonBridge(
       if (stderrLines.length > MAX_STDERR_LINES) stderrLines.shift();
     });
 
-    shell.end(async (err: any) => {
-      if (runOptions.sessionInput) await privateDone;
+    const finish = async (err: any) => {
+      if (runOptions.sessionInput || lazy) await Promise.all([privateDone, requestDone]);
       if (settled) {
         cleanupCall();
         monitorTree(treeRecord);
+        return;
+      }
+      if (lazy && demanded && !granted) {
+        failWith(new Error('Private session handoff incomplete'), 'private grant');
         return;
       }
       settled = true;
@@ -585,11 +703,22 @@ export function runPythonBridge(
         if (stderrLines.length > 0 && !err.stderr) {
           err.stderr = stderrLines.join('\n');
         }
+        if (lazy) sanitizeSessionError(err, privateSecrets);
         reject(err);
       } else {
         resolve(output);
       }
-    });
+    };
+    if (lazy) {
+      // PythonShell.end closes stdin; lazy children must keep it until grant/denial.
+      let pythonError: Error | undefined;
+      shell.on('pythonError', (error) => {
+        pythonError = error;
+      });
+      shell.once('close', () => {
+        void finish(pythonError);
+      });
+    } else shell.end(finish);
   });
 }
 

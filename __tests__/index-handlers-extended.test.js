@@ -32,7 +32,7 @@ test('provider aggregate retains integrity verdict and child reasons', () => {
   const failure = classifyFailure({ context: { details: { failures: [
     { provider: 'libgen', reason: 'dns_failure' }, { provider: 'libgen', reason: 'integrity_mismatch' },
   ] } } }, 'download', 'libgen');
-  expect(errorEnvelope(failure, 'download').error).toMatchObject({ code: 'integrity_mismatch', retry: 'may_spend_quota', attempts: [
+  expect(errorEnvelope(failure, 'download').error).toMatchObject({ code: 'integrity_mismatch', retry: 'safe', attempts: [
     { reason: 'dns_failure' }, { reason: 'integrity_mismatch' },
   ] });
 });

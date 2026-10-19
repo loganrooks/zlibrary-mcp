@@ -104,16 +104,37 @@ async function callPythonFunction(
 ): Promise<any> {
   const configuredEnv = { ...process.env };
   const identity = configuredEnv.ZLIBRARY_EMAIL || '';
-  const reuse = needsEapi(functionName, args) && getSessionMode() === 'memory';
+  const memory = getSessionMode() === 'memory';
+  const reuse = needsEapi(functionName, args) && memory;
+  const lazyAcquisition =
+    memory &&
+    functionName === 'acquire_book' &&
+    !['libgen', 'annas', 'annas_archive'].includes(
+      String(args.book_details?.source || '').toLowerCase(),
+    );
   const invoke = (transport?: SessionInput, signal = callOptions.signal) =>
     withRetry(
       async () => {
         const execute = async () => {
-          const session = reuse ? eapiSessions.get(identity) : undefined;
+          const lazy = lazyAcquisition && !transport;
+          let activeTransport = transport;
+          const lifetime = new AbortController();
+          const lazySignal = signal ? AbortSignal.any([signal, lifetime.signal]) : lifetime.signal;
+          let ownerWork: Promise<any> | undefined;
+          const controlWork: Promise<any>[] = [];
+          let denied: unknown;
+          let completeOperation!: (value: any) => void;
+          let rejectOperation!: (error: any) => void;
+          const operation = new Promise<any>((resolve, reject) => {
+            completeOperation = resolve;
+            rejectOperation = reject;
+          });
+          void operation.catch(() => {}); // raw child may fail before a grant exists
+          const session = transport ? eapiSessions.get(identity) : undefined;
           let sessionUpdate: unknown;
           const adoptUpdate = () => {
-            if (transport && sessionUpdate && !signal?.aborted) {
-              eapiSessions.consume(sessionUpdate, identity, transport.generation);
+            if (activeTransport && sessionUpdate && !signal?.aborted && !lifetime.signal.aborted) {
+              eapiSessions.consume(sessionUpdate, identity, activeTransport.generation);
               sessionUpdate = undefined;
             }
           };
@@ -125,6 +146,7 @@ async function callPythonFunction(
             const childEnv = { ...configuredEnv };
             delete childEnv.ZLIBRARY_EAPI_SESSION;
             delete childEnv.ZLIBRARY_EAPI_CHANNEL;
+            delete childEnv.ZLIBRARY_EAPI_HANDOFF_TIMEOUT_MS;
             if (transport) childEnv.ZLIBRARY_EAPI_CHANNEL = '1';
             const options: PythonShellOptions = {
               env: childEnv,
@@ -140,12 +162,47 @@ async function callPythonFunction(
             // running forever (see src/lib/python-runner.ts).
             const results = await runPythonBridge(BRIDGE_SCRIPT_NAME, options, {
               timeoutMs: callOptions.timeoutMs ?? defaultTimeoutFor(functionName),
-              signal,
+              signal: lazy ? lazySignal : signal,
               label: `python_bridge.${functionName}`,
               sessionInput: transport ? { ...transport } : undefined,
-              onSession: transport
-                ? (update) => {
-                    if (!signal?.aborted) sessionUpdate = update;
+              onSession:
+                transport || lazy
+                  ? (update) => {
+                      if (!signal?.aborted) sessionUpdate = update;
+                    }
+                  : undefined,
+              onSessionNeeded: lazy
+                ? (channel) => {
+                    ownerWork = eapiSessions.run(
+                      identity,
+                      async (input, authSignal) => {
+                        if (input.action !== 'operation') {
+                          const work = invoke(input, authSignal);
+                          controlWork.push(work);
+                          return work;
+                        }
+                        const handoff = () => {
+                          if (activeTransport)
+                            throw new PythonBridgeError('Duplicate private handoff', {}, false);
+                          activeTransport = Object.freeze({ ...input });
+                          channel.grant({ ...activeTransport });
+                          // Decode independently; never await owner completion in the raw runner.
+                          return operation;
+                        };
+                        return input.authRetry
+                          ? handoff()
+                          : pythonBridgeCircuitBreaker.execute(handoff);
+                      },
+                      {
+                        signal: lazySignal,
+                        timeoutMs: callOptions.timeoutMs ?? defaultTimeoutFor(functionName),
+                        operationMode: 'at-most-once',
+                      },
+                    );
+                    void ownerWork.catch((error) => {
+                      denied = error;
+                      if (!activeTransport) channel.deny(error);
+                    });
                   }
                 : undefined,
             });
@@ -203,7 +260,7 @@ async function callPythonFunction(
               );
             }
 
-            if (transport?.action === 'login' && resultData?.login_failed) {
+            if (activeTransport?.action === 'login' && resultData?.login_failed) {
               const failure = resultData.login_failed;
               throw new PythonBridgeError(
                 String(resultData.error || 'Z-Library login failed'),
@@ -216,9 +273,12 @@ async function callPythonFunction(
                 false,
               );
             }
-            if (transport && resultData?.auth_rejected?.generation === transport.generation) {
+            if (
+              activeTransport &&
+              resultData?.auth_rejected?.generation === activeTransport.generation
+            ) {
               throw authRejected(
-                transport.generation,
+                activeTransport.generation,
                 String(resultData.error || 'EAPI authentication rejected'),
               );
             }
@@ -243,15 +303,41 @@ async function callPythonFunction(
 
             // Accept private metadata only after excluding a matching auth rejection.
             adoptUpdate();
+            if (lazy) {
+              completeOperation(resultData);
+              if (ownerWork) await ownerWork;
+            }
             return resultData;
-          } catch (err: any) {
+          } catch (caught: any) {
+            let err = caught;
+            if (lazy) {
+              rejectOperation(err);
+              // An owner denial wins over the consequent child failure, but our
+              // own cleanup abort must not hide an earlier protocol/child error.
+              const ownerDenial = denied;
+              if (!activeTransport) lifetime.abort();
+              if (ownerWork) {
+                try {
+                  await ownerWork;
+                } catch (ownerError) {
+                  if (activeTransport) err = denied ?? ownerError;
+                  else if (ownerDenial || signal?.aborted) err = ownerDenial ?? ownerError;
+                }
+              }
+              if (err && typeof err === 'object')
+                err.context = {
+                  ...err.context,
+                  details: { ...err.context?.details, request_issued: !!activeTransport },
+                };
+            }
             if (!['auth_rejected', 'login_failed'].includes(err?.context?.reason)) adoptUpdate();
             // Never log or retain subprocess environments or internal bearer output.
             sanitizeSessionError(err, [
               configuredEnv.ZLIBRARY_EMAIL || '',
               configuredEnv.ZLIBRARY_PASSWORD || '',
-              transport?.remix_userkey || '',
+              activeTransport?.remix_userkey || '',
               session?.remix_userkey || '',
+              (sessionUpdate as any)?.remix_userkey || '',
               eapiSessions.get(identity)?.remix_userkey || '',
             ]);
 
@@ -294,12 +380,22 @@ async function callPythonFunction(
                 functionName,
                 args,
                 stderr: err.stderr,
+                details: err.context?.details,
                 originalError: err,
               },
             );
+          } finally {
+            if (lazy) {
+              lifetime.abort();
+              // Owner waiters can settle before their cancelled control child.
+              // This call still owns that child's actual pipe/exit cleanup.
+              await Promise.allSettled(controlWork);
+            }
           }
         };
-        return transport?.authRetry ? execute() : pythonBridgeCircuitBreaker.execute(execute);
+        return transport?.authRetry || (lazyAcquisition && !transport)
+          ? execute()
+          : pythonBridgeCircuitBreaker.execute(execute);
       },
       {
         signal,
@@ -366,7 +462,9 @@ function admitDownloadArgs(args: Record<string, unknown>): void {
     (retiredProcessFlag in args && args[retiredProcessFlag] !== false) ||
     'processed_output_format' in args
   ) {
-    throw new Error('Text processing was removed in 2.0. Use a separate 1.4.x installation for text processing.');
+    throw new Error(
+      'Text processing was removed in 2.0. Use a separate 1.4.x installation for text processing.',
+    );
   }
   const unknown = Object.keys(args).filter(
     (key) => !['bookDetails', 'outputDir', retiredProcessFlag].includes(key),
@@ -549,9 +647,15 @@ export async function downloadBookToFile(
     }
 
     const processingKeys = [
-      'processed_file_path', 'metadata_file_path', 'footnotes_file_path',
-      'endnotes_file_path', 'citations_file_path', 'stats',
-      'content_types_produced', 'output_files', 'processing_error',
+      'processed_file_path',
+      'metadata_file_path',
+      'footnotes_file_path',
+      'endnotes_file_path',
+      'citations_file_path',
+      'stats',
+      'content_types_produced',
+      'output_files',
+      'processing_error',
     ];
     if (processingKeys.some((key) => key in result)) {
       throw new Error('Invalid response from Python bridge: unexpected text-processing bundle.');

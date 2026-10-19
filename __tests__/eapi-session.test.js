@@ -459,3 +459,149 @@ test('short password cannot corrupt authentication reason codes or backoff', asy
   await expect(call()).rejects.toMatchObject({ context: { reason: 'login_failed' } });
   await expect(call()).rejects.toMatchObject({ context: { reason: 'auth_backoff' } });
 });
+
+// Lazy acquisition uses the same owner but never replays a granted transfer.
+const lazyCall = (options = {}) => api.invokeAcquisitionBridge('acquire_book', { book_details: { source: 'zlibrary', id: '202', hash: 'hash202' } }, options);
+function lazyBackend({ operation, login } = {}) {
+  const counts = { login: 0, validate: 0, grants: 0, quota: 0, normal: 0 };
+  runPythonBridge.mockImplementation(async (_script, _options, ro) => {
+    const input = ro.sessionInput;
+    if (input?.action === 'login') {
+      counts.login++;
+      if (login) return login(input, ro, counts);
+      ro.onSession({ ...session(input.generation), identity: input.identity });
+      return envelope({ authenticated: true });
+    }
+    if (input?.action === 'validate') { counts.validate++; return envelope({ authenticated: true }); }
+    if (!ro.onSessionNeeded) { counts.normal++; return envelope([]); }
+    return new Promise((resolve, reject) => {
+      const abort = () => reject(new Error('Synthetic child cancellation'));
+      ro.signal?.addEventListener('abort', abort, { once: true });
+      const finish = value => { ro.signal?.removeEventListener('abort', abort); resolve(value); };
+      ro.onSessionNeeded({
+        grant(snapshot) {
+          counts.grants++; counts.quota++;
+          if (operation) operation(snapshot, ro, counts, finish, reject);
+          else finish(envelope({ path: '/synthetic/document', transfer_skipped: false }));
+        },
+        deny(error) { ro.signal?.removeEventListener('abort', abort); reject(error); },
+      });
+    });
+  });
+  return counts;
+}
+
+test('lazy postgrant quota-decrement rejection performs one transfer, rejects generation, never refreshes', async () => {
+  const counts = lazyBackend({ operation(input, ro, _counts, finish) {
+    // A rejected generation must not be rescued by its terminal private metadata.
+    ro.onSession(session(input.generation, 'rejected-private-canary'));
+    finish(rejectReply(input.generation));
+  } });
+  await expect(lazyCall()).rejects.toMatchObject({ context: { reason: 'auth_rejected', details: { request_issued: true } } });
+  expect(counts).toMatchObject({ login: 1, grants: 1, quota: 1 });
+  expect(JSON.stringify(consoleSpy.mock.calls)).not.toContain('rejected-private-canary');
+  // A later independent read may authenticate, but the transfer was not replayed.
+  await call();
+  expect(counts.login).toBe(2); expect(counts.grants).toBe(1);
+});
+
+test('lazy recovered domain/validate_next is adopted and validated by later search/read', async () => {
+  const counts = lazyBackend({ operation(input, ro, _counts, finish) {
+    ro.onSession({ ...session(input.generation, 'recovered-private-canary', 'recovered.example.test'), validate_next: true });
+    finish(envelope({ path: '/synthetic/document' }));
+  } });
+  await lazyCall();
+  const seen = [];
+  runPythonBridge.mockImplementation(async (_script, _options, ro) => {
+    seen.push({ action: ro.sessionInput.action, domain: ro.sessionInput.domain });
+    expect(ro.sessionInput.remix_userkey).toBe('recovered-private-canary');
+    return envelope(ro.sessionInput.action === 'validate' ? { authenticated: true } : []);
+  });
+  await api.searchBooks({ query: 'synthetic recovered-domain search' });
+  expect(seen).toEqual([{ action: 'validate', domain: 'recovered.example.test' }, { action: 'operation', domain: 'recovered.example.test' }]);
+  expect(counts.login).toBe(1);
+});
+
+test('lazy raw error before grant survives cancellation of its unfinished owner login', async () => {
+  let failChild;
+  const entered = new Promise(resolve => {
+    runPythonBridge.mockImplementation((_script, _options, ro) => {
+      if (ro.sessionInput) { resolve(); return new Promise((_done, reject) => ro.signal.addEventListener('abort', () => reject(new Error('Synthetic cancelled login')), { once: true })); }
+      return new Promise((_done, reject) => { failChild = reject; ro.onSessionNeeded({ grant() { throw new Error('No grant expected'); }, deny() {} }); });
+    });
+  });
+  const work = lazyCall(); const outcome = work.catch(error => error);
+  await entered; failChild(new Error('Invalid private session request'));
+  expect((await outcome).message).toContain('Invalid private session request');
+});
+
+test('lazy leader cancellation permits live search waiter takeover, no late login adoption', async () => {
+  let entered, late;
+  const started = new Promise(resolve => { entered = resolve; });
+  const controller = new AbortController();
+  const counts = lazyBackend({ login(input, ro, stats) {
+    if (stats.login > 1) { ro.onSession({ ...session(input.generation, 'takeover-cookie'), identity: input.identity }); return envelope({ authenticated: true }); }
+    late = () => ro.onSession(session(input.generation, 'late-private-canary'));
+    entered();
+    return new Promise((_resolve, reject) => ro.signal.addEventListener('abort', () => reject(new Error('Synthetic cancelled login')), { once: true }));
+  } });
+  const leader = lazyCall({ signal: controller.signal }).catch(error => error);
+  await started;
+  const waiter = call(); controller.abort();
+  expect((await leader).context.reason).toBe('aborted');
+  await expect(waiter).resolves.toEqual([]); late();
+  expect(counts.login).toBe(2); expect(counts.grants).toBe(0);
+  await call(); expect(counts.login).toBe(2);
+});
+
+test('lazy postgrant cancellation fences late update and does not replay transfer', async () => {
+  let granted, late;
+  const started = new Promise(resolve => { granted = resolve; });
+  const controller = new AbortController();
+  const counts = lazyBackend({ operation(input, ro) { late = () => ro.onSession(session(input.generation, 'late-operation-cookie')); granted(); } });
+  const outcome = lazyCall({ signal: controller.signal }).catch(error => error);
+  await started; controller.abort();
+  expect((await outcome).context.reason).toBe('aborted'); late();
+  const inputs = [];
+  runPythonBridge.mockImplementation(async (_script, _options, ro) => { inputs.push(ro.sessionInput); return envelope([]); });
+  await call();
+  expect(inputs[0].remix_userkey).toBe(token);
+  expect(counts).toMatchObject({ login: 1, grants: 1, quota: 1 });
+});
+
+test('stale lazy rejection and account-switch output cannot clear a newer session', async () => {
+  let granted, completeOld, oldInput, oldRun;
+  const started = new Promise(resolve => { granted = resolve; });
+  const counts = lazyBackend({ operation(input, ro, _counts, finish) { oldInput = input; oldRun = ro; completeOld = finish; granted(); } });
+  const old = lazyCall().catch(error => error); await started;
+  process.env.ZLIBRARY_EMAIL = 'other-account@example.test'; await call();
+  process.env.ZLIBRARY_EMAIL = identity; await call();
+  const logins = counts.login;
+  oldRun.onSession(session(oldInput.generation, 'obsolete-private-canary'));
+  completeOld(rejectReply(oldInput.generation));
+  expect((await old).context.reason).toBe('auth_rejected');
+  await call(); expect(counts.login).toBe(logins); expect(counts.quota).toBe(1);
+});
+
+test('lazy waiter cancellation neither aborts shared login leader nor receives a grant', async () => {
+  let release, entered;
+  const started = new Promise(resolve => { entered = resolve; });
+  const counts = lazyBackend({ login(input, ro) {
+    entered(); return new Promise(resolve => { release = () => { ro.onSession(session(input.generation)); resolve(envelope({ authenticated: true })); }; });
+  } });
+  const leader = call(); await started;
+  const controller = new AbortController();
+  const waiter = lazyCall({ signal: controller.signal }).catch(error => error);
+  await new Promise(resolve => setTimeout(resolve, 0)); controller.abort();
+  expect((await waiter).context.reason).toBe('aborted');
+  release(); await expect(leader).resolves.toEqual([]);
+  expect(counts).toMatchObject({ login: 1, grants: 0, quota: 0 });
+});
+
+test('lazy non-auth uncertainty retains the session without operation replay', async () => {
+  const counts = lazyBackend({ operation(_input, _ro, _counts, finish) {
+    finish(envelope({ error: 'Synthetic transfer timeout', type: 'RuntimeError', details: { reason: 'read_timeout', request_issued: true } }));
+  } });
+  await expect(lazyCall()).rejects.toThrow('Synthetic transfer timeout');
+  await call(); expect(counts).toMatchObject({ login: 1, grants: 1, quota: 1 });
+});

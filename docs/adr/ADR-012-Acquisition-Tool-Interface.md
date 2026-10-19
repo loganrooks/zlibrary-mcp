@@ -60,6 +60,34 @@ swaps remain outside this guarantee. Native Windows qualification requires the
 focused hosted CI job; semantic-emulator results alone do not establish it.
 These build choices are explicit in the migration note and lane handoff.
 
+Receipt permission/I/O read failures fail closed with `output_refused`, rather
+than erasing provenance and starting a provider request. Static symlink/nonregular
+sidecars are refused before reading external data; missing/malformed/nonobject
+receipts retain the absent policy. Retryable LibGen download failures are quota-safe
+even after issuance; quota-counting/unknown sources remain conservative. No retry
+hint authorizes automatic transfer replay or removes provider rate limits.
+
+Memory-mode Z-Library acquisitions now use the existing owner only after durable
+intent under the held leases. A bearer-free child sends one bounded `lazy-v1`
+`session_needed` request on fd4, then waits asynchronously for one operation grant
+plus EOF on stdin. Auth-only login/validate children remain under the existing
+singleflight owner. Its explicit at-most-once mode retains pregrant refresh but
+never reacquires/replays a granted transfer. The raw child outcome is decoded
+independently of owner completion, avoiding a promise cycle. Parent denial and
+cancellation close pipes and reap private children; generation/account fences and
+redaction cover delivered and recovered keys. Receipt hits bypass the owner,
+including cooldown/missing credentials/pending login. Per-call mode is unchanged.
+
+The request is capped at 128 bytes, grant and legacy terminal update at 8192 bytes;
+fd3 remains zero-or-one terminal update, never a request/response multiplex. The
+private descriptors are non-inheritable. Node overlapped stdin plus asyncio
+`connect_read_pipe` provides cancellable I/O on supported POSIX/Windows event loops
+without executor readers or a Python3.12-only primitive; Python>=3.10 remains.
+Snapshot-only reuse, eager authentication, released preflight/restart and child-local
+login fallback were rejected because they lose receipt-first ordering or shared
+coordination. Native Windows with Python3.10/3.13 actual-pipe CI remains a lead-owned runtime
+gate; local POSIX and primary documentation are not native qualification.
+
 Offline tests address protocol shape, replay, collisions, actual two-process
 coalescing, altered bytes and process-crash recovery. They do not establish live
 provider metadata, network/other filesystem behavior, or the design's separate

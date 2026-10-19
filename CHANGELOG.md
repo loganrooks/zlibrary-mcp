@@ -25,6 +25,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Windows byte-range leases, released on close or process death without unlink.
   A remaining Windows lock file is not a held lease. Unsupported locking fails
   closed; network filesystems and hostile directory swaps remain outside the guarantee.
+- Fail closed on receipt permission/I/O errors and symlink/nonregular sidecars,
+  preserving provenance instead of starting a transfer. Retryable LibGen download
+  failures are quota-safe even after issuance; no download automatically retries.
+- Share the in-memory Z-Library session owner across reads and fresh acquisitions,
+  requesting authentication only after held-lease receipt checks and durable intent.
+  Receipt hits bypass credentials/cooldown/pending login; granted transfers never
+  replay after authentication rejection. Explicit per-call mode is unchanged.
 - Downloads return `path`, `bytes`, flags and `record`; full book records and all
   processing arguments are no longer MCP inputs. Even a saved false processing
   flag is rejected by the new MCP surface; the internal legacy API is unchanged.

@@ -209,6 +209,38 @@ export async function scoreTask({
     for (const title of ['Pride and Prejudice', 'Middlemarch', 'On Liberty'])
       if (!picked.some((r) => r.title === title)) mark(`missing download ${title}`);
     if (picked.length !== 3) mark('expected three downloads');
+    const candidates = trace.flatMap((download, index) => {
+      if (!isDownload(download.name)) return [];
+      const row = selected(download);
+      const searches = trace.flatMap((search, searchIndex) =>
+        searchIndex < index &&
+        isSearch(search.name) &&
+        !search.error &&
+        !search.reply?.isError &&
+        !dataOf(search.reply ?? {}).error &&
+        rowsOf(dataOf(search.reply ?? {})).some(
+          (found) =>
+            found.title === row.title &&
+            identity(found) === identity(row) &&
+            found.source === row.source &&
+            (!download.args?.ref || found.ref === download.args.ref),
+        )
+          ? [searchIndex]
+          : [],
+      );
+      if (!searches.length)
+        mark('missing corresponding same-task search before download', download);
+      return [searches];
+    });
+    // Match distinct calls, not rows: one broad search cannot stand in for three.
+    // Backtracking avoids rejecting a legitimate broad + narrower search pairing.
+    const match = (index, used) =>
+      index === candidates.length ||
+      candidates[index].some(
+        (call) => !used.has(call) && match(index + 1, new Set([...used, call])),
+      );
+    if (candidates.length !== 3 || !match(0, new Set()))
+      mark('three distinct same-task searches required');
   }
   // Success is a current artifact check, not merely a model's assertion.
   const files = [];

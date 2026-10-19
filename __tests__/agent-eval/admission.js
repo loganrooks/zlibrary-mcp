@@ -1,6 +1,7 @@
 import { tasks, arms } from './tasks.js';
 import { createUsageTracker } from './drivers.js';
-export const receiptSchemaVersion = 2;
+import { artifactProofErrors } from './build-proof.js';
+export const receiptSchemaVersion = 3;
 export const measuredStatus = 'measured; report comparison before deciding';
 export const stable = (value) =>
   JSON.stringify(value, (_k, v) =>
@@ -27,6 +28,7 @@ export function cellIdentity(r) {
     sha: r.build?.sha,
     trees: r.build?.source?.trees,
     tools: r.build?.tools,
+    artifactProof: r.build?.artifactProof,
   });
 }
 export function admitReceipt(r) {
@@ -74,6 +76,7 @@ function checkReceipt(r) {
   for (const key of ['dist', 'lib', 'vendoredZlibrary'])
     if (!/^[a-f0-9]{64}$/.test(r.build?.source?.trees?.[key]?.sha256 ?? ''))
       fail('missing build tree ' + key);
+  for (const reason of artifactProofErrors(r.build?.artifactProof, r.build)) fail(reason);
   if (!nonnegative(r.build?.tools?.serializedCharacters) || !nonnegative(r.build?.tools?.count))
     fail('missing tool-list measurement');
   const expectedCount = r.arm?.build === 'A' ? 12 : r.arm?.history ? 5 : 4;
@@ -106,6 +109,16 @@ function checkReceipt(r) {
     if (x.requestedModel !== s.model) fail('task requested model mismatch ' + key);
     if (x.driverError || x.nonEvaluationToolFailure || x.fenceError)
       fail('task driver/fence failure ' + key);
+    if (
+      x.capture?.complete !== true ||
+      x.capture?.closed !== true ||
+      x.capture?.code !== 0 ||
+      x.capture?.signal !== null ||
+      x.capture?.timedOut !== false ||
+      x.capture?.drainTimedOut !== false ||
+      x.capture?.spawnError
+    )
+      fail('incomplete/failed driver stream capture ' + key);
     if (
       (x.events ?? []).some(
         (e) =>

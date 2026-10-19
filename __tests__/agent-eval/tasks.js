@@ -71,8 +71,8 @@ export const tasks = [
     id: 'T9',
     prompt:
       'Download these three titles: Pride and Prejudice by Jane Austen; Middlemarch by George Eliot; On Liberty by John Stuart Mill.',
-    A: ['3 searches then corresponding download_book_to_file'],
-    B: ['3 searches then corresponding download'],
+    A: ['3 distinct same-task per-title searches, each before its download_book_to_file'],
+    B: ['3 distinct same-task per-title searches, each before its download'],
     wrong: ['wrong or duplicate rows', 'missing title'],
   },
   {

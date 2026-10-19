@@ -20,6 +20,7 @@ jobs:
         with:
           # Processing corpus is preserved separately; acquisition tests need no LFS PDFs.
           lfs: false
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -88,6 +89,7 @@ jobs:
         with:
           # Processing corpus is preserved separately; acquisition tests need no LFS PDFs.
           lfs: false
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: '22'

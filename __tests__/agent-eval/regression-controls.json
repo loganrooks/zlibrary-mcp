@@ -1,0 +1,430 @@
+{
+  "provenance": {
+    "source": "/Users/rookslog/Development/personal-work-ecosystem/local/2026-10-15-codex-campaign/ZLIB-OPUS-LEAD/lead-verification/eval-fixtures/self-test.json",
+    "sha": "e2517b3e347584333f9c127a0217a3c574f6a22e",
+    "kind": "real A scripted read-only traces; synthetic book data; no model calls"
+  },
+  "readonly": [
+    {
+      "task": "T2",
+      "trace": [
+        {
+          "name": "search_books",
+          "args": {
+            "query": "Seneca Letters",
+            "count": 50
+          },
+          "observedSelection": false,
+          "reply": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"retrieved_from_url\":\"EAPI search: Seneca Letters\",\"books\":[{\"id\":\"202\",\"name\":\"Letters on Ethics: To Lucilius\",\"title\":\"Letters on Ethics: To Lucilius\",\"author\":\"Seneca\",\"authors\":[\"Seneca\"],\"year\":\"2015\",\"language\":\"english\",\"extension\":\"pdf\",\"size\":1024,\"rating\":\"\",\"quality\":\"\",\"cover\":\"\",\"url\":\"\",\"isbn\":\"\",\"publisher\":\"Fixture Press\",\"hash\":\"hash202\",\"book_hash\":\"hash202\",\"pages\":100},{\"id\":\"203\",\"name\":\"Letters from a Stoic\",\"title\":\"Letters from a Stoic\",\"author\":\"Seneca\",\"authors\":[\"Seneca\"],\"year\":\"1969\",\"language\":\"english\",\"extension\":\"pdf\",\"size\":1024,\"rating\":\"\",\"quality\":\"\",\"cover\":\"\",\"url\":\"\",\"isbn\":\"\",\"publisher\":\"Fixture Press\",\"hash\":\"hash203\",\"book_hash\":\"hash203\",\"pages\":100}]}"
+              }
+            ],
+            "structuredContent": {
+              "retrieved_from_url": "EAPI search: Seneca Letters",
+              "books": [
+                {
+                  "id": "202",
+                  "name": "Letters on Ethics: To Lucilius",
+                  "title": "Letters on Ethics: To Lucilius",
+                  "author": "Seneca",
+                  "authors": ["Seneca"],
+                  "year": "2015",
+                  "language": "english",
+                  "extension": "pdf",
+                  "size": 1024,
+                  "rating": "",
+                  "quality": "",
+                  "cover": "",
+                  "url": "",
+                  "isbn": "",
+                  "publisher": "Fixture Press",
+                  "hash": "hash202",
+                  "book_hash": "hash202",
+                  "pages": 100
+                },
+                {
+                  "id": "203",
+                  "name": "Letters from a Stoic",
+                  "title": "Letters from a Stoic",
+                  "author": "Seneca",
+                  "authors": ["Seneca"],
+                  "year": "1969",
+                  "language": "english",
+                  "extension": "pdf",
+                  "size": 1024,
+                  "rating": "",
+                  "quality": "",
+                  "cover": "",
+                  "url": "",
+                  "isbn": "",
+                  "publisher": "Fixture Press",
+                  "hash": "hash203",
+                  "book_hash": "hash203",
+                  "pages": 100
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "get_book_metadata",
+          "args": {
+            "bookId": "202",
+            "bookHash": "hash202",
+            "include": ["description"]
+          },
+          "selected": {
+            "id": "202",
+            "name": "Letters on Ethics: To Lucilius",
+            "title": "Letters on Ethics: To Lucilius",
+            "author": "Seneca",
+            "authors": ["Seneca"],
+            "year": "2015",
+            "language": "english",
+            "extension": "pdf",
+            "size": 1024,
+            "rating": "",
+            "quality": "",
+            "cover": "",
+            "url": "",
+            "isbn": "",
+            "publisher": "Fixture Press",
+            "hash": "hash202",
+            "book_hash": "hash202",
+            "pages": 100
+          },
+          "fixtureId": "202",
+          "observedSelection": true,
+          "reply": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"rating\":null,\"series\":null,\"categories\":[],\"isbn_10\":null,\"isbn_13\":null,\"id\":\"202\",\"book_hash\":\"hash202\",\"description\":\"Translated by Margaret Graver and A. A. Long; 2015 edition.\"}"
+              }
+            ],
+            "structuredContent": {
+              "rating": null,
+              "series": null,
+              "categories": [],
+              "isbn_10": null,
+              "isbn_13": null,
+              "id": "202",
+              "book_hash": "hash202",
+              "description": "Translated by Margaret Graver and A. A. Long; 2015 edition."
+            }
+          }
+        },
+        {
+          "name": "get_book_metadata",
+          "args": {
+            "bookId": "203",
+            "bookHash": "hash203",
+            "include": ["description"]
+          },
+          "selected": {
+            "id": "203",
+            "name": "Letters from a Stoic",
+            "title": "Letters from a Stoic",
+            "author": "Seneca",
+            "authors": ["Seneca"],
+            "year": "1969",
+            "language": "english",
+            "extension": "pdf",
+            "size": 1024,
+            "rating": "",
+            "quality": "",
+            "cover": "",
+            "url": "",
+            "isbn": "",
+            "publisher": "Fixture Press",
+            "hash": "hash203",
+            "book_hash": "hash203",
+            "pages": 100
+          },
+          "fixtureId": "203",
+          "observedSelection": true,
+          "reply": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"rating\":null,\"series\":null,\"categories\":[],\"isbn_10\":null,\"isbn_13\":null,\"id\":\"203\",\"book_hash\":\"hash203\",\"description\":\"Translated by Robin Campbell; 1969 edition.\"}"
+              }
+            ],
+            "structuredContent": {
+              "rating": null,
+              "series": null,
+              "categories": [],
+              "isbn_10": null,
+              "isbn_13": null,
+              "id": "203",
+              "book_hash": "hash203",
+              "description": "Translated by Robin Campbell; 1969 edition."
+            }
+          }
+        }
+      ],
+      "final": "Margaret Graver and A. A. Long (2015); Robin Campbell (1969).",
+      "remainingBefore": 2,
+      "quotaSpent": 0,
+      "providerEvents": [
+        {
+          "route": "/eapi/book/search",
+          "arguments": {
+            "message": ["Seneca Letters"],
+            "limit": ["50"],
+            "page": ["1"]
+          }
+        },
+        {
+          "route": "/eapi/book/202/hash202",
+          "arguments": {}
+        },
+        {
+          "route": "/eapi/book/203/hash203",
+          "arguments": {}
+        }
+      ]
+    },
+    {
+      "task": "T4",
+      "trace": [
+        {
+          "name": "get_download_limits",
+          "args": {},
+          "observedSelection": false,
+          "reply": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"daily_limit\":10,\"daily_remaining\":2,\"downloads_today\":8,\"is_premium\":false}"
+              }
+            ],
+            "structuredContent": {
+              "daily_limit": 10,
+              "daily_remaining": 2,
+              "downloads_today": 8,
+              "is_premium": false
+            }
+          }
+        }
+      ],
+      "final": "2 Z-Library downloads remain. LibGen has no daily cap.",
+      "remainingBefore": 2,
+      "quotaSpent": 0,
+      "providerEvents": [
+        {
+          "route": "/eapi/user/profile",
+          "arguments": {}
+        }
+      ]
+    },
+    {
+      "task": "T7",
+      "trace": [
+        {
+          "name": "get_download_history",
+          "args": {
+            "count": 50
+          },
+          "observedSelection": false,
+          "reply": {
+            "content": [
+              {
+                "type": "text",
+                "text": "[{\"id\":\"101\",\"name\":\"Rehearsal sequential\",\"title\":\"Rehearsal sequential\",\"author\":\"Offline Author\",\"authors\":[\"Offline Author\"],\"year\":\"2026\",\"language\":\"english\",\"extension\":\"txt\",\"size\":27,\"rating\":\"\",\"quality\":\"\",\"cover\":\"\",\"url\":\"\",\"isbn\":\"\",\"publisher\":\"Fixture Press\",\"hash\":\"hash101\",\"book_hash\":\"hash101\",\"pages\":100},{\"id\":\"901\",\"name\":\"Being and Time\",\"title\":\"Being and Time\",\"author\":\"Martin Heidegger\",\"authors\":[\"Martin Heidegger\"],\"year\":\"1962\",\"language\":\"english\",\"extension\":\"pdf\",\"size\":1024,\"rating\":\"\",\"quality\":\"\",\"cover\":\"\",\"url\":\"\",\"isbn\":\"\",\"publisher\":\"Fixture Press\",\"hash\":\"hash901\",\"book_hash\":\"hash901\",\"pages\":100}]"
+              }
+            ],
+            "structuredContent": {
+              "items": [
+                {
+                  "id": "101",
+                  "name": "Rehearsal sequential",
+                  "title": "Rehearsal sequential",
+                  "author": "Offline Author",
+                  "authors": ["Offline Author"],
+                  "year": "2026",
+                  "language": "english",
+                  "extension": "txt",
+                  "size": 27,
+                  "rating": "",
+                  "quality": "",
+                  "cover": "",
+                  "url": "",
+                  "isbn": "",
+                  "publisher": "Fixture Press",
+                  "hash": "hash101",
+                  "book_hash": "hash101",
+                  "pages": 100
+                },
+                {
+                  "id": "901",
+                  "name": "Being and Time",
+                  "title": "Being and Time",
+                  "author": "Martin Heidegger",
+                  "authors": ["Martin Heidegger"],
+                  "year": "1962",
+                  "language": "english",
+                  "extension": "pdf",
+                  "size": 1024,
+                  "rating": "",
+                  "quality": "",
+                  "cover": "",
+                  "url": "",
+                  "isbn": "",
+                  "publisher": "Fixture Press",
+                  "hash": "hash901",
+                  "book_hash": "hash901",
+                  "pages": 100
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "final": "Being and Time is in your downloaded account history.",
+      "remainingBefore": 2,
+      "quotaSpent": 0,
+      "providerEvents": [
+        {
+          "route": "/eapi/user/book/downloaded",
+          "arguments": {
+            "page": ["1"],
+            "limit": ["50"]
+          }
+        }
+      ]
+    },
+    {
+      "task": "T12",
+      "trace": [
+        {
+          "name": "search_by_author",
+          "args": {
+            "author": "Hannah Arendt",
+            "yearFrom": 1950,
+            "yearTo": 1965,
+            "count": 50
+          },
+          "observedSelection": false,
+          "reply": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"author\":\"Hannah Arendt\",\"books\":[{\"id\":\"204\",\"name\":\"The Human Condition\",\"title\":\"The Human Condition\",\"author\":\"Hannah Arendt\",\"authors\":[\"Hannah Arendt\"],\"year\":\"1958\",\"language\":\"english\",\"extension\":\"pdf\",\"size\":1024,\"rating\":\"\",\"quality\":\"\",\"cover\":\"\",\"url\":\"\",\"isbn\":\"\",\"publisher\":\"Fixture Press\",\"hash\":\"hash204\",\"book_hash\":\"hash204\",\"pages\":100},{\"id\":\"205\",\"name\":\"The Origins of Totalitarianism\",\"title\":\"The Origins of Totalitarianism\",\"author\":\"Hannah Arendt\",\"authors\":[\"Hannah Arendt\"],\"year\":\"1951\",\"language\":\"english\",\"extension\":\"pdf\",\"size\":1024,\"rating\":\"\",\"quality\":\"\",\"cover\":\"\",\"url\":\"\",\"isbn\":\"\",\"publisher\":\"Fixture Press\",\"hash\":\"hash205\",\"book_hash\":\"hash205\",\"pages\":100},{\"id\":\"206\",\"name\":\"Eichmann in Jerusalem\",\"title\":\"Eichmann in Jerusalem\",\"author\":\"Hannah Arendt\",\"authors\":[\"Hannah Arendt\"],\"year\":\"1963\",\"language\":\"english\",\"extension\":\"pdf\",\"size\":1024,\"rating\":\"\",\"quality\":\"\",\"cover\":\"\",\"url\":\"\",\"isbn\":\"\",\"publisher\":\"Fixture Press\",\"hash\":\"hash206\",\"book_hash\":\"hash206\",\"pages\":100}],\"total_results\":3}"
+              }
+            ],
+            "structuredContent": {
+              "author": "Hannah Arendt",
+              "books": [
+                {
+                  "id": "204",
+                  "name": "The Human Condition",
+                  "title": "The Human Condition",
+                  "author": "Hannah Arendt",
+                  "authors": ["Hannah Arendt"],
+                  "year": "1958",
+                  "language": "english",
+                  "extension": "pdf",
+                  "size": 1024,
+                  "rating": "",
+                  "quality": "",
+                  "cover": "",
+                  "url": "",
+                  "isbn": "",
+                  "publisher": "Fixture Press",
+                  "hash": "hash204",
+                  "book_hash": "hash204",
+                  "pages": 100
+                },
+                {
+                  "id": "205",
+                  "name": "The Origins of Totalitarianism",
+                  "title": "The Origins of Totalitarianism",
+                  "author": "Hannah Arendt",
+                  "authors": ["Hannah Arendt"],
+                  "year": "1951",
+                  "language": "english",
+                  "extension": "pdf",
+                  "size": 1024,
+                  "rating": "",
+                  "quality": "",
+                  "cover": "",
+                  "url": "",
+                  "isbn": "",
+                  "publisher": "Fixture Press",
+                  "hash": "hash205",
+                  "book_hash": "hash205",
+                  "pages": 100
+                },
+                {
+                  "id": "206",
+                  "name": "Eichmann in Jerusalem",
+                  "title": "Eichmann in Jerusalem",
+                  "author": "Hannah Arendt",
+                  "authors": ["Hannah Arendt"],
+                  "year": "1963",
+                  "language": "english",
+                  "extension": "pdf",
+                  "size": 1024,
+                  "rating": "",
+                  "quality": "",
+                  "cover": "",
+                  "url": "",
+                  "isbn": "",
+                  "publisher": "Fixture Press",
+                  "hash": "hash206",
+                  "book_hash": "hash206",
+                  "pages": 100
+                }
+              ],
+              "total_results": 3
+            }
+          }
+        }
+      ],
+      "final": "The Human Condition; The Origins of Totalitarianism; Eichmann in Jerusalem",
+      "remainingBefore": 2,
+      "quotaSpent": 0,
+      "providerEvents": [
+        {
+          "route": "/eapi/book/search",
+          "arguments": {
+            "message": ["Hannah Arendt"],
+            "limit": ["50"],
+            "page": ["1"],
+            "yearFrom": ["1950"],
+            "yearTo": ["1965"]
+          }
+        }
+      ]
+    }
+  ],
+  "codexProbe": {
+    "cliVersion": "0.162.1",
+    "session": "recorded-root-session",
+    "source": "ROOT-DRIVER-SMOKE-RESULT.md + ROOT-USAGE-PROBE-RESULT.md / usage-probe.json (2026-10-19)",
+    "totals": [
+      {
+        "input_tokens": 39031,
+        "cached_input_tokens": 19328,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 118
+      },
+      {
+        "input_tokens": 78605,
+        "cached_input_tokens": 58240,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 236
+      },
+      {
+        "input_tokens": 101125,
+        "cached_input_tokens": 77952,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 241
+      }
+    ]
+  }
+}

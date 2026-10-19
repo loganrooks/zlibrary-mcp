@@ -208,7 +208,11 @@ test('S6 healthy Library Genesis search reaches the real parser and fixture', as
 test('I1 five-tool download repeat hashes disk and avoids authentication and transfer', async () => {
   await h.scenario('I1', async connect => {
     const c = await connect();
-    const found = await h.call(c, 'search', { query: 'receipt', sources: ['zlibrary'], limit: 1 });
+    const found = await h.call(c, 'search', { query: 'Persuasion', sources: ['zlibrary'], limit: 1 });
+    expect(found.rows).toHaveLength(1);
+    expect(found.rows[0]).toMatchObject({ title: 'Persuasion', author: 'Jane Austen', source: 'zlibrary' });
+    const detail = await h.call(c, 'get_book', { ref: found.rows[0].ref });
+    expect(detail.identifiers).toEqual({ id: '201', hash: 'hash201' });
     const args = { ref: found.rows[0].ref, output_dir: h.downloads };
     const first = await h.call(c, 'download', args);
     const before = await h.stats();
@@ -216,7 +220,7 @@ test('I1 five-tool download repeat hashes disk and avoids authentication and tra
     expect(repeat).toMatchObject({ path: first.path, transfer_skipped: true, reused: false, verified: 'sha256' });
     expect(await h.stats()).toEqual(before);
     const record = JSON.parse(await readFile(repeat.record, 'utf8'));
-    expect(record).toMatchObject({ state: 'complete', record_version: 1, identifiers: { id: '101', hash: 'hash101' } });
+    expect(record).toMatchObject({ state: 'complete', record_version: 1, identifiers: { id: '201', hash: 'hash201' } });
   });
 });
 test('I2 lost-reply cursor replay repeats position and local limits cost no upstream call', async () => {
@@ -224,14 +228,23 @@ test('I2 lost-reply cursor replay repeats position and local limits cost no upst
     const c = await connect();
     const before = await h.stats();
     await h.call(c, 'get_limits', {});
-    const missing = await h.call(c, 'search', { query: 'cursor' }, true);
+    const missing = await h.call(c, 'search', { query: 'Phenomenology' }, true);
     expect(missing.error.code).toBe('sources_required');
     expect(await h.stats()).toEqual(before);
-    const first = await h.call(c, 'search', { query: 'cursor', sources: ['zlibrary'], limit: 1 });
+    const first = await h.call(c, 'search', { query: 'Phenomenology', sources: ['zlibrary'], limit: 50 });
+    expect(first.rows.map(r => r.title)).toEqual(Array.from({ length: 50 }, (_, i) => `Phenomenology Studies, Volume ${String(i + 1).padStart(2, '0')}`));
+    const firstDetail = await h.call(c, 'get_book', { ref: first.rows[0].ref });
+    expect(firstDetail.identifiers).toEqual({ id: '1000', hash: 'hash1000' });
     const cursor = first.next_cursor;
+    expect(cursor).toBeDefined();
     const lost = await h.call(c, 'search', { cursor });
+    expect(lost.rows.map(r => r.title)).toEqual(Array.from({ length: 10 }, (_, i) => `Phenomenology Studies, Volume ${String(i + 51).padStart(2, '0')}`));
+    expect(lost.next_cursor).toBeUndefined();
+    const nextDetail = await h.call(c, 'get_book', { ref: lost.rows[0].ref });
+    expect(nextDetail.identifiers).toEqual({ id: '1050', hash: 'hash1050' });
     const replay = await h.call(c, 'search', { cursor });
     expect(replay.rows.map(r => r.title)).toEqual(lost.rows.map(r => r.title));
+    expect(replay).toEqual(lost);
     const at = await h.stats();
     const invalid = await h.call(c, 'search', { cursor, limit: 2 }, true);
     expect(invalid.error.code).toBe('invalid_argument');

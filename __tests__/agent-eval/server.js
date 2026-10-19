@@ -2,7 +2,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { createServer } from 'node:net';
 import { createInterface } from 'node:readline';
-import { mkdir, readFile, writeFile, readdir } from 'node:fs/promises';
+import { mkdir, readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
@@ -11,6 +11,9 @@ import { snapshotSource } from '../rehearsal/source-identity.js';
 import { dataOf, rowsOf, identity } from './oracles.js';
 import { gitRead, pinnedInputs, verifyBuildArtifacts, artifactProofErrors } from './build-proof.js';
 export { gitRead, verifyBuildArtifacts } from './build-proof.js';
+import { verifyPythonRuntime, pythonProofErrors } from './python-runtime.js';
+import { verifyEvaluatorIdentity } from './evaluator-identity.js';
+export { verifyEvaluatorIdentity } from './evaluator-identity.js';
 
 export const here = path.dirname(fileURLToPath(import.meta.url));
 export const root = path.resolve(here, '../..');
@@ -67,6 +70,9 @@ export class EvaluationServer {
     s.sha = gitRead(s.buildRoot, 'rev-parse', 'HEAD');
     try {
       // No fixture server, MCP server or model may start without reproducible bytes.
+      if (pin && s.sha !== gitRead(s.buildRoot, 'rev-parse', `${pin}^{commit}`))
+        throw new Error('server checkout does not match pinned commit');
+      s.evaluator = await verifyEvaluatorIdentity();
       s.artifactProof = await verifyBuildArtifacts({ buildRoot: s.buildRoot, pin });
       s.sourceStart = await evalSnapshot(s.buildRoot);
       const proofErrors = artifactProofErrors(s.artifactProof, {
@@ -74,7 +80,10 @@ export class EvaluationServer {
         source: s.sourceStart,
       });
       if (proofErrors.length) throw new Error(proofErrors.join('; '));
-      s.fake = await Rehearsal.start('agent-eval');
+      s.python = await verifyPythonRuntime({ buildRoot: s.buildRoot });
+      const pythonErrors = pythonProofErrors(s.python, { artifactProof: s.artifactProof });
+      if (pythonErrors.length) throw new Error(pythonErrors.join('; '));
+      s.fake = await Rehearsal.start('agent-eval', { python: s.python.descriptor });
       s.home = path.join(s.fake.temp, 'server');
       s.downloads = path.join(s.home, 'downloads');
       s.artifactRoot = s.downloads;
@@ -83,13 +92,7 @@ export class EvaluationServer {
         PATH: process.env.PATH,
         HOME: s.home,
         TMPDIR: s.home,
-        PYTHONDONTWRITEBYTECODE: '1',
-        PYTHONPATH: [
-          here,
-          path.resolve(here, '../rehearsal'),
-          path.join(s.buildRoot, 'zlibrary/src'),
-          s.buildRoot,
-        ].join(path.delimiter),
+        ...s.python.descriptor.env,
         SSL_CERT_FILE: s.fake.cert,
         REHEARSAL_ALLOWED_PORT: String(new URL(s.fake.origin).port),
         REHEARSAL_EGRESS_TRAP: path.join(s.home, 'egress-trap.txt'),
@@ -115,6 +118,15 @@ export class EvaluationServer {
       };
       s.env = env;
       await s.fake.mode({ mode: 'healthy', reset: true, remaining: 2 });
+      const launchPython = await verifyPythonRuntime({ buildRoot: s.buildRoot });
+      if (
+        launchPython.sha256 !== s.python.sha256 ||
+        JSON.stringify(launchPython.descriptor) !== JSON.stringify(s.python.descriptor)
+      )
+        throw new Error('Python identity changed before server launch');
+      const launchEvaluator = await verifyEvaluatorIdentity();
+      if (launchEvaluator.sha256 !== s.evaluator.sha256)
+        throw new Error('evaluator source changed before server launch');
       const launchSnapshot = await evalSnapshot(s.buildRoot);
       if (
         launchSnapshot.sha !== s.sourceStart.sha ||
@@ -182,6 +194,17 @@ export class EvaluationServer {
       await s.close();
       throw e;
     }
+  }
+  async finishIdentity() {
+    const evaluator = await verifyEvaluatorIdentity(),
+      python = await verifyPythonRuntime({ buildRoot: this.buildRoot });
+    if (
+      evaluator.sha256 !== this.evaluator.sha256 ||
+      python.sha256 !== this.python.sha256 ||
+      JSON.stringify(python.descriptor) !== JSON.stringify(this.python.descriptor)
+    )
+      throw new Error('evaluator/Python metadata drift during evaluation');
+    return { evaluator, python };
   }
   async call(name, args = {}) {
     const c = { name, args: structuredClone(args), origin: 'broker', forwarded: false };

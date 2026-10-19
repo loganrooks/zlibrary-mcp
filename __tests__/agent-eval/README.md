@@ -68,8 +68,9 @@ MD5 for compatibility; it is **not an evaluation download target**. All five
 evaluation LibGen downloads advertise the actual synthetic payload MD5.
 
 The server receives only fake credentials and an allowlisted environment. Its PYTHONPATH
-forces the selected build’s vendored Z-Library before any editable dependency
-installation, so sharing a uv environment cannot silently select another checkout. The
+selects the build’s vendored Z-Library. Schema 4 additionally rejects foreign editable
+metadata even if that PYTHONPATH would shadow it; a shared foreign environment is not
+accepted. The
 rehearsal Python/Node fences reject non-fixture networking. Evaluation's Python
 sitecustomize redirects LibGen httpx resolution/transfer URLs to the same TLS
 fake; the real production HTTP clients, parsers, acquisition and digest checks
@@ -226,7 +227,7 @@ acquisition tasks still require their real artifact and decision checks.
 
 ### Evidence admission and bars (EVAL-R1-02/03/05)
 
-`admission.js` now requires receipt schema 3 (schema 2 is legacy diagnostic), the exact completed measured status,
+`admission.js` now requires receipt schema 4 (schemas 2/3 are legacy diagnostic), the exact completed measured status,
 `sourceStable:true`, `fencePassed:true`, no receipt/task driver/fence/source/cleanup
 failure, fixed model/CLI/build/settings, complete nonnegative usage and decision
 metrics, and the exact unique `(run, phaseIndex, task)` grid. There must be five
@@ -348,13 +349,13 @@ package-content digest, pinned input manifests and both runtime manifests are
 retained as `build.artifactProof`. Existing installed dependencies are used;
 this is not a package-registry or dependency-supply-chain attestation.
 
-Schema 3 requires that concrete, internally consistent build proof and its source/
+Schema 4 retains that concrete, internally consistent build proof and its source/
 full-dist bindings at admission. Legacy/unproven/malformed receipts stay diagnostic,
 even if they contain an arbitrary syntactically valid dist hash. Receipt JSON is
 not a cryptographic signature; the trusted local producer performs the actual
 comparison. Startup failures after pin resolution persist failed receipts with
 no completed cell. Matrix generation resolves one exact A identity from `--a-root`
-and writes that same `--a-pin` into **every** generated A/B command. Copy that SHA
+and writes that same `--a-pin` and absolute `--a-root` into **every** generated A/B command. Copy that SHA
 into all manually written paid commands too; do not independently infer A from B.
 
 **EVAL-C1-03:** T9 requires three distinct successful same-task search calls,
@@ -370,7 +371,7 @@ stdout/stderr. A five-minute invocation deadline, two-second TERM→KILL grace a
 two-second post-exit/post-KILL drain deadline bound failures. Timeout, spawn error,
 signal and never-closing inherited pipes cannot become successful measured usage.
 Each attempt retains unique stdout, stderr and `.capture.json` telemetry before
-usage parsing; incomplete output is retained but not promoted. Schema 3 requires
+usage parsing; incomplete output is retained but not promoted. Schema 4 requires
 complete, closed, successful capture for every row. The synthetic child tests
 exercise this real path without launching either model CLI and retain their raw
 attempts at the temporary evidence directory printed by Jest.
@@ -379,3 +380,83 @@ Original six round-1 scoring/usage/attempt controls, the canonical inbox alias
 positive/strict negatives, and strict-cold **inconclusive** behavior remain in
 the focused suite. No new cross-vendor, B model, strict-cold or merge acceptance
 follows from these local controls. Lead owns clean B preflight and connector round 2.
+
+
+## Connector round-2 common evaluator, Python metadata and process-group proof
+
+Schema **4** additionally requires all three stable identities: production/build
+inputs, the actual **executing** common evaluator, and the selected Python runtime
+metadata. Schemas 2/3 remain diagnostic only. Different production A/B HEADs are
+expected; compatibility uses the common evaluator manifest and normalized Python
+metadata digests, not equality of those HEAD locators.
+
+`evaluator-identity.js` enumerates **all** files in `__tests__/agent-eval/` and
+`__tests__/rehearsal/` from its own module root (not `--server-root`). Actual bytes
+must match committed Git blobs; tracked dirt hidden by status, missing files,
+symlinks and ignored/untracked additions fail. Only generated CPython-named `.pyc`
+files under `__pycache__` are excluded, not code placed inside that directory.
+Prompts, scorers, fences, fixtures, tests and docs are conservatively included.
+The check runs before any fake/model, immediately before MCP, and at evaluation
+end. Relocated identical manifests compare equally even with different HEADs;
+different scorers and end drift are ineligible. During implementation an
+uncommitted harness correctly refuses self-test; the final committed-head positive
+control belongs to the lead, not a cleanliness waiver.
+
+Pinned production inputs and default-A source equivalence now include
+`pyproject.toml` and `uv.lock`. Scratch TypeScript compilation remains independent
+of Python/uv/environment readiness. `python-runtime.js` separately executes the
+selected **project-local** `.venv/bin/python` launcher (`Scripts/python.exe` on
+Windows), never its resolved base binary in place of the launcher. It records
+that binary's hash and interpreter/version/platform/cache tag, uv binary/version,
+manifest hashes, import selection and a canonical distribution metadata inventory.
+The inventory includes selected site packages and the validated local zlibrary
+source metadata exposed by the declared PYTHONPATH; that source record cannot
+substitute for the installed editable's direct URL. Origins are validated before
+root normalization. A foreign editable is refused even with local import shadowing.
+
+Readiness invokes only bounded, read-only:
+
+```text
+uv sync --check --frozen --offline --no-default-groups --group dev --no-config --project /selected/root
+```
+
+No extras, default groups, install fallback or silent sync. UV/Python redirection
+and config environment variables are not inherited; the project environment and
+launcher are explicit, user site is disabled, and probe HOME/config/cache/log
+working directories are disposable. The same explicit Python descriptor is
+passed to the fake through a backward-compatible optional rehearsal argument and
+to the evaluator's MCP environment. Production routing is unchanged. Metadata is
+rechecked before MCP/end; missing, failed, foreign or drifting proof is ineligible.
+Root paths normalize only after validation, so A/B relocation remains compatible.
+
+**Scope limit:** this is selected interpreter and resolved dependency **metadata**
+proof, not installed package payload/.pth/stdlib/shared-library identity,
+hermeticity, supply-chain attestation, or independent attestation of every Python
+process. Change-and-restore between checks is not established by these snapshots.
+Receipt JSON is structural evidence from a trusted local producer, not a signature.
+
+Model-driver capture is POSIX-only and refuses unsupported platforms **before**
+CLI version/model invocation; this does not alter product Windows support.
+Detached `ChildProcess.pid` is the sole trusted owned PGID. Normal drained zero-exit
+leaders are checked for residual members too. Timeout, drain timeout or residual
+groups trigger one idempotent bounded TERM → KILL → observation sequence;
+leader exit never cancels escalation. ESRCH is gone; EPERM/error or a group still
+observable after the deadline is unknown/failed. Signals stop once gone. Readers
+stay attached through bounded drain/cleanup; unique raw streams and capture JSON
+are retained before parsing. Successful admission requires drained close and
+proven group cleanup; timeout/residual capture remains incomplete even if cleanup
+succeeds. This contains ordinary same-PGID descendants only, not deliberate setsid
+escape or numerical PGID reuse; no broad process scans, stdout-derived signal
+PIDs or unref-based escape are used by capture.
+
+T1/T8 now require a successful corresponding current-task search before each
+download, matching title/source/identity and B ref, with no literal query rule.
+T3/T10 retain intended prior-task reuse. T11 requires successful limits followed
+by successful LibGen search returning nonempty source/title plus A id or md5 /
+B ref and identity. Empty Anna's or LibGen, errors, and unusable rows do not pass;
+no URL/hash/format requirement or actual download is added. T9's distinct-search
+matching and valid interleaving remain unchanged.
+
+Only real compiler tests/hooks have a 30-second Jest deadline; the runtime
+compiler's 60-second limit and every assertion remain unchanged. These local
+repairs are not connector-3, hosted-CI, model/bar, merge or release acceptance.

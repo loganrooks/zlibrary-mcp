@@ -81,6 +81,24 @@ export async function scoreTask({
   const mark = (reason, c) => wrong.push({ reason, tool: c?.name, arguments: c?.args });
   const b = arm.build === 'B';
   const selected = (c) => c.selected ?? c.args?.bookDetails ?? {};
+  const successful = (c) => !c.error && !c.reply?.isError && !dataOf(c.reply ?? {}).error;
+  const matchingSearches = (download, index) => {
+    const row = selected(download);
+    return trace.flatMap((search, searchIndex) =>
+      searchIndex < index &&
+      isSearch(search.name) &&
+      successful(search) &&
+      rowsOf(dataOf(search.reply ?? {})).some(
+        (found) =>
+          found.title === row.title &&
+          identity(found) === identity(row) &&
+          found.source === row.source &&
+          (!download.args?.ref || found.ref === download.args.ref),
+      )
+        ? [searchIndex]
+        : [],
+    );
+  };
   for (const c of trace) {
     const a = c.args ?? {},
       kind = category(c.name),
@@ -169,6 +187,29 @@ export async function scoreTask({
     requireKind('search');
     if (kinds.indexOf('limits') > kinds.indexOf('search'))
       mark('alternative search before checking limits');
+    const limitsIndex = trace.findIndex((c) => category(c.name) === 'limits' && successful(c));
+    if (
+      !trace.some(
+        (c, index) =>
+          index > limitsIndex &&
+          limitsIndex >= 0 &&
+          isSearch(c.name) &&
+          successful(c) &&
+          (b
+            ? c.args?.sources?.includes('libgen')
+            : c.name === 'search_multi_source' && c.args?.source === 'libgen') &&
+          rowsOf(dataOf(c.reply ?? {})).some(
+            (row) =>
+              row.source === 'libgen' &&
+              typeof row.title === 'string' &&
+              row.title.trim() &&
+              (b
+                ? typeof row.ref === 'string' && row.ref.trim() && identity(row)
+                : String(row.id ?? '').trim() || String(row.md5 ?? '').trim()),
+          ),
+      )
+    )
+      mark('missing successful usable LibGen fallback after limits');
   }
   if (task.id === 'T2') {
     const details = trace.filter((c) => category(c.name) === 'detail');
@@ -211,23 +252,7 @@ export async function scoreTask({
     if (picked.length !== 3) mark('expected three downloads');
     const candidates = trace.flatMap((download, index) => {
       if (!isDownload(download.name)) return [];
-      const row = selected(download);
-      const searches = trace.flatMap((search, searchIndex) =>
-        searchIndex < index &&
-        isSearch(search.name) &&
-        !search.error &&
-        !search.reply?.isError &&
-        !dataOf(search.reply ?? {}).error &&
-        rowsOf(dataOf(search.reply ?? {})).some(
-          (found) =>
-            found.title === row.title &&
-            identity(found) === identity(row) &&
-            found.source === row.source &&
-            (!download.args?.ref || found.ref === download.args.ref),
-        )
-          ? [searchIndex]
-          : [],
-      );
+      const searches = matchingSearches(download, index);
       if (!searches.length)
         mark('missing corresponding same-task search before download', download);
       return [searches];
@@ -242,6 +267,10 @@ export async function scoreTask({
     if (candidates.length !== 3 || !match(0, new Set()))
       mark('three distinct same-task searches required');
   }
+  if (['T1', 'T8'].includes(task.id))
+    for (const [index, download] of trace.entries())
+      if (isDownload(download.name) && !matchingSearches(download, index).length)
+        mark('missing corresponding same-task search before download', download);
   // Success is a current artifact check, not merely a model's assertion.
   const files = [];
   for (const c of trace.filter((c) => isDownload(c.name))) {

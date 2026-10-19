@@ -385,13 +385,35 @@ export function commandFor({
       'code_mode_tool_search disabled; retired tool_search switch deliberately not passed',
   };
 }
-async function captureChild(binary, args, options, limits) {
-  const { timeoutMs = 300000, killGraceMs = 2000, drainTimeoutMs = 2000 } = limits;
+// POSIX detached child.pid is the sole trusted PGID. Never derive signal targets
+// from driver stdout/stderr. Deliberate setsid escape and numeric PGID reuse are
+// outside ordinary same-group containment; no broad process scans are performed.
+export function assertDriverPlatform(platform = process.platform) {
+  if (!['darwin', 'linux', 'freebsd', 'openbsd', 'netbsd', 'sunos', 'aix'].includes(platform))
+    throw new Error('model-driver capture requires supported POSIX process groups');
+}
+export async function captureChild(binary, args, options, limits = {}) {
+  assertDriverPlatform(limits.platform);
+  const {
+    timeoutMs = 300000,
+    killGraceMs = 2000,
+    drainTimeoutMs = 2000,
+    signalGroup = (pgid, signal) => process.kill(-pgid, signal),
+  } = limits;
   for (const value of [timeoutMs, killGraceMs, drainTimeoutMs])
     if (!Number.isSafeInteger(value) || value < 1)
       throw new Error('positive capture deadlines required');
   let stdout = '',
     stderr = '';
+  const cleanup = {
+    scope: 'owned-posix-process-group',
+    pgid: null,
+    state: 'not-started',
+    success: false,
+    termSent: false,
+    killSent: false,
+    observations: [],
+  };
   const capture = {
     complete: false,
     closed: false,
@@ -399,77 +421,181 @@ async function captureChild(binary, args, options, limits) {
     signal: null,
     timedOut: false,
     drainTimedOut: false,
+    residualGroup: false,
+    leaderExited: false,
+    cleanup,
   };
   await new Promise((resolve) => {
     let child,
       timer,
-      killTimer,
       drainTimer,
-      settled = false;
+      killTimer,
+      observeTimer,
+      cleanupDeadline,
+      settled = false,
+      cleaning = false,
+      cleanupDone = false,
+      drainExpired = false;
     const finish = () => {
       if (settled) return;
       settled = true;
-      clearTimeout(timer);
-      clearTimeout(killTimer);
-      clearTimeout(drainTimer);
+      for (const t of [timer, drainTimer, killTimer, observeTimer, cleanupDeadline])
+        clearTimeout(t);
       capture.complete =
-        capture.closed && !capture.spawnError && !capture.timedOut && !capture.drainTimedOut;
+        capture.closed &&
+        cleanup.success &&
+        !capture.spawnError &&
+        !capture.timedOut &&
+        !capture.drainTimedOut &&
+        !capture.residualGroup;
+      // Readers live through the entire bounded cleanup/drain attempt.
       if (!capture.closed) {
         child?.stdout?.destroy();
         child?.stderr?.destroy();
       }
       resolve();
     };
+    const maybeFinish = () => {
+      if (cleanupDone && (capture.closed || drainExpired)) finish();
+    };
+    const probe = () => {
+      try {
+        signalGroup(cleanup.pgid, 0);
+        cleanup.observations.push('alive');
+        return 'alive';
+      } catch (error) {
+        if (error.code === 'ESRCH') {
+          cleanup.observations.push('gone');
+          return 'gone';
+        }
+        cleanup.error = error.code ?? error.message;
+        cleanup.observations.push('unknown');
+        return 'unknown';
+      }
+    };
+    const done = (state) => {
+      if (cleanupDone) return;
+      cleanupDone = true;
+      cleanup.state = state;
+      cleanup.success = state === 'gone';
+      for (const t of [killTimer, observeTimer, cleanupDeadline]) clearTimeout(t);
+      maybeFinish();
+    };
+    const observe = () => {
+      if (cleanupDone) return;
+      const state = probe();
+      if (state !== 'alive') {
+        done(state);
+        return;
+      }
+      observeTimer = setTimeout(observe, 25);
+    };
+    const send = (signal) => {
+      if (cleanupDone) return false;
+      // Re-probe before every signal and stop forever once gone.
+      const state = probe();
+      if (state !== 'alive') {
+        done(state);
+        return false;
+      }
+      try {
+        signalGroup(cleanup.pgid, signal);
+        cleanup[signal === 'SIGTERM' ? 'termSent' : 'killSent'] = true;
+        return true;
+      } catch (error) {
+        if (error.code === 'ESRCH') done('gone');
+        else {
+          cleanup.error = error.code ?? error.message;
+          done('unknown');
+        }
+        return false;
+      }
+    };
     const boundDrain = () => {
       drainTimer ??= setTimeout(() => {
         capture.drainTimedOut = true;
-        finish();
+        drainExpired = true;
+        startCleanup('drain-timeout');
+        maybeFinish();
       }, drainTimeoutMs);
     };
+    const startCleanup = (reason) => {
+      if (cleaning || cleanupDone) return;
+      cleaning = true;
+      cleanup.reason = reason;
+      if (!Number.isSafeInteger(cleanup.pgid) || cleanup.pgid < 1) {
+        done('no-owned-pgid');
+        return;
+      }
+      const state = probe();
+      if (state !== 'alive') {
+        done(state);
+        return;
+      }
+      if (reason === 'closed') capture.residualGroup = true;
+      cleanup.state = 'terminating';
+      if (!send('SIGTERM')) return;
+      killTimer = setTimeout(() => {
+        if (send('SIGKILL')) cleanup.state = 'observing-after-kill';
+      }, killGraceMs);
+      cleanupDeadline = setTimeout(() => {
+        const state = probe();
+        done(state === 'gone' ? 'gone' : state === 'unknown' ? 'unknown' : 'alive-after-deadline');
+        drainExpired = true;
+        maybeFinish();
+      }, killGraceMs + drainTimeoutMs);
+      observeTimer = setTimeout(observe, 25);
+    };
     try {
-      child = spawn(binary, args, options);
+      child = spawn(binary, args, { ...options, detached: true });
+      cleanup.pgid = Number.isSafeInteger(child.pid) && child.pid > 0 ? child.pid : null;
     } catch (error) {
-      capture.spawnError = String(error.message);
+      capture.spawnError = error.message;
+      cleanupDone = true;
+      cleanup.state = 'no-owned-pgid';
+      drainExpired = true;
       finish();
       return;
     }
-    child.stdout.setEncoding('utf8');
-    child.stderr.setEncoding('utf8');
-    child.stdout.on('data', (d) => {
-      stdout += d;
+    child.stdout?.setEncoding('utf8');
+    child.stderr?.setEncoding('utf8');
+    child.stdout?.on('data', (data) => {
+      stdout += data;
     });
-    child.stderr.on('data', (d) => {
-      stderr += d;
+    child.stderr?.on('data', (data) => {
+      stderr += data;
     });
     child.once('error', (error) => {
-      capture.spawnError = String(error.message);
+      capture.spawnError = error.message;
       boundDrain();
+      startCleanup('spawn-error');
     });
     child.once('exit', (code, signal) => {
       capture.code = code;
       capture.signal = signal;
+      capture.leaderExited = true;
       clearTimeout(timer);
-      clearTimeout(killTimer);
       boundDrain();
     });
     child.once('close', (code, signal) => {
       capture.code = code;
       capture.signal = signal;
       capture.closed = true;
-      finish();
+      clearTimeout(timer);
+      clearTimeout(drainTimer);
+      startCleanup('closed');
+      maybeFinish();
     });
     timer = setTimeout(() => {
       capture.timedOut = true;
-      child.kill('SIGTERM');
-      killTimer = setTimeout(() => {
-        child.kill('SIGKILL');
-        boundDrain();
-      }, killGraceMs);
+      boundDrain();
+      startCleanup('timeout');
     }, timeoutMs);
   });
   return { stdout, stderr, capture };
 }
 export async function runDriver(command, prompt, directory, limits = {}) {
+  assertDriverPlatform(limits.platform);
   const current = execFileSync(command.binary, ['--version'], { encoding: 'utf8' }).trim();
   const driver = command.binary,
     pin = driverPins[driver];

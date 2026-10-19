@@ -1,7 +1,9 @@
 import { tasks, arms } from './tasks.js';
 import { createUsageTracker } from './drivers.js';
 import { artifactProofErrors } from './build-proof.js';
-export const receiptSchemaVersion = 3;
+import { pythonProofErrors } from './python-runtime.js';
+import { evaluatorProofErrors } from './evaluator-identity.js';
+export const receiptSchemaVersion = 4;
 export const measuredStatus = 'measured; report comparison before deciding';
 export const stable = (value) =>
   JSON.stringify(value, (_k, v) =>
@@ -19,6 +21,8 @@ export function comparisonSettings(r) {
     driverVersion: r.driverVersion,
     settings: r.settings,
     baselinePin: r.baselinePin,
+    evaluator: r.evaluator?.sha256,
+    python: r.python?.sha256,
   });
 }
 export function cellIdentity(r) {
@@ -44,6 +48,20 @@ function checkReceipt(r) {
   if (r.schemaVersion !== receiptSchemaVersion) fail('unsupported/legacy receipt schema');
   if (r.status !== measuredStatus) fail('receipt did not complete measured successfully');
   if (r.sourceStable !== true) fail('source integrity not stable');
+  for (const reason of evaluatorProofErrors(r.evaluator)) fail(reason);
+  if (
+    r.evaluatorStable !== true ||
+    r.evaluatorEnd?.sha256 !== r.evaluator?.sha256 ||
+    evaluatorProofErrors(r.evaluatorEnd).length
+  )
+    fail('evaluator identity not stable');
+  for (const reason of pythonProofErrors(r.python, r.build)) fail(reason);
+  if (
+    r.pythonStable !== true ||
+    r.pythonEnd?.sha256 !== r.python?.sha256 ||
+    pythonProofErrors(r.pythonEnd, r.build).length
+  )
+    fail('Python metadata identity not stable');
   if (r.fencePassed !== true) fail('network fence not established');
   if (
     r.error ||
@@ -116,7 +134,13 @@ function checkReceipt(r) {
       x.capture?.signal !== null ||
       x.capture?.timedOut !== false ||
       x.capture?.drainTimedOut !== false ||
-      x.capture?.spawnError
+      x.capture?.spawnError ||
+      x.capture?.cleanup?.scope !== 'owned-posix-process-group' ||
+      x.capture?.cleanup?.success !== true ||
+      x.capture?.cleanup?.state !== 'gone' ||
+      !Number.isSafeInteger(x.capture?.cleanup?.pgid) ||
+      x.capture.cleanup.pgid < 1 ||
+      x.capture?.residualGroup !== false
     )
       fail('incomplete/failed driver stream capture ' + key);
     if (

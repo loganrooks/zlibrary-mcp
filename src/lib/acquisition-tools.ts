@@ -354,7 +354,7 @@ export class AcquisitionTools {
   }
   private async page(operation: 'search' | 'get_history', args: any, options: CallOptions) {
     let cursor: Cursor | undefined;
-    if (args.cursor) {
+    if (args.cursor !== undefined) {
       cursor = this.refs.get<Cursor>(args.cursor, 'c');
       if (cursor.operation !== operation)
         throw new ToolFailure('invalid_argument', 'Cursor belongs to another operation.');

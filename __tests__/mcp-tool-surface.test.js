@@ -93,3 +93,63 @@ test('get_book subprocess failure retains selected source and sanitized timeout 
   expect(JSON.stringify(reply)).not.toMatch(/SECRET|private\.invalid/);
   expect(run.mock.calls.at(-1)[1].args[0]).toBe('get_book_metadata_complete');
 });
+
+test.each(['search', 'get_history'])('%s rejects empty cursor through RefStore before configuration or bridge work', async name => {
+  run.mockResolvedValue(encode([]));
+  const configured = jest.spyOn(server.tools, 'configured');
+  const resolve = jest.spyOn(server.tools.refs, 'get');
+  try {
+    const reply = await client.callTool({ name, arguments: { cursor: '' } });
+    expect(run.mock.calls.length).toBe(0);
+    expect(configured).not.toHaveBeenCalled();
+    expect(resolve).toHaveBeenCalledWith('', 'c');
+    expect(reply.isError).toBe(true);
+    expect(reply.structuredContent.error).toMatchObject({
+      code: 'invalid_argument', operation: name, message: 'Reference has the wrong kind.', retry: 'no',
+    });
+    expect(ErrorEnvelopeSchema.safeParse(reply.structuredContent).success).toBe(true);
+    expect(JSON.parse(reply.content[0].text)).toEqual(reply.structuredContent);
+  } finally {
+    configured.mockRestore(); resolve.mockRestore();
+  }
+});
+
+test.each(['search', 'get_history'])('%s still refuses unknown nonempty cursor without configuration or bridge work', async name => {
+  const configured = jest.spyOn(server.tools, 'configured');
+  try {
+    const result = await call(name, { cursor: 'cmissing' });
+    expect(result.error).toMatchObject({
+      code: 'ref_unavailable', operation: name, detail: { kind: 'cursor', reason: 'unknown' },
+    });
+    expect(ErrorEnvelopeSchema.safeParse(result).success).toBe(true);
+    expect(configured).not.toHaveBeenCalled();
+    expect(run.mock.calls.length).toBe(0);
+  } finally { configured.mockRestore(); }
+});
+
+test.each(['search', 'get_history'])('%s still rejects empty or nonempty cursor mixed with other arguments', async name => {
+  for (const cursor of ['', 'cmissing']) {
+    const result = await call(name, { cursor, limit: 2 });
+    expect(result.error).toMatchObject({ code: 'invalid_argument', message: 'A cursor must be passed by itself.' });
+  }
+  expect(run.mock.calls.length).toBe(0);
+});
+
+test.each(['search', 'get_history'])('%s retains valid cursor-only page forwarding and exact lost-reply replay', async name => {
+  run.mockImplementation(async (_script, options) => {
+    const { page } = JSON.parse(options.args[1]);
+    const row = { ...book, id: String(page), title: `Page ${page}` };
+    return encode(name === 'search' ? { books: [row] } : [row]);
+  });
+  const first = await call(name, name === 'search' ? { query: 'Book', sources: ['zlibrary'], limit: 1 } : { limit: 1 });
+  expect(first.next_cursor).toBeDefined();
+  const lost = await call(name, { cursor: first.next_cursor });
+  const replay = await call(name, { cursor: first.next_cursor });
+  expect(lost.rows[0].title).toBe('Page 2');
+  expect(replay).toEqual(lost);
+  expect(run.mock.calls.map(c => [c[1].args[0], JSON.parse(c[1].args[1]).page])).toEqual([
+    [name === 'search' ? 'search' : 'get_download_history', 1],
+    [name === 'search' ? 'search' : 'get_download_history', 2],
+    [name === 'search' ? 'search' : 'get_download_history', 2],
+  ]);
+});

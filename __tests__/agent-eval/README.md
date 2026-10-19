@@ -9,6 +9,11 @@ book data and file bytes are synthetic. No model call happens by default.
 From a baseline-compatible evaluator checkout with Node dependencies and its uv
 `.venv` available (these commands do not select an interface checkout as A):
 
+Full local Git history is required for the settled-baseline and parent controls.
+A shallow clone cannot establish source equivalence; missing historical objects
+remain a fail-closed prerequisite error, not a product misclassification. CI's
+full-Jest checkouts explicitly use `fetch-depth: 0` to provide that history.
+
 ```sh
 npm run build
 node __tests__/agent-eval/run.mjs --self-test --out test_output/agent-eval-self-test.json

@@ -108,6 +108,9 @@ async def main():
         _emit(trace, "request-close", "start")
         os.close(4)
         _emit(trace, "request-close", "done")
+        if mode == "request-partial":
+            # Exit the selected launcher too, so partial+EOF is observable.
+            return
         if mode.endswith("fragmented"):
             # The demand must be observed while this child is still alive,
             # not only when process exit finally closes every inherited handle.
@@ -142,8 +145,8 @@ async def main():
             assert error.reason == "breaker_open"
         (root / "admitted").write_text("intent+lease")
         private = await request_session(timeout=10, diagnostic=session_trace)
-        with (root / "transfers").open("a") as stream:
-            stream.write("1\n")
+        with (root / "transfers").open("ab") as stream:
+            stream.write(b"1\n")
         (root / "granted").write_text("yes")
         if mode == "postgrant-extra":
             os.write(extra_fd, b"x")

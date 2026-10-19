@@ -63,14 +63,24 @@ new destination. `record` points to `<path>.acq.json`.
 Record version 1 includes `state` (`intent` or `complete`), file path, bytes,
 SHA-256, known MD5, source, nested provenance, edition metadata (explicit nulls
 for unknown fields), identifiers and request context. Intent is persisted
-before authentication/transfer. A digest checkpoint before publication lets an
-intent receipt recover a fully published file after a crash. Complete receipts
-are re-read and re-hashed per call, not trusted from a process cache.
+before authentication/transfer. When the acquired format corrects the filename,
+the initial destination lease remains held and a non-waiting canonical-target
+lease covers publication and all receipt finalization. Canonical hashed intent
+is written before alias intent and publication. Alias recovery also leases the
+canonical target before verifying/finalizing it and rechecks its identity.
+Compatible complete canonical receipts and provenance remain authoritative and
+unchanged; verified foreign identities cannot adopt even identical bytes.
+Complete receipts are re-read and re-hashed per call, not trusted from a process
+cache.
 
-Per-destination O_EXCL locks coalesce independent processes on local filesystems.
-Dead holders are reclaimed, live holders are not stolen just because a transfer
-is slow. Lock creation failure returns `output_refused`; there is no silent
-uncoalesced fallback. Network-filesystem lock semantics are not established here.
+Per-destination leases coalesce independent processes on local filesystems.
+POSIX uses O_EXCL creation and `flock`, reclaiming stale holders only under an
+inode-checked lease and unlinking while held. Live holders are not stolen because
+a transfer is slow. Windows uses native nonblocking byte-range leases on
+persistent files, released on close or process death without stale-PID checks or
+unlink; a remaining file is not a held lease. Unsupported locking returns
+`output_refused`; there is no silent uncoalesced fallback. Network-filesystem lock
+semantics are not established here.
 Output-root checks include existing symlinks but do not defend against a local
 operator racing to replace directories.
 
@@ -80,6 +90,9 @@ have `source`, `remaining`, `as_of` (observation time), `basis` (`observed` or
 `decremented`). Other processes can change the account count. Unknown outcomes
 and potentially quota-spending cancellation invalidate estimates until another
 live observation. Acquisition is never automatically retried.
+Corrected-target contention refuses without waiting, potentially after a
+quota-counting transfer: `request_issued: true` maps to `retry: "may_spend_quota"`
+and invalidates the estimate. A refusal before transfer does not spend quota.
 
 ## get_limits
 

@@ -38,7 +38,26 @@ Refs are not authorization tokens and expire under shared LRU pressure. The
 The design's handle-length examples are incompatible with its entropy and
 unbounded-counter requirements; full nonce/counter semantics win. An extra
 pre-publication digest checkpoint closes the intent/publication crash window.
-Unsupported lock creation fails closed instead of downgrading idempotence.
+The initial destination lease stays held while a corrected-format canonical
+target is leased without waiting, through publication and receipt finalization.
+Recovery also leases that target before verification and identity checks.
+Canonical hashed intent precedes alias intent and publication; compatible
+complete canonical receipts and provenance remain authoritative and unchanged.
+Foreign verified identities cannot adopt identical bytes.
+
+Waiting for a secondary lease is rejected because opposing format corrections
+can deadlock. A directory guard only after transfer misses initial admission and
+recovery. Non-waiting secondary contention can instead refuse after a
+quota-counting transfer: `request_issued: true` maps to `retry: "may_spend_quota"`,
+invalidates the estimate, and never triggers an automatic retry.
+
+POSIX retains O_EXCL creation, `flock` and inode-checked unlink while held.
+Windows uses persistent native nonblocking byte-range lease files: close or
+process death releases the lease without unlink or POSIX PID checks, and a
+remaining file is not a held lease. Unsupported locking fails closed instead of
+downgrading idempotence. Network filesystems and hostile concurrent directory
+swaps remain outside this guarantee. Native Windows qualification requires the
+focused hosted CI job; semantic-emulator results alone do not establish it.
 These build choices are explicit in the migration note and lane handoff.
 
 Offline tests address protocol shape, replay, collisions, actual two-process

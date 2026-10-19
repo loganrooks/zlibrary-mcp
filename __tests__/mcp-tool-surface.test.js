@@ -153,3 +153,27 @@ test.each(['search', 'get_history'])('%s retains valid cursor-only page forwardi
     [name === 'search' ? 'search' : 'get_download_history', 2],
   ]);
 });
+
+test.each([true, false])('download lease contention issued=%s has bounded retry/estimate semantics and no automatic retry', async issued => {
+  let acquisitions = 0;
+  run.mockImplementation(async (_script, options) => {
+    const operation = options.args[0];
+    if (operation === 'get_download_limits') return encode({ daily_limit: 10, downloads_today: 3, daily_remaining: 7 });
+    if (operation === 'search') return encode({ books: [book] });
+    acquisitions++;
+    if (acquisitions === 1) throw Object.assign(new Error('synthetic lease contention'), {
+      stderr: JSON.stringify({ error: 'synthetic lease contention', type: 'AcquisitionError', details: { reason: 'breaker_open', request_issued: issued } }),
+    });
+    return encode({ path: '/offline/book.pdf', bytes: 12, verified: 'sha256', reused: false, transfer_skipped: true, record: '/offline/book.pdf.acq.json' });
+  });
+  await call('get_limits', { mode: 'live', sources: ['zlibrary'] });
+  const ref = (await call('search', { query: 'Book', sources: ['zlibrary'] })).rows[0].ref;
+  const failed = await call('download', { ref });
+  expect(failed.error).toMatchObject({ code: 'breaker_open', source: 'zlibrary', retry: issued ? 'may_spend_quota' : 'safe', detail: { reason: 'breaker_open', request_issued: issued } });
+  expect(ErrorEnvelopeSchema.safeParse(failed).success).toBe(true);
+  expect(acquisitions).toBe(1); // no automatic quota-consuming second transfer
+  const explicitRepeat = await call('download', { ref });
+  if (issued) expect(explicitRepeat.quota_estimate).toBeUndefined();
+  else expect(explicitRepeat.quota_estimate).toMatchObject({ remaining: 7, basis: 'observed' });
+  expect(acquisitions).toBe(2);
+});

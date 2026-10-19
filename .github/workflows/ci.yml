@@ -229,3 +229,18 @@ jobs:
         run: docker build -t zlibrary-mcp:ci -f docker/Dockerfile .
       - name: Verify image contents
         run: docker run --rm --entrypoint sh zlibrary-mcp:ci -c "test -f /app/dist/index.js && node -e 'console.log(\"OK\")'"
+
+  acquisition-windows:
+    name: Offline acquisition leases (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          lfs: false
+      - uses: astral-sh/setup-uv@v7
+        with:
+          python-version: '3.13'
+      - run: uv sync --frozen --group dev
+      - name: Verify native leases and canonical receipt recovery
+        run: uv run pytest __tests__/python/test_acquisition_locking.py __tests__/python/test_acquisition_receipts.py --no-cov -rs

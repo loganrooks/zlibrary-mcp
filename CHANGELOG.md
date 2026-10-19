@@ -16,6 +16,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added no-network local source limits; account history remains distinct from local files.
 - Added intent/completion acquisition sidecars, SHA-256 re-hashing before reuse,
   cross-process destination locks and crash recovery before receipt finalization.
+- Retained the initial lease while leasing corrected-format canonical targets
+  through finalization and recovery; canonical hashed intent precedes alias intent
+  and publication, and compatible complete receipts/provenance stay authoritative.
+  Non-waiting corrected-target contention can follow a quota-counting transfer
+  (`request_issued: true`, `retry: "may_spend_quota"`); no automatic retry occurs.
+- Preserved POSIX flock/inode-checked unlink ordering and added persistent native
+  Windows byte-range leases, released on close or process death without unlink.
+  A remaining Windows lock file is not a held lease. Unsupported locking fails
+  closed; network filesystems and hostile directory swaps remain outside the guarantee.
 - Downloads return `path`, `bytes`, flags and `record`; full book records and all
   processing arguments are no longer MCP inputs. Even a saved false processing
   flag is rejected by the new MCP surface; the internal legacy API is unchanged.

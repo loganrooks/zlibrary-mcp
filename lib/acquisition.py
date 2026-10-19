@@ -5,8 +5,9 @@ concurrently swapping directories. Receipts are not authorization tokens.
 """
 
 import asyncio
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, ExitStack
 from datetime import datetime, timezone
+import errno
 import hashlib
 import json
 import os
@@ -19,8 +20,15 @@ from lib.filename_utils import create_unified_filename, normalize_document_exten
 
 try:
     import fcntl
-except ImportError:  # Windows still uses O_EXCL; no advisory lock available.
+except ImportError:
     fcntl = None
+
+try:
+    import msvcrt
+except ImportError:
+    msvcrt = None
+
+_WINDOWS = os.name == "nt"
 
 
 class AcquisitionError(ValueError):
@@ -148,6 +156,10 @@ def _atomic_json(path, record):
 
 
 def _alive(pid):
+    if _WINDOWS:
+        raise AcquisitionError(
+            "output_refused", "POSIX PID liveness is unavailable on Windows"
+        )
     if not isinstance(pid, int) or pid <= 0:
         return False
     try:
@@ -161,6 +173,10 @@ def _alive(pid):
 
 def _remove_stale(lock, budget):
     """Never steal an active local holder merely because a call was slow."""
+    if _WINDOWS or fcntl is None:
+        raise AcquisitionError(
+            "output_refused", "Stale unlink requires the POSIX lease backend"
+        )
     try:
         with lock.open("r+") as existing:
             if fcntl:
@@ -172,52 +188,149 @@ def _remove_stale(lock, budget):
                 record = json.load(existing)
             except ValueError:
                 record = {}
+            if not isinstance(record, dict):
+                record = {}
             st = os.fstat(existing.fileno())
-            stale = (
-                not _alive(record.get("pid"))
-                if record.get("pid")
-                else time.time() - st.st_mtime > budget
-            )
-            if stale and lock.stat().st_ino == st.st_ino:
+            pid = record.get("pid")
+            # The OS lease, not an empty file's age, protects a paused creator.
+            usable_pid = type(pid) is int and pid > 0
+            stale = not _alive(pid) if usable_pid else True
+            current = lock.stat()
+            if stale and (current.st_dev, current.st_ino) == (st.st_dev, st.st_ino):
                 lock.unlink()
     except FileNotFoundError:
         pass
 
 
+class DestinationLease:
+    """One non-waiting OS lease; Windows lock files are persistent coordination state."""
+
+    def __init__(self, path, budget, *, issued=False):
+        self.lock = Path(str(path) + ".lock")
+        self.budget = budget
+        self.issued = issued
+        self.descriptor = None
+        self.held = False
+        self.windows = _WINDOWS
+
+    def _busy(self):
+        return AcquisitionError(
+            "breaker_open",
+            "Destination is still being acquired; retry after the active call completes",
+            issued=self.issued,
+        )
+
+    def __enter__(self):
+        if (self.windows and msvcrt is None) or (not self.windows and fcntl is None):
+            raise AcquisitionError(
+                "output_refused",
+                "No supported destination lease backend",
+                issued=self.issued,
+            )
+        try:
+            if self.windows:
+                # No O_EXCL, metadata liveness checks or unlink on this backend.
+                self.descriptor = os.open(
+                    self.lock,
+                    os.O_CREAT | os.O_RDWR | getattr(os, "O_BINARY", 0),
+                    0o600,
+                )
+                os.lseek(self.descriptor, 0, os.SEEK_SET)
+                try:
+                    msvcrt.locking(self.descriptor, msvcrt.LK_NBLCK, 1)
+                except OSError as error:
+                    # CRT _locking reports a conflicting region as EACCES/EDEADLK.
+                    # An open failure, EBADF/ENOSYS etc. is not contention.
+                    if error.errno in {errno.EACCES, errno.EAGAIN, errno.EDEADLK}:
+                        raise self._busy() from error
+                    raise
+                self.held = True
+            else:
+                try:
+                    self.descriptor = os.open(
+                        self.lock, os.O_CREAT | os.O_EXCL | os.O_RDWR, 0o600
+                    )
+                except FileExistsError:
+                    _remove_stale(self.lock, self.budget)
+                    try:
+                        self.descriptor = os.open(
+                            self.lock, os.O_CREAT | os.O_EXCL | os.O_RDWR, 0o600
+                        )
+                    except FileExistsError as error:
+                        raise self._busy() from error
+                try:
+                    fcntl.flock(self.descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BlockingIOError as error:
+                    raise self._busy() from error
+                self.held = True
+                # A reaper may have replaced our empty inode before this flock.
+                # Never write metadata or admit a holder detached from the path.
+                held = os.fstat(self.descriptor)
+                try:
+                    current = self.lock.stat()
+                except FileNotFoundError as error:
+                    raise self._busy() from error
+                if (held.st_dev, held.st_ino) != (current.st_dev, current.st_ino):
+                    raise self._busy()
+                os.write(
+                    self.descriptor,
+                    json.dumps({"pid": os.getpid(), "time": _now()}).encode(),
+                )
+                os.fsync(self.descriptor)
+            return self
+        except BaseException as error:
+            self.close()
+            if isinstance(error, OSError):
+                raise AcquisitionError(
+                    "output_refused",
+                    "Cannot acquire destination lease",
+                    issued=self.issued,
+                ) from error
+            raise
+
+    def close(self):
+        descriptor, self.descriptor = self.descriptor, None
+        if descriptor is None:
+            return
+        try:
+            if self.held:
+                if self.windows:
+                    os.lseek(descriptor, 0, os.SEEK_SET)
+                    msvcrt.locking(descriptor, msvcrt.LK_UNLCK, 1)
+                else:
+                    try:
+                        current, held = self.lock.stat(), os.fstat(descriptor)
+                        if (current.st_dev, current.st_ino) == (
+                            held.st_dev,
+                            held.st_ino,
+                        ):
+                            self.lock.unlink()  # inode checked while flock is still held
+                    except FileNotFoundError:
+                        pass
+        finally:
+            self.held = False
+            os.close(descriptor)  # must run even if unlock/stat/unlink raises
+
+    def __exit__(self, *_):
+        self.close()
+
+
 @asynccontextmanager
 async def destination_lock(path, budget):
-    lock = Path(str(path) + ".lock")
     deadline = time.monotonic() + budget
-    descriptor = None
-    while descriptor is None:
+    while True:
+        lease = DestinationLease(path, budget)
         try:
-            descriptor = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_RDWR, 0o600)
-        except FileExistsError:
-            _remove_stale(lock, budget)
-            if time.monotonic() >= deadline:
-                raise AcquisitionError(
-                    "breaker_open",
-                    "Destination is still being acquired; retry after the active call completes",
-                )
+            lease.__enter__()
+            break
+        except AcquisitionError as error:
+            if error.reason != "breaker_open" or time.monotonic() >= deadline:
+                raise
             await asyncio.sleep(0.05)
-        except OSError as error:
-            # Fail closed instead of advertising an idempotence promise this filesystem cannot provide.
-            raise AcquisitionError(
-                "output_refused", "Cannot create the destination acquisition lock"
-            ) from error
     try:
-        if fcntl:
-            fcntl.flock(descriptor, fcntl.LOCK_EX)
-        os.write(descriptor, json.dumps({"pid": os.getpid(), "time": _now()}).encode())
-        os.fsync(descriptor)
-        yield
+        yield lease
     finally:
-        try:
-            if lock.stat().st_ino == os.fstat(descriptor).st_ino:
-                lock.unlink()
-        except FileNotFoundError:
-            pass
-        os.close(descriptor)
+        lease.close()
 
 
 def _record(book, source, identifiers, destination, request):
@@ -268,101 +381,210 @@ def _reply(record, record_path, skipped):
     }
 
 
+def _same_identity(record, source, identifiers):
+    return record.get("source") == source and record.get("identifiers") == identifiers
+
+
+def _guard_target(path, directory, *, issued=False):
+    path = Path(path)
+    if path.is_symlink() or path.resolve().parent != directory:
+        raise AcquisitionError(
+            "output_refused",
+            "Destination must remain inside the output directory",
+            issued=issued,
+        )
+    return path.resolve()
+
+
+def _refuse_foreign(record, target, directory, source, identifiers, *, issued=False):
+    # A durable hashed intent reserves its canonical identity even before publication.
+    reserved = (
+        record.get("record_version") == 1
+        and record.get("state") == "intent"
+        and record.get("sha256")
+        and record.get("path") == str(target)
+    )
+    if (
+        reserved or _verified_artifact(record, directory) is not None
+    ) and not _same_identity(record, source, identifiers):
+        raise AcquisitionError(
+            "output_refused",
+            "Destination has a verified receipt or intent for another selection",
+            issued=issued,
+        )
+
+
 async def acquire(
     book_details, output_dir=None, filename=None, request=None, *, transfer
 ):
-    """Check current bytes under a cross-process lock before any provider call."""
+    """Lease initial and canonical destinations through publication and every receipt write."""
     book = dict(book_details)
     directory = output_directory(output_dir)
-    name = destination_name(book, filename)
+    destination = _guard_target(directory / destination_name(book, filename), directory)
     source, identifiers = _identity(book)
-    destination = directory / name
-    if destination.is_symlink() or destination.resolve().parent != directory:
-        raise AcquisitionError(
-            "output_refused", "Destination must remain inside the output directory"
-        )
     directory.mkdir(parents=True, exist_ok=True)
     receipt_path = Path(str(destination) + ".acq.json")
     budget = max(
         1.0, float(os.environ.get("PYTHON_BRIDGE_LONG_TIMEOUT", "600000")) / 1000
     )
     async with destination_lock(destination, budget):
-        previous = _read(receipt_path)
-        path = _verified_artifact(previous, directory)
-        if path is not None:
+        with ExitStack() as leases:
+            held = {destination}
+
+            def canonical_lease(target, *, issued):
+                target = _guard_target(target, directory, issued=issued)
+                if target not in held:
+                    # Never await a nested lease: opposing format corrections must not deadlock.
+                    leases.enter_context(
+                        DestinationLease(target, budget, issued=issued)
+                    )
+                    held.add(target)
+                return target
+
+            previous = _read(receipt_path)
+            if previous.get("record_version") == 1 and isinstance(
+                previous.get("path"), str
+            ):
+                target = canonical_lease(previous["path"], issued=False)
+                _refuse_foreign(previous, destination, directory, source, identifiers)
+                canonical_path = Path(str(target) + ".acq.json")
+                canonical = _read(
+                    canonical_path
+                )  # inspect only after acquiring its lease
+                _refuse_foreign(canonical, target, directory, source, identifiers)
+                candidate = canonical if canonical else previous
+                path = _verified_artifact(candidate, directory)
+                if path == target and _same_identity(candidate, source, identifiers):
+                    if candidate["state"] == "intent":
+                        candidate = {
+                            **candidate,
+                            "state": "complete",
+                            "transfer_skipped": True,
+                            "reused": False,
+                        }
+                        _atomic_json(canonical_path, candidate)
+                    elif not canonical:
+                        _atomic_json(canonical_path, candidate)
+                    if receipt_path != canonical_path and previous != candidate:
+                        _atomic_json(receipt_path, candidate)
+                    return _reply(candidate, canonical_path, True)
+            else:
+                _refuse_foreign(previous, destination, directory, source, identifiers)
+
+            record = _record(book, source, identifiers, destination, request or {})
+            _atomic_json(receipt_path, record)  # before authentication/provider work
+            checkpoint_target = None
+            checkpoint_count = 0
+            checkpoint_valid = False
+            authority = None
+
+            def checkpoint(stage, target):
+                nonlocal \
+                    checkpoint_count, \
+                    checkpoint_target, \
+                    checkpoint_valid, \
+                    authority, \
+                    record
+                checkpoint_count += 1
+                checkpoint_valid = False
+                if checkpoint_count != 1:
+                    raise AcquisitionError(
+                        "internal",
+                        "Acquisition requires exactly one publication checkpoint",
+                        issued=True,
+                    )
+                target = canonical_lease(target, issued=True)
+                stage = Path(stage)
+                if stage.resolve() == target or not stage.is_file():
+                    raise AcquisitionError(
+                        "internal",
+                        "Checkpoint must precede publication of a staged file",
+                        issued=True,
+                    )
+                canonical_path = Path(str(target) + ".acq.json")
+                existing = _read(canonical_path)
+                _refuse_foreign(
+                    existing, target, directory, source, identifiers, issued=True
+                )
+                digest, size = _hash(stage), stage.stat().st_size
+                record.update(
+                    path=str(target),
+                    bytes=size,
+                    sha256=digest,
+                    format=normalize_document_extension(target.suffix) or None,
+                )
+                if _verified_artifact(existing, directory) == target and _same_identity(
+                    existing, source, identifiers
+                ):
+                    if existing["sha256"] != digest or existing["bytes"] != size:
+                        raise AcquisitionError(
+                            "integrity_mismatch",
+                            "Staged bytes differ from the verified canonical artifact",
+                            issued=True,
+                        )
+                    authority = existing
+                    if authority["state"] == "intent":
+                        authority = {
+                            **authority,
+                            "state": "complete",
+                            "transfer_skipped": True,
+                            "reused": False,
+                        }
+                        _atomic_json(canonical_path, authority)
+                    # A completed canonical receipt, including provenance, is immutable on reuse.
+                    if canonical_path != receipt_path:
+                        _atomic_json(receipt_path, authority)
+                else:
+                    _atomic_json(
+                        canonical_path, record
+                    )  # canonical hashed intent FIRST
+                    if canonical_path != receipt_path:
+                        _atomic_json(receipt_path, record)
+                checkpoint_target = target
+                checkpoint_valid = True
+
+            result = await transfer(
+                book, str(directory), filename=filename, publication_hook=checkpoint
+            )
+            if checkpoint_count != 1 or not checkpoint_valid:
+                raise AcquisitionError(
+                    "internal",
+                    "Acquisition requires exactly one successful prepublication checkpoint",
+                    issued=True,
+                )
+            final = _guard_target(result["file_path"], directory, issued=True)
+            if final != checkpoint_target or not final.is_file():
+                raise AcquisitionError(
+                    "internal",
+                    "Transfer returned a different or missing checkpoint target",
+                    issued=True,
+                )
             if (
-                previous.get("source") != source
-                or previous.get("identifiers") != identifiers
+                _hash(final) != record["sha256"]
+                or final.stat().st_size != record["bytes"]
             ):
                 raise AcquisitionError(
-                    "output_refused",
-                    "Destination has a verified receipt for another selection",
-                )
-            record_path = Path(str(path) + ".acq.json")
-            if previous["state"] == "intent":
-                # Recover publication before finalization; complete receipts remain byte-stable.
-                previous.update(state="complete", transfer_skipped=True, reused=False)
-                _atomic_json(receipt_path, previous)
-                if record_path != receipt_path:
-                    _atomic_json(record_path, previous)
-            return _reply(previous, record_path, True)
-        record = _record(book, source, identifiers, destination, request or {})
-        _atomic_json(
-            receipt_path, record
-        )  # precedes authentication and every upstream request
-
-        def checkpoint(stage, target):
-            if target.is_symlink() or target.resolve().parent != directory:
-                raise AcquisitionError(
-                    "output_refused",
-                    "Published destination must remain inside the output directory",
+                    "integrity_mismatch",
+                    "Published bytes differ from the acquisition checkpoint",
                     issued=True,
                 )
-            target_receipt = _read(Path(str(target) + ".acq.json"))
-            if _verified_artifact(target_receipt, directory) is not None and (
-                target_receipt.get("source") != source
-                or target_receipt.get("identifiers") != identifiers
-            ):
-                raise AcquisitionError(
-                    "output_refused",
-                    "Published destination has a verified receipt for another selection",
-                    issued=True,
+            canonical_path = Path(str(final) + ".acq.json")
+            if authority is None:
+                record.update(
+                    state="complete",
+                    reused=bool(result.get("publication_reused", False)),
+                    provenance=result.get("provenance") or record["provenance"],
                 )
-            record.update(
-                path=str(target),
-                bytes=stage.stat().st_size,
-                sha256=_hash(stage),
-                format=normalize_document_extension(target.suffix) or None,
+                _atomic_json(canonical_path, record)
+            else:
+                record = authority
+            if canonical_path != receipt_path and _read(receipt_path) != record:
+                _atomic_json(receipt_path, record)
+            reply = _reply(
+                {**record, "reused": bool(result.get("publication_reused", False))},
+                canonical_path,
+                False,
             )
-            _atomic_json(
-                receipt_path, record
-            )  # still intent; crash after publication is recoverable
-
-        result = await transfer(
-            book, str(directory), filename=filename, publication_hook=checkpoint
-        )
-        final = Path(result["file_path"]).resolve()
-        if final.parent != directory or not final.is_file():
-            raise AcquisitionError(
-                "internal",
-                "Transfer did not publish inside the destination",
-                issued=True,
-            )
-        # The checkpoint is called by the publication code. A fallback hash supports legacy transfers.
-        record.update(
-            path=str(final),
-            format=normalize_document_extension(final.suffix) or None,
-            bytes=final.stat().st_size,
-            sha256=_hash(final),
-            state="complete",
-            reused=bool(result.get("publication_reused", False)),
-            provenance=result.get("provenance") or record["provenance"],
-        )
-        record_path = Path(str(final) + ".acq.json")
-        _atomic_json(record_path, record)
-        if record_path != receipt_path:
-            _atomic_json(receipt_path, record)
-        reply = _reply(record, record_path, False)
-        if result.get("quota_estimate"):
-            reply["quota_estimate"] = result["quota_estimate"]
-        return reply
+            if result.get("quota_estimate"):
+                reply["quota_estimate"] = result["quota_estimate"]
+            return reply

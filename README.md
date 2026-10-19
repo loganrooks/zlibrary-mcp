@@ -128,25 +128,35 @@ SHA-256 skip the transfer without quota. `transfer_skipped: true` means no
 transfer; `reused: true` means bytes were fetched and an identical existing file
 was adopted, so quota may have been spent. Both cannot be true together.
 
-An intent receipt precedes the request. A digest checkpoint before publication
-allows recovery from a crash after publication but before finalization. A partial
-or missing file does not qualify for reuse. Different filenames/directories are
-different destinations. Pre-2.0 files have no receipts and may be fetched before
-post-transfer reuse. Different existing bytes are never silently overwritten.
+An intent receipt precedes the request. If the acquired format corrects the
+filename, the call retains its initial lease and takes a non-waiting lease on the
+canonical target through receipt finalization; alias recovery also leases that
+target before verifying it. Canonical hashed intent is persisted before the alias
+intent and publication. Compatible complete canonical receipts, including their
+provenance, remain authoritative. A partial or missing file does not qualify for
+reuse. Different filenames/directories are different destinations. Pre-2.0 files
+have no receipts and may be fetched before post-transfer reuse. Different existing
+bytes and verified foreign identities are never silently overwritten.
 
 The default directory is `ZLIBRARY_OUTPUT_ROOT`, otherwise `./downloads`.
 `output_dir` must resolve inside the root when configured (including symlinks).
 `filename` is a sanitized basename; its extension is forced to the acquired
 format. The root guard admits arguments; it is not a sandbox against a local
-operator swapping directories during a call. Local filesystems with exclusive
-file creation support cross-process coalescing. An unavailable lock fails with
-`output_refused` instead of starting an uncoalesced transfer.
+operator swapping directories during a call. On local filesystems, POSIX leases
+use exclusive creation and `flock`, with inode-checked unlink while held. Windows
+uses native nonblocking byte-range leases on persistent files: close or process
+death releases the lease, so a remaining file does not mean it is held.
+Unsupported locking fails with `output_refused` instead of starting an
+uncoalesced transfer. Network-filesystem locking is not established here.
 
 `quota_estimate`, when present, labels the last live observation and deductions
 for issued transfers in this process. Other account clients can change the real
 count. An ambiguous download or cancellation invalidates the estimate. Downloads
 are not automatically retried: `retry` is `safe`, `may_spend_quota`, or `no`, and
 cancelled calls require fresh user intent. See [errors](docs/api.md#errors).
+Corrected-target contention refuses without waiting and can occur after a
+quota-counting transfer (`request_issued: true`, `retry: "may_spend_quota"`); it
+invalidates the estimate and is never automatically retried.
 
 ## Installation
 

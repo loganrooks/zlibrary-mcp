@@ -391,102 +391,11 @@ describe('Z-Library API', () => {
             args: ['download_book', JSON.stringify({
                 book_details: mockBookDetails, // Pass bookDetails object
                 output_dir: './downloads',
-                process_for_rag: false,
-                processed_output_format: 'txt' // Default format
             })]
         }), expect.objectContaining({ label: expect.any(String) }));
         expect(result).toEqual({
             file_path: '/abs/path/to/downloads/Success Book.epub'
             // No processed_file_path expected
-        });
-    });
-
-    // Updated for Phase 19: with RAG, callers receive the additive bundle fields too
-    test('should call Python bridge with correct args (with RAG)', async () => {
-        const pythonResult_dl2 = { // Unique result var
-            file_path: '/abs/path/to/rag_out/RAG Book.pdf',
-            processed_file_path: '/abs/path/to/processed_rag_output/RAG Book.pdf.processed.md',
-            metadata_file_path: '/abs/path/to/processed_rag_output/RAG Book.pdf.metadata.json',
-            footnotes_file_path: '/abs/path/to/processed_rag_output/RAG Book.pdf.processed_footnotes.md',
-            content_types_produced: ['body', 'footnotes'],
-            output_files: {
-                body: '/abs/path/to/processed_rag_output/RAG Book.pdf.processed.md',
-                metadata: '/abs/path/to/processed_rag_output/RAG Book.pdf.metadata.json',
-                footnotes: '/abs/path/to/processed_rag_output/RAG Book.pdf.processed_footnotes.md'
-            }
-        };
-        mockGetManagedPythonPath.mockResolvedValue('/fake/python');
-        // Corrected Mock: Simulate python printing the JSON string of the MCP response structure
-        const mockPythonResultString_dl2 = JSON.stringify(pythonResult_dl2);
-        const mockMcpResponseString_dl2 = JSON.stringify({ content: [{ type: 'text', text: mockPythonResultString_dl2 }] });
-        mockRunPythonBridge.mockResolvedValueOnce([mockMcpResponseString_dl2]);
-
-        const mockBookDetails = { id: 'rag123', url: 'http://example.com/book/rag123/slug', title: 'RAG Book' };
-        const downloadArgs = { bookDetails: mockBookDetails, outputDir: './rag_out', process_for_rag: true, processed_output_format: 'md' };
-
-        result = await zlibApi.downloadBookToFile(downloadArgs);
-
-        expect(mockRunPythonBridge).toHaveBeenCalledTimes(1);
-        expect(mockRunPythonBridge).toHaveBeenCalledWith('python_bridge.py', expect.objectContaining({
-            scriptPath: EXPECTED_SCRIPT_PATH,
-            args: ['download_book', JSON.stringify({
-                book_details: mockBookDetails, // Pass bookDetails object
-                output_dir: './rag_out',
-                process_for_rag: true,
-                processed_output_format: 'md'
-            })]
-        }), expect.objectContaining({ label: expect.any(String) }));
-        expect(result).toEqual({
-            file_path: '/abs/path/to/rag_out/RAG Book.pdf',
-            processed_file_path: '/abs/path/to/processed_rag_output/RAG Book.pdf.processed.md',
-            metadata_file_path: '/abs/path/to/processed_rag_output/RAG Book.pdf.metadata.json',
-            footnotes_file_path: '/abs/path/to/processed_rag_output/RAG Book.pdf.processed_footnotes.md',
-            content_types_produced: ['body', 'footnotes'],
-            output_files: {
-                body: '/abs/path/to/processed_rag_output/RAG Book.pdf.processed.md',
-                metadata: '/abs/path/to/processed_rag_output/RAG Book.pdf.metadata.json',
-                footnotes: '/abs/path/to/processed_rag_output/RAG Book.pdf.processed_footnotes.md'
-            }
-        });
-    });
-
-    // Updated for Phase 19: no-text processing still returns the additive bundle shape
-    test('should handle Python response when processing requested but path is null', async () => {
-        const pythonResult_dl3 = { // Unique result var
-            file_path: '/abs/path/to/image.pdf',
-            processed_file_path: null,
-            metadata_file_path: null,
-            stats: null,
-            content_types_produced: [],
-            output_files: {}
-        };
-        mockGetManagedPythonPath.mockResolvedValue('/fake/python');
-        // Corrected Mock: Simulate python printing the JSON string of the MCP response structure
-        const mockPythonResultString_dl3 = JSON.stringify(pythonResult_dl3);
-        const mockMcpResponseString_dl3 = JSON.stringify({ content: [{ type: 'text', text: mockPythonResultString_dl3 }] });
-        mockRunPythonBridge.mockResolvedValueOnce([mockMcpResponseString_dl3]);
-
-        const mockBookDetails = { id: 'image456', url: 'http://example.com/book/image456/slug', title: 'Image Book' };
-        const downloadArgs = { bookDetails: mockBookDetails, process_for_rag: true };
-
-        result = await zlibApi.downloadBookToFile(downloadArgs);
-
-        expect(mockRunPythonBridge).toHaveBeenCalledTimes(1);
-        expect(mockRunPythonBridge).toHaveBeenCalledWith('python_bridge.py', expect.objectContaining({
-            args: ['download_book', JSON.stringify({
-                book_details: mockBookDetails, // Pass bookDetails object
-                output_dir: './downloads', // Default dir
-                process_for_rag: true,
-                processed_output_format: 'txt' // Default format
-            })]
-        }), expect.objectContaining({ label: expect.any(String) }));
-        expect(result).toEqual({
-            file_path: '/abs/path/to/image.pdf',
-            processed_file_path: null,
-            metadata_file_path: null,
-            stats: null,
-            content_types_produced: [],
-            output_files: {}
         });
     });
 
@@ -511,25 +420,6 @@ describe('Z-Library API', () => {
     });
 
     // Updated for Spec v2.1: Uses bookDetails
-    test('should throw error if processing requested and Python response missing processed_file_path key', async () => {
-        const invalidPythonResult_dl5 = { file_path: '/abs/path/book.epub' }; // Unique result var, Missing processed_file_path key
-        mockGetManagedPythonPath.mockResolvedValue('/fake/python');
-        // Corrected Mock: Simulate python printing the JSON string of the MCP response structure
-        const mockPythonResultString_dl5 = JSON.stringify(invalidPythonResult_dl5);
-        const mockMcpResponseString_dl5 = JSON.stringify({ content: [{ type: 'text', text: mockPythonResultString_dl5 }] });
-        mockRunPythonBridge.mockResolvedValueOnce([mockMcpResponseString_dl5]);
-
-        const mockBookDetails = { id: 'invalidResp2', url: 'http://example.com/book/invalidResp2/slug' };
-        const downloadArgs = { bookDetails: mockBookDetails, process_for_rag: true };
-
-        await expect(zlibApi.downloadBookToFile(downloadArgs))
-            .rejects
-            .toThrow("Invalid response from Python bridge: Processing requested but processed_file_path key is missing.");
-
-        expect(mockRunPythonBridge).toHaveBeenCalledTimes(1);
-    });
-
-    // Updated for Spec v2.1: Uses bookDetails
     test('should handle errors from Python bridge during download_book', async () => {
       const apiError = new Error('Python Download Book Failed');
       mockGetManagedPythonPath.mockResolvedValue('/fake/python');
@@ -537,7 +427,7 @@ describe('Z-Library API', () => {
 
       const mockBookDetails = { id: 'failDownload', url: 'http://example.com/book/failDownload/slug' };
       await expect(zlibApi.downloadBookToFile({ bookDetails: mockBookDetails })).rejects.toThrow(`Python bridge execution failed for download_book: ${apiError.message}`);
-      expect(mockRunPythonBridge).toHaveBeenCalledWith('python_bridge.py', expect.objectContaining({ scriptPath: EXPECTED_SCRIPT_PATH, args: ['download_book', JSON.stringify({ book_details: mockBookDetails, output_dir: './downloads', process_for_rag: false, processed_output_format: 'txt' })] }), expect.objectContaining({ label: expect.any(String) }));
+      expect(mockRunPythonBridge).toHaveBeenCalledWith('python_bridge.py', expect.objectContaining({ scriptPath: EXPECTED_SCRIPT_PATH, args: ['download_book', JSON.stringify({ book_details: mockBookDetails, output_dir: './downloads' })] }), expect.objectContaining({ label: expect.any(String) }));
     });
 
   });
@@ -650,122 +540,6 @@ describe('Z-Library API', () => {
     });
   });
 
-  describe('processDocumentForRag', () => {
-    // test.todo('[FAILING] should call Python bridge with correct args and return processed_file_path'); // Remove todo
-    test('should call Python bridge with correct args and return the additive bundle contract', async () => { // Uncomment test
-        // Arrange: Mock python bridge success
-        const pythonResult_rag1 = {
-            processed_file_path: '/abs/path/to/processed_rag_output/doc.txt.processed.txt',
-            metadata_file_path: '/abs/path/to/processed_rag_output/doc.txt.metadata.json',
-            content_types_produced: ['body'],
-            output_files: {
-                body: '/abs/path/to/processed_rag_output/doc.txt.processed.txt',
-                metadata: '/abs/path/to/processed_rag_output/doc.txt.metadata.json'
-            }
-        };
-        mockGetManagedPythonPath.mockResolvedValue('/fake/python');
-        // Corrected: Ensure mock provides the stringified MCP response in an array (Unique Vars)
-        const mockPythonResultString_rag1 = JSON.stringify(pythonResult_rag1);
-        const mockMcpResponseString_rag1 = JSON.stringify({ content: [{ type: 'text', text: mockPythonResultString_rag1 }] });
-        mockRunPythonBridge.mockResolvedValueOnce([mockMcpResponseString_rag1]);
-
-        const processArgs = { filePath: './local/doc.txt', outputFormat: 'txt' };
-        const expectedPythonFilePath = path.resolve('./local/doc.txt'); // Node resolves path
-
-        // Act
-        result = await zlibApi.processDocumentForRag(processArgs);
-
-        // Assert Python call
-        expect(mockRunPythonBridge).toHaveBeenCalledTimes(1);
-        expect(mockRunPythonBridge).toHaveBeenCalledWith('python_bridge.py', expect.objectContaining({
-            scriptPath: EXPECTED_SCRIPT_PATH,
-            args: ['process_document', JSON.stringify({
-                file_path_str: expectedPythonFilePath, // Correct arg name
-                output_format: 'txt'
-            })]
-        }), expect.objectContaining({ label: expect.any(String) }));
-        // Assert final result structure (based on spec v2.1)
-        expect(result).toEqual({
-            processed_file_path: '/abs/path/to/processed_rag_output/doc.txt.processed.txt',
-            metadata_file_path: '/abs/path/to/processed_rag_output/doc.txt.metadata.json',
-            content_types_produced: ['body'],
-            output_files: {
-                body: '/abs/path/to/processed_rag_output/doc.txt.processed.txt',
-                metadata: '/abs/path/to/processed_rag_output/doc.txt.metadata.json'
-            }
-        });
-    });
-
-     test('should handle null processed_file_path from Python', async () => { // Add test for null path
-        // Arrange: Mock python bridge success with null path
-        const pythonResult_rag2 = {
-            processed_file_path: null,
-            metadata_file_path: null,
-            stats: null,
-            content_types_produced: [],
-            output_files: {}
-        };
-        mockGetManagedPythonPath.mockResolvedValue('/fake/python');
-        // Corrected: Ensure mock provides the stringified MCP response in an array (Unique Vars)
-        const mockPythonResultString_rag2 = JSON.stringify(pythonResult_rag2);
-        const mockMcpResponseString_rag2 = JSON.stringify({ content: [{ type: 'text', text: mockPythonResultString_rag2 }] });
-        mockRunPythonBridge.mockResolvedValueOnce([mockMcpResponseString_rag2]);
-
-        const processArgs = { filePath: './local/image.pdf' };
-        const expectedPythonFilePath = path.resolve('./local/image.pdf');
-
-        // Act
-        result = await zlibApi.processDocumentForRag(processArgs);
-
-        // Assert Python call
-        expect(mockRunPythonBridge).toHaveBeenCalledTimes(1);
-        expect(mockRunPythonBridge).toHaveBeenCalledWith('python_bridge.py', expect.objectContaining({
-            args: ['process_document', JSON.stringify({
-                file_path_str: expectedPythonFilePath, // Correct arg name expected by Python
-                output_format: 'txt' // Default
-            })]
-        }), expect.objectContaining({ label: expect.any(String) }));
-        // Assert final result structure (based on spec v2.1)
-        expect(result).toEqual({
-            processed_file_path: null,
-            metadata_file_path: null,
-            stats: null,
-            content_types_produced: [],
-            output_files: {}
-        });
-    });
-
-    // test.todo('[FAILING] should throw error if Python response is missing processed_file_path'); // Remove todo
-    test('should throw error if Python response is missing processed_file_path key', async () => { // Uncomment test and update description
-        // Arrange: Mock python bridge returning invalid object
-        const invalidPythonResult_rag3 = { some_other_key: 'value' }; // Unique result var, Missing processed_file_path key
-        mockGetManagedPythonPath.mockResolvedValue('/fake/python');
-        // Corrected: Ensure mock provides the stringified MCP response in an array (Unique Vars)
-        const mockPythonResultString_rag3 = JSON.stringify(invalidPythonResult_rag3);
-        const mockMcpResponseString_rag3 = JSON.stringify({ content: [{ type: 'text', text: mockPythonResultString_rag3 }] });
-        mockRunPythonBridge.mockResolvedValueOnce([mockMcpResponseString_rag3]);
-
-        const processArgs = { filePath: './local/doc.txt' };
-
-        // Act & Assert
-        await expect(zlibApi.processDocumentForRag(processArgs))
-            .rejects
-            .toThrow("Invalid response from Python bridge during processing. Missing processed_file_path key."); // Updated error message
-
-        expect(mockRunPythonBridge).toHaveBeenCalledTimes(1);
-    });
-
-    test('should handle errors from Python bridge during processDocumentForRag', async () => {
-      const apiError = new Error('Python Process Failed');
-      mockGetManagedPythonPath.mockResolvedValue('/fake/python');
-      mockRunPythonBridge.mockRejectedValue(apiError);
-
-      await expect(zlibApi.processDocumentForRag({ filePath: './local/doc.txt' })).rejects.toThrow(`Python bridge execution failed for process_document: ${apiError.message}`);
-      const expectedPythonFilePath = path.resolve('./local/doc.txt');
-      expect(mockRunPythonBridge).toHaveBeenCalledWith('python_bridge.py', expect.objectContaining({ scriptPath: EXPECTED_SCRIPT_PATH, args: ['process_document', JSON.stringify({ file_path_str: expectedPythonFilePath, output_format: 'txt' })] }), expect.objectContaining({ label: expect.any(String) }));
-    });
-  });
-
   /**
    * A budget sized for a provider walk would kill a large download or an OCR
    * pass mid-flight — turning a slow success into a hard failure, which is a
@@ -797,12 +571,6 @@ describe('Z-Library API', () => {
       });
       expect(runOptionsOf().timeoutMs).toBe(LONG_BRIDGE_TIMEOUT_MS);
       expect(LONG_BRIDGE_TIMEOUT_MS).toBeGreaterThan(240000);
-    });
-
-    test('document processing gets the long budget', async () => {
-      resolveWith({ processed_file_path: '/abs/processed/doc.txt' });
-      await zlibApi.processDocumentForRag({ filePath: './local/doc.txt' });
-      expect(runOptionsOf().timeoutMs).toBe(LONG_BRIDGE_TIMEOUT_MS);
     });
 
     test('an explicit per-call budget still wins', async () => {

@@ -30,10 +30,10 @@ rehearses a tree from before it.
 
 
 - `reuse`: cold reuse, rejection single-flight, no additional login after ambiguity;
-  S4 authentication cooldown with local processing and Library Genesis search working.
+  S4 authentication cooldown with Library Genesis search working.
 - `redaction`: no occurrence of the known cookie-ID authentication message in
   captured stderr or `client-N/logs/zlibrary_debug.log`.
-- `breaker`: local document processing and Library Genesis search succeed while
+- `breaker`: Library Genesis search succeeds while
   the EAPI breaker is open.
 
 Absent features use isolated expected-failure assertions. Password, cookie-key,
@@ -77,9 +77,8 @@ skipped, duplicate and failed cases cannot produce a green aggregate.
   the sixth call dispatches nothing upstream and protocol listing survives.
   With `reuse`: all six replies name authentication as the cause, at most one
   upstream login is attempted, subsequent upstream counters stay unchanged, and
-  local processing works. The observation must finish within the first 30-second
-  cooldown; expiry and later windows are not tested. Local processing and Library
-  Genesis survival assertions are ordinary passes with either `reuse` or `breaker`,
+  removed processing calls are rejected without provider contact. The observation must finish within the first 30-second
+  cooldown; expiry and later windows are not tested. Library Genesis survival assertions are ordinary passes with either `reuse` or `breaker`,
   otherwise isolated expected failures. Reuse-mode success does not establish
   independence from an open breaker, because auth backoff need not open it.
 - S5: names/argument names equal `tools-surface.json`, an observed baseline, not an

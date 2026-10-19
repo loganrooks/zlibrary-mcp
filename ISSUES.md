@@ -286,7 +286,7 @@ is unchanged; live provider behavior remains unchecked by these offline tests.
 model, and quota-aware `SourceRouter` — but Z-Library does not implement it, going
 through `python_bridge.py` directly. Of 13 tools, 12 are Z-Library-only and one
 reaches the router. A new source therefore cannot inherit metadata enrichment,
-booklists, term search, or the RAG pipeline, and Z-Library remains a single point of
+booklists or term search, and Z-Library remains a single point of
 failure.
 **Direction**: Wrap the EAPI client in `SourceAdapter`, register it in the router,
 route all tools through it. See section 6 of the health assessment.
@@ -315,7 +315,7 @@ superseded analyses to `archive/`.
 
 ### Architecture
 1. **Tight Coupling**: Node.js and Python layers coupled through PythonShell (acceptable trade-off)
-2. **Legacy Facades**: rag_processing.py still exists as facade delegating to lib/rag/ (intentional for backward compat)
+2. **Parked text processing**: removed from this branch, not repaired; see [migration and issue #245](docs/text-processing-migration.md).
 
 ### Testing
 1. **No Performance Tests**: Missing load testing, stress testing
@@ -345,13 +345,6 @@ superseded analyses to `archive/`.
 ### Download Management
 - **DL-001**: No queue management for batch downloads
 - **DL-002**: Cannot resume interrupted downloads
-
-### RAG Processing
-- **RAG-001**: No semantic chunking strategies
-- **RAG-002**: OCR for scanned PDFs - *Partially implemented* (framework exists, ML models pending)
-- **RAG-005**: No support for MOBI, AZW3, DJVU formats
-
----
 
 ## Broken Functionality
 

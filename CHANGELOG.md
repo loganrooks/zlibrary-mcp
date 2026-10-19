@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking: acquisition-only 2.0
+
+- Removed local text processing, its tool, combined-download options, CLI paths,
+  detectors, quality helpers, and processing-only tests/dependencies. Downloads
+  now return the original `file_path` without processing bundle keys.
+- Saved requests with `process_for_rag: true` (or a malformed value) or any
+  `processed_output_format` fail before authentication, quota use, or transfer.
+  `process_for_rag: false` alone remains an unadvertised no-op; other unknown
+  download arguments fail explicitly.
+- The `rag` and `scholar` extras are gone. All current source, npm, container,
+  and CI recipes use acquisition dependencies, plus contributor tools as needed.
+- **Migration:** stay on an isolated 1.4.x installation for text processing until
+  a text add-on exists. Existing downloaded/extracted files are not deleted.
+  Code and tests are preserved at `parked/text-processing` and immutable tag
+  `parked-text-processing-2026-10` (`25fe05a`); held optical work is preserved
+  separately at `parked-pr240-optical-2026-10`. See
+  [migration details](docs/text-processing-migration.md). This does not fix the
+  four parked processing failures in issue #245.
+
 ### Added
 
 - `npm run audit:release` ([scripts/release-audit.mjs](scripts/release-audit.mjs)) and a

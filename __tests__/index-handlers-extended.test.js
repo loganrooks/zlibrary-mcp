@@ -2,7 +2,7 @@ import { jest, describe, beforeEach, test, expect } from '@jest/globals';
 
 // ============================================================================
 // Tests for uncovered handler paths in src/index.ts
-// Covers: processDocumentForRag, getBookMetadata, searchByTerm, searchByAuthor,
+// Covers: getBookMetadata, searchByTerm, searchByAuthor,
 //         fetchBooklist, searchAdvanced, searchMultiSource handlers
 //         + wrapResult helper (error and success paths)
 //         + toolRegistry entries for newer tools
@@ -26,7 +26,6 @@ describe('Tool Handlers - Extended Coverage', () => {
       getDownloadHistory: jest.fn(),
       getDownloadLimits: jest.fn(),
       downloadBookToFile: jest.fn(),
-      processDocumentForRag: jest.fn(),
       getBookMetadata: jest.fn(),
       searchByTerm: jest.fn(),
       searchByAuthor: jest.fn(),
@@ -41,6 +40,7 @@ describe('Tool Handlers - Extended Coverage', () => {
     const mockServer = {
       connect: jest.fn().mockResolvedValue(undefined),
       tool: jest.fn((...args) => registeredTools.set(args[0], args[4])),
+      registerTool: jest.fn((name, _config, callback) => registeredTools.set(name, callback)),
       close: jest.fn(),
     };
 
@@ -59,55 +59,6 @@ describe('Tool Handlers - Extended Coverage', () => {
     const { toolRegistry, handlers, start } = await import('../dist/index.js');
     return { toolRegistry, handlers, start, registeredTools, mocks };
   }
-
-  describe('processDocumentForRag handler', () => {
-    test('should call zlibApi.processDocumentForRag with mapped args on success', async () => {
-      const mockProcessDoc = jest.fn().mockResolvedValue({
-        processed_file_path: '/output/doc.txt',
-        metadata_file_path: '/output/doc.metadata.json',
-        content_types_produced: ['body'],
-        output_files: {
-          body: '/output/doc.txt',
-          metadata: '/output/doc.metadata.json',
-        },
-      });
-      const { toolRegistry } = await setupWithMocks({ processDocumentForRag: mockProcessDoc });
-
-      const handler = toolRegistry.process_document_for_rag.handler;
-      const args = { file_path: '/input/doc.epub', output_format: 'markdown' };
-      const validatedArgs = toolRegistry.process_document_for_rag.schema.parse(args);
-      const response = await handler(validatedArgs);
-
-      expect(mockProcessDoc).toHaveBeenCalledWith(
-        {
-          filePath: '/input/doc.epub',
-          outputFormat: 'markdown',
-        },
-        { signal: undefined },
-      );
-      expect(response).toEqual({
-        processed_file_path: '/output/doc.txt',
-        metadata_file_path: '/output/doc.metadata.json',
-        content_types_produced: ['body'],
-        output_files: {
-          body: '/output/doc.txt',
-          metadata: '/output/doc.metadata.json',
-        },
-      });
-    });
-
-    test('should return error object on failure', async () => {
-      const mockProcessDoc = jest.fn().mockRejectedValue(new Error('Process failed'));
-      const { toolRegistry } = await setupWithMocks({ processDocumentForRag: mockProcessDoc });
-
-      const handler = toolRegistry.process_document_for_rag.handler;
-      const args = { file_path: '/input/doc.epub' };
-      const validatedArgs = toolRegistry.process_document_for_rag.schema.parse(args);
-      const response = await handler(validatedArgs);
-
-      expect(response).toEqual({ error: { message: 'Process failed' } });
-    });
-  });
 
   describe('downloadBookToFile handler', () => {
     test('preserves structured provider details on failure', async () => {
@@ -496,29 +447,9 @@ describe('Tool Handlers - Extended Coverage', () => {
       expect(entry.schema).toBeDefined();
       expect(typeof entry.handler).toBe('function');
     });
-
-    test('process_document_for_rag registry entry should have description, schema, and handler', async () => {
-      const { toolRegistry } = await setupWithMocks();
-      const entry = toolRegistry.process_document_for_rag;
-      expect(entry.description).toBeDefined();
-      expect(entry.description).toContain('metadata');
-      expect(entry.schema).toBeDefined();
-      expect(typeof entry.handler).toBe('function');
-    });
   });
 
   describe('Handler error message fallbacks', () => {
-    test('processDocumentForRag handler should use fallback message when error has no message', async () => {
-      const mockProcessDoc = jest.fn().mockRejectedValue({});
-      const { toolRegistry } = await setupWithMocks({ processDocumentForRag: mockProcessDoc });
-
-      const handler = toolRegistry.process_document_for_rag.handler;
-      const args = { file_path: '/input/doc.epub' };
-      const validatedArgs = toolRegistry.process_document_for_rag.schema.parse(args);
-      const response = await handler(validatedArgs);
-
-      expect(response).toEqual({ error: { message: 'Failed to process document for RAG' } });
-    });
 
     test('getBookMetadata handler should use fallback message when error has no message', async () => {
       const mockGetMeta = jest.fn().mockRejectedValue({});
@@ -606,7 +537,6 @@ describe('Tool Handlers - Extended Coverage', () => {
       ['get_download_history', 'getDownloadHistory', {}, 1],
       ['get_download_limits', 'getDownloadLimits', {}, 0],
       ['download_book_to_file', 'downloadBookToFile', { bookDetails: { id: '1' } }, 1],
-      ['process_document_for_rag', 'processDocumentForRag', { file_path: '/a.epub' }, 1],
       ['get_book_metadata', 'getBookMetadata', { bookId: '1', bookHash: 'h' }, 3],
       ['search_by_term', 'searchByTerm', { term: 't' }, 1],
       ['search_by_author', 'searchByAuthor', { author: 'a' }, 1],

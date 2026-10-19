@@ -1,3 +1,5 @@
+> Current scope: document-processing decisions below are historical and preserved on `parked-text-processing-2026-10`; their implementation no longer ships. See [migration](../text-processing-migration.md).
+
 # Architecture Decision Records (ADR) Index
 
 **Purpose**: Index of all architecture decisions for the Z-Library MCP server

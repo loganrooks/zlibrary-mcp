@@ -13,7 +13,7 @@ export const requiredCases = [
   'C7 PID mismatch still closes every client',
   'Base known cookie-ID log finding is absent',
   'Epoch known cookie-ID log finding is absent',
-  'S4 local document processing survives authentication failures',
+  'S4 removed processing call cannot contact providers during authentication failures',
   'S1 sequential calls preserve identity and download exact bytes inside temp storage',
   'S2 five concurrent slow/fast calls correlate; count logins independently',
   'S2 session reuse: exactly one login (expected failure on master)',

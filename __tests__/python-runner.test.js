@@ -200,7 +200,11 @@ maybe('python-runner', () => {
   });
 
   test('an abort signal kills the child instead of orphaning it', async () => {
-    const name = script('hang3.py', 'import time\ntime.sleep(600)\n');
+    const pidFile = path.join(tmpDir, 'child.pid');
+    const name = script('hang3.py',
+      'import os, pathlib, time\n' +
+      `pathlib.Path(${JSON.stringify(pidFile)}).write_text(str(os.getpid()))\n` +
+      'time.sleep(600)\n');
     const controller = new AbortController();
 
     const promise = runner
@@ -211,8 +215,9 @@ maybe('python-runner', () => {
       )
       .catch((err) => err);
 
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    const pid = lastSpawnedPid();
+    expect(await waitFor(() => fs.existsSync(pidFile))).toBe(true);
+    const pid = Number(fs.readFileSync(pidFile, 'utf8'));
+    expect(pid).toBeGreaterThan(0);
     controller.abort();
 
     const error = await promise;
@@ -318,12 +323,21 @@ maybe('python-runner', () => {
     if (process.platform === 'win32') return;
 
     const pidFile = path.join(tmpDir, 'successful-parent-descendant.pid');
+    // The parent must wait until SIGTERM is ignored. Publishing the PID in
+    // the parent raced child startup and occasionally tested an already-reaped
+    // child rather than the intended grace-period path.
+    const descendantCode = [
+      'import os, pathlib, signal, time',
+      'signal.signal(signal.SIGTERM, signal.SIG_IGN)',
+      `pathlib.Path(${JSON.stringify(pidFile)}).write_text(str(os.getpid()))`,
+      'time.sleep(600)',
+    ].join('\n');
     const name = script(
       'successful-parent-with-descendant.py',
       [
-        'import pathlib, subprocess, sys',
-        'child = subprocess.Popen([sys.executable, "-c", "import signal, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(600)"], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True)',
-        `pathlib.Path(${JSON.stringify(pidFile)}).write_text(str(child.pid))`,
+        'import pathlib, subprocess, sys, time',
+        `child = subprocess.Popen([sys.executable, "-c", ${JSON.stringify(descendantCode)}], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True)`,
+        `while not pathlib.Path(${JSON.stringify(pidFile)}).exists(): time.sleep(0.01)`,
         'print("complete")',
         '',
       ].join('\n'),
@@ -633,7 +647,11 @@ maybe('python-runner', () => {
   );
 
   test('killAllPythonChildren reaps children still running', async () => {
-    const name = script('hang4.py', 'import time\ntime.sleep(600)\n');
+    const pidFile = path.join(tmpDir, 'child.pid');
+    const name = script('hang4.py',
+      'import os, pathlib, time\n' +
+      `pathlib.Path(${JSON.stringify(pidFile)}).write_text(str(os.getpid()))\n` +
+      'time.sleep(600)\n');
 
     const promise = runner
       .runPythonBridge(
@@ -643,8 +661,9 @@ maybe('python-runner', () => {
       )
       .catch((err) => err);
 
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    const pid = lastSpawnedPid();
+    expect(await waitFor(() => fs.existsSync(pidFile))).toBe(true);
+    const pid = Number(fs.readFileSync(pidFile, 'utf8'));
+    expect(pid).toBeGreaterThan(0);
     expect(runner.liveChildCount()).toBe(1);
 
     const killed = runner.killAllPythonChildren('SIGKILL');
@@ -733,27 +752,6 @@ maybe('python-runner', () => {
     expect(process.listenerCount('exit')).toBeLessThanOrEqual(before + 1);
   });
 });
-
-/**
- * The pid of the most recently spawned python child of this process.
- *
- * Read from the OS rather than from the runner, so the assertion is about a
- * real process and not about bookkeeping that could itself be wrong.
- */
-function lastSpawnedPid() {
-  try {
-    const out = execFileSync('pgrep', ['-P', String(process.pid)], {
-      encoding: 'utf8',
-    });
-    const pids = out
-      .split('\n')
-      .map((line) => parseInt(line.trim(), 10))
-      .filter((pid) => Number.isInteger(pid));
-    return pids.length > 0 ? pids[pids.length - 1] : -1;
-  } catch {
-    return -1;
-  }
-}
 
 /**
  * Budget parsing, which needs no Python child: a fresh import per case, since

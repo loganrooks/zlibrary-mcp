@@ -36,10 +36,8 @@ COPY zlibrary/ ./zlibrary/
 COPY tsconfig.json ./
 COPY scripts/ ./scripts/
 
-# The image is a RAG-capable distribution: PDF and EPUB extraction work without
-# an interactive install step. Keep scholar dependencies out so source and npm
-# users retain the lightweight core default, and Alpine need not install OpenCV.
-RUN uv sync --frozen --no-dev --extra rag
+# Only acquisition dependencies ship in the runtime image.
+RUN uv sync --frozen --no-dev
 
 # Install Node dependencies and build TypeScript
 RUN npm ci && npm run build

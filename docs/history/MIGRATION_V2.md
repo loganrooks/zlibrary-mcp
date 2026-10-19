@@ -1,3 +1,5 @@
+> Historical: this UV migration guide used an unshipped “v2.0.0” label; it is not the acquisition-only 2.0 migration. See [current migration](../text-processing-migration.md).
+
 # Migration Guide: v1.x → v2.0.0 (UV)
 
 **Version**: 2.0.0 (Breaking Change)
@@ -335,8 +337,8 @@ rm -rf ~/.cache/zlibrary-mcp/
 
 **Documentation**:
 - [UV Documentation](https://docs.astral.sh/uv/)
-- [UV Migration Plan](UV_MIGRATION_PLAN.md)
-- [Architecture Analysis](ARCHITECTURE_ANALYSIS.md)
+- [UV Migration Plan](../UV_MIGRATION_PLAN.md)
+- [Architecture Analysis](../ARCHITECTURE_ANALYSIS.md)
 
 **Issues**: https://github.com/rookslog/zlibrary-mcp/issues
 

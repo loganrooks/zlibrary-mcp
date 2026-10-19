@@ -1,11 +1,19 @@
 [
   {
     "name": "download_book_to_file",
-    "arguments": ["bookDetails", "outputDir", "process_for_rag", "processed_output_format"]
+    "arguments": [
+      "bookDetails",
+      "outputDir"
+    ]
   },
   {
     "name": "fetch_booklist",
-    "arguments": ["booklistHash", "booklistId", "page", "topic"]
+    "arguments": [
+      "booklistHash",
+      "booklistId",
+      "page",
+      "topic"
+    ]
   },
   {
     "name": "full_text_search",
@@ -22,11 +30,17 @@
   },
   {
     "name": "get_book_metadata",
-    "arguments": ["bookHash", "bookId", "include"]
+    "arguments": [
+      "bookHash",
+      "bookId",
+      "include"
+    ]
   },
   {
     "name": "get_download_history",
-    "arguments": ["count"]
+    "arguments": [
+      "count"
+    ]
   },
   {
     "name": "get_download_limits",
@@ -34,15 +48,20 @@
   },
   {
     "name": "get_recent_books",
-    "arguments": ["count", "format"]
-  },
-  {
-    "name": "process_document_for_rag",
-    "arguments": ["file_path", "output_format"]
+    "arguments": [
+      "count",
+      "format"
+    ]
   },
   {
     "name": "search_advanced",
-    "arguments": ["count", "exact", "query", "yearFrom", "yearTo"]
+    "arguments": [
+      "count",
+      "exact",
+      "query",
+      "yearFrom",
+      "yearTo"
+    ]
   },
   {
     "name": "search_books",
@@ -59,14 +78,33 @@
   },
   {
     "name": "search_by_author",
-    "arguments": ["author", "count", "exact", "extensions", "languages", "yearFrom", "yearTo"]
+    "arguments": [
+      "author",
+      "count",
+      "exact",
+      "extensions",
+      "languages",
+      "yearFrom",
+      "yearTo"
+    ]
   },
   {
     "name": "search_by_term",
-    "arguments": ["count", "extensions", "languages", "term", "yearFrom", "yearTo"]
+    "arguments": [
+      "count",
+      "extensions",
+      "languages",
+      "term",
+      "yearFrom",
+      "yearTo"
+    ]
   },
   {
     "name": "search_multi_source",
-    "arguments": ["count", "query", "source"]
+    "arguments": [
+      "count",
+      "query",
+      "source"
+    ]
   }
 ]

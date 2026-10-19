@@ -1,10 +1,4 @@
-/**
- * Distribution contracts for the optional Python dependency tiers.
- *
- * The npm tarball must contain every document linked by the README, while the
- * Docker image deliberately includes the lightweight RAG tier without making
- * that tier mandatory for source or npm users.
- */
+/** Acquisition-only packaging and installation contracts. */
 
 import { execFileSync } from 'child_process';
 import {
@@ -81,22 +75,19 @@ describe('distribution boundaries', () => {
     );
   });
 
-  test('Docker installs the RAG extra without making source installs non-core', () => {
+  test('Docker installs only acquisition dependencies', () => {
     const dockerfile = readFileSync(path.join(projectRoot, 'docker', 'Dockerfile'), 'utf8');
 
-    expect(dockerfile).toMatch(/uv sync --frozen --no-dev --extra rag/);
+    expect(dockerfile).toMatch(/uv sync --frozen --no-dev/);
     expect(dockerfile).not.toMatch(/--all-extras/);
   });
 
   test('setup keeps end-user core separate from the contributor dev group', () => {
     expect(runSetupUv(['--no-dev'])).toBe('sync --no-dev');
-    // Contributors get the dev group AND every extra: part of the fast suite
-    // imports scholar-tier modules at collection time, so a core-only
-    // contributor environment cannot run the verification CONTRIBUTING.md
-    // documents on the very next line (Codex on #114).
-    expect(runSetupUv([])).toBe('sync --group dev --all-extras');
-    // Deployments validate RAG processing, which core alone cannot do.
-    expect(runSetupUv(['--deploy'])).toBe('sync --no-dev --extra rag --extra scholar');
+    // Contributor tools do not require a processing stack.
+    expect(runSetupUv([])).toBe('sync --group dev');
+    // Deployment and end-user runtime dependencies match.
+    expect(runSetupUv(['--deploy'])).toBe('sync --no-dev');
   });
 
   test('packed CI runs the documented core setup and rejects contributor packages', () => {
@@ -154,11 +145,11 @@ describe('distribution boundaries', () => {
     );
 
     // Contributor default must match what the fast suite needs to collect.
-    expect(setup).toContain('sync --group dev --all-extras');
+    expect(setup).toContain('sync --group dev');
     expect(contributing).toMatch(/bash setup-uv\.sh\s*$/m);
 
-    // Deployment validates RAG processing, so its tier must carry rag+scholar.
-    expect(setup).toContain('--extra rag --extra scholar');
+    // Deployment has no processing extras.
+    expect(setup).not.toMatch(/--extra (rag|scholar)/);
     expect(deployment).toContain('bash setup-uv.sh --deploy');
 
     // The health check is recommended to core installs; it must not sync dev.
@@ -177,11 +168,7 @@ describe('distribution boundaries', () => {
 
     expect(systemWide).toContain('bash setup-uv.sh --no-dev');
     expect(troubleshooting).toContain('uv sync --no-dev');
-    expect(troubleshooting).toContain('uv sync --no-dev --extra rag');
-    expect(troubleshooting).toContain('uv sync --no-dev --extra scholar');
-    // The contributor row names the script, not a flag combination: `--group
-    // dev` alone fails at collection, because a unit-marked test imports PIL
-    // at module scope and Pillow is scholar-only (Codex on #114).
+    expect(troubleshooting).not.toMatch(/--extra (rag|scholar)/);
     expect(troubleshooting).toContain('bash setup-uv.sh');
     expect(troubleshooting).not.toContain('uv sync --group dev`');
     expect(troubleshooting).not.toContain(

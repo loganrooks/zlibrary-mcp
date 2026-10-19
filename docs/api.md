@@ -33,9 +33,8 @@ On error, responses include `isError: true` and a descriptive error message.
   - [get_book_metadata](#get_book_metadata)
 - [Collection Tools](#collection-tools)
   - [fetch_booklist](#fetch_booklist)
-- [Download and Processing Tools](#download-and-processing-tools)
+- [Download Tools](#download-tools)
   - [download_book_to_file](#download_book_to_file)
-  - [process_document_for_rag](#process_document_for_rag)
 - [Utility Tools](#utility-tools)
   - [get_download_limits](#get_download_limits)
   - [get_download_history](#get_download_history)
@@ -393,130 +392,39 @@ Results from this tool can be downloaded. Pass a result to `download_book_to_fil
 
 ---
 
-## Download and Processing Tools
+## Download Tools
 
 ### download_book_to_file
 
-**Description:** Download a book to a local file. Pass the full `bookDetails` object from a search result.
+Downloads the original file. Start with a search result; direct ID download is
+not supported. Returns paths on the server, not document contents.
 
-This tool accepts results from `search_books` (Z-Library) and from `search_multi_source` (Library Genesis or Anna's Archive). The server reads the `source` field to select the download path. A Library Genesis download needs no Z-Library account. Optionally process the document for RAG after download. When processing is enabled, the response stays additive: `processed_file_path` remains the body-text anchor and sibling bundle paths are returned when available.
-
-**Parameters:**
-
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| bookDetails | object | Yes | -- | The full book object from `search_books` or `search_multi_source` |
-| outputDir | string | No | `"./downloads"` | Directory to save the file to |
-| process_for_rag | boolean | No | -- | Whether to process the document content for RAG after download |
-| processed_output_format | string | No | -- | Desired output format for RAG processing (e.g., `"text"`, `"markdown"`) |
-
-**Returns:** JSON object with `file_path` (downloaded file path). If RAG processing was requested, the response also includes `processed_file_path` (body text), `metadata_file_path`, optional `footnotes_file_path` / `endnotes_file_path` / `citations_file_path`, `content_types_produced`, `stats`, and `output_files`.
-
-**Example Usage:**
+| Parameter | Type | Required | Default |
+|---|---|---|---|
+| `bookDetails` | object | yes | Full object returned by search |
+| `outputDir` | string | no | `./downloads` |
 
 ```json
 {
   "tool": "download_book_to_file",
   "arguments": {
-    "bookDetails": {
-      "id": "12345678",
-      "hash": "abc123",
-      "title": "Being and Time",
-      "author": "Martin Heidegger",
-      "extension": "pdf"
-    },
-    "outputDir": "./downloads",
-    "process_for_rag": true,
-    "processed_output_format": "text"
+    "bookDetails": {"id": "123", "hash": "search-result-hash", "extension": "pdf"},
+    "outputDir": "./downloads"
   }
 }
 ```
 
-**Example Processed Response:**
+The example illustrates the shape; pass the actual complete result from search.
+Multi-source results carry `source` and `md5` instead of a Z-Library ID/hash.
 
 ```json
-{
-  "file_path": "./downloads/HeideggerMartin_BeingAndTime_12345678.pdf",
-  "processed_file_path": "./processed_rag_output/HeideggerMartin_BeingAndTime_12345678.pdf.processed.markdown",
-  "metadata_file_path": "./processed_rag_output/HeideggerMartin_BeingAndTime_12345678.pdf.metadata.json",
-  "footnotes_file_path": "./processed_rag_output/HeideggerMartin_BeingAndTime_12345678.pdf.processed_footnotes.markdown",
-  "content_types_produced": ["body", "footnotes"],
-  "stats": {
-    "word_count": 102345,
-    "char_count": 654321,
-    "format": "markdown"
-  },
-  "output_files": {
-    "body": "./processed_rag_output/HeideggerMartin_BeingAndTime_12345678.pdf.processed.markdown",
-    "metadata": "./processed_rag_output/HeideggerMartin_BeingAndTime_12345678.pdf.metadata.json",
-    "footnotes": "./processed_rag_output/HeideggerMartin_BeingAndTime_12345678.pdf.processed_footnotes.markdown"
-  }
-}
+{"file_path": "./downloads/Author_Title_123.pdf"}
 ```
 
-**Error Cases:**
-- Invalid or missing `bookDetails` object
-- Download failed (book unavailable, credentials invalid)
-- Output directory not writable
-- Daily download limit exceeded (check with `get_download_limits`)
-- RAG processing failure (unsupported format, corrupted file)
-
----
-
-### process_document_for_rag
-
-**Description:** Process a downloaded document (EPUB, TXT, PDF) into a file-based RAG bundle. The body-text output remains available at `processed_file_path`, and the tool additively reports metadata and optional sibling outputs so callers do not need to guess filenames.
-
-**Parameters:**
-
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| file_path | string | Yes | -- | Path to the downloaded file to process |
-| output_format | string | No | -- | Desired output format (e.g., `"text"`, `"markdown"`) |
-
-**Returns:** JSON object with `processed_file_path` (body-text output path), `metadata_file_path`, optional `footnotes_file_path` / `endnotes_file_path` / `citations_file_path`, `content_types_produced`, `stats`, and `output_files`.
-
-**Example Usage:**
-
-```json
-{
-  "tool": "process_document_for_rag",
-  "arguments": {
-    "file_path": "./downloads/Being_and_Time_Heidegger.pdf",
-    "output_format": "text"
-  }
-}
-```
-
-**Example Response:**
-
-```json
-{
-  "processed_file_path": "./processed_rag_output/test-book.pdf.processed.markdown",
-  "metadata_file_path": "./processed_rag_output/test-book.pdf.metadata.json",
-  "footnotes_file_path": "./processed_rag_output/test-book.pdf.processed_footnotes.markdown",
-  "content_types_produced": ["body", "footnotes"],
-  "stats": {
-    "word_count": 12345,
-    "char_count": 67890,
-    "format": "markdown"
-  },
-  "output_files": {
-    "body": "./processed_rag_output/test-book.pdf.processed.markdown",
-    "metadata": "./processed_rag_output/test-book.pdf.metadata.json",
-    "footnotes": "./processed_rag_output/test-book.pdf.processed_footnotes.markdown"
-  }
-}
-```
-
-**Error Cases:**
-- Invalid or missing `file_path`
-- File not found at specified path
-- Unsupported file format (only EPUB, TXT, and PDF are supported)
-- Corrupted or encrypted file
-- Insufficient disk space for output
-
----
+Saved requests asking for text processing fail before authentication, quota use,
+or byte transfer. The old false flag alone is accepted and ignored, but is no
+longer advertised. Other unknown download fields are rejected. See
+[text-processing migration](text-processing-migration.md) for exact legacy fields.
 
 ## Utility Tools
 

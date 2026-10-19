@@ -25,7 +25,8 @@ describe('MCP Server', () => {
     const mockTransport = { send: jest.fn() };
     const mockMcpServer = {
       connect: jest.fn().mockResolvedValue(undefined),
-      tool: jest.fn(), // McpServer uses .tool() for registration
+      tool: jest.fn(),
+      registerTool: jest.fn(), // McpServer uses .tool() for registration
       close: jest.fn(),
     };
     mockServerInstance = mockMcpServer;
@@ -83,6 +84,7 @@ describe('MCP Server', () => {
         // server.tool(name, description, shape, annotations, handler)
         registeredToolNames.push(args[0]);
       }),
+      registerTool: jest.fn((name) => registeredToolNames.push(name)),
       close: jest.fn(),
     };
     mockServerInstance = mockMcpServer;
@@ -104,7 +106,6 @@ describe('MCP Server', () => {
     // Verify all expected tools registered
     expect(registeredToolNames).toContain('search_books');
     expect(registeredToolNames).toContain('download_book_to_file');
-    expect(registeredToolNames).toContain('process_document_for_rag');
     expect(registeredToolNames).toContain('full_text_search');
     expect(registeredToolNames).toContain('get_download_history');
     expect(registeredToolNames).toContain('get_download_limits');
@@ -176,20 +177,8 @@ describe('Tool Handlers (Direct)', () => {
         expect(schema.shape.id).toBeUndefined(); // Ensure old 'id' is removed
         expect(schema.shape.format).toBeUndefined(); // Ensure old 'format' is removed
         expect(schema.shape.outputDir).toBeDefined();
-        expect(schema.shape.process_for_rag).toBeDefined();
-        expect(schema.shape.process_for_rag).toBeInstanceOf(z.ZodOptional);
-        expect(schema.shape.process_for_rag.unwrap()).toBeInstanceOf(z.ZodBoolean);
-        expect(schema.shape.processed_output_format).toBeDefined();
-      });
-
-      test('process_document_for_rag schema should define input and output (v2.1)', () => {
-        const schema = toolRegistry.process_document_for_rag.schema;
-
-        // Check input schema properties
-        expect(schema.shape.file_path).toBeDefined();
-        expect(schema.shape.file_path).toBeInstanceOf(z.ZodString);
-        expect(schema.shape.output_format).toBeDefined();
-        expect(schema.shape.output_format).toBeInstanceOf(z.ZodOptional);
+        expect(schema.shape.process_for_rag).toBeUndefined();
+        expect(schema.shape.processed_output_format).toBeUndefined();
       });
     }); // End Tool Schemas describe
 
@@ -208,7 +197,6 @@ describe('Tool Handlers (Direct)', () => {
        getDownloadHistory: jest.fn(),
        getDownloadLimits: jest.fn(),
        getRecentBooks: jest.fn(),
-       processDocumentForRag: jest.fn(),
      }));
 
      const { toolRegistry } = await import('../dist/index.js');
@@ -244,7 +232,6 @@ describe('Tool Handlers (Direct)', () => {
          getDownloadHistory: jest.fn(),
          getDownloadLimits: jest.fn(),
          getRecentBooks: jest.fn(),
-         processDocumentForRag: jest.fn(),
        }));
 
        const { toolRegistry } = await import('../dist/index.js');
@@ -254,7 +241,7 @@ describe('Tool Handlers (Direct)', () => {
        const mockBookDetailsArg = { id: 'book456', url: 'http://example.com/book/456/slug', title: 'Test Download' };
        const mockArgs = { bookDetails: mockBookDetailsArg, outputDir: '/tmp/test' };
        const validatedArgs = toolRegistry.download_book_to_file.schema.parse(mockArgs);
-       const mockResult = { file_path: '/tmp/test/book.epub', processed_file_path: null };
+       const mockResult = { file_path: '/tmp/test/book.epub' };
        mockDownloadBookToFile.mockResolvedValueOnce(mockResult);
 
        const response = await handler(validatedArgs);
@@ -281,7 +268,6 @@ describe('Tool Handlers (Direct)', () => {
          getDownloadHistory: jest.fn(),
          getDownloadLimits: jest.fn(),
          getRecentBooks: jest.fn(),
-         processDocumentForRag: jest.fn(),
        }));
 
        const { toolRegistry } = await import('../dist/index.js');
@@ -316,7 +302,6 @@ describe('Tool Handlers (Direct)', () => {
          getDownloadHistory: mockGetDownloadHistory,
          getDownloadLimits: jest.fn(),
          getRecentBooks: jest.fn(),
-         processDocumentForRag: jest.fn(),
        }));
 
        const { toolRegistry } = await import('../dist/index.js');
@@ -351,7 +336,6 @@ describe('Tool Handlers (Direct)', () => {
          getDownloadHistory: jest.fn(),
          getDownloadLimits: mockGetDownloadLimits,
          getRecentBooks: jest.fn(),
-         processDocumentForRag: jest.fn(),
        }));
 
        const { toolRegistry } = await import('../dist/index.js');

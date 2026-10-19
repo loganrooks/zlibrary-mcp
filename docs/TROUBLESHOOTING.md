@@ -2,7 +2,7 @@
 
 Common issues and solutions for the Z-Library MCP server.
 
-> **Note**: Since v2.0.0 the project uses [UV](https://docs.astral.sh/uv/) with a
+> **Note**: The project uses [UV](https://docs.astral.sh/uv/) with a
 > project-local `.venv/`. There is **no** cache venv at `~/.cache/zlibrary-mcp/` and no
 > `.venv_config` file — if a guide mentions those, it predates the UV migration.
 
@@ -63,27 +63,14 @@ absolute paths in your clients' `.mcp.json`.
 
 ### Which UV sync command should I use?
 
-Bare `uv sync` installs UV's default development group in this project; it is not the
-lightweight end-user environment. Choose the tier explicitly:
-
 | Need | Command |
 |---|---|
 | Search, metadata, and downloads | `uv sync --no-dev` |
-| PDF/EPUB extraction and footnote detection | `uv sync --no-dev --extra rag` |
-| Complete scholarly analysis and OCR libraries | `uv sync --no-dev --extra scholar` |
 | Contributor test and lint tools | `bash setup-uv.sh` |
 
-**Contributors need every extra, not just the dev group.** `--group` adds a
-dependency group; optional dependencies need `--extra` or `--all-extras`, and
-they are not optional in practice: the fast suite collects
-`__tests__/python/test_resolution_renderer.py`, whose module-scope
-`from PIL import Image` needs the scholar extra, so a `--group dev` environment
-fails at collection before marker deselection can skip anything. CI installs
-`--all-extras`, and `bash setup-uv.sh` with no argument now does the same —
-which is why the row above names the script rather than a flag combination that
-has to be kept in step with it by hand.
-
-The end-user rows are unaffected: those tiers are genuinely opt-in.
+Text processing is removed from 2.0, not an optional install tier. See
+[migration](text-processing-migration.md) to keep an isolated 1.4.x installation.
+The retained test suite collects using only core dependencies and the dev group.
 
 ---
 
@@ -191,7 +178,10 @@ debugging the client side.
 
 ---
 
-## Test suite fails on a fresh clone (PyMuPDF errors, tiny PDF files)
+## Preserved 1.4.x PDF tests (historical)
+
+This section applies only to the preserved text-processing installation. The
+acquisition-only suite does not need PDF engines or hydrated processing fixtures.
 
 ### Symptom
 

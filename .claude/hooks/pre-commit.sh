@@ -46,36 +46,16 @@ if [ -f ".venv/bin/pytest" ]; then
   }
 fi
 
-# 5. Real PDF tests (critical quality gate for RAG changes)
-if git diff --cached --name-only | grep -qE "lib/rag_processing\.py|lib/.*detection\.py|lib/formatting"; then
-  echo "🔬 Running real PDF validation tests (RAG changes detected)..."
-  .venv/bin/pytest __tests__/python/test_real_world_validation.py -x || {
-    echo "❌ Real PDF tests failed - RAG changes must pass validation"
-    exit 1
-  }
-fi
+# Processing-only quality gates live on parked-text-processing-2026-10.
 
-# 6. Performance budget validation (if budgets changed or RAG modified)
-if [ -f "test_files/performance_budgets.json" ]; then
-  if git diff --cached --name-only | grep -qE "lib/rag|lib/.*detection|performance_budgets"; then
-    echo "⚡ Validating performance budgets..."
-    if [ -f "scripts/validation/validate_performance_budgets.py" ]; then
-      .venv/bin/python scripts/validation/validate_performance_budgets.py || {
-        echo "❌ Performance budget exceeded"
-        exit 1
-      }
-    fi
-  fi
-fi
-
-# 7. Check commit message format (conventional commits)
+# 5. Check commit message format (conventional commits)
 COMMIT_MSG_FILE="$1"
 if [ -n "$COMMIT_MSG_FILE" ]; then
   COMMIT_MSG=$(cat "$COMMIT_MSG_FILE" 2>/dev/null || echo "")
   if ! echo "$COMMIT_MSG" | grep -qE "^(feat|fix|docs|chore|refactor|test|perf)(\(.+\))?:"; then
     echo "⚠️  WARNING: Commit message doesn't follow conventional commits format"
     echo "Expected: {type}({scope}): {description}"
-    echo "Examples: feat(rag): ..., fix(tests): ..., docs(claude): ..."
+    echo "Examples: feat(download): ..., fix(tests): ..., docs(claude): ..."
     echo ""
     echo "See: .claude/VERSION_CONTROL.md for guidelines"
     # Warning only, don't block

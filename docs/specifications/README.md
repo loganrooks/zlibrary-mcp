@@ -1,7 +1,9 @@
+> Processing specifications are preserved for future text work, not implemented by the acquisition-only server. See [migration](../text-processing-migration.md).
+
 # Technical Specifications Catalog
 
 **Purpose**: Index of all technical specifications for Z-Library MCP server
-**Status**: 7 active specifications (19-36KB each)
+**Status**: historical processing specifications; not active server capabilities
 **Last Updated**: 2025-10-21
 
 ---

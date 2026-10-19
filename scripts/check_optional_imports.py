@@ -1,15 +1,12 @@
 #!/usr/bin/env python3
-"""Reject eager module-scope imports of optional RAG/scholar dependencies."""
+"""Check that acquisition stays independent of parked text-processing dependencies."""
 
 from __future__ import annotations
 
 import argparse
 import asyncio
 import ast
-from contextlib import redirect_stdout
 from dataclasses import dataclass
-import io
-import json
 from pathlib import Path
 import sys
 import tempfile
@@ -104,73 +101,111 @@ def find_violations(root: Path) -> list[Violation]:
 
 
 async def _run_core_smoke(repo_root: Path) -> None:
-    """Exercise the bridge without providers and check missing-RAG guidance."""
+    """Exercise real bridge dispatch with fake providers and an import trap."""
+    import importlib.abc
+
+    parked = {
+        "rag",
+        "rag_processing",
+        "rag_data_models",
+        "footnote_continuation",
+        "footnote_corruption_model",
+        "formatting_group_merger",
+        "garbled_text_detection",
+        "marginalia_extraction",
+        "metadata_generator",
+        "metadata_verification",
+        "note_classification",
+        "quality_verification",
+        "strikethrough_detection",
+    }
+
+    class ImportTrap(importlib.abc.MetaPathFinder):
+        def find_spec(self, fullname, path=None, target=None):
+            parts = fullname.split(".")
+            if (
+                parts[0] in HEAVY_MODULES
+                or parts[0] in parked
+                or (parts[0] == "lib" and len(parts) > 1 and parts[1] in parked)
+            ):
+                raise AssertionError(f"acquisition imported parked module: {fullname}")
+
+    trap = ImportTrap()
+    sys.meta_path.insert(0, trap)
     sys.path.insert(0, str(repo_root / "lib"))
-    import python_bridge
-    import lib.rag_processing as facade
-    from lib.rag.orchestrator import process_document
-    from lib.rag.orchestrator_pdf import process_pdf_structured
-
-    class OfflineRouter:
-        async def search(self, query, source="auto", **kwargs):
-            if query != "offline boundary probe":
-                raise AssertionError(f"unexpected smoke query: {query!r}")
-            return []
-
-        async def close(self):
-            return None
-
-    python_bridge._source_router = OfflineRouter()
-    original_argv = sys.argv
-    stdout = io.StringIO()
     try:
-        sys.argv = [
-            str(repo_root / "lib" / "python_bridge.py"),
-            "search_multi_source",
-            json.dumps(
-                {
-                    "query": "offline boundary probe",
-                    "source": "libgen",
-                    "count": 1,
+        import python_bridge
+
+        class OfflineRouter:
+            async def search(self, query, source="auto", **kwargs):
+                assert query == "offline boundary probe"
+                return []
+
+        class OfflineEapi:
+            async def search(self, **kwargs):
+                return {"books": []}
+
+            async def get_book_info(self, book_id, book_hash):
+                return {
+                    "book": {
+                        "id": book_id,
+                        "title": "Offline",
+                        "description": "Offline description",
+                        "hash": book_hash,
+                    }
                 }
-            ),
-        ]
-        with redirect_stdout(stdout):
-            await python_bridge.main()
-    finally:
-        sys.argv = original_argv
 
-    envelope = json.loads(stdout.getvalue())
-    result = json.loads(envelope["content"][0]["text"])
-    if result != {"books": [], "sources_used": []}:
-        raise AssertionError(f"unexpected bridge search result: {result!r}")
+            async def download_file(self, book_id, book_hash, output_dir):
+                document = Path(output_dir) / "offline.txt"
+                document.write_text("offline acquisition bytes", encoding="utf-8")
+                return str(document)
 
-    original_pymupdf = facade.PYMUPDF_AVAILABLE
-    original_ebooklib = facade.EBOOKLIB_AVAILABLE
-    try:
-        facade.PYMUPDF_AVAILABLE = False
-        facade.EBOOKLIB_AVAILABLE = False
-        with tempfile.TemporaryDirectory(prefix="zlibrary-core-smoke-") as temp_dir:
-            for suffix in (".pdf", ".epub"):
-                document = Path(temp_dir) / f"missing-extra{suffix}"
-                document.write_bytes(b"")
-                try:
-                    if suffix == ".pdf":
-                        process_pdf_structured(document)
-                    else:
-                        await process_document(str(document))
-                except (ImportError, RuntimeError) as error:
-                    if "uv sync --no-dev --extra rag" not in str(error):
-                        raise AssertionError(
-                            f"missing actionable rag install hint for {suffix}: {error}"
-                        ) from error
-                else:
-                    raise AssertionError(
-                        f"{suffix} processing unexpectedly succeeded without the rag extra"
-                    )
+        original_router, original_eapi = (
+            python_bridge._source_router,
+            python_bridge._eapi_client,
+        )
+        python_bridge._source_router = OfflineRouter()
+        python_bridge._eapi_client = OfflineEapi()
+        try:
+            dispatch = python_bridge._dispatch_bridge_function
+            result = await dispatch(
+                "search_multi_source",
+                {"query": "offline boundary probe", "source": "libgen"},
+            )
+            assert result == {"books": [], "sources_used": []}
+            assert (await dispatch("search", {"query": "offline"}))["books"] == []
+            metadata = await dispatch(
+                "get_book_metadata_complete", {"book_id": "1", "book_hash": "offline"}
+            )
+            assert metadata["description"] == "Offline description"
+            with tempfile.TemporaryDirectory(prefix="zlibrary-core-smoke-") as temp_dir:
+                result = await dispatch(
+                    "download_book",
+                    {
+                        "book_details": {
+                            "id": "1",
+                            "hash": "offline",
+                            "title": "Offline",
+                            "extension": "txt",
+                        },
+                        "output_dir": temp_dir,
+                    },
+                )
+                assert set(result) == {"file_path"}
+                assert (
+                    Path(result["file_path"]).read_text() == "offline acquisition bytes"
+                )
+        finally:
+            python_bridge._source_router, python_bridge._eapi_client = (
+                original_router,
+                original_eapi,
+            )
+        assert not any(
+            name.split(".")[0] in HEAVY_MODULES or name.startswith("lib.rag")
+            for name in sys.modules
+        )
     finally:
-        facade.PYMUPDF_AVAILABLE = original_pymupdf
-        facade.EBOOKLIB_AVAILABLE = original_ebooklib
+        sys.meta_path.remove(trap)
 
 
 def main(argv: list[str] | None = None) -> int:

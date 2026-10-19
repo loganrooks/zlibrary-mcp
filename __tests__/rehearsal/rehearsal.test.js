@@ -108,11 +108,10 @@ test('S4 authentication outage respects the selected login policy; listing survi
       const cooldownObservedMs = Date.now() - started;
       // v3's first failed-login window is 30 seconds; do not cross its expiry.
       if (reuse) expect(cooldownObservedMs).toBeLessThan(30000);
-      const file = path.join(h.downloads, 'local.txt');
-      await writeFile(file, 'local reader survives');
-      const local = await h.call(c, 'process_document_for_rag', { file_path: file }, true);
-      localResult = local;
-      if (reuse) expect(local.error).toBeUndefined();
+      const removed = await c.callTool({ name: 'process_document_for_rag', arguments: { file_path: '/unused' } });
+      localResult = removed;
+      expect(removed.isError).toBe(true);
+      expect(await h.stats()).toEqual(before);
       h.scan(await c.listTools());
       expect((await c.listTools()).tools.length).toBeGreaterThan(0);
       alternateResult = await h.call(
@@ -134,7 +133,7 @@ test('S4 authentication outage respects the selected login policy; listing survi
               authenticationRepliesChecked: 6,
             }
           : {}),
-        localBridge: local.error ? 'blocked' : 'works',
+        removedProcessing: 'unknown tool; no provider contact',
         toolsList: 'works',
         alternateSources: alternateResult.error
           ? 'Library Genesis blocked'
@@ -170,8 +169,8 @@ test('Base scans have zero unexpected sentinel findings', () => {
 redactionTest('Base known cookie-ID log finding is absent', () => {
   expect(h.knownFindings).toBe(0);
 });
-sourceSurvivalTest('S4 local document processing survives authentication failures', () => {
-  expect(localResult.error).toBeUndefined();
+test('S4 removed processing call cannot contact providers during authentication failures', () => {
+  expect(localResult.isError).toBe(true);
 });
 test('C5 fake rejects a search without cookies', async () => {
   await h.mode({ mode: 'healthy', reset: true });

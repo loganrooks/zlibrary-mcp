@@ -59,18 +59,18 @@ describe('Path Resolution Helpers', () => {
       expect(existsSync(scriptPath)).toBe(true);
     });
 
-    test('should return path to rag_processing.py', () => {
-      const scriptPath = getPythonScriptPath('rag_processing.py');
+    test('should return path to filename_utils.py', () => {
+      const scriptPath = getPythonScriptPath('filename_utils.py');
 
       expect(scriptPath).toContain('lib');
-      expect(scriptPath).toContain('rag_processing.py');
+      expect(scriptPath).toContain('filename_utils.py');
       expect(existsSync(scriptPath)).toBe(true);
     });
 
     test('should handle different script names', () => {
       const scripts = [
         'python_bridge.py',
-        'rag_processing.py',
+        'filename_utils.py',
         'enhanced_metadata.py'
       ];
 

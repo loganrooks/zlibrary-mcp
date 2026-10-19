@@ -7,7 +7,7 @@ import type { RunBridgeOptions } from './python-runner.js';
 import { PythonBridgeError } from './errors.js';
 
 const BRIDGE_SCRIPT_NAME = 'python_bridge.py';
-const LONG_RUNNING_FUNCTIONS = new Set(['download_book', 'process_document']);
+const LONG_RUNNING_FUNCTIONS = new Set(['download_book']);
 
 export interface BridgeErrorEnvelope {
   error: string;

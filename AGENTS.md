@@ -6,9 +6,9 @@ restating it, so there is nothing here to drift out of sync with a second versio
 
 ## What this is
 
-A Model Context Protocol server that finds books, downloads them, and turns them into
-files a RAG pipeline can use. Node.js/TypeScript MCP layer (`src/`) over a Python bridge
-(`lib/`) that does the Z-Library API work and document processing.
+A Model Context Protocol server that finds books and downloads the original files. Text processing is
+parked separately; see [migration](docs/text-processing-migration.md). Node.js/TypeScript MCP layer (`src/`) over a Python bridge
+(`lib/`) that does the Z-Library API work and acquisition.
 
 `VISION.md` states the seven invariants and the non-goals. Read it before proposing
 anything architectural — it is short, and it is the document that says what this project
@@ -40,11 +40,9 @@ npm run build        # tsc + validates that every Python bridge file exists
 separate and a green `npm test` says nothing about the Python side — which is where most
 of the actual logic lives.
 
-**Five real-PDF tests do not run in CI** (issue #85): the repo exceeded its Git LFS
-budget, so CI checks out with `lfs: false` and guards in `__tests__/python/conftest.py`
-skip those tests with a stated reason. Locally, `git lfs pull` hydrates them. Do **not**
-run `git lfs install` — it writes hooks that conflict with the repo's Husky-managed
-`core.hooksPath`.
+Processing-only tests and their dependency stack are preserved on
+`parked-text-processing-2026-10`, not collected on this branch. Do **not** run
+`git lfs install`: it writes hooks that conflict with Husky's `core.hooksPath`.
 
 For an optional preliminary Codex development manifest and its required owning brief,
 see [development lane instructions](tools/lanes/README.md). The template is not task
@@ -81,7 +79,6 @@ production.
 - `src/lib/zlibrary-api.ts` — bridge to Python via PythonShell
 - `src/lib/venv-manager.ts` — uv environment lifecycle
 - `lib/python_bridge.py` — core Z-Library operations
-- `lib/rag_processing.py` — EPUB/TXT/PDF processing
 - `lib/sources/` — source adapters
 - `zlibrary/` — vendored fork of sertraline/zlibrary with custom download logic
 
@@ -108,7 +105,7 @@ commit or `docs-check` fails. Retry, timeout, and circuit-breaker tuning is in
 Z-Library publishes no public API. Since the Phase 7 EAPI migration (Feb 2026), access
 goes through undocumented **JSON** endpoints (`/eapi/book/search`, `/eapi/user/login`,
 `/eapi/info/domains`) — there are zero BeautifulSoup selectors left in `zlibrary/`. The
-remaining DOM-fragile surfaces are `lib/sources/annas.py` and EPUB internals. Domains
+remaining DOM-fragile surfaces are `lib/sources/annas.py`. Domains
 rotate frequently, so `discover_eapi_domain()` resolves them at runtime.
 
 ## How releases are tracked
@@ -171,14 +168,12 @@ are absent, because LibGen search and download need no account. A credential-fre
 setup is supported — do not turn that warning into fatal startup validation.
 `ZLIBRARY_MIRROR` is optional.
 
-## RAG pipeline work has a stricter process
+## Parked text-processing work
 
-Anything touching the RAG pipeline follows `.claude/TDD_WORKFLOW.md`: acquire a **real**
-PDF exhibiting the feature, write ground truth into `test_files/ground_truth/`, write the
-failing test against the real file (no mocks), then implement. Verify side-by-side
-against the source document and check the budgets in
-`test_files/performance_budgets.json`. Quality criteria are in
-`.claude/RAG_QUALITY_FRAMEWORK.md`.
+Text processing does not ship in 2.0. Use the preserved branch/tag and its
+real-document workflow for future text work; see
+[scope, migration, and unresolved failures](docs/text-processing-migration.md).
+Saved processing download requests must be refused before provider contact.
 
 ## Where the documentation is — and which of it lies
 

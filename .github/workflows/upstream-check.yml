@@ -58,13 +58,13 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          # lfs: false — the repo exceeded its Git LFS budget, which fails
-          # actions/checkout outright. Unhydrated-pointer guards in
-          # __tests__/python/conftest.py skip the affected tests with a clear
-          # reason (surfaced by pytest -rs). Restore to true if the budget
-          # is ever restored. See #85.
+          # Processing corpus is preserved separately; acquisition tests need no LFS PDFs.
           lfs: false
       - uses: ./.github/actions/setup
+      # Coverage is gated by the full acquisition suite, not credentialed live probes.
+      # Acquisition-only tests collect without document-processing packages (#250).
+      - name: Collect retained integration tests
+        run: uv run pytest -m integration --collect-only --no-cov -q
       - name: Run integration-marked tests against live Z-Library
         id: live
         env:
@@ -83,7 +83,7 @@ jobs:
             exit 0
           fi
           set +e
-          uv run pytest -m integration --benchmark-disable --no-header -q 2>&1 | tee live.log
+          uv run pytest -m integration --no-cov --benchmark-disable --no-header -q 2>&1 | tee live.log
           code=${PIPESTATUS[0]}
           set -e
           if [ "$code" -eq 0 ]; then

@@ -11,7 +11,7 @@ set -euo pipefail
 
 # Extract tool names from server.tool() calls in src/index.ts.
 # server.tool( appears on one line; the tool name string appears on the next line.
-SOURCE_TOOLS=$(grep -A 1 "server\.tool(" src/index.ts \
+SOURCE_TOOLS=$(grep -E -A 1 "server\.(tool|registerTool)\(" src/index.ts \
   | python3 -c "import re,sys; print('\n'.join(sorted(m for l in sys.stdin for m in re.findall(r'[\'\"]([a-z_]+)[\'\"]', l))))")
 
 # Extract tool names from the README.md Available MCP Tools section only.

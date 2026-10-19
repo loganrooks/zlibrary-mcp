@@ -119,6 +119,52 @@ maybe('python-runner', () => {
     return name;
   }
 
+  test('stdin and fd 3 keep fake bearer separate from public output', async () => {
+    const marker = 'fake-private-fd-cookie';
+    const name = script(
+      'private.py',
+      [
+        'import sys, os, json',
+        'os.set_inheritable(3, False)',
+        'value=json.loads(sys.stdin.readline())',
+        'assert value["remix_userkey"] not in " ".join(sys.argv)',
+        'assert value["remix_userkey"] not in str(dict(os.environ))',
+        'os.write(3, (json.dumps(value)+"\\n").encode())',
+        'print("public result")',
+      ].join('\n'),
+    );
+    const updates = [];
+    const lines = await runner.runPythonBridge(
+      name,
+      { mode: 'text', pythonPath: PYTHON, scriptPath: tmpDir },
+      {
+        sessionInput: { generation: 7, remix_userkey: marker },
+        onSession: (update) => updates.push(update),
+      },
+    );
+    expect(lines).toEqual(['public result']);
+    expect(updates).toEqual([{ generation: 7, remix_userkey: marker }]);
+    expect(JSON.stringify(lines)).not.toContain(marker);
+  });
+
+  test('private channel refuses malformed or duplicate updates without echoing them', async () => {
+    for (const body of ['fake-private-fd-cookie', '{}\n{}\n']) {
+      const name = script(
+        'bad-private.py',
+        'import os\nos.write(3,' + JSON.stringify(body) + '.encode())\n',
+      );
+      const error = await runner
+        .runPythonBridge(
+          name,
+          { mode: 'text', pythonPath: PYTHON, scriptPath: tmpDir },
+          { sessionInput: { generation: 7 } },
+        )
+        .catch((error) => error);
+      expect(error.message).toBe('Invalid private session response');
+      expect(JSON.stringify(error)).not.toContain('fake-private-fd-cookie');
+    }
+  });
+
   test('returns the child stdout lines on success', async () => {
     const name = script('ok.py', 'print("hello")\nprint("world")\n');
 
@@ -135,7 +181,7 @@ maybe('python-runner', () => {
 
   /** Each process writes its own identity, then readiness after signal setup. */
   function lifecycleFixture({ descendant = false, ignoreTerm = false, successful = false,
-    delayMs = 0, neverReady = false, parentIgnoreTerm = false } = {}) {
+    delayMs = 0, neverReady = false, parentIgnoreTerm = false, pidFile } = {}) {
     const parentPidFile = path.join(tmpDir, 'fixture-parent.pid');
     const descendantPidFile = path.join(tmpDir, 'fixture-descendant.pid');
     const readyFile = path.join(tmpDir, 'fixture.ready');
@@ -161,6 +207,7 @@ maybe('python-runner', () => {
         `child = subprocess.Popen([sys.executable, "-c", ${JSON.stringify(childBody)}], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True)`,
         `while not pathlib.Path(${JSON.stringify(childReadyFile)}).exists(): time.sleep(0.01)`,
       ] : []),
+      ...(pidFile ? publish(pidFile, 'f"{os.getpid()} {child.pid}"') : []),
       `time.sleep(${delayMs / 1000})`,
       ...(neverReady ? [] : publish(readyFile, '"ready"')),
       ...(successful ? [
@@ -315,10 +362,14 @@ maybe('python-runner', () => {
 
   test('an abort signal kills descendants spawned by the bridge', async () => {
     if (process.platform === 'win32') return;
-    await withReadyBridge(lifecycleFixture({ descendant: true }), { timeoutMs: 60000 },
+    const pidFile = path.join(tmpDir, 'tree.pids');
+    await withReadyBridge(lifecycleFixture({ descendant: true, pidFile }),
+      { timeoutMs: 60000, label: 'tree-abort-test' },
       async ({ promise, controller, fixture }) => {
-        const parentPid = fixture.parentPid();
-        const descendantPid = fixture.descendantPid();
+        expect(fs.existsSync(pidFile)).toBe(true);
+        const [parentPid, descendantPid] = fs.readFileSync(pidFile, 'utf8').split(' ').map(Number);
+        expect(parentPid).toBe(fixture.parentPid());
+        expect(descendantPid).toBe(fixture.descendantPid());
         expect(parentPid).toBeGreaterThan(0);
         expect(descendantPid).toBeGreaterThan(0);
         expect(isAlive(descendantPid)).toBe(true);
@@ -767,20 +818,17 @@ describe('python-runner budget configuration', () => {
     ['0x10'],
     ['+240000'],
     ['Infinity'],
-  ])(
-    'falls back to the default for the nonsense value %p',
-    async (raw) => {
-      const mod = await importWith({
-        PYTHON_BRIDGE_TIMEOUT: raw,
-        PYTHON_BRIDGE_LONG_TIMEOUT: raw,
-        PYTHON_BRIDGE_KILL_GRACE: raw,
-      });
+  ])('falls back to the default for the nonsense value %p', async (raw) => {
+    const mod = await importWith({
+      PYTHON_BRIDGE_TIMEOUT: raw,
+      PYTHON_BRIDGE_LONG_TIMEOUT: raw,
+      PYTHON_BRIDGE_KILL_GRACE: raw,
+    });
 
-      expect(mod.DEFAULT_BRIDGE_TIMEOUT_MS).toBe(240000);
-      expect(mod.LONG_BRIDGE_TIMEOUT_MS).toBe(2400000);
-      expect(mod.KILL_GRACE_MS).toBe(3000);
-    },
-  );
+    expect(mod.DEFAULT_BRIDGE_TIMEOUT_MS).toBe(240000);
+    expect(mod.LONG_BRIDGE_TIMEOUT_MS).toBe(2400000);
+    expect(mod.KILL_GRACE_MS).toBe(3000);
+  });
 
   test('the long budget exceeds the ordinary one by default', async () => {
     // A download or an OCR pass is slow, not hung. Sharing the search budget
@@ -801,11 +849,7 @@ describe('python-runner budget configuration', () => {
     const finalizationHeadroomSeconds = 135;
 
     expect(mod.LONG_BRIDGE_TIMEOUT_MS).toBe(
-      (libgenResolutionSeconds +
-        transferSeconds +
-        ocrSeconds +
-        finalizationHeadroomSeconds) *
-        1000,
+      (libgenResolutionSeconds + transferSeconds + ocrSeconds + finalizationHeadroomSeconds) * 1000,
     );
   });
 });

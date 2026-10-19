@@ -22,6 +22,7 @@ zlibrary_path = os.path.join(os.path.dirname(__file__), "..", "zlibrary", "src")
 sys.path.insert(0, zlibrary_path)
 
 from zlibrary.eapi import (
+    EAPIAuthenticationError,
     EAPIClient,
     normalize_eapi_search_response,
     resolve_eapi_domain,
@@ -99,6 +100,8 @@ async def fetch_booklist(
                     if book_data.get("rating"):
                         book["rating"] = book_data["rating"]
                     enriched_count += 1
+                except EAPIAuthenticationError:
+                    raise  # Authentication is not optional enrichment; the parent owns refresh.
                 except Exception as e:
                     logger.debug("Could not enrich book %s: %s", book_id, e)
 

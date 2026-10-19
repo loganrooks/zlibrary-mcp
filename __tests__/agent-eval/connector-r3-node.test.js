@@ -10,11 +10,76 @@ import {
   rename,
   symlink,
   mkdir,
+  lstat,
 } from 'node:fs/promises';
 import * as runtime from './node-runtime.js';
 import { execFileSync } from 'node:child_process';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { nodeFixture } from './node-runtime-controls.js';
+
+// onRead also observes the selected Node/npm tools. Only package payloads have
+// package-relative exclusion roles; absolute tool/checkout ancestors are not payloads.
+function readSpyRoles({ root, node, cli, packageRoots }) {
+  const npmRoot = path.dirname(path.dirname(cli));
+  return {
+    manifests: ['package.json', 'package-lock.json'].map((name) => path.join(root, name)),
+    node,
+    tools: [
+      path.join(npmRoot, 'package.json'),
+      cli,
+      fileURLToPath(new URL('./node-inventory-guard.cjs', import.meta.url)),
+      path.join(npmRoot, 'node_modules/@npmcli/arborist/package.json'),
+      path.join(npmRoot, 'node_modules/@npmcli/arborist/lib/index.js'),
+    ],
+    packages: [...packageRoots].sort((a, b) => b.length - a.length),
+  };
+}
+function assertReadSpyRole({ name, kind }, roles) {
+  const reject = () => {
+    throw new Error(`unexpected ${kind} content read: ${name}`);
+  };
+  if (typeof name !== 'string' || !path.isAbsolute(name) || path.resolve(name) !== name)
+    return reject();
+  switch (kind) {
+    case 'manifest':
+      if (!roles.manifests.includes(name)) reject();
+      break;
+    case 'node-binary':
+      if (name !== roles.node) reject();
+      break;
+    case 'inventory-tool':
+      if (!roles.tools.includes(name)) reject();
+      break;
+    case 'package-metadata':
+      if (!roles.packages.some((root) => name === path.join(root, 'package.json'))) reject();
+      break;
+    case 'runtime-payload': {
+      // Most-specific owner: selected nested dependencies are separate packages;
+      // an unselected nested node_modules path must not inherit its parent's role.
+      const owner = roles.packages.find((root) => name.startsWith(root + path.sep));
+      if (!owner) return reject();
+      const relative = path.relative(owner, name);
+      if (
+        relative === 'package.json' ||
+        relative
+          .split(path.sep)
+          .some((part) =>
+            /^(?:node_modules|__tests__|tests?|fixtures?|examples?|docs?|coverage|\.?cache|__snapshots__|\.github|\.git|fixture-dev)$/.test(
+              part,
+            ),
+          ) ||
+        /(?:^|\/)(?:\.?npmrc|\.env(?:\.[^/]*)?|\.netrc|credentials?(?:\.[^/]*)?|id_(?:rsa|dsa|ed25519)(?:\.[^/]*)?|[^/]+\.(?:pem|key|p12|pfx))$/i.test(
+          relative,
+        ) ||
+        /(?:\.map|\.[cm]?ts|\.flow|\.md|\.markdown|\.rst)$/i.test(relative)
+      )
+        reject();
+      break;
+    }
+    default:
+      reject();
+  }
+}
 let temp;
 beforeEach(async () => {
   temp = await realpath(await mkdtemp(path.join(os.tmpdir(), 'eval-node-proof-')));
@@ -117,31 +182,124 @@ test('4318878598 relocated identical ordinary install and shared top-level insta
   expect(relocated.sha256).toBe(first.sha256);
   expect(shared.local.install).not.toBe(relocated.local.install);
 }, 30000);
-test('4318878598 content read spies exclude forbidden files, dev runtime/cache, docs and source maps before reads', async () => {
-  const f = await nodeFixture(temp),
-    reads = [],
-    traces = [];
-  await f.put(`node_modules/${f.sdk}/ignored.js.map`, 'unread map');
-  await f.put(`node_modules/${f.sdk}/.cache/private.json`, 'unread cache');
-  await runtime.verifyNodeRuntime({
-    root: temp,
-    onRead: (name, kind) => reads.push({ name, kind }),
-    onAudit: ({ trace }) => traces.push(...trace),
-  });
-  expect(
-    reads.some((r) =>
-      /\.env|\.npmrc|credentials|fixtures|private\.key|docs|cache|ignored\.js\.map|fixture-dev/.test(
-        r.name,
+for (const ancestor of ['ordinary', 'hostedtoolcache'])
+  test(`4318878598 content read spies exclude forbidden files, dev runtime/cache, docs and source maps before reads (${ancestor})`, async () => {
+    const selectedRoot = path.join(temp, ancestor);
+    const f = await nodeFixture(selectedRoot),
+      reads = [],
+      traces = [];
+    await f.put(`node_modules/${f.sdk}/ignored.js.map`, 'unread map');
+    await f.put(`node_modules/${f.sdk}/.cache/private.json`, 'unread cache');
+    const proof = await runtime.verifyNodeRuntime({
+      root: selectedRoot,
+      onRead: (name, kind) => reads.push({ name, kind }),
+      onAudit: ({ trace }) => traces.push(...trace),
+    });
+    const packageRoots = Object.keys(f.definitions)
+      .filter((locator) => locator !== 'node_modules/fixture-dev')
+      .map((locator) => path.join(selectedRoot, locator));
+    expect(proof.local.packageRoots.map((p) => p.realpath).sort()).toEqual(
+      [...packageRoots].sort(),
+    );
+    const roles = readSpyRoles({
+      root: selectedRoot,
+      node: await realpath(process.execPath),
+      cli: proof.local.cli,
+      packageRoots,
+    });
+    expect([...new Set(reads.map((r) => r.kind))].sort()).toEqual(
+      ['manifest', 'node-binary', 'inventory-tool', 'package-metadata', 'runtime-payload'].sort(),
+    );
+    for (const read of reads) assertReadSpyRole(read, roles);
+    for (const [kind, names] of [
+      ['manifest', roles.manifests],
+      ['node-binary', [roles.node]],
+      ['inventory-tool', roles.tools],
+      ['package-metadata', packageRoots.map((root) => path.join(root, 'package.json'))],
+      [
+        'runtime-payload',
+        [
+          path.join(selectedRoot, 'node_modules', f.sdk, 'dist/esm/client.js'),
+          path.join(selectedRoot, 'node_modules', f.sdk, 'node_modules/fixture-dep/index.js'),
+        ],
+      ],
+    ])
+      for (const name of names) expect(reads).toContainEqual({ name, kind });
+    const forbidden = [
+      '.env',
+      '.npmrc',
+      'credentials.json',
+      'fixtures/auth.json',
+      'test/private.key',
+      'docs/secret.txt',
+      '.cache/private.json',
+      'ignored.js.map',
+    ].map((name) => path.join(selectedRoot, 'node_modules', f.sdk, name));
+    forbidden.push(
+      path.join(selectedRoot, '.npmrc'),
+      path.join(selectedRoot, 'node_modules/fixture-dev/index.js'),
+      path.join(selectedRoot, 'node_modules/fixture-dev/cache.json'),
+    );
+    for (const name of forbidden) {
+      expect((await lstat(name)).isFile()).toBe(true);
+      expect(reads.some((read) => read.name === name)).toBe(false);
+    }
+    expect(traces.some((r) => r.allowed && r.path === path.join(selectedRoot, '.npmrc'))).toBe(
+      false,
+    );
+    expect(
+      traces.some(
+        (r) => r.allowed && r.path.includes('/fixture-dev/') && !r.path.endsWith('/package.json'),
       ),
-    ),
-  ).toBe(false);
-  expect(traces.some((r) => r.allowed && r.path === path.join(temp, '.npmrc'))).toBe(false);
-  expect(
-    traces.some(
-      (r) => r.allowed && r.path.includes('/fixture-dev/') && !r.path.endsWith('/package.json'),
-    ),
-  ).toBe(false);
-}, 30000);
+    ).toBe(false);
+  }, 30000);
+test('read-spy role oracle rejects forbidden relative payloads, outside paths and unknown kinds', () => {
+  const root = path.join(temp, 'hostedtoolcache'),
+    sdk = path.join(root, 'node_modules/@modelcontextprotocol/sdk'),
+    nested = path.join(sdk, 'node_modules/fixture-dep'),
+    cli = path.join(temp, 'hostedtoolcache/tool/npm/bin/npm-cli.js'),
+    roles = readSpyRoles({
+      root,
+      node: path.join(temp, 'hostedtoolcache/bin/node'),
+      cli,
+      packageRoots: [sdk, nested],
+    });
+  for (const [kind, name] of [
+    ['manifest', roles.manifests[0]],
+    ['node-binary', roles.node],
+    ['inventory-tool', cli],
+    ['package-metadata', path.join(sdk, 'package.json')],
+    ['runtime-payload', path.join(sdk, 'dist/client.js')],
+    ['runtime-payload', path.join(nested, 'index.js')],
+  ])
+    expect(() => assertReadSpyRole({ name, kind }, roles)).not.toThrow();
+  const rejected = [
+    ...[
+      '.env',
+      '.env.local',
+      '.npmrc',
+      'credentials.json',
+      'fixtures/auth.json',
+      'test/private.key',
+      'docs/secret.txt',
+      '.cache/private.json',
+      'ignored.js.map',
+      'node_modules/unselected/index.js',
+    ].map((name) => ['runtime-payload', path.join(sdk, name)]),
+    ['runtime-payload', path.join(nested, 'docs/secret.txt')],
+    ['runtime-payload', path.join(root, 'node_modules/fixture-dev/index.js')],
+    ['runtime-payload', path.join(temp, 'outside/index.js')],
+    ['runtime-payload', path.join(sdk + '-outside', 'index.js')],
+    ['runtime-payload', roles.node],
+    ['manifest', path.join(root, '.npmrc')],
+    ['package-metadata', path.join(root, 'node_modules/fixture-dev/package.json')],
+    ['inventory-tool', path.join(path.dirname(cli), '.npmrc')],
+    ['node-binary', path.join(path.dirname(roles.node), 'other-node')],
+    ['unknown-kind', path.join(sdk, 'dist/client.js')],
+  ];
+  for (const [kind, name] of rejected)
+    expect(() => assertReadSpyRole({ name, kind }, roles)).toThrow(/unexpected .* content read/);
+});
 for (const kind of [
   'unclassified asset',
   'runtime link',

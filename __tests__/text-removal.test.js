@@ -67,3 +67,45 @@ test('stale backend processing bundles cannot escape the acquisition-only API', 
   }) }] })]);
   await expect(api.downloadBookToFile({ bookDetails })).rejects.toThrow(/unexpected.*processing/i);
 });
+
+test('download advertises a closed top-level schema while preserving full bookDetails', async () => {
+  await connect();
+  const { tools } = await client.listTools();
+  const { inputSchema } = tools.find((tool) => tool.name === 'download_book_to_file');
+  expect(inputSchema.additionalProperties).toBe(false);
+  expect(Object.keys(inputSchema.properties).sort()).toEqual(['bookDetails', 'outputDir']);
+  expect(inputSchema.properties.bookDetails.additionalProperties).toBe(true);
+  expect(JSON.stringify(inputSchema)).not.toContain('"additionalProperties":{}');
+});
+
+test('default memory mode refuses saved true before session acquisition', async () => {
+  const { EapiSessionOwner, getSessionMode } = await import('../dist/lib/eapi-session.js');
+  const session = jest.spyOn(EapiSessionOwner.prototype, 'run');
+  const originalMode = process.env.ZLIBRARY_SESSION_MODE;
+  const originalEmail = process.env.ZLIBRARY_EMAIL;
+  const originalPassword = process.env.ZLIBRARY_PASSWORD;
+  delete process.env.ZLIBRARY_SESSION_MODE;
+  process.env.ZLIBRARY_EMAIL = 'offline@example.test';
+  process.env.ZLIBRARY_PASSWORD = 'offline-password';
+  try {
+    expect(getSessionMode()).toBe('memory');
+    await connect();
+    const result = await client.callTool({
+      name: 'download_book_to_file',
+      arguments: { bookDetails, process_for_rag: true },
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toMatch(/text processing was removed in 2\.0/i);
+    expect(session).not.toHaveBeenCalled();
+    expect(runBridge).not.toHaveBeenCalled();
+  } finally {
+    session.mockRestore();
+    for (const [name, value] of [
+      ['ZLIBRARY_SESSION_MODE', originalMode], ['ZLIBRARY_EMAIL', originalEmail],
+      ['ZLIBRARY_PASSWORD', originalPassword],
+    ]) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+  }
+});

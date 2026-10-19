@@ -88,6 +88,7 @@ const DownloadBookToFileParamsSchema = z
     bookDetails: z
       .object({})
       .loose()
+      .meta({ additionalProperties: true })
       .describe('The full book details object obtained from search_books'),
     outputDir: z
       .string()
@@ -95,7 +96,11 @@ const DownloadBookToFileParamsSchema = z
       .default('./downloads')
       .describe('Directory to save the file to (default: "./downloads")'),
   })
-  .loose();
+  // Preserve raw saved-call fields for admitDownloadArgs. Zod's JSON-schema
+  // metadata closes the advertised top level without stripping those fields
+  // before our compatibility/unknown-key guard can give the intended error.
+  .loose()
+  .meta({ additionalProperties: false });
 
 const GetBookMetadataParamsSchema = z.object({
   bookId: z.string().describe('Z-Library book ID'),

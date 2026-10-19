@@ -474,6 +474,10 @@ consuming retry or shared circuit-breaker health budgets.
 
 ## Development
 
+Build, test, and rehearsal commands require a source checkout. `audit:release`
+also needs Git history and GitHub access; installed `doctor` includes that source-only
+audit after its upstream probe. See [scripts](scripts/README.md).
+
 ### Running Tests
 
 ```bash
@@ -527,7 +531,3 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 ## Disclaimer
 
 This tool is provided for educational and research purposes only. Users are responsible for complying with all applicable laws and regulations regarding the downloading and use of copyrighted materials. Accessing Z-Library may be restricted in certain jurisdictions.
-
-Build, test, and rehearsal commands require a source checkout. `audit:release`
-also needs Git history and GitHub access; installed `doctor` includes that source-only
-audit after its upstream probe. See [scripts](scripts/README.md).

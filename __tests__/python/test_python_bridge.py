@@ -2126,6 +2126,34 @@ asyncio.run(python_bridge.main())
         assert result["file_path"].endswith("libgen-book.pdf")
 
     @pytest.mark.asyncio
+    async def test_empty_declared_extension_uses_recovered_download_path(
+        self, tmp_path, mocker
+    ):
+        """Whitespace metadata cannot erase a response-supported EPUB suffix."""
+        raw_path = tmp_path / ".source-attempt.epub"
+        raw_path.write_bytes(b"PK\x03\x04mimetypeapplication/epub+zip")
+        mocker.patch(
+            "python_bridge._fetch_from_source",
+            new=AsyncMock(return_value=str(raw_path)),
+        )
+
+        result = await download_book(
+            book_details={
+                "md5": "a" * 32,
+                "source": "annas_archive",
+                "author": "Test Author",
+                "title": "Recovered Extension",
+                "extension": "   ",
+            },
+            output_dir=str(tmp_path),
+        )
+
+        final_path = Path(result["file_path"])
+        assert final_path.exists()
+        assert final_path.suffix == ".epub"
+        assert final_path.name.endswith(f"_{'a' * 32}.epub")
+
+    @pytest.mark.asyncio
     async def test_download_book_success(
         self, mock_eapi_download, tmp_path, mocker, patch_eapi_client
     ):

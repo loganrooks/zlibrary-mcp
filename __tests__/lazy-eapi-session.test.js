@@ -710,3 +710,275 @@ describe('native protocol real Node/Python pipes', () => {
     }
   });
 });
+
+// Diagnostic only: never changes the product interpreter or v1 EOF contract.
+describe('native protocol launcher EOF discriminator', () => {
+  test('compares selected venv with its identified base while each worker responds before explicit finish', async () => {
+    const { spawn, execFile } = await import('node:child_process');
+    const selected =
+      process.env.LAZY_PROTOCOL_PYTHON ||
+      path.resolve(process.platform === 'win32' ? '.venv/Scripts/python.exe' : '.venv/bin/python');
+    const fixture = path.resolve('__tests__/fixtures/fd4-launcher-worker.py');
+    const request = Buffer.from('{"v":1,"type":"session_needed"}\n');
+    const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    const alive = (pid) => {
+      if (!Number.isSafeInteger(pid) || pid <= 0) return false;
+      try {
+        process.kill(pid, 0); // Read-only observation, never PID-based signal authority.
+        return true;
+      } catch (error) {
+        return error.code !== 'ESRCH';
+      }
+    };
+    const identify = () =>
+      new Promise((resolve) => {
+        execFile(
+          selected,
+          [fixture, 'identify'],
+          { timeout: 2000, maxBuffer: 2048 },
+          (error, stdout) => {
+            if (error) return resolve(undefined);
+            try {
+              const value = JSON.parse(stdout);
+              resolve(
+                typeof value.base === 'string' && path.isAbsolute(value.base)
+                  ? value.base
+                  : undefined,
+              );
+            } catch {
+              resolve(undefined);
+            }
+          },
+        );
+      });
+    const compare = async (executable, role) => {
+      const result = {
+        role,
+        version: null,
+        launchedEqualsWorker: null,
+        requestByteCount: 0,
+        requestMatches: false,
+        writeByteCount: null,
+        writeClosed: false,
+        readiness: false,
+        heartbeatBeforeWindow: false,
+        heartbeatAfterWindow: false,
+        eofAtWindowStart: false,
+        eofAtWindowEnd: false,
+        eofBeforeFinish: false,
+        finishACK: false,
+        exitZero: false,
+        childClosed: false,
+        workerExited: false,
+        forcedCleanup: false,
+        cleanupCompleted: false,
+        stderrSeen: false,
+        errors: [],
+      };
+      const error = (stage, code) => {
+        if (result.errors.length < 8)
+          result.errors.push({
+            stage: [
+              'spawn',
+              'stdin',
+              'fd4',
+              'stdout',
+              'readiness',
+              'heartbeat-before',
+              'heartbeat-after',
+              'finish',
+              'cleanup',
+              'control',
+            ].includes(stage)
+              ? stage
+              : 'control',
+            code: ['io', 'invalid', 'oversize', 'deadline', 'unknown'].includes(code)
+              ? code
+              : 'invalid',
+          });
+      };
+      // Paths and raw PIDs are used only in this owned process's memory.
+      let workerPID,
+        finishSent = false,
+        eof = false,
+        pongs = 0,
+        pending = '',
+        bytes = Buffer.alloc(0);
+      const child = spawn(executable, [fixture, 'probe'], {
+        // This stdlib-only command reader is intentionally synchronous.
+        // Product overlapped stdin and its reader are not used or changed.
+        stdio: ['pipe', 'pipe', 'pipe', 'ignore', 'pipe'],
+        detached: process.platform !== 'win32',
+        windowsHide: true,
+      });
+      child.on('error', () => error('spawn', 'io'));
+      child.on('close', (code) => {
+        result.childClosed = true;
+        result.exitZero = code === 0;
+      });
+      child.stdin.on('error', () => error('stdin', 'io'));
+      child.stderr.on('data', () => {
+        result.stderrSeen = true;
+      });
+      child.stdio[4].on('data', (chunk) => {
+        result.requestByteCount = Math.min(129, result.requestByteCount + chunk.length);
+        if (bytes.length + chunk.length <= 128) bytes = Buffer.concat([bytes, chunk]);
+      });
+      child.stdio[4].on('end', () => {
+        eof = true;
+        if (!finishSent) result.eofBeforeFinish = true;
+      });
+      child.stdio[4].on('error', () => error('fd4', 'io'));
+      child.stdout.on('data', (chunk) => {
+        if (pending.length + chunk.length > 1024) {
+          error('stdout', 'oversize');
+          pending = '';
+          return;
+        }
+        pending += chunk.toString('utf8');
+        while (pending.includes('\n')) {
+          const end = pending.indexOf('\n');
+          const line = pending.slice(0, end);
+          pending = pending.slice(end + 1);
+          try {
+            const message = JSON.parse(line);
+            if (
+              message.type === 'ready' &&
+              !result.readiness &&
+              Object.keys(message).sort().join(',') === 'closed,pid,type,version,written' &&
+              Number.isSafeInteger(message.pid) &&
+              message.pid > 0 &&
+              Array.isArray(message.version) &&
+              message.version.length === 3 &&
+              message.version.every((v) => Number.isSafeInteger(v) && v >= 0 && v < 1000) &&
+              Number.isSafeInteger(message.written) &&
+              message.written >= 0 &&
+              message.written <= 32 &&
+              typeof message.closed === 'boolean'
+            ) {
+              workerPID = message.pid;
+              result.launchedEqualsWorker = child.pid === workerPID;
+              result.version = message.version;
+              result.writeByteCount = message.written;
+              result.writeClosed = message.closed;
+              result.readiness = true;
+            } else if (message.type === 'pong' && Object.keys(message).length === 1) pongs++;
+            else if (message.type === 'finished' && Object.keys(message).length === 1 && finishSent)
+              result.finishACK = true;
+            else error('stdout', 'invalid');
+          } catch {
+            error('stdout', 'invalid');
+          }
+        }
+      });
+      const deadline = performance.now() + 4000;
+      const wait = async (condition, stage, end = deadline) => {
+        while (!condition() && performance.now() < end) await pause(5);
+        if (!condition())
+          throw Object.assign(new Error('Launcher diagnostic control deadline'), { stage });
+      };
+      try {
+        await wait(() => result.readiness && result.requestByteCount >= 32, 'readiness');
+        child.stdin.write('ping\n');
+        await wait(() => pongs >= 1, 'heartbeat-before');
+        result.heartbeatBeforeWindow = true;
+        result.eofAtWindowStart = eof;
+        await pause(400);
+        result.eofAtWindowEnd = eof;
+        child.stdin.write('ping\n');
+        await wait(() => pongs >= 2, 'heartbeat-after');
+        result.heartbeatAfterWindow = true;
+        // EOF is an observation, never a hypothesis-outcome pass criterion.
+        finishSent = true;
+        child.stdin.end('finish\n');
+        await wait(() => result.finishACK && result.childClosed, 'finish');
+      } catch (failure) {
+        error(failure.stage || 'control', 'deadline');
+      } finally {
+        if (!result.childClosed) {
+          // Prefer explicit completion/EOF, including failed-control cleanup.
+          if (!child.stdin.writableEnded && !child.stdin.destroyed) {
+            finishSent = true;
+            try {
+              child.stdin.end('finish\n');
+            } catch {
+              error('stdin', 'io');
+            }
+          }
+          const finishDeadline = performance.now() + 250;
+          while (!result.childClosed && performance.now() < finishDeadline) await pause(5);
+        }
+        if (process.platform === 'win32') {
+          // Only the still-owned launched tree is signal authority. A worker PID
+          // reported on stdout may be unbound/reused and is NEVER a kill target.
+          if (
+            !result.childClosed &&
+            child.exitCode === null &&
+            child.signalCode === null &&
+            child.pid
+          ) {
+            result.forcedCleanup = true;
+            await new Promise((resolve) => {
+              execFile('taskkill', ['/PID', String(child.pid), '/T', '/F'], { timeout: 1000 }, () =>
+                resolve(),
+              );
+            });
+          }
+        } else if ((!result.childClosed || alive(workerPID)) && child.pid) {
+          // POSIX retains only the known owned spawned process-group authority.
+          result.forcedCleanup = true;
+          try {
+            process.kill(-child.pid, 'SIGKILL');
+          } catch (failure) {
+            if (failure.code !== 'ESRCH') error('cleanup', 'io');
+          }
+        }
+        const cleanupDeadline = performance.now() + 2000;
+        while ((!result.childClosed || alive(workerPID)) && performance.now() < cleanupDeadline)
+          await pause(5);
+        result.workerExited = !!workerPID && !alive(workerPID);
+        result.cleanupCompleted = result.childClosed && result.workerExited;
+        // Reported-PID liveness after launcher close cannot establish ownership.
+        if (!result.cleanupCompleted) error('cleanup', 'unknown');
+        result.requestMatches = bytes.equals(request);
+      }
+      return result;
+    };
+    const base = await identify(); // This path is never written to an artifact/log.
+    const artifact = {
+      schema: 'launcher-eof-v1',
+      windowMs: 400,
+      identifiedBase: !!base,
+      roles: [],
+    };
+    if (base) {
+      artifact.roles.push(await compare(selected, 'selected'));
+      artifact.roles.push(await compare(base, 'base'));
+    }
+    await fs.mkdir('test_output/native-protocol', { recursive: true });
+    await fs.writeFile(
+      'test_output/native-protocol/launcher-eof.json',
+      JSON.stringify(artifact, null, 2) + '\n',
+    );
+    expect(artifact.identifiedBase).toBe(true);
+    expect(artifact.roles).toHaveLength(2);
+    for (const role of artifact.roles) {
+      expect(role).toMatchObject({
+        requestByteCount: 32,
+        requestMatches: true,
+        writeByteCount: 32,
+        writeClosed: true,
+        readiness: true,
+        heartbeatBeforeWindow: true,
+        heartbeatAfterWindow: true,
+        finishACK: true,
+        exitZero: true,
+        childClosed: true,
+        workerExited: true,
+        forcedCleanup: false,
+        cleanupCompleted: true,
+        errors: [],
+      });
+    }
+  });
+});

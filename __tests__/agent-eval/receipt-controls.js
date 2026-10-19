@@ -1,11 +1,49 @@
 // Synthetic complete receipts for deterministic gate tests; never model evidence.
 import { tasks } from './tasks.js';
 import * as drivers from './drivers.js';
+import { receiptSchemaVersion } from './admission.js';
+import { artifactProofMethod, manifestDigest } from './build-proof.js';
+function syntheticArtifactProof(sha, fullDist) {
+  const manifest = (paths) => {
+    const files = paths
+      .sort((a, b) => a.localeCompare(b))
+      .map((path) => ({ path, sha256: '2'.repeat(64) }));
+    return { files, sha256: manifestDigest(files) };
+  };
+  const runtime = manifest(['index.js']);
+  return {
+    version: 1,
+    method: artifactProofMethod,
+    status: 'verified',
+    identityStable: true,
+    sha,
+    inputs: manifest(['src/index.ts', 'package-lock.json', 'package.json', 'tsconfig.json']),
+    compiler: { version: 'synthetic-compiler-control', sha256: '3'.repeat(64), files: 1 },
+    command: {
+      binary: 'node',
+      compiler: 'typescript/bin/tsc',
+      args: [
+        '--project',
+        'tsconfig.json',
+        '--outDir',
+        'dist',
+        '--incremental',
+        'false',
+        '--noEmitOnError',
+        'true',
+      ],
+    },
+    compiledRuntime: structuredClone(runtime),
+    selectedRuntime: runtime,
+    fullDist,
+  };
+}
 export function measured(arm, input = 100) {
   const sha = (arm.build === 'A' ? 'a' : 'b').repeat(40);
   const tree = { sha256: '1'.repeat(64), files: 1 };
+  const artifactProof = syntheticArtifactProof(sha, tree);
   return {
-    schemaVersion: 2,
+    schemaVersion: receiptSchemaVersion,
     status: 'measured; report comparison before deciding',
     sourceStable: true,
     fencePassed: true,
@@ -24,7 +62,19 @@ export function measured(arm, input = 100) {
     },
     build: {
       sha,
-      source: { sha, trees: { dist: tree, lib: tree, vendoredZlibrary: tree } },
+      source: {
+        sha,
+        trees: {
+          dist: tree,
+          lib: tree,
+          vendoredZlibrary: tree,
+          productionInputs: {
+            sha256: artifactProof.inputs.sha256,
+            files: artifactProof.inputs.files.length,
+          },
+        },
+      },
+      artifactProof,
       tools: { count: arm.history ? (arm.build === 'A' ? 12 : 5) : 4, serializedCharacters: 5000 },
     },
     results: Array.from({ length: 5 }, (_, run) =>
@@ -45,6 +95,14 @@ export function measured(arm, input = 100) {
           calls: 0,
           quotaSpent: 0,
           trace: [],
+          capture: {
+            complete: true,
+            closed: true,
+            code: 0,
+            signal: null,
+            timedOut: false,
+            drainTimedOut: false,
+          },
           providerEvents: [],
           attemptCoverage: { unavailable: [] },
           requestedModel: drivers.driverPins.claude.model,

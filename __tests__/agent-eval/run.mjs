@@ -4,7 +4,8 @@ import { writeFile, mkdir, readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import assert from 'node:assert/strict';
-import { tasks, arms, baselinePin } from './tasks.js';
+import { tasks, arms } from './tasks.js';
+import { resolveBaselinePin } from './build-proof.js';
 import { EvaluationServer, evalSnapshot, root, here } from './server.js';
 import { dataOf, rowsOf, scoreTask } from './oracles.js';
 import {
@@ -24,7 +25,8 @@ const { values: opts } = parseArgs({
     'dry-run': { type: 'boolean' },
     paid: { type: 'boolean' },
     'server-root': { type: 'string', default: root },
-    'a-pin': { type: 'string', default: baselinePin },
+    'a-pin': { type: 'string' },
+    'a-root': { type: 'string', default: root },
     arm: { type: 'string', default: 'A' },
     driver: { type: 'string', default: 'codex' },
     model: { type: 'string' },
@@ -53,11 +55,16 @@ if (opts.paid && (opts['self-test'] || opts['dry-run']))
   throw new Error('choose paid OR offline mode');
 const selfTest = opts['self-test'];
 if (selfTest && arm.build !== 'A') throw new Error('self-test targets A; B is not required');
+const baseline = await resolveBaselinePin(
+  arm.build === 'A' ? opts['server-root'] : opts['a-root'],
+  opts['a-pin'],
+);
 const plan = {
   schemaVersion: receiptSchemaVersion,
   fencePassed: false,
   date: new Date().toISOString(),
-  baselinePin: opts['a-pin'],
+  baselinePin: baseline.pin,
+  baselineSelection: baseline,
   arm,
   driver: opts.driver,
   settings: {
@@ -93,15 +100,30 @@ if (!selfTest && !opts.paid) {
   await writeFile(opts.out, JSON.stringify(plan, null, 2) + '\n');
   process.stdout.write(`Dry-run plan written to ${opts.out}; no model invoked.\n`);
 } else {
-  const s = await EvaluationServer.start({
-    buildRoot: opts['server-root'],
-    pin: arm.build === 'A' ? opts['a-pin'] : undefined,
-    arm,
-    defaultOrderEnv: opts['default-order-env'],
-  });
+  let s;
+  try {
+    s = await EvaluationServer.start({
+      buildRoot: opts['server-root'],
+      pin: arm.build === 'A' ? baseline.pin : undefined,
+      arm,
+      defaultOrderEnv: opts['default-order-env'],
+    });
+  } catch (error) {
+    plan.status = 'failed';
+    plan.error = String(error.stack);
+    plan.sourceStable = false;
+    await writeFile(opts.out, JSON.stringify(plan, null, 2) + '\n');
+    throw error;
+  }
   let failure;
   try {
-    plan.build = { root: s.buildRoot, sha: s.sha, source: s.sourceStart, tools: s.measurement };
+    plan.build = {
+      root: s.buildRoot,
+      sha: s.sha,
+      source: s.sourceStart,
+      tools: s.measurement,
+      artifactProof: s.artifactProof,
+    };
     if (selfTest) {
       // Falsifiers use the real running A server, not a second fake protocol server.
       for (const args of [
@@ -290,6 +312,7 @@ if (!selfTest && !opts.paid) {
             driverVersion: raw?.version,
             rawUsage: raw?.usage,
             rawFiles: raw?.rawFiles,
+            capture: raw?.capture,
             ...scored,
             usage,
             final,

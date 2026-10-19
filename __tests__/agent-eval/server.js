@@ -6,19 +6,14 @@ import { mkdir, readFile, writeFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
 import { Rehearsal } from '../rehearsal/harness.js';
 import { snapshotSource } from '../rehearsal/source-identity.js';
 import { dataOf, rowsOf, identity } from './oracles.js';
+import { gitRead, pinnedInputs, verifyBuildArtifacts, artifactProofErrors } from './build-proof.js';
+export { gitRead, verifyBuildArtifacts } from './build-proof.js';
 
 export const here = path.dirname(fileURLToPath(import.meta.url));
 export const root = path.resolve(here, '../..');
-export const gitRead = (dir, ...args) =>
-  execFileSync(
-    'git',
-    ['-C', dir, '-c', 'filter.lfs.process=', '-c', 'filter.lfs.required=false', ...args],
-    { encoding: 'utf8', env: { ...process.env, GIT_OPTIONAL_LOCKS: '0' } },
-  ).trim();
 
 export const canonicalRow = (value) =>
   JSON.stringify(value, (_key, item) =>
@@ -46,6 +41,12 @@ export async function evalSnapshot(buildRoot) {
   };
   await visit(path.join(buildRoot, 'zlibrary/src'));
   snapshot.trees.vendoredZlibrary = { sha256: hash.digest('hex') };
+  const inputs = await pinnedInputs(buildRoot);
+  if (inputs.sha !== snapshot.sha) throw new Error('HEAD changed while snapshotting source');
+  snapshot.trees.productionInputs = {
+    sha256: inputs.inputs.sha256,
+    files: inputs.inputs.files.length,
+  };
   return snapshot;
 }
 
@@ -64,15 +65,15 @@ export class EvaluationServer {
     s.refRows = new Map();
     s.buildRoot = path.resolve(buildRoot);
     s.sha = gitRead(s.buildRoot, 'rev-parse', 'HEAD');
-    if (pin && s.sha !== gitRead(s.buildRoot, 'rev-parse', `${pin}^{commit}`))
-      throw new Error('server checkout does not match pinned commit');
-    if (
-      arm.build === 'A' &&
-      gitRead(s.buildRoot, 'diff', '--name-only', 'HEAD', '--', 'src', 'lib', 'zlibrary')
-    )
-      throw new Error('arm A has production source changes');
     try {
+      // No fixture server, MCP server or model may start without reproducible bytes.
+      s.artifactProof = await verifyBuildArtifacts({ buildRoot: s.buildRoot, pin });
       s.sourceStart = await evalSnapshot(s.buildRoot);
+      const proofErrors = artifactProofErrors(s.artifactProof, {
+        sha: s.sha,
+        source: s.sourceStart,
+      });
+      if (proofErrors.length) throw new Error(proofErrors.join('; '));
       s.fake = await Rehearsal.start('agent-eval');
       s.home = path.join(s.fake.temp, 'server');
       s.downloads = path.join(s.home, 'downloads');
@@ -114,6 +115,12 @@ export class EvaluationServer {
       };
       s.env = env;
       await s.fake.mode({ mode: 'healthy', reset: true, remaining: 2 });
+      const launchSnapshot = await evalSnapshot(s.buildRoot);
+      if (
+        launchSnapshot.sha !== s.sourceStart.sha ||
+        JSON.stringify(launchSnapshot.trees) !== JSON.stringify(s.sourceStart.trees)
+      )
+        throw new Error('source/runtime identity changed before server launch');
       s.transport = new StdioClientTransport({
         command: process.execPath,
         args: [

@@ -385,7 +385,91 @@ export function commandFor({
       'code_mode_tool_search disabled; retired tool_search switch deliberately not passed',
   };
 }
-export async function runDriver(command, prompt, directory) {
+async function captureChild(binary, args, options, limits) {
+  const { timeoutMs = 300000, killGraceMs = 2000, drainTimeoutMs = 2000 } = limits;
+  for (const value of [timeoutMs, killGraceMs, drainTimeoutMs])
+    if (!Number.isSafeInteger(value) || value < 1)
+      throw new Error('positive capture deadlines required');
+  let stdout = '',
+    stderr = '';
+  const capture = {
+    complete: false,
+    closed: false,
+    code: null,
+    signal: null,
+    timedOut: false,
+    drainTimedOut: false,
+  };
+  await new Promise((resolve) => {
+    let child,
+      timer,
+      killTimer,
+      drainTimer,
+      settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      clearTimeout(killTimer);
+      clearTimeout(drainTimer);
+      capture.complete =
+        capture.closed && !capture.spawnError && !capture.timedOut && !capture.drainTimedOut;
+      if (!capture.closed) {
+        child?.stdout?.destroy();
+        child?.stderr?.destroy();
+      }
+      resolve();
+    };
+    const boundDrain = () => {
+      drainTimer ??= setTimeout(() => {
+        capture.drainTimedOut = true;
+        finish();
+      }, drainTimeoutMs);
+    };
+    try {
+      child = spawn(binary, args, options);
+    } catch (error) {
+      capture.spawnError = String(error.message);
+      finish();
+      return;
+    }
+    child.stdout.setEncoding('utf8');
+    child.stderr.setEncoding('utf8');
+    child.stdout.on('data', (d) => {
+      stdout += d;
+    });
+    child.stderr.on('data', (d) => {
+      stderr += d;
+    });
+    child.once('error', (error) => {
+      capture.spawnError = String(error.message);
+      boundDrain();
+    });
+    child.once('exit', (code, signal) => {
+      capture.code = code;
+      capture.signal = signal;
+      clearTimeout(timer);
+      clearTimeout(killTimer);
+      boundDrain();
+    });
+    child.once('close', (code, signal) => {
+      capture.code = code;
+      capture.signal = signal;
+      capture.closed = true;
+      finish();
+    });
+    timer = setTimeout(() => {
+      capture.timedOut = true;
+      child.kill('SIGTERM');
+      killTimer = setTimeout(() => {
+        child.kill('SIGKILL');
+        boundDrain();
+      }, killGraceMs);
+    }, timeoutMs);
+  });
+  return { stdout, stderr, capture };
+}
+export async function runDriver(command, prompt, directory, limits = {}) {
   const current = execFileSync(command.binary, ['--version'], { encoding: 'utf8' }).trim();
   const driver = command.binary,
     pin = driverPins[driver];
@@ -393,43 +477,45 @@ export async function runDriver(command, prompt, directory) {
     throw new Error(`CLI version mismatch: ${current}; expected ${pin.version}`);
   const env = { ...process.env, ...command.env };
   for (const name of command.unsetEnv) delete env[name];
-  const child = spawn(command.binary, [...command.args, prompt], {
-    cwd: directory,
-    env,
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
-  let stdout = '',
-    stderr = '';
-  child.stdout.on('data', (d) => (stdout += d));
-  child.stderr.on('data', (d) => (stderr += d));
-  let killTimer;
-  const timer = setTimeout(() => {
-    child.kill('SIGTERM');
-    killTimer = setTimeout(() => child.kill('SIGKILL'), 2000);
-  }, 300000);
-  let code;
-  try {
-    code = await new Promise((resolve, reject) => {
-      child.once('error', reject);
-      child.once('exit', resolve);
-    });
-  } finally {
-    clearTimeout(timer);
-    clearTimeout(killTimer);
-  }
+  const { stdout, stderr, capture } = await captureChild(
+    command.binary,
+    [...command.args, prompt],
+    {
+      cwd: directory,
+      env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    },
+    limits,
+  );
   const attemptId = randomUUID();
   await writeFile(path.join(directory, `${attemptId}.jsonl`), stdout);
   await writeFile(path.join(directory, `${attemptId}.stderr`), stderr);
+  await writeFile(
+    path.join(directory, `${attemptId}.capture.json`),
+    JSON.stringify(capture, null, 2) + '\n',
+  );
   await writeFile(path.join(directory, 'last-driver.jsonl'), stdout);
   await writeFile(path.join(directory, 'last-driver.stderr'), stderr);
   const events = parseEvents(stdout);
   const result = {
     version: current,
+    capture,
     events,
-    rawFiles: { stdout: `${attemptId}.jsonl`, stderr: `${attemptId}.stderr` },
+    rawFiles: {
+      stdout: `${attemptId}.jsonl`,
+      stderr: `${attemptId}.stderr`,
+      capture: `${attemptId}.capture.json`,
+    },
   };
   try {
-    if (code !== 0) throw new Error(`${driver} exited ${code}; inspect preserved raw output`);
+    if (!capture.complete)
+      throw new Error(
+        `${driver} capture failed/incomplete: ${JSON.stringify(capture)}; inspect preserved raw output`,
+      );
+    if (capture.code !== 0 || capture.signal)
+      throw new Error(
+        `${driver} exited ${capture.code}/${capture.signal}; inspect preserved raw output`,
+      );
     if (
       events.some(
         (e) =>

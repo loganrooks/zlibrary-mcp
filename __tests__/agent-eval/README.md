@@ -6,7 +6,8 @@ book data and file bytes are synthetic. No model call happens by default.
 
 ## Offline checks
 
-From a checkout with Node dependencies and its uv `.venv` available:
+From a baseline-compatible evaluator checkout with Node dependencies and its uv
+`.venv` available (these commands do not select an interface checkout as A):
 
 ```sh
 npm run build
@@ -25,12 +26,19 @@ matching, languages, inclusive years, translator separation, cursor/page replay,
 wrong-decision argument mutations, usage parsing and comparison bars. Neither is
 an agent-performance result. T5/T6/T10 are explicitly outside A's comparison bar.
 
-The pin is `e2517b3e347584333f9c127a0217a3c574f6a22e`; another A can be
-specified with `--a-pin SHA --server-root /checkout`. The runner requires that
-checkout's HEAD to equal the pin and refuses production source changes on A.
+The settled baseline is `e2517b3e347584333f9c127a0217a3c574f6a22e`. By default,
+the runner derives the selected A checkout's **current exact HEAD** only after
+proving clean production/config inputs and source equality with that settled
+baseline. Evaluator-only descendants therefore work with the default command;
+an interface/B checkout cannot silently become A. An explicit common baseline
+identity remains supported with `--a-pin SHA --server-root /checkout`; the A
+checkout's HEAD must equal that resolved pin. For B without an explicit pin,
+`--a-root /baseline-checkout` selects the separate compatible baseline to resolve.
+Receipts retain the resolved SHA, selection mode and requested explicit pin.
 It records SHA, source tree hashes (including vendored Z-Library), observed tools/list count, characters and UTF-8
-bytes; it never checks out, stages or commits anything. Build the pinned checkout
-before running it. B is a separately built worktree, recorded by SHA and hashes.
+bytes; it never checks out, stages or commits anything. Build the selected checkout
+before running it. Both A and B must pass the executable build proof below before
+the server starts; B remains a separately built worktree.
 
 ## Fixtures and isolation
 
@@ -38,15 +46,15 @@ before running it. B is a separately built worktree, recorded by SHA and hashes.
 source, paging row and account-history row. `../rehearsal/fake_catalogue.py` is
 authoritative; the JSON is its dated inventory. There are 13 core Z-Library rows,
 6 LibGen rows, 15 fixed rehearsal rows, 60 paging rows, and 2 history rows (one
-also a rehearsal row). Account-history-only ID 901 is *Being and Time*, never
+also a rehearsal row). Account-history-only ID 901 is _Being and Time_, never
 pre-created on disk and never returned by search. Each test task starts with two
 remaining Z-Library downloads, except T11, which starts with zero. Transfers
 spend quota at link issuance, even if subsequent acquisition fails; local reuse
 cannot decrement this fake-side counter.
 
-LibGen has *Persuasion* EPUB; Z-Library has PDF. The Graver–Long and Campbell
-Seneca editions have distinct IDs, years, detail descriptions and bytes. *The
-Glass Orchard* exists only on LibGen. *Phenomenology* has 60 stable volumes.
+LibGen has _Persuasion_ EPUB; Z-Library has PDF. The Graver–Long and Campbell
+Seneca editions have distinct IDs, years, detail descriptions and bytes. _The
+Glass Orchard_ exists only on LibGen. _Phenomenology_ has 60 stable volumes.
 Arendt has three in-range and two out-of-range books. Anna's search is an
 explicitly empty account catalogue, allowing ordered fallback without real
 network access; it has no configured download key. Browser/challenge routes are
@@ -75,8 +83,8 @@ lead authorizes the real comparison. Example commands for that later campaign:
 
 ```sh
 node __tests__/agent-eval/run.mjs --paid --arm A --driver codex --server-root /A --a-pin SHA --runs 5 --warm-runs 1 --out /receipts/A-codex.json
-node __tests__/agent-eval/run.mjs --paid --arm B --driver claude --server-root /B --runs 5 --warm-runs 1 --out /receipts/B-claude.json
-node __tests__/agent-eval/run.mjs --paid --arm B --driver claude --tool-search --server-root /B --runs 5 --warm-runs 1 --out /receipts/B-claude-search.json
+node __tests__/agent-eval/run.mjs --paid --arm B --driver claude --server-root /B --a-pin SHA --runs 5 --warm-runs 1 --out /receipts/B-claude.json
+node __tests__/agent-eval/run.mjs --paid --arm B --driver claude --tool-search --server-root /B --a-pin SHA --runs 5 --warm-runs 1 --out /receipts/B-claude-search.json
 node __tests__/agent-eval/report.mjs /receipts/*.json > /receipts/comparison.json
 ```
 
@@ -205,7 +213,7 @@ instruction uses placeholders, never the expected translations, years, quota
 number or result titles. Arrays must contain all matching observed facts; the
 example is an item shape, not a count. `answers.js` compares exact keys/types and
 facts; swapped editions, duplicate translators, extra contradictory properties
-and duplicate JSON keys cannot pass. The original scripted control's *whole*
+and duplicate JSON keys cannot pass. The original scripted control's _whole_
 canonical sentences/list grammar also remains supported. Arbitrary prose,
 including correct-looking text followed by a contradictory sentence, goes to
 manual review. This is intentionally not a general semantic judge. Other
@@ -213,7 +221,7 @@ acquisition tasks still require their real artifact and decision checks.
 
 ### Evidence admission and bars (EVAL-R1-02/03/05)
 
-`admission.js` requires receipt schema 2, the exact completed measured status,
+`admission.js` now requires receipt schema 3 (schema 2 is legacy diagnostic), the exact completed measured status,
 `sourceStable:true`, `fencePassed:true`, no receipt/task driver/fence/source/cleanup
 failure, fixed model/CLI/build/settings, complete nonnegative usage and decision
 metrics, and the exact unique `(run, phaseIndex, task)` grid. There must be five
@@ -261,7 +269,7 @@ telemetry is marked incomplete; arguments are not invented. An apparently
 successful unmatched attempt invalidates the cell rather than disappearing.
 
 The drivers may suppress attempts before emitting any identifiable event. That
-signal is unavailable: zero *recognized* extra attempts is not an attestation
+signal is unavailable: zero _recognized_ extra attempts is not an attestation
 that a CLI never rejected anything internally. Opaque CLI errors remain driver
 failures, not invented tool names/counts. These parsers are deterministic fixture
 tests, not a new paid confirmation of either driver's event coverage.
@@ -295,7 +303,7 @@ the strict cold bar even after normalization.
 
 ```sh
 node --experimental-vm-modules node_modules/jest/bin/jest.js __tests__/agent-eval/ --coverage=false --runInBand
-node __tests__/agent-eval/run.mjs --self-test --a-pin f9d56a04d79c6e84a087e68481db2b66b2798c65 --out /private/tmp/eval-r1-self-test.json
+node __tests__/agent-eval/run.mjs --self-test --out /private/tmp/eval-r1-self-test.json
 ```
 
 `regression-controls.json` preserves the root's actual A read-only traces and
@@ -307,3 +315,62 @@ CLI/model/session mismatch, missing usage, ambiguous facts, delta resets and
 cross-layer rejection deduplication. The real A positive exercise remains
 separate. No B runtime/full matrix/live-provider boundary is closed by these
 checks; root owns the fresh round-2 gate and git operations.
+
+## Connector round-1 proof and capture contract
+
+2026-10-19. Authority: `FIX-CONNECTOR-r1.md` and lead
+`ZLIB-EVAL-CONNECTOR-DISPOSITION-r1.md`; this is a connector repair loop, not
+a third native review or a model-performance result.
+
+**EVAL-C1-01:** Before starting even the fixture/MCP server,
+`build-proof.js` checks selected source/config bytes against the pinned Git blobs,
+rejects dirty/untracked production inputs, and copies those checked TypeScript
+inputs plus `tsconfig.json`, `package.json` and `package-lock.json` into disposable
+scratch. It invokes only the existing local TypeScript compiler directly, with
+the pinned config, scratch `--outDir dist`, `--incremental false` and
+`--noEmitOnError true`. No package scripts, installs or model-supplied commands run.
+It compares the exact runtime file set and SHA256 of every file against selected
+dist. Wrong/stale/missing/extra files and symlinks fail before launch. Source,
+config, HEAD, compiler package identity and selected outputs must stay unchanged
+across verification; source/runtime identity is checked again before MCP launch.
+
+Proof covers executable `.js/.mjs/.cjs` and runtime `.json/.node/.wasm` outputs.
+Maps, declarations and incremental metadata are excluded from byte equality
+because they are not executed and maps may describe scratch-relative paths.
+Unclassified outputs fail closed. The **full selected dist hash** (including that
+metadata) remains recorded and checked for evaluation drift. Compiler version and
+package-content digest, pinned input manifests and both runtime manifests are
+retained as `build.artifactProof`. Existing installed dependencies are used;
+this is not a package-registry or dependency-supply-chain attestation.
+
+Schema 3 requires that concrete, internally consistent build proof and its source/
+full-dist bindings at admission. Legacy/unproven/malformed receipts stay diagnostic,
+even if they contain an arbitrary syntactically valid dist hash. Receipt JSON is
+not a cryptographic signature; the trusted local producer performs the actual
+comparison. Startup failures after pin resolution persist failed receipts with
+no completed cell. Matrix generation resolves one exact A identity from `--a-root`
+and writes that same `--a-pin` into **every** generated A/B command. Copy that SHA
+into all manually written paid commands too; do not independently infer A from B.
+
+**EVAL-C1-03:** T9 requires three distinct successful same-task search calls,
+each returning the downloaded title and identity (including source and B ref)
+before its corresponding download. Interleaved search→download remains valid;
+all three searches need not precede the first download, and no literal query
+spelling is required. One broad search, unrelated/failed searches, Pride-only
+repeats and prior-episode selections alone cannot satisfy the three titles.
+Download count, identity/observed selection and exact synthetic bytes stay strict.
+
+**EVAL-C1-04:** Drivers wait for process/stream `close` before persisting/parsing
+stdout/stderr. A five-minute invocation deadline, two-second TERM→KILL grace and
+two-second post-exit/post-KILL drain deadline bound failures. Timeout, spawn error,
+signal and never-closing inherited pipes cannot become successful measured usage.
+Each attempt retains unique stdout, stderr and `.capture.json` telemetry before
+usage parsing; incomplete output is retained but not promoted. Schema 3 requires
+complete, closed, successful capture for every row. The synthetic child tests
+exercise this real path without launching either model CLI and retain their raw
+attempts at the temporary evidence directory printed by Jest.
+
+Original six round-1 scoring/usage/attempt controls, the canonical inbox alias
+positive/strict negatives, and strict-cold **inconclusive** behavior remain in
+the focused suite. No new cross-vendor, B model, strict-cold or merge acceptance
+follows from these local controls. Lead owns clean B preflight and connector round 2.

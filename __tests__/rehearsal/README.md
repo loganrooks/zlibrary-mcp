@@ -25,7 +25,7 @@ REHEARSAL_EXPECT=reuse,redaction,breaker npm run test:rehearsal
 ```
 
 Omit a name until that feature's fix is expected. Unset, the default is what
-master has fixed: `reuse,redaction` since #248. `REHEARSAL_EXPECT=` (empty)
+master has fixed: `reuse,redaction,breaker` (session policy from #248, isolation from #192). `REHEARSAL_EXPECT=` (empty)
 rehearses a tree from before it.
 
 
@@ -62,7 +62,7 @@ not a continuous filesystem lock or an atomic snapshot.
 
 ## Cases and receipts
 
-There are 35 mandatory cases, including scanner/source-identity/startup contracts. The
+There are 36 mandatory cases, including scanner/source-identity/startup contracts. The
 manifest records expected/executed counts, ordinary versus per-fix expected
 outcomes, endpoint/login-attempt/login-success counts, fake cookie epochs, stable
 Node PIDs, and categorized sentinel findings without their values. Missing,
@@ -86,6 +86,10 @@ skipped, duplicate and failed cases cannot produce a green aggregate.
   approved 2.0 surface. A deliberate surface change must update the snapshot.
 - S6: healthy Library Genesis search goes through the real third-party parser,
   returns a hand-authored HTML record, and makes zero EAPI login attempts.
+- S7: a warmed session receives five HTTP 503 operation failures (not auth); the
+  sixth call is blocked with no upstream dispatch. The same server then searches
+  Library Genesis and processes a real local TXT while EAPI remains OPEN. One
+  login and six EAPI searches (warm + five outages) must remain unchanged.
 - E1–E3: overlapping refresh, four ambiguity/recovery cases, and invalid credentials
   within the explicit zero-retry budget. Master ambiguity counts reflect fresh
   per-call logins; they do not isolate retry-after-failure behavior.

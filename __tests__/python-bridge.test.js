@@ -97,7 +97,7 @@ describe('Python Bridge', () => {
     expect(pythonBridge.isBridgeDetailRetryable(details)).toBe(false);
   });
 
-  test('does not flatten mixed permanent/transient aggregates to permanent', async () => {
+  test('mixed permanent/transient details still veto Node retry', async () => {
     const { pythonBridge } = await setup();
     const details = {
       failures: [
@@ -106,7 +106,7 @@ describe('Python Bridge', () => {
       ],
     };
 
-    expect(pythonBridge.isBridgeDetailRetryable(details)).toBe(true);
+    expect(pythonBridge.isBridgeDetailRetryable(details)).toBe(false);
   });
 
   test('preserves the public JSON parse error shape', async () => {

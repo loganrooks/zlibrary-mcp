@@ -75,72 +75,87 @@ export async function withRetry<T>(
   throw lastError;
 }
 
-/**
- * Determine if an error is retryable based on error characteristics
- * @param error - The error to classify
- * @returns true if the error should trigger a retry
- */
+/** Positively classified dependency-health failures, never message keywords. */
+export function isTransientDependencyError(error: any): boolean {
+  if (
+    !error ||
+    error.name === 'AbortError' ||
+    ['aborted', 'auth_rejected', 'auth_backoff', 'identity_changed'].includes(error.context?.reason)
+  )
+    return false;
+  if (error.code === 'BRIDGE_SPAWN')
+    return ['EAGAIN', 'EMFILE', 'ENFILE'].includes(error.errnoCode ?? error.context?.errnoCode);
+  if (error.code === 'TIMEOUT' && error.context?.reason === 'timeout') return true;
+  if (
+    error.fatal ||
+    ['AUTH_ERROR', 'FORBIDDEN', 'INVALID_INPUT', 'VALIDATION_ERROR', 'BRIDGE_KILLED'].includes(
+      error.code,
+    )
+  )
+    return false;
+  const transientStatus = (status: any) =>
+    Number.isInteger(status) &&
+    (status === 408 || status === 429 || (status >= 500 && status <= 599));
+  const transientDetail = (detail: any): boolean => {
+    if (!detail || typeof detail !== 'object') return false;
+    if (Array.isArray(detail.failures)) return detail.failures.some(transientDetail);
+    // Source adapters emit an exact HTTP NNN token in this structured field.
+    if (detail.reason === 'http_error')
+      return transientStatus(
+        detail.status_code ?? Number(/^HTTP (\d{3})$/.exec(detail.detail)?.[1]),
+      );
+    return [
+      'dns_failure',
+      'dns_timeout',
+      'connect_timeout',
+      'connect_refused',
+      'connect_error',
+      'read_timeout',
+      'search_timeout',
+      'integrity_mismatch',
+    ].includes(detail.reason);
+  };
+  if (error.context?.details !== undefined) return transientDetail(error.context.details);
+  if (
+    error.context?.pythonErrorType === 'HTTPStatusError' ||
+    (error.context?.reason === 'login_failed' && error.context.loginStatus !== undefined)
+  )
+    return transientStatus(error.context.httpStatus ?? error.context.loginStatus);
+  const code = error.code === 'PYTHON_ERROR' ? error.context?.originalError?.code : error.code;
+  return (
+    [
+      'NETWORK_ERROR',
+      'TIMEOUT',
+      'ECONNREFUSED',
+      'ECONNRESET',
+      'ENOTFOUND',
+      'ETIMEDOUT',
+      'EAI_AGAIN',
+      'DOMAIN_ERROR',
+      'SERVER_ERROR',
+    ].includes(code) ||
+    /^5\d\d$/.test(String(code)) ||
+    [
+      'ReadTimeout',
+      'WriteTimeout',
+      'ConnectTimeout',
+      'PoolTimeout',
+      'TimeoutException',
+      'ReadError',
+      'WriteError',
+      'ConnectionError',
+      'TimeoutError',
+    ].includes(error.context?.pythonErrorType)
+  );
+}
+
+/** Python owns retries/failover once it emits a details-bearing envelope. */
 export function isRetryableError(error: any): boolean {
-  // Fatal errors that should not be retried
-  if (error.fatal === true) {
-    return false;
-  }
-
-  // An explicit verdict from whoever built the error beats the heuristics
-  // below. Those heuristics match on message text, so a provider error like
-  // "resolved but did not accept a connection before the deadline" would
-  // otherwise be retried on the strength of the word "connection" — even
-  // though the caller already established the host is not answering.
-  if (error.retryable === false) {
-    return false;
-  }
-  if (error.retryable === true && (error.code !== 'PYTHON_ERROR' || error.context?.details)) {
-    return true;
-  }
-
-  // Authentication/authorization errors are not retryable
-  if (error.code === 'AUTH_ERROR' || error.code === 'FORBIDDEN') {
-    return false;
-  }
-
-  // Invalid input errors are not retryable
-  if (error.code === 'INVALID_INPUT' || error.code === 'VALIDATION_ERROR') {
-    return false;
-  }
-
-  // Network errors are retryable
-  if (
-    error.code === 'NETWORK_ERROR' ||
-    error.code === 'TIMEOUT' ||
-    error.code === 'ECONNREFUSED' ||
-    error.code === 'ENOTFOUND' ||
-    error.code === 'ETIMEDOUT'
-  ) {
-    return true;
-  }
-
-  // Python bridge errors might be transient
-  if (error.code === 'PYTHON_ERROR') {
-    // Check if it's a transient Python error
-    const message = error.message?.toLowerCase() || '';
-    if (
-      message.includes('timeout') ||
-      message.includes('connection') ||
-      message.includes('network')
-    ) {
-      return true;
-    }
-  }
-
-  // Domain/server errors are retryable
-  if (
-    error.code === 'DOMAIN_ERROR' ||
-    error.code === 'SERVER_ERROR' ||
-    error.code?.startsWith('5')
-  ) {
-    return true;
-  }
-
-  // Default to not retryable if we can't classify
-  return false;
+  return (
+    error?.context?.details === undefined &&
+    error?.details === undefined &&
+    !error?.fatal &&
+    error?.retryable !== false &&
+    isTransientDependencyError(error)
+  );
 }

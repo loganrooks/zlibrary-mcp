@@ -138,7 +138,7 @@ describe('spawn errors and circuit-breaker counting', () => {
     expect(mockRunPythonBridge).toHaveBeenCalledTimes(2);
   });
 
-  test('other errno values continue to count toward the breaker', async () => {
+  test('spawn resource pressure counts toward the breaker', async () => {
     const { searchByTerm, BridgeSpawnError } = await loadApi();
     mockRunPythonBridge.mockRejectedValue(new BridgeSpawnError('process limit reached', 'EAGAIN'));
 
@@ -151,14 +151,14 @@ describe('spawn errors and circuit-breaker counting', () => {
 
 
 describe('bridge failure retry policy', () => {
-  test.each(['ENOENT', 'EAGAIN', 'ECONNREFUSED', 'ETIMEDOUT'])(
-    'spawn errno %s keeps the explicit retry verdict with a domain code', async (errnoCode) => {
+  test.each([['ENOENT', false], ['EACCES', false], ['ENOEXEC', false], ['EAGAIN', true], ['EMFILE', true], ['ENFILE', true], ['ECONNREFUSED', false], ['ETIMEDOUT', false]])(
+    'spawn errno %s has a classified retry verdict', async (errnoCode, retryable) => {
       const { BridgeSpawnError } = await import('../lib/errors.js');
       const { isRetryableError } = await import('../lib/retry-manager.js');
       const error = new BridgeSpawnError('could not start', errnoCode);
       expect(error).toMatchObject({ code: 'BRIDGE_SPAWN', errnoCode });
       expect(error.toJSON().context.errnoCode).toBe(errnoCode);
-      expect(isRetryableError(error)).toBe(errnoCode !== 'ENOENT');
+      expect(isRetryableError(error)).toBe(retryable);
     },
   );
 

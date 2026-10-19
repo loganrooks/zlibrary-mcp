@@ -1,4 +1,5 @@
 export const requiredCases = [
+  'S7 transient EAPI outage opens only EAPI; Library Genesis and local work survive',
   'C8 fake binds and loads TLS without hostname resolution',
   'C9 startup deadline reports captured stderr and live process status',
   'C10 startup exit and spawn errors retain stderr and status',

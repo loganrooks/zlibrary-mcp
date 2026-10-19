@@ -1,4 +1,4 @@
-"""Bounded private lazy-v1 handoff; no authentication or provider work here."""
+"""Bounded private lazy-v2 demand / v1 reply handoff; no authentication or provider work here."""
 
 import asyncio
 import json
@@ -197,7 +197,8 @@ async def request_session(*, timeout=240, input_fd=0, request_fd=4, diagnostic=N
     phase = "request-write"
     try:
         try:
-            request = b'{"v":1,"type":"session_needed"}\n'
+            body = b'{"type":"session_needed","terminal":true}'
+            request = b"ZLAD\x02" + len(body).to_bytes(2, "big") + body
             write_error = None
             try:
                 _emit(diagnostic, phase, "start")

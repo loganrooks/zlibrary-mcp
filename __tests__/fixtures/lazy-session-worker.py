@@ -13,7 +13,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "lib"))
 from acquisition import AcquisitionError, DestinationLease, acquire
 from eapi_session_protocol import SessionProtocolError, request_session, _emit
 
+DEMAND_BODY = b'{"type":"session_needed","terminal":true}'
+DEMAND = b"ZLAD\x02" + len(DEMAND_BODY).to_bytes(2, "big") + DEMAND_BODY
 mode, directory = sys.argv[1:3]
+extra_fd = os.dup(4) if mode in {"postgrant-extra", "stdout-late-extra"} else None
 for descriptor in (3,) if mode == "control" else (3, 4):
     os.set_inheritable(descriptor, False)
 root = Path(directory)
@@ -59,18 +62,49 @@ async def main():
         os.close(4)
         await asyncio.sleep(30)
         return
+    if mode in {
+        "request-hold",
+        "request-delayed-extra",
+        "request-same-extra",
+        "request-partial-open",
+    }:
+        payload = DEMAND[:-1] if mode == "request-partial-open" else DEMAND
+        if mode == "request-same-extra":
+            payload += b"x"
+        os.write(4, payload)
+        if mode == "request-hold":
+            deadline = asyncio.get_running_loop().time() + 2
+            while not (root / "parent-observed-demand").exists():
+                if asyncio.get_running_loop().time() >= deadline:
+                    raise AssertionError("No live demand")
+                await asyncio.sleep(0.005)
+            print("{}")
+            return
+        if mode == "request-delayed-extra":
+            await asyncio.sleep(0.05)
+            (root / "extra").write_text("yes")
+            os.write(4, b"x")
+        await asyncio.sleep(30)
+        return
     if mode.startswith("request-"):
         payload = {
-            "fragmented": b'{"v":1,"type":"session_needed"}\n',
-            "duplicate": b'{"v":1,"type":"session_needed"}\n' * 2,
-            "oversize": b"x" * 129,
-            "malformed": b'{"private":"canary-not-public"}\n',
-            "version": b'{"v":2,"type":"session_needed"}\n',
-            "partial": b'{"v":1,"type":"session_needed"}',
+            "fragmented": DEMAND,
+            "duplicate": DEMAND * 2,
+            "oversize": b"x" * 136,
+            "malformed": b"ZLAD\x02"
+            + len(DEMAND_BODY).to_bytes(2, "big")
+            + b"x" * len(DEMAND_BODY),
+            "version": DEMAND[:4] + b"\x01" + DEMAND[5:],
+            "partial": DEMAND[:-1],
         }[mode.removeprefix("request-")]
-        for byte in payload:
-            os.write(4, bytes([byte]))
-            await asyncio.sleep(0.001)
+        if mode == "request-duplicate":
+            # Coalesced duplicate must be rejected before commit; delayed extras
+            # have their own pre/post-grant controls under the settled v2 rules.
+            os.write(4, payload)
+        else:
+            for byte in payload:
+                os.write(4, bytes([byte]))
+                await asyncio.sleep(0.001)
         _emit(trace, "request-close", "start")
         os.close(4)
         _emit(trace, "request-close", "done")
@@ -111,6 +145,10 @@ async def main():
         with (root / "transfers").open("a") as stream:
             stream.write("1\n")
         (root / "granted").write_text("yes")
+        if mode == "postgrant-extra":
+            os.write(extra_fd, b"x")
+            os.close(extra_fd)
+            await asyncio.sleep(30)
         if mode == "stall":
             await asyncio.sleep(30)
         update = {k: v for k, v in private.items() if k != "action"}
@@ -144,7 +182,12 @@ async def main():
         "synthetic.epub",
         transfer=transfer,
     )
-    print(json.dumps(result))
+    print(json.dumps(result), flush=True)
+    if mode == "stdout-late-extra":
+        await asyncio.sleep(0.05)
+        os.write(extra_fd, b"x")
+        os.close(extra_fd)
+        await asyncio.sleep(30)
 
 
 async def run():

@@ -453,3 +453,77 @@ async def test_cancellation_remains_primary_when_transport_cleanup_fails(monkeyp
         event["phase"] == "cleanup" and event["state"] == "error" for event in events
     )
     assert "canary" not in json.dumps(events)
+
+
+@pytest.mark.asyncio
+async def test_demand_encoder_is_exact_lazy_v2_but_reply_stays_v1(monkeypatch):
+    import eapi_session_protocol as protocol
+
+    writes = []
+
+    class Pipe:
+        def close(self):
+            pass
+
+    real_write, real_close = protocol.os.write, protocol.os.close
+    monkeypatch.setattr(
+        protocol.os,
+        "write",
+        lambda fd, data: writes.append(bytes(data)) or len(data)
+        if fd == 404
+        else real_write(fd, data),
+    )
+    monkeypatch.setattr(
+        protocol.os, "close", lambda fd: None if fd == 404 else real_close(fd)
+    )
+    monkeypatch.setattr(
+        protocol, "_open_input_pipe", lambda fd, diagnostic=None: Pipe()
+    )
+
+    async def connect(factory, pipe):
+        p = factory()
+        p.data_received(frame({"v": 1, "type": "session", "input": PRIVATE}))
+        p.eof_received()
+
+        class Transport:
+            def close(self):
+                p.connection_lost(None)
+
+        return Transport(), p
+
+    monkeypatch.setattr(asyncio.get_running_loop(), "connect_read_pipe", connect)
+    assert await protocol.request_session(request_fd=404) == PRIVATE
+    body = b'{"type":"session_needed","terminal":true}'
+    assert writes == [b"ZLAD\x02" + len(body).to_bytes(2, "big") + body]
+
+
+@pytest.mark.parametrize("mode", ["", "1", "lazy-v2", "lazy-v1", "lazy-v3", "unknown"])
+def test_private_mode_admission_is_exact_and_never_falls_back(monkeypatch, mode):
+    import io
+    import os
+    import sys
+    from pathlib import Path
+
+    monkeypatch.setenv("ZLIBRARY_EAPI_CHANNEL", mode)
+    monkeypatch.setattr(sys, "stdin", io.StringIO("{}\n"))
+    inherited = []
+    monkeypatch.setattr(
+        os, "set_inheritable", lambda fd, value: inherited.append((fd, value))
+    )
+    namespace = {"__name__": "__main__"}
+    source = Path(python_bridge.__file__).read_text().split("import httpx")[0]
+    if mode in {"lazy-v1", "lazy-v3", "unknown"}:
+        with pytest.raises(SystemExit, match="Invalid private session input"):
+            exec(source, namespace)
+        assert not inherited
+    else:
+        exec(source, namespace)
+        assert namespace["_lazy_session"] is (mode == "lazy-v2")
+        assert namespace["_session_input"] == ({} if mode == "1" else None)
+        assert inherited == (
+            []
+            if not mode
+            else [(3, False), (4, False)]
+            if mode == "lazy-v2"
+            else [(3, False)]
+        )

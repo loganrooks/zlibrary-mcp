@@ -514,19 +514,24 @@ describe('native protocol real Node/Python pipes', () => {
         },
       });
       const outcome = promise.catch((error) => error);
-      if (phase === 'granted') {
-        await waitFile('granted');
+      try {
+        if (phase === 'granted') {
+          await waitFile('granted');
+          controller.abort();
+        }
+        const error = await outcome;
+        expect(error.context.reason).toBe('aborted');
+        expect(JSON.stringify(error)).not.toContain(input.remix_userkey);
+        const { getEventListeners } = await import('node:events');
+        expect(getEventListeners(controller.signal, 'abort')).toHaveLength(0);
+        await run('operation');
+        expect(
+          (await fs.readFile(path.join(directory, 'transfers'), 'utf8')).trim().split('\n'),
+        ).toHaveLength(phase === 'granted' ? 2 : 1);
+      } finally {
         controller.abort();
+        await outcome;
       }
-      const error = await outcome;
-      expect(error.context.reason).toBe('aborted');
-      expect(JSON.stringify(error)).not.toContain(input.remix_userkey);
-      const { getEventListeners } = await import('node:events');
-      expect(getEventListeners(controller.signal, 'abort')).toHaveLength(0);
-      await run('operation');
-      expect(
-        (await fs.readFile(path.join(directory, 'transfers'), 'utf8')).trim().split('\n'),
-      ).toHaveLength(phase === 'granted' ? 2 : 1);
     },
   );
   test('private auth-control abort also waits for actual child exit', async () => {
@@ -565,7 +570,7 @@ describe('native protocol real Node/Python pipes', () => {
       observe(child);
       let stdout = '',
         stderr = '',
-        demand = '';
+        demand = Buffer.alloc(0);
       child.stdout.on('data', (c) => {
         stdout += c;
       });
@@ -577,13 +582,18 @@ describe('native protocol real Node/Python pipes', () => {
         child.on('error', reject);
         child.on('close', (code) => resolve(code));
       });
+      const demandBody = Buffer.from('{"type":"session_needed","terminal":true}');
+      const expectedDemand = Buffer.concat([
+        Buffer.from([0x5a, 0x4c, 0x41, 0x44, 2, 0, demandBody.length]),
+        demandBody,
+      ]);
       await new Promise((resolve) => {
         child.stdio[4].on('data', (c) => {
-          demand += c;
+          demand = Buffer.concat([demand, c]);
+          if (demand.length >= expectedDemand.length) resolve();
         });
-        child.stdio[4].on('end', resolve);
       });
-      expect(JSON.parse(demand)).toEqual({ v: 1, type: 'session_needed' });
+      expect(demand).toEqual(expectedDemand);
       const frame = JSON.stringify({ v: 1, type: 'session', input }) + '\n';
       if (kind === 'fragmented') {
         for (const char of frame) {
@@ -709,6 +719,82 @@ describe('native protocol real Node/Python pipes', () => {
       await closed;
     }
   });
+  test('lazy-v2 commit grants before physical fd4 EOF while selected worker stays alive', async () => {
+    let grants = 0;
+    await run('request-hold', {
+      onSessionNeeded(c) {
+        grants++;
+        nativeFs.writeFileSync(path.join(directory, 'parent-observed-demand'), 'yes');
+        c.grant(input);
+      },
+    });
+    expect(grants).toBe(1);
+  });
+  test('lazy-v2 delayed auth-pending extra invalidates and stale grant cannot write', async () => {
+    let retained;
+    const events = [];
+    const outcome = run('request-delayed-extra', {
+      onSessionNeeded(c) {
+        retained = c;
+      },
+      onProtocolDiagnostic(e) {
+        events.push(e);
+      },
+    }).catch((e) => e);
+    await waitFile('extra');
+    const error = await outcome;
+    expect(retained).toBeDefined();
+    retained.grant(input);
+    expect(error.message).toBe('Invalid private session request');
+    expect(error.privateSessionProtocolCorruption).toBe(true);
+    expect(events.filter((e) => e.phase === 'grant')).toHaveLength(0);
+    await expect(fs.stat(path.join(directory, 'transfers'))).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+  });
+  test.each(['request-same-extra', 'request-partial-open'])(
+    'lazy-v2 %s never grants',
+    async (mode) => {
+      let grants = 0;
+      const events = [];
+      const error = await run(mode, {
+        // Existing run() budget: prove bytes arrived, not fixture-startup expiry.
+        onProtocolDiagnostic(event) {
+          events.push(event);
+        },
+        onSessionNeeded() {
+          grants++;
+        },
+      }).catch((e) => e);
+      expect(events.some((event) => event.phase === 'request-data')).toBe(true);
+      expect(grants).toBe(0);
+      if (mode === 'request-partial-open') expect(error.context.reason).toBe('timeout');
+      else expect(error.privateSessionProtocolCorruption).toBe(true);
+    },
+  );
+  test.each(['postgrant-extra', 'stdout-late-extra'])(
+    'lazy-v2 %s fails after <=1 transfer and never publishes buffered fd3',
+    async (mode) => {
+      let grants = 0;
+      const updates = [];
+      const error = await run(mode, {
+        onSession: (u) => updates.push(u),
+        onSessionNeeded(c) {
+          grants++;
+          c.grant(input);
+        },
+      }).catch((e) => e);
+      expect(error.message).toBe('Invalid private session request');
+      expect(error.privateSessionProtocolCorruption).toBe(true);
+      expect(grants).toBe(1);
+      expect(
+        (await fs.readFile(path.join(directory, 'transfers'), 'utf8')).trim().split('\n'),
+      ).toHaveLength(1);
+      expect(updates).toEqual([]);
+      expect(JSON.stringify(error)).not.toContain(input.remix_userkey);
+      expect(JSON.stringify(error)).not.toContain('recovered-private-canary');
+    },
+  );
 });
 
 // Diagnostic only: never changes the product interpreter or v1 EOF contract.
@@ -980,5 +1066,56 @@ describe('native protocol launcher EOF discriminator', () => {
         errors: [],
       });
     }
+  });
+});
+
+describe('native protocol lazy-v2 exact demand decoder', () => {
+  const body = Buffer.from('{"type":"session_needed","terminal":true}');
+  const header = Buffer.from([0x5a, 0x4c, 0x41, 0x44, 2, 0, body.length]);
+  const wire = Buffer.concat([header, body]);
+  test('every header/body boundary and every-byte fragmentation commits once', async () => {
+    const { PrivateDemandDecoder } = await import('../dist/lib/python-runner.js');
+    for (let split = 1; split < wire.length; split++) {
+      const decoder = new PrivateDemandDecoder();
+      expect(decoder.push(wire.subarray(0, split))).toBe(false);
+      expect(decoder.push(wire.subarray(split))).toBe(true);
+      decoder.end();
+    }
+    const decoder = new PrivateDemandDecoder();
+    for (let i = 0; i < wire.length; i++)
+      expect(decoder.push(wire.subarray(i, i + 1))).toBe(i === wire.length - 1);
+    decoder.end();
+  });
+  test('wrong header/body/length and coalesced extra commands refuse before commit', async () => {
+    const { PrivateDemandDecoder } = await import('../dist/lib/python-runner.js');
+    const bad = [
+      Buffer.from('NOPE'),
+      Buffer.from('{\"v\":1,\"type\":\"session_needed\"}\n'),
+      Buffer.from([0x5a, 0x4c, 0x41, 0x44, 1]),
+      ...[0, 129, body.length - 1, body.length + 1].map((n) =>
+        Buffer.from([0x5a, 0x4c, 0x41, 0x44, 2, 0, n]),
+      ),
+      Buffer.from([0x5a, 0x4c, 0x41, 0x44, 2, 1, body.length]),
+      Buffer.concat([header, Buffer.from('{"terminal":true,"type":"session_needed"}')]),
+      Buffer.concat([header, Buffer.alloc(body.length, 0x78)]),
+      Buffer.concat([wire, wire]),
+      Buffer.concat([wire, Buffer.from('x')]),
+    ];
+    for (const bytes of bad) {
+      const decoder = new PrivateDemandDecoder();
+      expect(() => decoder.push(bytes)).toThrow('Invalid private session request');
+    }
+  });
+  test('partial EOF/close and delayed extra refuse; empty no-demand is valid', async () => {
+    const { PrivateDemandDecoder } = await import('../dist/lib/python-runner.js');
+    new PrivateDemandDecoder().end();
+    for (let split = 1; split < wire.length; split++) {
+      const decoder = new PrivateDemandDecoder();
+      decoder.push(wire.subarray(0, split));
+      expect(() => decoder.end()).toThrow('Invalid private session request');
+    }
+    const decoder = new PrivateDemandDecoder();
+    decoder.push(wire);
+    expect(() => decoder.push(Buffer.from('x'))).toThrow('Invalid private session request');
   });
 });

@@ -14,10 +14,12 @@ _lazy_session = False
 _session_published = None
 if __name__ == "__main__":
     _private_mode = os.environ.pop("ZLIBRARY_EAPI_CHANNEL", "")
-    if _private_mode in {"1", "lazy-v1"}:
+    if _private_mode and _private_mode not in {"1", "lazy-v2"}:
+        raise SystemExit("Invalid private session input") from None
+    if _private_mode in {"1", "lazy-v2"}:
         try:
             os.set_inheritable(3, False)
-            if _private_mode == "lazy-v1":
+            if _private_mode == "lazy-v2":
                 os.set_inheritable(4, False)
                 _lazy_session = True
             else:

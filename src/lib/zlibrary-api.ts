@@ -310,6 +310,8 @@ async function callPythonFunction(
             return resultData;
           } catch (caught: any) {
             let err = caught;
+            // Capture runner's internal corruption identity before owner replacement.
+            const protocolCorrupted = caught?.privateSessionProtocolCorruption === true;
             if (lazy) {
               rejectOperation(err);
               // An owner denial wins over the consequent child failure, but our
@@ -330,7 +332,19 @@ async function callPythonFunction(
                   details: { ...err.context?.details, request_issued: !!activeTransport },
                 };
             }
-            if (!['auth_rejected', 'login_failed'].includes(err?.context?.reason)) adoptUpdate();
+            if (protocolCorrupted) {
+              sessionUpdate = undefined; // No metadata adoption from corrupt fd3/fd4 streams.
+              err = new PythonBridgeError(
+                'Invalid private session protocol',
+                {
+                  functionName,
+                  reason: 'internal',
+                  details: { request_issued: !!activeTransport },
+                },
+                false,
+              );
+            } else if (!['auth_rejected', 'login_failed'].includes(err?.context?.reason))
+              adoptUpdate();
             // Never log or retain subprocess environments or internal bearer output.
             sanitizeSessionError(err, [
               configuredEnv.ZLIBRARY_EMAIL || '',
@@ -361,7 +375,11 @@ async function callPythonFunction(
                 {
                   functionName,
                   args,
-                  details: bridgeError.details,
+                  details: {
+                    ...err.context?.details,
+                    ...bridgeError.details,
+                    ...(activeTransport ? { request_issued: true } : {}),
+                  },
                   pythonErrorType: bridgeError.type,
                   stderr: err.stderr,
                   originalError: err,

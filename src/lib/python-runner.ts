@@ -378,6 +378,57 @@ export interface ProtocolDiagnostic {
   errno?: number;
 }
 
+/** Internal corruption identity; never a public error-code or payload carrier. */
+export class PrivateSessionProtocolError extends Error {
+  readonly privateSessionProtocolCorruption = true;
+  constructor(message: string) {
+    super(message);
+    this.name = 'PrivateSessionProtocolError';
+  }
+}
+
+const DEMAND_BODY = Buffer.from('{"type":"session_needed","terminal":true}', 'ascii');
+const DEMAND_MAGIC = Buffer.from('ZLAD', 'ascii');
+
+/** Internal lazy-v2 decoder: commit is logical readiness, NOT child success.
+ * Each complete delivered chunk must contain exactly one canonical transaction.
+ * Later bytes remain violations before AND after grant; EOF is only final drain.
+ */
+export class PrivateDemandDecoder {
+  private pending = Buffer.alloc(0);
+  private committed = false;
+  private terminal = false;
+
+  push(chunk: Buffer): boolean {
+    if (!chunk.length) return false;
+    const invalid = () => new PrivateSessionProtocolError('Invalid private session request');
+    if (this.committed || this.terminal) throw invalid();
+    if (this.pending.length + chunk.length > 7 + DEMAND_BODY.length) throw invalid();
+    this.pending = Buffer.concat([this.pending, chunk]);
+    const data = this.pending;
+    const magicLength = Math.min(4, data.length);
+    if (!data.subarray(0, magicLength).equals(DEMAND_MAGIC.subarray(0, magicLength)))
+      throw invalid();
+    if (data.length >= 5 && data[4] !== 2) throw invalid();
+    if (
+      data.length >= 7 &&
+      (data.readUInt16BE(5) > 128 || data.readUInt16BE(5) !== DEMAND_BODY.length)
+    )
+      throw invalid();
+    if (data.length < 7 + DEMAND_BODY.length) return false;
+    if (!data.subarray(7).equals(DEMAND_BODY)) throw invalid();
+    this.committed = true;
+    this.pending = Buffer.alloc(0);
+    return true;
+  }
+
+  end(): void {
+    if (this.pending.length)
+      throw new PrivateSessionProtocolError('Invalid private session request');
+    this.terminal = true;
+  }
+}
+
 export interface RunBridgeOptions {
   /** Wall-clock budget in ms. Defaults to DEFAULT_BRIDGE_TIMEOUT_MS. */
   timeoutMs?: number;
@@ -445,6 +496,10 @@ export function runPythonBridge(
     let cleanupCall = () => {};
     let failWith: (error: Error, why: string) => void = () => {};
     let childClosed = false;
+    let closeChild!: () => void;
+    const childCloseDone = new Promise<void>((done) => {
+      closeChild = done;
+    });
     let demanded = false;
     let granted = false;
     let diagnosticSequence = 0;
@@ -519,7 +574,7 @@ export function runPythonBridge(
             stdio: ['overlapped', 'pipe', 'pipe', 'pipe', 'pipe'],
             env: {
               ...options.env,
-              ZLIBRARY_EAPI_CHANNEL: 'lazy-v1',
+              ZLIBRARY_EAPI_CHANNEL: 'lazy-v2',
               ZLIBRARY_EAPI_HANDOFF_TIMEOUT_MS: String(timeoutMs),
             },
           }
@@ -532,6 +587,7 @@ export function runPythonBridge(
     shell.on('error', onShellError);
     shell.childProcess.once('close', () => {
       childClosed = true;
+      closeChild();
       diagnostic('child-close');
     });
     if (runOptions.onProtocolDiagnostic) {
@@ -554,44 +610,67 @@ export function runPythonBridge(
     }
     let privateDone = Promise.resolve();
     let requestDone = Promise.resolve();
+    let requestTerminal = Promise.resolve();
+    let privateUpdate: unknown;
+    let hasPrivateUpdate = false;
     if (runOptions.sessionInput || lazy) {
       const channel = shell.childProcess.stdio[3] as Readable;
       privateDone = new Promise<void>((done) => {
         let pending = '';
-        let delivered = false;
+        let terminal = false;
         channel.setEncoding('utf8');
         channel.on('data', (chunk: string) => {
           if (settled) return;
           if (lazy && !granted) {
-            failWith(new Error('Invalid private session response'), 'private channel');
+            failWith(
+              new PrivateSessionProtocolError('Invalid private session response'),
+              'private channel',
+            );
             return;
           }
           pending += chunk;
           if (Buffer.byteLength(pending) > 8192) {
             pending = '';
-            failWith(new Error('Invalid private session response'), 'private channel');
+            failWith(
+              new PrivateSessionProtocolError('Invalid private session response'),
+              'private channel',
+            );
             return;
           }
-          if (!pending.includes('\n')) return;
+          const newline = pending.indexOf('\n');
+          if (newline === -1) return;
           try {
-            if (delivered || pending.trim().split('\n').length !== 1) throw new Error();
-            delivered = true;
-            const update = JSON.parse(pending.trim());
-            if (typeof update?.remix_userkey === 'string')
-              privateSecrets.push(update.remix_userkey);
-            runOptions.onSession?.(update);
+            if (hasPrivateUpdate || newline !== pending.length - 1) throw new Error();
+            privateUpdate = JSON.parse(pending.slice(0, newline));
+            hasPrivateUpdate = true;
+            if (typeof (privateUpdate as any)?.remix_userkey === 'string')
+              privateSecrets.push((privateUpdate as any).remix_userkey);
             pending = '';
           } catch {
-            failWith(new Error('Invalid private session response'), 'private channel');
+            failWith(
+              new PrivateSessionProtocolError('Invalid private session response'),
+              'private channel',
+            );
           }
         });
-        channel.on('end', () => {
-          if (pending) failWith(new Error('Invalid private session response'), 'private channel');
+        const terminalPrivate = () => {
+          if (terminal) return;
+          terminal = true;
+          if (!settled && pending)
+            failWith(
+              new PrivateSessionProtocolError('Invalid private session response'),
+              'private channel',
+            );
           done();
-        });
+        };
+        channel.on('end', terminalPrivate);
+        channel.on('close', terminalPrivate);
         channel.on('error', () => {
-          done();
-          failWith(new Error('Private session channel closed'), 'private channel');
+          failWith(
+            new PrivateSessionProtocolError('Private session channel closed'),
+            'private channel',
+          );
+          terminalPrivate();
         });
       });
       shell.stdin.on('error', () => {}); // A dying leader may close stdin before reading.
@@ -600,46 +679,54 @@ export function runPythonBridge(
     }
     if (lazy) {
       const request = shell.childProcess.stdio[4] as Readable;
+      const decoder = new PrivateDemandDecoder();
+      let invalid = false;
+      let physicalTerminal = false;
+      let endRequest!: () => void;
+      requestTerminal = new Promise<void>((done) => {
+        endRequest = done;
+      });
       requestDone = new Promise<void>((done) => {
-        let pending = Buffer.alloc(0);
+        const corrupt = (message = 'Invalid private session request') => {
+          invalid = true;
+          done();
+          failWith(new PrivateSessionProtocolError(message), 'private request');
+        };
         request.on('data', (chunk: Buffer) => {
           diagnostic('request-data', chunk.length);
           if (settled) return;
-          pending = Buffer.concat([pending, chunk]);
-          if (pending.length > 128) {
-            pending = Buffer.alloc(0);
-            failWith(new Error('Invalid private session request'), 'private request');
-          }
-        });
-        request.on('end', () => {
-          diagnostic('request-end', pending.length);
           try {
-            if (!pending.length) return; // receipt hit: no authentication or stdin read
-            const frame = JSON.parse(pending.toString('utf8'));
-            if (
-              !pending.toString('utf8').endsWith('\n') ||
-              !frame ||
-              Object.keys(frame).sort().join(',') !== 'type,v' ||
-              frame.v !== 1 ||
-              frame.type !== 'session_needed'
-            )
-              throw new Error();
+            if (!decoder.push(chunk)) return;
             demanded = true;
             diagnostic('request-accepted');
-            if (settled) return;
+            done(); // Logical readiness only; physical drain still gates FINAL.
             runOptions.onSessionNeeded!({
               grant(input) {
-                if (settled) return;
+                if (
+                  settled ||
+                  invalid ||
+                  runOptions.signal?.aborted ||
+                  childClosed ||
+                  shell.childProcess.exitCode !== null ||
+                  shell.childProcess.signalCode !== null
+                )
+                  return;
                 if (granted) {
-                  failWith(new Error('Invalid private session handoff'), 'private grant');
+                  failWith(
+                    new PrivateSessionProtocolError('Invalid private session handoff'),
+                    'private grant',
+                  );
                   return;
                 }
                 const frame = JSON.stringify({ v: 1, type: 'session', input }) + '\n';
                 if (Buffer.byteLength(frame) > 8192) {
-                  failWith(new Error('Invalid private session handoff'), 'private grant');
+                  failWith(
+                    new PrivateSessionProtocolError('Invalid private session handoff'),
+                    'private grant',
+                  );
                   return;
                 }
-                granted = true;
+                granted = true; // Atomic once before the write; never replay.
                 diagnostic('grant');
                 if (typeof input.remix_userkey === 'string')
                   privateSecrets.push(input.remix_userkey);
@@ -655,17 +742,32 @@ export function runPythonBridge(
               },
             });
           } catch {
-            failWith(new Error('Invalid private session request'), 'private request');
-          } finally {
-            pending = Buffer.alloc(0);
-            done();
+            corrupt();
           }
         });
-        request.on('close', () => diagnostic('request-close'));
+        const terminalRequest = () => {
+          if (physicalTerminal) return;
+          physicalTerminal = true;
+          try {
+            if (!settled) decoder.end();
+          } catch {
+            corrupt();
+          }
+          done(); // Empty physical terminal is the receipt/no-demand case.
+          endRequest();
+        };
+        request.on('end', () => {
+          diagnostic('request-end');
+          terminalRequest();
+        });
+        request.on('close', () => {
+          diagnostic('request-close');
+          terminalRequest();
+        });
         request.on('error', (error) => {
           diagnostic('request-error', undefined, error);
-          done();
-          failWith(new Error('Private session request channel closed'), 'private request');
+          corrupt('Private session request channel closed');
+          terminalRequest();
         });
       });
     }
@@ -756,15 +858,30 @@ export function runPythonBridge(
     });
 
     const finish = async (err: any) => {
-      if (runOptions.sessionInput || lazy) await Promise.all([privateDone, requestDone]);
+      if (runOptions.sessionInput || lazy)
+        await Promise.all([childCloseDone, privateDone, requestDone, requestTerminal]);
       if (settled) {
         cleanupCall();
         monitorTree(treeRecord);
         return;
       }
       if (lazy && demanded && !granted) {
-        failWith(new Error('Private session handoff incomplete'), 'private grant');
+        failWith(
+          new PrivateSessionProtocolError('Private session handoff incomplete'),
+          'private grant',
+        );
         return;
+      }
+      if (hasPrivateUpdate) {
+        try {
+          runOptions.onSession?.(privateUpdate);
+        } catch {
+          failWith(
+            new PrivateSessionProtocolError('Invalid private session response'),
+            'private channel',
+          );
+          return;
+        }
       }
       settled = true;
       diagnostic('completion');

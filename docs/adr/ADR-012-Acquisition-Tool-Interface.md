@@ -68,9 +68,16 @@ even after issuance; quota-counting/unknown sources remain conservative. No retr
 hint authorizes automatic transfer replay or removes provider rate limits.
 
 Memory-mode Z-Library acquisitions now use the existing owner only after durable
-intent under the held leases. A bearer-free child sends one bounded `lazy-v1`
-`session_needed` request on fd4, then waits asynchronously for one operation grant
-plus EOF on stdin. Auth-only login/validate children remain under the existing
+intent under the held leases. A bearer-free child sends one bounded `lazy-v2`
+application-terminal request on fd4: `ZLAD`, version byte 2, uint16 big-endian
+length, then exact ASCII `{"type":"session_needed","terminal":true}`. It does not
+wait for fd4 OS EOF before one asynchronous operation grant plus EOF on stdin
+(the separate stdin v1 envelope is unchanged). Same-chunk and pregrant extra bytes
+invalidate before grant; postgrant extras abort/fail without replay and may already
+have issued quota. Logical readiness is not success: actual child close and physical
+private-channel drain still gate completion. Corrupt private streams never adopt
+buffered fd3 metadata; valid provider-error recovery remains adoptable. Parent-known
+handoff issuance cannot be erased by a child error envelope. Auth-only login/validate children remain under the existing
 singleflight owner. Its explicit at-most-once mode retains pregrant refresh but
 never reacquires/replays a granted transfer. The raw child outcome is decoded
 independently of owner completion, avoiding a promise cycle. Parent denial and
@@ -78,7 +85,8 @@ cancellation close pipes and reap private children; generation/account fences an
 redaction cover delivered and recovered keys. Receipt hits bypass the owner,
 including cooldown/missing credentials/pending login. Per-call mode is unchanged.
 
-The request is capped at 128 bytes, grant and legacy terminal update at 8192 bytes;
+The demand body is capped at 128 bytes with its exact canonical length enforced;
+grant and legacy terminal update remain capped at 8192 bytes;
 fd3 remains zero-or-one terminal update, never a request/response multiplex. The
 private descriptors are non-inheritable. Node overlapped stdin plus asyncio
 `connect_read_pipe` provides cancellable I/O on supported POSIX/Windows event loops

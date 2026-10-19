@@ -605,3 +605,71 @@ test('lazy non-auth uncertainty retains the session without operation replay', a
   await expect(lazyCall()).rejects.toThrow('Synthetic transfer timeout');
   await call(); expect(counts).toMatchObject({ login: 1, grants: 1, quota: 1 });
 });
+
+test('typed private corruption cannot adopt a valid update or become an owner/envelope provider error', async () => {
+  const counts = lazyBackend({
+    operation(input, ro, _counts, _finish, reject) {
+      ro.onSession({
+        ...session(input.generation, 'corrupted-private-canary', 'corrupted.example.test'),
+        validate_next: true,
+      });
+      reject(
+        Object.assign(new Error('Invalid private session request'), {
+          privateSessionProtocolCorruption: true,
+          stderr: JSON.stringify({
+            error: 'corrupted-private-canary',
+            type: 'ReadTimeout',
+            details: { reason: 'read_timeout', request_issued: false },
+          }),
+        }),
+      );
+    },
+  });
+  const error = await lazyCall().catch((e) => e);
+  expect(error.context).toMatchObject({ reason: 'internal', details: { request_issued: true } });
+  const { errorEnvelope } = await import('../dist/lib/tool-errors.js');
+  expect(errorEnvelope(error, 'download', 'zlibrary').error).toMatchObject({
+    code: 'internal',
+    retry: 'no',
+    detail: { request_issued: true },
+  });
+  runPythonBridge.mockImplementation(async (_s, _o, ro) => {
+    expect(ro.sessionInput.remix_userkey).toBe(token);
+    return envelope([]);
+  });
+  await call();
+  expect(counts).toMatchObject({ login: 1, grants: 1, quota: 1 });
+  expect(JSON.stringify(error)).not.toContain('corrupted-private-canary');
+});
+
+test.each([false, undefined])(
+  'parent handoff issuance wins child stderr request_issued=%s; valid recovery still adopts',
+  async (issued) => {
+    const counts = lazyBackend({
+      operation(input, ro, _counts, _finish, reject) {
+        ro.onSession(session(input.generation, 'valid-recovery-cookie', 'recovery.example.test'));
+        reject(
+          Object.assign(new Error('Synthetic provider failure'), {
+            stderr: JSON.stringify({
+              error: 'Synthetic provider failure',
+              type: 'ReadTimeout',
+              details: {
+                provider: 'zlibrary',
+                reason: 'read_timeout',
+                ...(issued === undefined ? {} : { request_issued: issued }),
+              },
+            }),
+          }),
+        );
+      },
+    });
+    const error = await lazyCall().catch((e) => e);
+    expect(error.context.details).toMatchObject({ reason: 'read_timeout', request_issued: true });
+    runPythonBridge.mockImplementation(async (_s, _o, ro) => {
+      expect(ro.sessionInput.remix_userkey).toBe('valid-recovery-cookie');
+      return envelope([]);
+    });
+    await call();
+    expect(counts).toMatchObject({ login: 1, grants: 1, quota: 1 });
+  },
+);

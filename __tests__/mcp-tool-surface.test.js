@@ -223,3 +223,72 @@ test.each(['invalid_argument', 'quota_exhausted'])('LibGen %s does not become au
   expect(failure.code).toBe(reason);
   expect(failure.info.retry).toBe('no');
 });
+
+test('lazy-v2 actual API/tool corruption is internal/no, issued after handoff, invalidates cached quota and never replays', async () => {
+  process.env.ZLIBRARY_SESSION_MODE = 'memory';
+  let grants = 0,
+    acquisitions = 0,
+    logins = 0;
+  run.mockImplementation(async (_script, options, ro) => {
+    const snapshot = ro.sessionInput;
+    if (snapshot?.action === 'login') {
+      logins++;
+      ro.onSession({
+        ...snapshot,
+        domain: 'offline.invalid',
+        remix_userid: '7',
+        remix_userkey: 'original-private-canary',
+      });
+      return encode({ authenticated: true });
+    }
+    if (options.args[0] === 'get_download_limits')
+      return encode({ daily_limit: 10, downloads_today: 3, daily_remaining: 7 });
+    if (options.args[0] === 'search') return encode({ books: [book] });
+    acquisitions++;
+    if (acquisitions > 1)
+      return encode({
+        path: '/offline/book.pdf',
+        bytes: 12,
+        verified: 'sha256',
+        reused: false,
+        transfer_skipped: true,
+        record: '/offline/book.pdf.acq.json',
+      });
+    return new Promise((_resolve, reject) =>
+      ro.onSessionNeeded({
+        grant(input) {
+          grants++;
+          ro.onSession({ ...input, remix_userkey: 'corrupted-private-canary' });
+          reject(
+            Object.assign(new Error('Invalid private session request'), {
+              privateSessionProtocolCorruption: true,
+              stderr: JSON.stringify({
+                error: 'corrupted-private-canary',
+                type: 'ReadTimeout',
+                details: { reason: 'read_timeout', request_issued: false },
+              }),
+            }),
+          );
+        },
+        deny: reject,
+      }),
+    );
+  });
+  await call('get_limits', { mode: 'live', sources: ['zlibrary'] });
+  const ref = (await call('search', { query: 'Book', sources: ['zlibrary'] })).rows[0].ref;
+  const failed = await call('download', { ref });
+  expect(failed.error).toMatchObject({
+    code: 'internal',
+    retry: 'no',
+    detail: { request_issued: true },
+  });
+  expect(acquisitions).toBe(1);
+  expect(grants).toBe(1);
+  const receipt = await call('download', { ref });
+  expect(receipt).not.toHaveProperty('error');
+  expect(receipt.transfer_skipped).toBe(true);
+  expect(receipt.quota_estimate).toBeUndefined();
+  expect(grants).toBe(1);
+  expect(logins).toBe(1);
+  expect(JSON.stringify(failed)).not.toContain('private-canary');
+});

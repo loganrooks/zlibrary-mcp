@@ -236,7 +236,7 @@ async def test_native_backend_process_exclusion_death_and_reacquisition(
 
             monkeypatch.setattr(acq, "_alive", forbidden)
             monkeypatch.setattr(acq, "_remove_stale", forbidden)
-            assert lock.read_bytes() == b""
+            assert lock.stat().st_size == 0
         with pytest.raises(acq.AcquisitionError) as error:
             async with acq.destination_lock(target, 0):
                 pytest.fail("other process did not exclude acquisition")

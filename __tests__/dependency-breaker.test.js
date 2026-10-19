@@ -279,7 +279,7 @@ test.each([
         {
           reason: 'login_failed',
           loginStatus,
-          pythonErrorType: 'HTTPStatusError',
+          pythonErrorType: 'EAPIAuthenticationError',
         },
         false,
       ),

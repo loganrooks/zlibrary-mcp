@@ -1,908 +1,173 @@
 #!/usr/bin/env node
-import { getSessionMode } from './lib/eapi-session.js';
-
-import type { ZodObject, ZodRawShape } from 'zod';
-import { z } from 'zod';
-// UV Migration Note: ensureVenvReady removed - user runs `uv sync` before build
-import * as fs from 'fs';
-import { appendFile as appendFileAsync, mkdir as mkdirAsync } from 'fs/promises';
-import * as path from 'path';
-import { fileURLToPath } from 'url';
-
-// Import SDK components using ESM syntax
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-
-// Import API handlers
-import * as zlibraryApi from './lib/zlibrary-api.js';
+import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import type { Tool } from '@modelcontextprotocol/sdk/types.js';
+import { z } from 'zod';
+import { AcquisitionTools, INPUTS } from './lib/acquisition-tools.js';
+import type { ToolName } from './lib/acquisition-tools.js';
+import { getSessionMode } from './lib/eapi-session.js';
+import { invokeAcquisitionBridge } from './lib/zlibrary-api.js';
 import { logger } from './lib/logger.js';
 
-// Recreate __dirname for ESM
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-// Define Zod schemas for tool parameters
-const SearchBooksParamsSchema = z.object({
-  query: z.string().describe('Search query'),
-  exact: z.boolean().optional().default(false).describe('Whether to perform an exact match search'),
-  fromYear: z.number().int().optional().describe('Filter by minimum publication year'),
-  toYear: z.number().int().optional().describe('Filter by maximum publication year'),
-  languages: z
-    .array(z.string())
-    .optional()
-    .default([])
-    .describe('Filter by languages (e.g., ["english", "russian"])'),
-  extensions: z
-    .array(z.string())
-    .optional()
-    .default([])
-    .describe('Filter by file extensions (e.g., ["pdf", "epub"])'),
-  content_types: z
-    .array(z.string())
-    .optional()
-    .default([])
-    .describe('Filter by content types (e.g., ["book", "article"])'),
-  count: z.number().int().optional().default(10).describe('Number of results to return per page'),
-});
-
-const FullTextSearchParamsSchema = z.object({
-  query: z.string().describe('Text to search for in book content'),
-  exact: z.boolean().optional().default(false).describe('Whether to perform an exact match search'),
-  phrase: z
-    .boolean()
-    .optional()
-    .default(true)
-    .describe('Whether to search for the exact phrase (requires at least 2 words)'),
-  words: z.boolean().optional().default(false).describe('Whether to search for individual words'),
-  languages: z
-    .array(z.string())
-    .optional()
-    .default([])
-    .describe('Filter by languages (e.g., ["english", "russian"])'),
-  extensions: z
-    .array(z.string())
-    .optional()
-    .default([])
-    .describe('Filter by file extensions (e.g., ["pdf", "epub"])'),
-  content_types: z
-    .array(z.string())
-    .optional()
-    .default([])
-    .describe('Filter by content types (e.g., ["book", "article"])'),
-  count: z.number().int().optional().default(10).describe('Number of results to return per page'),
-});
-
-const GetDownloadHistoryParamsSchema = z.object({
-  count: z.number().int().optional().default(10).describe('Number of results to return'),
-});
-
-const GetDownloadLimitsParamsSchema = z.object({});
-
-const GetRecentBooksParamsSchema = z.object({
-  count: z.number().int().positive().optional().default(10).describe('Number of books to return'),
-  format: z.string().optional().describe('Filter by file format (e.g., "pdf", "epub")'),
-});
-
-const DownloadBookToFileParamsSchema = z
-  .object({
-    bookDetails: z
-      .object({})
-      .loose()
-      .meta({ additionalProperties: true })
-      .describe('The full book details object obtained from search_books'),
-    outputDir: z
-      .string()
-      .optional()
-      .default('./downloads')
-      .describe('Directory to save the file to (default: "./downloads")'),
-  })
-  // Preserve raw saved-call fields for admitDownloadArgs. Zod's JSON-schema
-  // metadata closes the advertised top level without stripping those fields
-  // before our compatibility/unknown-key guard can give the intended error.
-  .loose()
-  .meta({ additionalProperties: false });
-
-const GetBookMetadataParamsSchema = z.object({
-  bookId: z.string().describe('Z-Library book ID'),
-  bookHash: z.string().describe('Book hash (can be extracted from book URL)'),
-  include: z
-    .array(z.enum(['terms', 'booklists', 'ipfs', 'ratings', 'description']))
-    .optional()
-    .describe(
-      'Optional field groups to include beyond core defaults. Core always includes: title, author, year, publisher, language, pages, isbn, rating, cover, categories, extension, filesize. Use include to add: terms (conceptual keywords), booklists (curated collections), ipfs (IPFS CIDs), ratings (quality_score), description (full text description).',
-    ),
-});
-
-const SearchByTermParamsSchema = z.object({
-  term: z.string().describe('Conceptual term to search for (e.g., "dialectic", "phenomenology")'),
-  yearFrom: z.number().int().optional().describe('Filter by minimum publication year'),
-  yearTo: z.number().int().optional().describe('Filter by maximum publication year'),
-  languages: z.array(z.string()).optional().default([]).describe('Filter by languages'),
-  extensions: z.array(z.string()).optional().default([]).describe('Filter by file extensions'),
-  count: z.number().int().optional().default(25).describe('Number of results to return'),
-});
-
-const SearchByAuthorParamsSchema = z.object({
-  author: z.string().describe('Author name (supports "Lastname, Firstname" format)'),
-  exact: z.boolean().optional().default(false).describe('Use exact author name matching'),
-  yearFrom: z.number().int().optional().describe('Filter by minimum publication year'),
-  yearTo: z.number().int().optional().describe('Filter by maximum publication year'),
-  languages: z.array(z.string()).optional().default([]).describe('Filter by languages'),
-  extensions: z.array(z.string()).optional().default([]).describe('Filter by file extensions'),
-  count: z.number().int().optional().default(25).describe('Number of results to return'),
-});
-
-const FetchBooklistParamsSchema = z.object({
-  booklistId: z.string().describe('Booklist ID from book metadata'),
-  booklistHash: z.string().describe('Booklist hash from book metadata'),
-  topic: z.string().describe('Booklist topic name'),
-  page: z.number().int().optional().default(1).describe('Page number for pagination'),
-});
-
-const SearchAdvancedParamsSchema = z.object({
-  query: z.string().describe('Search query'),
-  exact: z.boolean().optional().default(false).describe('Whether to perform exact match search'),
-  yearFrom: z.number().int().optional().describe('Filter by minimum publication year'),
-  yearTo: z.number().int().optional().describe('Filter by maximum publication year'),
-  count: z.number().int().optional().default(10).describe('Number of results to return'),
-});
-
-const SearchMultiSourceParamsSchema = z.object({
-  query: z.string().describe('Search query'),
-  source: z
-    .enum(['auto', 'annas', 'libgen'])
-    .optional()
-    .default('auto')
-    .describe(
-      "Source selection: auto (Anna's Archive if key available, else LibGen), annas (force Anna's Archive), or libgen (force LibGen)",
-    ),
-  count: z.number().int().optional().default(10).describe('Maximum number of results to return'),
-});
-
-// ============================================================================
-// Tool Annotations (MCP Best Practice - helps AI assistants make better decisions)
-// ============================================================================
-
-interface ToolAnnotations {
-  readOnlyHint?: boolean;
-  destructiveHint?: boolean;
-  idempotentHint?: boolean;
-  openWorldHint?: boolean;
-  title?: string;
-}
-
-const toolAnnotations: Record<string, ToolAnnotations> = {
-  search_books: {
-    readOnlyHint: true,
-    idempotentHint: true,
-    openWorldHint: true,
-    title: 'Search Books',
-  },
-  full_text_search: {
-    readOnlyHint: true,
-    idempotentHint: true,
-    openWorldHint: true,
-    title: 'Full Text Search',
-  },
-  get_download_history: {
-    readOnlyHint: true,
-    idempotentHint: false,
-    openWorldHint: true,
-    title: 'Download History',
-  },
-  get_download_limits: {
-    readOnlyHint: true,
-    idempotentHint: false,
-    openWorldHint: true,
-    title: 'Download Limits',
-  },
-  download_book_to_file: {
-    readOnlyHint: false,
-    destructiveHint: false,
-    idempotentHint: false,
-    openWorldHint: true,
-    title: 'Download Book',
-  },
-  get_book_metadata: {
-    readOnlyHint: true,
-    idempotentHint: true,
-    openWorldHint: true,
-    title: 'Book Metadata',
-  },
-  search_by_term: {
-    readOnlyHint: true,
-    idempotentHint: true,
-    openWorldHint: true,
-    title: 'Search by Term',
-  },
-  search_by_author: {
-    readOnlyHint: true,
-    idempotentHint: true,
-    openWorldHint: true,
-    title: 'Search by Author',
-  },
-  fetch_booklist: {
-    readOnlyHint: true,
-    idempotentHint: true,
-    openWorldHint: true,
-    title: 'Fetch Booklist',
-  },
-  search_advanced: {
-    readOnlyHint: true,
-    idempotentHint: true,
-    openWorldHint: true,
-    title: 'Advanced Search',
-  },
-  search_multi_source: {
-    readOnlyHint: true,
-    idempotentHint: true,
-    openWorldHint: true,
-    title: 'Multi-Source Search',
+const descriptions: Record<ToolName, string> = {
+  search:
+    'Metadata, not book text. Give query and/or author; exact covers both. sources is ordered: libgen needs no account/quota; zlibrary needs an account, downloads spend quota; annas searches without a key, downloads with one. Defaults: get_limits. Use refs. Refs last this process and 5,000 recent entries; on ref_unavailable search and choose again. Pass cursor alone: replay fetches the same position; pages are re-queried, not frozen.',
+  get_book:
+    'Edition evidence for a ref. Zlibrary costs one detail call; others return held rows. Description capped at 1,000 characters.',
+  download:
+    'Download a ref to server disk: path, bytes and record sidecar, not text. Repeats at the same destination re-hash sha256 and skip an intact copy without quota; different output_dir or filename transfers again. Local O_EXCL locks coalesce processes.',
+  get_limits:
+    'Capabilities and default source order. mode:local (default) costs no network. mode:live fetches account numbers for named sources; only zlibrary costs an account call. Other clients can change estimates; errors are per source.',
+  get_history:
+    'Zlibrary account history in source order. Not local files. Refs last this process and 5,000 entries; search again if unavailable. Pass cursor alone: replay fetches the same position; pages are not frozen.',
+};
+// Wire schemas describe each arm; the richer closed-code validator also runs independently.
+const errorShape = {
+  required: ['error'],
+  properties: {
+    error: {
+      type: 'object',
+      required: ['code', 'operation', 'message', 'retry', 'recovery', 'attempts', 'detail'],
+      properties: {
+        code: { type: 'string' },
+        retry: { enum: ['safe', 'may_spend_quota', 'no'] },
+        message: { type: 'string' },
+        attempts: { type: 'array', items: { type: 'object' } },
+        detail: { type: 'object' },
+      },
+    },
   },
 };
-
-// ============================================================================
-// Tool handler implementations
-// ============================================================================
-
-/**
- * Cancellation context for a tool call.
- *
- * Every handler takes it, not just the multi-source ones: the subprocess
- * budget bounds a hung call, but only the client's own signal ends one the
- * client has already stopped waiting for. Without it a cancelled download
- * keeps running for up to PYTHON_BRIDGE_LONG_TIMEOUT with nobody to receive
- * the result.
- */
-interface HandlerOptions {
-  signal?: AbortSignal;
-}
-
-interface HandlerMap {
-  [key: string]: (args: any, options?: HandlerOptions) => Promise<any>;
-  searchBooks: (args: any, options?: HandlerOptions) => Promise<any>;
-  fullTextSearch: (args: any, options?: HandlerOptions) => Promise<any>;
-  getDownloadHistory: (args: any, options?: HandlerOptions) => Promise<any>;
-  getDownloadLimits: (args: any, options?: HandlerOptions) => Promise<any>;
-  downloadBookToFile: (args: any, options?: HandlerOptions) => Promise<any>;
-  getBookMetadata: (args: any, options?: HandlerOptions) => Promise<any>;
-  searchByTerm: (args: any, options?: HandlerOptions) => Promise<any>;
-  searchByAuthor: (args: any, options?: HandlerOptions) => Promise<any>;
-  fetchBooklist: (args: any, options?: HandlerOptions) => Promise<any>;
-  searchAdvanced: (args: any, options?: HandlerOptions) => Promise<any>;
-  searchMultiSource: (args: any, options?: HandlerOptions) => Promise<any>;
-}
-
-const handlers: HandlerMap = {
-  searchBooks: async (
-    args: z.infer<typeof SearchBooksParamsSchema>,
-    options: HandlerOptions = {},
-  ) => {
-    try {
-      const searchBooksReceivedArgsLog = `[${new Date().toISOString()}] [src/index.ts] searchBooks handler received Zod-parsed args: ${JSON.stringify(args)}\n`;
-      logger.debug(searchBooksReceivedArgsLog.trim());
-      try {
-        const logFilePath = path.resolve(__dirname, '..', 'logs', 'nodejs_debug.log');
-        await mkdirAsync(path.dirname(logFilePath), { recursive: true });
-        await appendFileAsync(logFilePath, searchBooksReceivedArgsLog);
-      } catch (e) {
-        console.error('Failed to write to logs/nodejs_debug.log', e);
-      }
-      const apiArgs = {
-        query: args.query,
-        exact: args.exact,
-        fromYear: args.fromYear,
-        toYear: args.toYear,
-        languages: args.languages,
-        extensions: args.extensions,
-        content_types: args.content_types,
-        count: args.count,
-      };
-      const searchBooksSendingLog = `[${new Date().toISOString()}] [src/index.ts] searchBooks handler sending to zlibraryApi: ${JSON.stringify(apiArgs)}\n`;
-      logger.debug(searchBooksSendingLog.trim());
-      try {
-        const logFilePath = path.resolve(__dirname, '..', 'logs', 'nodejs_debug.log');
-        await appendFileAsync(logFilePath, searchBooksSendingLog);
-      } catch (e) {
-        console.error('Failed to write to logs/nodejs_debug.log', e);
-      }
-      return await zlibraryApi.searchBooks(apiArgs, options);
-    } catch (error: any) {
-      return { error: { message: error.message || 'Failed to search books' } };
-    }
+const successShapes: Record<ToolName, Record<string, any>> = {
+  search: {
+    required: ['rows', 'routing'],
+    properties: {
+      rows: { type: 'array', items: { type: 'object', required: ['ref', 'source'] } },
+      routing: { type: 'object', required: ['requested', 'attempts', 'fell_back'] },
+      next_cursor: { type: 'string' },
+      note: { type: 'string' },
+    },
   },
-
-  fullTextSearch: async (
-    args: z.infer<typeof FullTextSearchParamsSchema>,
-    options: HandlerOptions = {},
-  ) => {
-    try {
-      const ftsReceivedArgsLog = `[${new Date().toISOString()}] [src/index.ts] fullTextSearch handler received Zod-parsed args: ${JSON.stringify(args)}\n`;
-      logger.debug(ftsReceivedArgsLog.trim());
-      try {
-        const logFilePath = path.resolve(__dirname, '..', 'logs', 'nodejs_debug.log');
-        await mkdirAsync(path.dirname(logFilePath), { recursive: true });
-        await appendFileAsync(logFilePath, ftsReceivedArgsLog);
-      } catch (e) {
-        console.error('Failed to write to logs/nodejs_debug.log', e);
-      }
-      const apiArgsFTS = {
-        query: args.query,
-        exact: args.exact,
-        phrase: args.phrase,
-        words: args.words,
-        languages: args.languages,
-        extensions: args.extensions,
-        content_types: args.content_types,
-        count: args.count,
-      };
-      const ftsSendingLog = `[${new Date().toISOString()}] [src/index.ts] fullTextSearch handler sending to zlibraryApi: ${JSON.stringify(apiArgsFTS)}\n`;
-      logger.debug(ftsSendingLog.trim());
-      try {
-        const logFilePath = path.resolve(__dirname, '..', 'logs', 'nodejs_debug.log');
-        await appendFileAsync(logFilePath, ftsSendingLog);
-      } catch (e) {
-        console.error('Failed to write to logs/nodejs_debug.log', e);
-      }
-      return await zlibraryApi.fullTextSearch(apiArgsFTS, options);
-    } catch (error: any) {
-      return { error: { message: error.message || 'Failed to perform full text search' } };
-    }
+  get_book: {
+    required: ['ref', 'source', 'identifiers', 'evidence'],
+    properties: {
+      ref: { type: 'string' },
+      identifiers: { type: 'object' },
+      evidence: { type: 'object' },
+      description: { type: 'string', maxLength: 1000 },
+    },
   },
-
-  getDownloadHistory: async (
-    args: z.infer<typeof GetDownloadHistoryParamsSchema>,
-    options: HandlerOptions = {},
-  ) => {
-    try {
-      return await zlibraryApi.getDownloadHistory(args, options);
-    } catch (error: any) {
-      return { error: { message: error.message || 'Failed to get download history' } };
-    }
+  download: {
+    required: ['path', 'bytes', 'reused', 'transfer_skipped', 'verified', 'record'],
+    properties: {
+      path: { type: 'string' },
+      bytes: { type: 'integer', minimum: 0 },
+      reused: { type: 'boolean' },
+      transfer_skipped: { type: 'boolean' },
+      verified: { const: 'sha256' },
+      record: { type: 'string' },
+      quota_estimate: { type: 'object' },
+    },
   },
-
-  getDownloadLimits: async (_args: unknown, options: HandlerOptions = {}) => {
-    try {
-      return await zlibraryApi.getDownloadLimits(options);
-    } catch (error: any) {
-      return { error: { message: error.message || 'Failed to get download limits' } };
-    }
+  get_limits: {
+    required: ['sources'],
+    properties: {
+      sources: { type: 'object' },
+      default_order: { type: 'array', items: { type: 'string' } },
+    },
   },
+  get_history: {
+    required: ['rows'],
+    properties: {
+      rows: { type: 'array', items: { type: 'object' } },
+      next_cursor: { type: 'string' },
+    },
+  },
+};
+export const TOOL_DEFINITIONS: Tool[] = (Object.keys(INPUTS) as ToolName[]).map((name) => {
+  const json = z.toJSONSchema(INPUTS[name]);
+  delete json.$schema;
+  if ((json.properties as any)?.sources) (json.properties as any).sources.uniqueItems = true;
+  return {
+    name,
+    description: descriptions[name],
+    inputSchema: json as Tool['inputSchema'],
+    outputSchema: {
+      type: 'object',
+      oneOf: [{ ...successShapes[name], not: { required: ['error'] } }, errorShape],
+    },
+    annotations: {
+      readOnlyHint: name !== 'download',
+      ...(name === 'download' ? { destructiveHint: false } : {}),
+      idempotentHint: ['search', 'get_book', 'download'].includes(name),
+      openWorldHint: true,
+    },
+  };
+});
 
-  downloadBookToFile: async (
-    args: z.infer<typeof DownloadBookToFileParamsSchema>,
-    options: HandlerOptions = {},
-  ) => {
-    try {
-      return await zlibraryApi.downloadBookToFile(args, options);
-    } catch (error: any) {
-      const details = error?.context?.details;
+/** Lower-level SDK dispatch retains typed errors for invalid schemas and removed names. */
+class AcquisitionServer extends Server {
+  private definitions: Tool[] = [];
+  readonly tools = new AcquisitionTools(invokeAcquisitionBridge);
+  constructor() {
+    super(
+      { name: 'book-acquisition', version: getPackageVersion() },
+      { capabilities: { tools: {} } },
+    );
+    this.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: this.definitions }));
+    this.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
+      const result = await this.tools.call(request.params.name, request.params.arguments ?? {}, {
+        signal: extra.signal,
+      });
       return {
-        error: {
-          message: error.message || 'Failed to download book',
-          ...(details === undefined ? {} : { details }),
-        },
+        content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+        structuredContent: result,
+        ...(result.error ? { isError: true } : {}),
       };
-    }
-  },
-
-  getBookMetadata: async (
-    args: z.infer<typeof GetBookMetadataParamsSchema>,
-    options: HandlerOptions = {},
-  ) => {
-    try {
-      return await zlibraryApi.getBookMetadata(args.bookId, args.bookHash, args.include, options);
-    } catch (error: any) {
-      return { error: { message: error.message || 'Failed to get book metadata' } };
-    }
-  },
-
-  searchByTerm: async (
-    args: z.infer<typeof SearchByTermParamsSchema>,
-    options: HandlerOptions = {},
-  ) => {
-    try {
-      return await zlibraryApi.searchByTerm(
-        {
-          term: args.term,
-          yearFrom: args.yearFrom,
-          yearTo: args.yearTo,
-          languages: args.languages,
-          extensions: args.extensions,
-          limit: args.count,
-        },
-        options,
-      );
-    } catch (error: any) {
-      return { error: { message: error.message || 'Failed to search by term' } };
-    }
-  },
-
-  searchByAuthor: async (
-    args: z.infer<typeof SearchByAuthorParamsSchema>,
-    options: HandlerOptions = {},
-  ) => {
-    try {
-      return await zlibraryApi.searchByAuthor(
-        {
-          author: args.author,
-          exact: args.exact,
-          yearFrom: args.yearFrom,
-          yearTo: args.yearTo,
-          languages: args.languages,
-          extensions: args.extensions,
-          limit: args.count,
-        },
-        options,
-      );
-    } catch (error: any) {
-      return { error: { message: error.message || 'Failed to search by author' } };
-    }
-  },
-
-  fetchBooklist: async (
-    args: z.infer<typeof FetchBooklistParamsSchema>,
-    options: HandlerOptions = {},
-  ) => {
-    try {
-      return await zlibraryApi.fetchBooklist(
-        {
-          booklistId: args.booklistId,
-          booklistHash: args.booklistHash,
-          topic: args.topic,
-          page: args.page,
-        },
-        options,
-      );
-    } catch (error: any) {
-      return { error: { message: error.message || 'Failed to fetch booklist' } };
-    }
-  },
-
-  searchAdvanced: async (
-    args: z.infer<typeof SearchAdvancedParamsSchema>,
-    options: HandlerOptions = {},
-  ) => {
-    try {
-      return await zlibraryApi.searchAdvanced(
-        {
-          query: args.query,
-          exact: args.exact,
-          yearFrom: args.yearFrom,
-          yearTo: args.yearTo,
-          count: args.count,
-        },
-        options,
-      );
-    } catch (error: any) {
-      return { error: { message: error.message || 'Failed to perform advanced search' } };
-    }
-  },
-
-  searchMultiSource: async (
-    args: z.infer<typeof SearchMultiSourceParamsSchema>,
-    options: HandlerOptions = {},
-  ) => {
-    try {
-      return await zlibraryApi.searchMultiSource(
-        {
-          query: args.query,
-          source: args.source,
-          count: args.count,
-        },
-        { signal: options.signal },
-      );
-    } catch (error: any) {
-      // Provider failures name which source failed and why. The Python bridge
-      // puts that on stderr as `details`; surface it rather than flattening
-      // everything to one sentence, because "annas could not be resolved" and
-      // "libgen did not accept a connection" call for different responses.
-      const details = error?.context?.details;
-      return {
-        error: {
-          message: error.message || 'Failed to search multi-source',
-          ...(details === undefined ? {} : { details }),
-        },
-      };
-    }
-  },
-};
-
-// ============================================================================
-// Legacy compatibility exports (used by existing tests - will be updated in 03-02)
-// ============================================================================
-
-interface ToolRegistryEntry {
-  description: string;
-  schema: ZodObject<ZodRawShape>;
-  handler?: (args: any) => Promise<any>;
+    });
+  }
+  registerTool(name: ToolName) {
+    this.definitions.push(TOOL_DEFINITIONS.find((t) => t.name === name)!);
+  }
 }
-
-const toolRegistry: Record<string, ToolRegistryEntry> = {
-  search_books: {
-    description: 'Search for books in Z-Library',
-    schema: SearchBooksParamsSchema,
-    handler: handlers.searchBooks,
-  },
-  full_text_search: {
-    description: 'Full text search in book content',
-    schema: FullTextSearchParamsSchema,
-    handler: handlers.fullTextSearch,
-  },
-  get_download_history: {
-    description: 'Get download history',
-    schema: GetDownloadHistoryParamsSchema,
-    handler: handlers.getDownloadHistory,
-  },
-  get_download_limits: {
-    description: 'Get download limits',
-    schema: GetDownloadLimitsParamsSchema,
-    handler: handlers.getDownloadLimits,
-  },
-  get_recent_books: { description: 'Get recently added books', schema: GetRecentBooksParamsSchema },
-  download_book_to_file: {
-    description: 'Download a book and return its local file path.',
-    schema: DownloadBookToFileParamsSchema,
-    handler: handlers.downloadBookToFile,
-  },
-  get_book_metadata: {
-    description: 'Get book metadata',
-    schema: GetBookMetadataParamsSchema,
-    handler: handlers.getBookMetadata,
-  },
-  search_by_term: {
-    description: 'Search by conceptual term',
-    schema: SearchByTermParamsSchema,
-    handler: handlers.searchByTerm,
-  },
-  search_by_author: {
-    description: 'Search by author',
-    schema: SearchByAuthorParamsSchema,
-    handler: handlers.searchByAuthor,
-  },
-  fetch_booklist: {
-    description: 'Fetch booklist',
-    schema: FetchBooklistParamsSchema,
-    handler: handlers.fetchBooklist,
-  },
-  search_advanced: {
-    description: 'Advanced search',
-    schema: SearchAdvancedParamsSchema,
-    handler: handlers.searchAdvanced,
-  },
-  search_multi_source: {
-    description: 'Multi-source search',
-    schema: SearchMultiSourceParamsSchema,
-    handler: handlers.searchMultiSource,
-  },
-};
-
-// ============================================================================
-// Helper functions
-// ============================================================================
-
+export function createServer(): AcquisitionServer {
+  getSessionMode();
+  const server = new AcquisitionServer();
+  server.registerTool('search');
+  server.registerTool('get_book');
+  server.registerTool('download');
+  server.registerTool('get_limits');
+  server.registerTool('get_history');
+  return server;
+}
 function getPackageVersion(): string {
   try {
-    const packageJsonPath = path.resolve(__dirname, '..', 'package.json');
-    const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
-    return packageJson.version || 'unknown';
-  } catch (error: any) {
-    console.warn('Could not read package.json for version:', error.message);
+    return JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
+  } catch {
     return 'unknown';
   }
 }
-
-// Helper to wrap handler results in MCP content format
-function wrapResult(result: any, toolName: string) {
-  if (result && typeof result === 'object' && 'error' in result && result.error) {
-    return {
-      content: [
-        {
-          type: 'text' as const,
-          text: `Error from tool "${toolName}": ${result.error.message || result.error}`,
-        },
-      ],
-      structuredContent: result,
-      isError: true as const,
-    };
-  }
-  if (result === null || typeof result !== 'object') {
-    return {
-      content: [
-        {
-          type: 'text' as const,
-          text: `Error from tool "${toolName}": Invalid backend result: expected an object or array.`,
-        },
-      ],
-      isError: true as const,
-    };
-  }
-  // MCP requires structuredContent to be a record; a bare array (get_download_history
-  // returns one) is rejected by clients with invalid_type: "expected record,
-  // received array" before the caller ever sees the data. Keep the JSON text
-  // payload byte-identical and wrap only the structured mirror.
-  const structured = Array.isArray(result) ? { items: result } : result;
-  return {
-    content: [{ type: 'text' as const, text: JSON.stringify(result) }],
-    structuredContent: structured,
-  };
-}
-
-// ============================================================================
-// Server setup
-// ============================================================================
-
-/**
- * Check Z-Library credentials before server startup.
- *
- * Missing credentials are a warning, not a fatal error: since v1.4.0 the
- * LibGen source needs none, so `search_multi_source` and downloads of its
- * results work on a bare install. Exiting here would make a working,
- * unlimited source unreachable because an unrelated one was unconfigured.
- * Z-Library tools still fail with their own clear error when invoked.
- */
-function validateCredentials(): void {
-  const email = process.env.ZLIBRARY_EMAIL;
-  const password = process.env.ZLIBRARY_PASSWORD;
-
-  if (!email || !password) {
-    const missing: string[] = [];
-    if (!email) missing.push('ZLIBRARY_EMAIL');
-    if (!password) missing.push('ZLIBRARY_PASSWORD');
-
-    logger.warn(
-      `Missing environment variable(s): ${missing.join(', ')} — ` +
-        `Z-Library tools (search_books, full_text_search, get_download_limits, ` +
-        `download history) will fail when called. LibGen is unaffected: use ` +
-        `search_multi_source with source="libgen" and pass results to ` +
-        `download_book_to_file. To enable Z-Library, set "env": ` +
-        `{"ZLIBRARY_EMAIL": "...", "ZLIBRARY_PASSWORD": "..."} in your MCP ` +
-        `client configuration. See README.md.`,
-    );
-  }
-}
-
-interface StartOptions {
-  testing?: boolean;
-}
-
-export function createServer(): McpServer {
-  getSessionMode(); // Reject unknown privacy modes before accepting any requests.
-  // Instantiate the McpServer
-  const server = new McpServer({
-    name: 'zlibrary-mcp',
-    version: getPackageVersion(),
-  });
-
-  // ========================================================================
-  // Register the twelve acquisition tools
-  // ========================================================================
-
-  // Helper to get annotations with proper typing
-  const ann = (name: string) => toolAnnotations[name] as ToolAnnotations;
-
-  // Every handler below receives `extra.signal`, which aborts when the client
-  // cancels or times out the request. Passing it down is what turns that
-  // cancellation into a killed subprocess instead of one still running
-  // against a dead provider with nobody left to receive the result.
-
-  // 1. search_books
-  server.tool(
-    'search_books',
-    'Search for books in Z-Library by title, author, or keywords. Returns matching books with metadata including title (string), author (string), name, authors (array), year, format, and file size. Use exact=true for precise title matching. Filter results by year range, language, or file format.',
-    SearchBooksParamsSchema.shape,
-    ann('search_books'),
-    async (args, extra) =>
-      wrapResult(
-        await handlers.searchBooks(args as any, { signal: extra?.signal }),
-        'search_books',
-      ),
-  );
-
-  // 2. full_text_search
-  server.tool(
-    'full_text_search',
-    'Search for books containing specific text within their content. Returns books with title (string), author (string), name, authors (array), and other metadata. Useful for finding books that discuss particular topics, quotes, or concepts.',
-    FullTextSearchParamsSchema.shape,
-    ann('full_text_search'),
-    async (args, extra) =>
-      wrapResult(
-        await handlers.fullTextSearch(args as any, { signal: extra?.signal }),
-        'full_text_search',
-      ),
-  );
-
-  // 3. get_download_history
-  server.tool(
-    'get_download_history',
-    "Get the user's Z-Library download history. Returns a list of previously downloaded books with their metadata.",
-    GetDownloadHistoryParamsSchema.shape,
-    ann('get_download_history'),
-    async (args, extra) =>
-      wrapResult(
-        await handlers.getDownloadHistory(args as any, { signal: extra?.signal }),
-        'get_download_history',
-      ),
-  );
-
-  // 4. get_download_limits
-  server.tool(
-    'get_download_limits',
-    "Get the user's current Z-Library download limits. Shows daily download quota, downloads used today, and remaining downloads.",
-    GetDownloadLimitsParamsSchema.shape,
-    ann('get_download_limits'),
-    async (_args, extra) =>
-      wrapResult(
-        await handlers.getDownloadLimits(_args, { signal: extra?.signal }),
-        'get_download_limits',
-      ),
-  );
-
-  // 5. get_recent_books
-  server.tool(
-    'get_recent_books',
-    'Get recently added books to Z-Library. Optionally filter by file format.',
-    GetRecentBooksParamsSchema.shape,
-    ann('search_books'),
-    async (args, extra) => {
-      try {
-        const result = await zlibraryApi.getRecentBooks(args, {
-          signal: extra?.signal,
-        });
-        return wrapResult(result, 'get_recent_books');
-      } catch (error: any) {
-        return {
-          content: [{ type: 'text' as const, text: `Error: ${error.message}` }],
-          isError: true,
-        };
-      }
-    },
-  );
-
-  // 6. download_book_to_file
-  server.registerTool(
-    'download_book_to_file',
-    {
-      description:
-        'Download a book to a local file. Pass the full bookDetails object from search results. Returns the original file_path; does not extract text.',
-      inputSchema: DownloadBookToFileParamsSchema,
-      annotations: ann('download_book_to_file'),
-    },
-    async (args, extra) =>
-      wrapResult(
-        await handlers.downloadBookToFile(args as any, { signal: extra?.signal }),
-        'download_book_to_file',
-      ),
-  );
-
-  // 8. get_book_metadata
-  server.tool(
-    'get_book_metadata',
-    'Get metadata for a book. By default returns core fields (title, author, year, publisher, language, pages, isbn, rating, cover, categories). Use the include parameter to add optional field groups: terms (60+ conceptual keywords), booklists (11+ curated collections), ipfs (IPFS CIDs), ratings (quality score), description (full text). Requires bookId and bookHash from search results.',
-    GetBookMetadataParamsSchema.shape,
-    ann('get_book_metadata'),
-    async (args, extra) =>
-      wrapResult(
-        await handlers.getBookMetadata(args as any, { signal: extra?.signal }),
-        'get_book_metadata',
-      ),
-  );
-
-  // 9. search_by_term
-  server.tool(
-    'search_by_term',
-    'Search for books by conceptual term (e.g., "phenomenology", "dialectic", "epistemology"). Returns books with title (string), author (string), and other metadata. Books in Z-Library are tagged with 60+ conceptual terms.',
-    SearchByTermParamsSchema.shape,
-    ann('search_by_term'),
-    async (args, extra) =>
-      wrapResult(
-        await handlers.searchByTerm(args as any, { signal: extra?.signal }),
-        'search_by_term',
-      ),
-  );
-
-  // 10. search_by_author
-  server.tool(
-    'search_by_author',
-    'Advanced author search with support for various name formats. Returns books with title (string), author (string), and other metadata. Use exact=true for precise matching. Filter by publication year, language, or file format.',
-    SearchByAuthorParamsSchema.shape,
-    ann('search_by_author'),
-    async (args, extra) =>
-      wrapResult(
-        await handlers.searchByAuthor(args as any, { signal: extra?.signal }),
-        'search_by_author',
-      ),
-  );
-
-  // 11. fetch_booklist
-  server.tool(
-    'fetch_booklist',
-    'Fetch books from an expert-curated booklist. Z-Library books belong to 11+ booklists with up to 954 books per list. Get booklist IDs from get_book_metadata.',
-    FetchBooklistParamsSchema.shape,
-    ann('fetch_booklist'),
-    async (args, extra) =>
-      wrapResult(
-        await handlers.fetchBooklist(args as any, { signal: extra?.signal }),
-        'fetch_booklist',
-      ),
-  );
-
-  // 12. search_advanced
-  server.tool(
-    'search_advanced',
-    'Advanced search with automatic separation of exact matches from fuzzy/approximate matches. Returns two arrays: exact_matches and fuzzy_matches, each containing books with title (string), author (string), and other metadata.',
-    SearchAdvancedParamsSchema.shape,
-    ann('search_advanced'),
-    async (args, extra) =>
-      wrapResult(
-        await handlers.searchAdvanced(args as any, { signal: extra?.signal }),
-        'search_advanced',
-      ),
-  );
-
-  // 13. search_multi_source
-  server.tool(
-    'search_multi_source',
-    "Search for books across Anna's Archive and LibGen. Alternative to Z-Library EAPI. Returns books with md5, title, author, year, extension, size, source, download_url. Use source=auto to prefer Anna's Archive with LibGen fallback, or force a specific source.",
-    SearchMultiSourceParamsSchema.shape,
-    ann('search_multi_source'),
-    async (args, extra) =>
-      wrapResult(
-        await handlers.searchMultiSource(args as any, { signal: extra?.signal }),
-        'search_multi_source',
-      ),
-  );
-
-  return server;
-}
-
-async function start(
-  opts: StartOptions = {},
-): Promise<{ server: McpServer; transport: StdioServerTransport } | null> {
+export async function start(opts: { testing?: boolean } = {}) {
   try {
-    // Validate credentials before anything else (skip in test mode)
-    if (!opts.testing) {
-      validateCredentials();
-    }
-
-    // Ensure the logs directory exists
-    try {
-      await mkdirAsync(path.resolve(__dirname, '..', 'logs'), { recursive: true });
-      logger.debug("Log directory 'logs/' ensured.");
-    } catch (dirError: any) {
-      console.error("Failed to create 'logs/' directory:", dirError.message);
-    }
-
+    if (!opts.testing && (!process.env.ZLIBRARY_EMAIL || !process.env.ZLIBRARY_PASSWORD))
+      logger.warn(
+        'Z-Library account is not configured; LibGen remains available without an account. See get_limits.',
+      );
     const server = createServer();
-
-    // Create and connect the Stdio transport
     const transport = new StdioServerTransport();
     await server.connect(transport);
-    logger.info('Z-Library MCP server (ESM/TS) is running via Stdio...');
-
+    logger.info('Book acquisition MCP server is running via Stdio.');
     return { server, transport };
-  } catch (error: any) {
-    console.error('Failed to start MCP server:', error);
-
-    if (opts.testing !== true) {
-      process.exit(1);
-    }
+  } catch (error) {
+    logger.error('Failed to start book acquisition server', error);
+    if (!opts.testing) process.exitCode = 1;
     return null;
   }
 }
-
-/**
- * Whether this module is the process entry point (as opposed to being imported).
- *
- * The original check compared `import.meta.url` against a `file://` URL built by
- * string concatenation from `process.argv[1]`. That is never equal on Windows:
- * `argv[1]` is a backslash path (`C:\app\dist\index.js`) while `import.meta.url`
- * is percent-encoded with forward slashes (`file:///C:/app/dist/index.js`), so
- * the server never auto-started and the client saw an immediate exit.
- *
- * Comparing resolved filesystem paths is correct on every platform. Exported so
- * both operands can be exercised in tests without spawning a process.
- */
 export function isProcessEntryPoint(moduleUrl: string, argv1: string | undefined): boolean {
   if (!argv1) return false;
   // npm installs the `zlibrary-mcp` bin as a symlink into <prefix>/bin, so
@@ -926,13 +191,6 @@ export function isProcessEntryPoint(moduleUrl: string, argv1: string | undefined
   }
 }
 
-// Auto-start logic
 if (isProcessEntryPoint(import.meta.url, process.argv[1])) {
-  start().catch((err) => {
-    console.error('Fatal error starting server:', err);
-    process.exit(1);
-  });
+  void start();
 }
-
-// Export necessary components for testing
-export { start, handlers, toolRegistry };

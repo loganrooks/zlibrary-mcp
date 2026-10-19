@@ -15,15 +15,15 @@ afterAll(async () => {
 test('E1 explicit cookie rejection with overlapping callers records one new epoch', async () => {
   await h.scenario('E1', async (connect) => {
     const c = await connect();
-    await h.call(c, 'search_books', { query: 'warm' });
+    await h.call(c, 'search', { sources: ['zlibrary'], query: 'warm' });
     const before = await h.stats();
     await h.mode({ mode: 'healthy', reject_epoch: true });
     const replies = await Promise.all(
       Array.from({ length: 5 }, (_, i) =>
-        h.call(c, 'search_books', { query: `refresh-${i}` }, true),
+        h.call(c, 'search', { sources: ['zlibrary'], query: `refresh-${i}` }, true),
       ),
     );
-    replies.forEach((r, i) => expect(r.books[0].title).toBe(`Rehearsal refresh-${i}`));
+    replies.forEach((r, i) => expect(r.rows[0].title).toBe(`Rehearsal refresh-${i}`));
     const after = await h.stats();
     observations.refresh = after.logins - before.logins;
     expect(after.loginSuccesses - before.loginSuccesses).toBe(observations.refresh);
@@ -39,14 +39,14 @@ for (const mode of ['timeout', 'wall', 'ambiguous400', 'success0']) {
       `E2-${mode}`,
       async (connect) => {
         const c = await connect();
-        await h.call(c, 'search_books', { query: 'warm' });
+        await h.call(c, 'search', { sources: ['zlibrary'], query: 'warm' });
         const before = await h.stats();
         await h.mode({ mode });
-        const reply = await h.call(c, 'search_books', { query: 'ambiguous' }, true);
+        const reply = await h.call(c, 'search', { sources: ['zlibrary'], query: 'ambiguous' }, true);
         // success:0 is silently normalized to empty books on master; retain that observation.
-        expect(Boolean(reply.error) || reply.books?.length === 0).toBe(true);
+        expect(Boolean(reply.error) || reply.rows?.length === 0).toBe(true);
         await h.mode({ mode: 'healthy' });
-        expect((await h.call(c, 'search_books', { query: 'recovered' })).books[0].title).toBe(
+        expect((await h.call(c, 'search', { sources: ['zlibrary'], query: 'recovered' })).rows[0].title).toBe(
           'Rehearsal recovered',
         );
         observations[mode] = (await h.stats()).logins - before.logins;
@@ -63,7 +63,7 @@ test('E3 invalid login stops at the configured zero-retry budget', async () => {
   await h.scenario('E3', async (connect) => {
     const c = await connect();
     await h.mode({ mode: 'login400' });
-    expect((await h.call(c, 'search_books', { query: 'invalid' }, true)).error).toBeDefined();
+    expect((await h.call(c, 'search', { sources: ['zlibrary'], query: 'invalid' }, true)).error).toBeDefined();
     expect(await h.stats()).toMatchObject({ logins: 1, loginSuccesses: 0 });
   });
 });
@@ -73,9 +73,7 @@ test('TLS control rejects the disposable certificate when trust is not passed', 
     'TLS-untrusted',
     async (connect) => {
       const c = await connect();
-      expect((await h.call(c, 'search_books', { query: 'untrusted' }, true)).error.message).toMatch(
-        /certificate|SSL/i,
-      );
+      expect((await h.call(c, 'search', { sources: ['zlibrary'], query: 'untrusted' }, true)).error.code).toMatch(/internal|provider_unreachable/);
       expect((await h.stats()).logins).toBe(0);
     },
     { untrusted: true },

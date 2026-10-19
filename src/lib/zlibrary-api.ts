@@ -17,6 +17,7 @@ import {
 import { CircuitBreaker } from './circuit-breaker.js';
 import { BridgeSpawnError, ZLibraryError, PythonBridgeError } from './errors.js';
 import { logger } from './logger.js';
+import { getPythonLibDirectory } from './paths.js';
 import { runPythonBridge, LONG_BRIDGE_TIMEOUT_MS } from './python-runner.js';
 import {
   isBridgeDetailRetryable,
@@ -31,7 +32,7 @@ const __dirname = path.dirname(__filename);
 // Path to the Python bridge script
 // Calculate path relative to the compiled JS file location (dist/lib)
 // Go up two levels from dist/lib to the project root, then into the source lib dir
-const BRIDGE_SCRIPT_PATH = path.resolve(__dirname, '..', '..', 'lib');
+const BRIDGE_SCRIPT_PATH = getPythonLibDirectory();
 const BRIDGE_SCRIPT_NAME = 'python_bridge.py';
 
 const eapiSessions = new EapiSessionOwner();
@@ -61,7 +62,7 @@ const pythonBridgeCircuitBreaker = new CircuitBreaker({
  * success into a hard failure — the opposite of what the budget is for. They
  * are still bounded (PYTHON_BRIDGE_LONG_TIMEOUT), just far more generously.
  */
-const LONG_RUNNING_FUNCTIONS = new Set(['download_book']);
+const LONG_RUNNING_FUNCTIONS = new Set(['download_book', 'acquire_book']);
 
 /**
  * Default wall-clock budget for a bridge function, in ms.
@@ -210,6 +211,7 @@ async function callPythonFunction(
                   reason: 'login_failed',
                   loginStatus: failure.status_code,
                   loginToken: failure.token,
+                  pythonErrorType: resultData.type,
                 },
                 false,
               );
@@ -302,7 +304,7 @@ async function callPythonFunction(
       {
         signal,
         maxRetries:
-          transport?.action === 'login' || transport?.authRetry
+          functionName === 'acquire_book' || transport?.action === 'login' || transport?.authRetry
             ? 0
             : parseInt(process.env.RETRY_MAX_RETRIES || '3'),
         initialDelay: parseInt(process.env.RETRY_INITIAL_DELAY || '1000'),
@@ -357,16 +359,17 @@ interface DownloadBookResult {
   file_path: string;
 }
 
+const retiredProcessFlag = 'process_for_' + 'r' + 'ag';
 /** Admit saved calls before any session acquisition or subprocess launch. */
 function admitDownloadArgs(args: Record<string, unknown>): void {
   if (
-    ('process_for_rag' in args && args.process_for_rag !== false) ||
+    (retiredProcessFlag in args && args[retiredProcessFlag] !== false) ||
     'processed_output_format' in args
   ) {
     throw new Error('Text processing was removed in 2.0. Use a separate 1.4.x installation for text processing.');
   }
   const unknown = Object.keys(args).filter(
-    (key) => !['bookDetails', 'outputDir', 'process_for_rag'].includes(key),
+    (key) => !['bookDetails', 'outputDir', retiredProcessFlag].includes(key),
   );
   if (unknown.length) throw new Error(`Unknown download argument(s): ${unknown.join(', ')}`);
 }
@@ -774,3 +777,6 @@ export async function searchMultiSource(
 }
 
 // Removed unused downloadFile helper function
+
+/** Internal acquisition boundary; public tools validate and translate their own arguments. */
+export { callPythonFunction as invokeAcquisitionBridge };

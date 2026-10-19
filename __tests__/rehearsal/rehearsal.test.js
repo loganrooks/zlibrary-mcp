@@ -16,27 +16,24 @@ afterAll(async () => {
 test('S1 sequential calls preserve identity and download exact bytes inside temp storage', async () => {
   await h.scenario('S1', async (connect) => {
     const c = await connect();
-    const search = await h.call(c, 'search_books', { query: 'sequential' });
-    expect(search.books).toHaveLength(1);
-    expect(search.books[0].title).toBe('Rehearsal sequential');
-    const metadata = await h.call(c, 'get_book_metadata', {
-      bookId: '101',
-      bookHash: 'hash101',
-      include: ['description'],
+    const search = await h.call(c, 'search', { sources: ['zlibrary'], query: 'sequential' });
+    expect(search.rows).toHaveLength(1);
+    expect(search.rows[0].title).toBe('Rehearsal sequential');
+    const metadata = await h.call(c, 'get_book', {
+      ref: search.rows[0].ref,
     });
     expect(metadata.description).toBe('Details for rehearsal book 101');
-    const limits = await h.call(c, 'get_download_limits');
-    expect(limits).toMatchObject({ daily_limit: 10, daily_remaining: 7 });
-    const result = await h.call(c, 'download_book_to_file', {
-      bookDetails: search.books[0],
-      outputDir: h.downloads,
-      process_for_rag: false,
+    const limits = await h.call(c, 'get_limits', { mode: 'live', sources: ['zlibrary'] });
+    expect(limits.sources.zlibrary.limit).toMatchObject({ per_day: 10, remaining: 7 });
+    const result = await h.call(c, 'download', {
+      ref: search.rows[0].ref,
+      output_dir: h.downloads,
     });
-    const file = await realpath(result.file_path);
+    const file = await realpath(result.path);
     expect(file.startsWith((await realpath(h.downloads)) + path.sep)).toBe(true);
     expect(await readFile(file, 'utf8')).toBe('Offline rehearsal book 101.\n');
-    const history = await h.call(c, 'get_download_history', { count: 1 });
-    expect(history[0].id).toBe('101');
+    const history = await h.call(c, 'get_history', { limit: 1 });
+    expect(history.rows[0].ref).toBeDefined();
   });
 });
 
@@ -44,8 +41,8 @@ test('S2 five concurrent slow/fast calls correlate; count logins independently',
   await h.scenario('S2', async (connect) => {
     const c = await connect();
     const queries = ['slow-first', 'fast-second', 'slow-third', 'fast-fourth', 'fast-fifth'];
-    const replies = await Promise.all(queries.map((query) => h.call(c, 'search_books', { query })));
-    replies.forEach((reply, i) => expect(reply.books[0].title).toBe(`Rehearsal ${queries[i]}`));
+    const replies = await Promise.all(queries.map((query) => h.call(c, 'search', { query, sources: ['zlibrary'] })));
+    replies.forEach((reply, i) => expect(reply.rows[0].title).toBe(`Rehearsal ${queries[i]}`));
     const stats = await h.stats();
     expect(h.sessions).toHaveLength(1);
     expect(h.sessions[0].transport.pid).toBe(h.sessions[0].pid);
@@ -69,9 +66,9 @@ test('S3 two independent server processes each return their own results', async 
   await h.scenario('S3', async (connect) => {
     const clients = await Promise.all([connect(), connect()]);
     const replies = await Promise.all(
-      clients.map((c, i) => h.call(c, 'search_books', { query: `host-${i}` })),
+      clients.map((c, i) => h.call(c, 'search', { sources: ['zlibrary'], query: `host-${i}` })),
     );
-    replies.forEach((r, i) => expect(r.books[0].title).toBe(`Rehearsal host-${i}`));
+    replies.forEach((r, i) => expect(r.rows[0].title).toBe(`Rehearsal host-${i}`));
     expect((await h.stats()).logins).toBe(2);
   });
 });
@@ -86,10 +83,8 @@ test('S4 authentication outage respects the selected login policy; listing survi
       const started = Date.now();
       let cooldownStart;
       for (let i = 0; i < 5; i++) {
-        const reply = await h.call(c, 'get_download_limits', {}, true);
-        expect(reply.error.message).toMatch(
-          reuse ? /rejected the login|authentication/i : /401|authentication/i,
-        );
+        const reply = { error: (await h.call(c, 'get_limits', { mode: 'live', sources: ['zlibrary'] })).sources.zlibrary.error };
+        expect(['auth_failed', 'breaker_open']).toContain(reply.error.code);
         if (reuse) {
           const stats = await h.stats();
           expect(stats.logins).toBeGreaterThan(0);
@@ -100,10 +95,8 @@ test('S4 authentication outage respects the selected login policy; listing survi
         }
       }
       const before = await h.stats();
-      const blocked = await h.call(c, 'get_download_limits', {}, true);
-      expect(blocked.error.message).toMatch(
-        reuse ? /rejected the login|authentication/i : /circuit breaker.*open/i,
-      );
+      const blocked = { error: (await h.call(c, 'get_limits', { mode: 'live', sources: ['zlibrary'] })).sources.zlibrary.error };
+      expect(blocked.error.code).toBe('breaker_open');
       expect(await h.stats()).toEqual(before);
       const cooldownObservedMs = Date.now() - started;
       // v3's first failed-login window is 30 seconds; do not cross its expiry.
@@ -116,8 +109,8 @@ test('S4 authentication outage respects the selected login policy; listing survi
       expect((await c.listTools()).tools.length).toBeGreaterThan(0);
       alternateResult = await h.call(
         c,
-        'search_multi_source',
-        { query: 'fixture', source: 'libgen', count: 1 },
+        'search',
+        { query: 'fixture', sources: ['libgen'], limit: 1 },
         true,
       );
       h.note('S4', {
@@ -152,12 +145,11 @@ test('S5 capture observed tool names and argument names (not an approved surface
     const surface = listed.tools
       .map((t) => ({ name: t.name, arguments: Object.keys(t.inputSchema.properties ?? {}).sort() }))
       .sort((a, b) => a.name.localeCompare(b.name));
-    expect(surface.some((t) => t.name === 'search_books' && t.arguments.includes('query'))).toBe(
+    expect(surface.some((t) => t.name === 'search' && t.arguments.includes('query'))).toBe(
       true,
     );
-    expect(surface).toEqual(
-      JSON.parse(await readFile(new URL('./tools-surface.json', import.meta.url), 'utf8')),
-    );
+    expect(surface.map(t => t.name)).toEqual(['download', 'get_book', 'get_history', 'get_limits', 'search']);
+    expect(JSON.stringify(listed).length).toBeLessThan(6500);
     await h.captureSurface(surface);
   });
 });
@@ -179,10 +171,9 @@ test('C5 fake rejects a search without cookies', async () => {
 
 sourceSurvivalTest('S4 Library Genesis search survives authentication failures', () => {
   expect(alternateResult.error).toBeUndefined();
-  expect(alternateResult.books[0]).toMatchObject({
+  expect(alternateResult.rows[0]).toMatchObject({
     title: 'Rehearsal LibGen fixture',
     source: 'libgen',
-    md5: '0123456789abcdef0123456789abcdef',
   });
 });
 test('S6 healthy Library Genesis search reaches the real parser and fixture', async () => {
@@ -190,19 +181,52 @@ test('S6 healthy Library Genesis search reaches the real parser and fixture', as
     'S6',
     async (connect) => {
       const c = await connect();
-      const result = await h.call(c, 'search_multi_source', {
+      const result = await h.call(c, 'search', {
         query: 'fixture',
-        source: 'libgen',
-        count: 1,
+        sources: ['libgen'],
+        limit: 1,
       });
-      expect(result.books[0]).toMatchObject({
+      expect(result.rows[0]).toMatchObject({
         title: 'Rehearsal LibGen fixture',
         source: 'libgen',
-        md5: '0123456789abcdef0123456789abcdef',
-      });
+          });
       expect((await h.stats()).calls['/libgen/index.php']).toBe(1);
       expect((await h.stats()).logins).toBe(0);
     },
     { libgen: true },
   );
+});
+
+test('I1 five-tool download repeat hashes disk and avoids authentication and transfer', async () => {
+  await h.scenario('I1', async connect => {
+    const c = await connect();
+    const found = await h.call(c, 'search', { query: 'receipt', sources: ['zlibrary'], limit: 1 });
+    const args = { ref: found.rows[0].ref, output_dir: h.downloads };
+    const first = await h.call(c, 'download', args);
+    const before = await h.stats();
+    const repeat = await h.call(c, 'download', args);
+    expect(repeat).toMatchObject({ path: first.path, transfer_skipped: true, reused: false, verified: 'sha256' });
+    expect(await h.stats()).toEqual(before);
+    const record = JSON.parse(await readFile(repeat.record, 'utf8'));
+    expect(record).toMatchObject({ state: 'complete', record_version: 1, identifiers: { id: '101', hash: 'hash101' } });
+  });
+});
+test('I2 lost-reply cursor replay repeats position and local limits cost no upstream call', async () => {
+  await h.scenario('I2', async connect => {
+    const c = await connect();
+    const before = await h.stats();
+    await h.call(c, 'get_limits', {});
+    const missing = await h.call(c, 'search', { query: 'cursor' }, true);
+    expect(missing.error.code).toBe('sources_required');
+    expect(await h.stats()).toEqual(before);
+    const first = await h.call(c, 'search', { query: 'cursor', sources: ['zlibrary'], limit: 1 });
+    const cursor = first.next_cursor;
+    const lost = await h.call(c, 'search', { cursor });
+    const replay = await h.call(c, 'search', { cursor });
+    expect(replay.rows.map(r => r.title)).toEqual(lost.rows.map(r => r.title));
+    const at = await h.stats();
+    const invalid = await h.call(c, 'search', { cursor, limit: 2 }, true);
+    expect(invalid.error.code).toBe('invalid_argument');
+    expect(await h.stats()).toEqual(at);
+  });
 });

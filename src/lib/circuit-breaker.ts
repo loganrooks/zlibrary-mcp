@@ -48,7 +48,16 @@ export class CircuitBreaker {
       if (this.lastFailureTime && Date.now() - this.lastFailureTime > this.timeout) {
         this.transitionTo('HALF_OPEN');
       } else {
-        throw new Error('Circuit breaker is OPEN');
+        throw Object.assign(new Error('Circuit breaker is OPEN'), {
+          code: 'CIRCUIT_BREAKER_OPEN',
+          context: {
+            retryAfterMs: Math.max(
+              0,
+              this.timeout - (Date.now() - (this.lastFailureTime ?? Date.now())),
+            ),
+            details: { reason: 'breaker_open', request_issued: false },
+          },
+        });
       }
     }
 
@@ -105,7 +114,7 @@ export class CircuitBreaker {
       console.error('Circuit breaker opened due to repeated failures', {
         failureCount: this.failureCount,
         threshold: this.threshold,
-        lastFailureTime: new Date(this.lastFailureTime).toISOString()
+        lastFailureTime: new Date(this.lastFailureTime).toISOString(),
       });
     }
   }

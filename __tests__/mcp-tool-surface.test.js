@@ -1,334 +1,78 @@
-import { jest, beforeEach, afterEach, test, expect } from '@jest/globals';
-
-// These fixtures describe a single per-call subprocess, not private acquisition.
-let previousSessionMode;
-beforeEach(() => {
-  previousSessionMode = process.env.ZLIBRARY_SESSION_MODE;
-  process.env.ZLIBRARY_SESSION_MODE = 'per-call';
-});
-afterEach(() => {
-  if (previousSessionMode === undefined) delete process.env.ZLIBRARY_SESSION_MODE;
-  else process.env.ZLIBRARY_SESSION_MODE = previousSessionMode;
-});
+import { jest, test, expect, beforeEach, afterEach } from '@jest/globals';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-import { CallToolResultSchema } from '@modelcontextprotocol/sdk/types.js';
-
-// The result tests keep the API facade and SDK real, replacing only the
-// subprocess/environment boundary. One dispatch-only test supplies the missing
-// recent-books export so its registration can be checked before #171 lands.
-const runBridge = jest.fn();
-jest.unstable_mockModule('../lib/venv-manager.js', () => ({
-  getManagedPythonPath: jest.fn().mockResolvedValue('/offline/python'),
-}));
-jest.unstable_mockModule('../lib/python-runner.js', () => ({
-  runPythonBridge: runBridge,
-  LONG_BRIDGE_TIMEOUT_MS: 2400000,
-}));
-
-const cases = {
-  search_books: [{ query: 'offline' }, 'search', { books: [] }],
-  full_text_search: [{ query: 'offline phrase' }, 'full_text_search', { books: [] }],
-  get_download_history: [{ count: 1 }, 'get_download_history', []],
-  get_download_limits: [{}, 'get_download_limits', { daily_limit: 10, remaining: 10 }],
-  get_recent_books: [{ count: 1 }, 'get_recent_books', { books: [] }],
-  download_book_to_file: [
-    { bookDetails: { id: '1', hash: 'offline' } },
-    'download_book',
-    { file_path: '/offline/book.pdf' },
-  ],
-  get_book_metadata: [
-    { bookId: '1', bookHash: 'offline' },
-    'get_book_metadata_complete',
-    { title: 'Offline' },
-  ],
-  search_by_term: [{ term: 'offline' }, 'search_by_term_bridge', { books: [] }],
-  search_by_author: [{ author: 'offline' }, 'search_by_author_bridge', { books: [] }],
-  fetch_booklist: [
-    { booklistId: '1', booklistHash: 'offline', topic: 'offline' },
-    'fetch_booklist_bridge',
-    { books: [] },
-  ],
-  search_advanced: [
-    { query: 'offline' },
-    'search_advanced',
-    { exact_matches: [], fuzzy_matches: [] },
-  ],
-  search_multi_source: [
-    { query: 'offline', source: 'libgen' },
-    'search_multi_source',
-    { books: [] },
-  ],
-};
-
-// Literal expectations describe the Python boundary, independently of the
-// schemas/facade under test. JSON normalization omits undefined year filters.
-const expectedBridgeArgs = {
-  search_books: {
-    query: 'offline', exact: false, from_year: null, to_year: null,
-    languages: [], extensions: [], content_types: [], count: 10,
-  },
-  full_text_search: {
-    query: 'offline phrase', exact: false, phrase: true, words: false,
-    languages: [], extensions: [], content_types: [], count: 10,
-  },
-  get_download_history: { count: 1 },
-  get_download_limits: {},
-  get_recent_books: { count: 1 },
-  download_book_to_file: {
-    book_details: { id: '1', hash: 'offline' }, output_dir: './downloads',
-  },
-  get_book_metadata: { book_id: '1', book_hash: 'offline' },
-  search_by_term: { term: 'offline', languages: [], extensions: [], limit: 25 },
-  search_by_author: {
-    author: 'offline', exact: false, languages: [], extensions: [], limit: 25,
-  },
-  fetch_booklist: { booklist_id: '1', booklist_hash: 'offline', topic: 'offline', page: 1 },
-  search_advanced: { query: 'offline', exact: false, count: 10 },
-  search_multi_source: { query: 'offline', source: 'libgen', count: 10 },
-};
-
-// Non-default values make dropped optional fields observable even where the
-// facade would otherwise reconstruct a missing field's default value.
-const forwardingCases = [
-  {
-    name: 'search_books',
-    args: {
-      query: 'filtered books', exact: true, fromYear: 1900, toYear: 1950,
-      languages: ['english'], extensions: ['pdf'], content_types: ['book'], count: 3,
-    },
-    expectedArgs: {
-      query: 'filtered books', exact: true, from_year: 1900, to_year: 1950,
-      languages: ['english'], extensions: ['pdf'], content_types: ['book'], count: 3,
-    },
-  },
-  {
-    name: 'full_text_search',
-    args: {
-      query: 'filtered phrase', exact: true, phrase: false, words: true,
-      languages: ['french'], extensions: ['epub'], content_types: ['article'], count: 4,
-    },
-    expectedArgs: {
-      query: 'filtered phrase', exact: true, phrase: false, words: true,
-      languages: ['french'], extensions: ['epub'], content_types: ['article'], count: 4,
-    },
-  },
-  {
-    name: 'download_book_to_file',
-    args: {
-      bookDetails: { id: '2', hash: 'other', title: 'Preserved details' },
-      outputDir: '/offline/downloads',
-    },
-    expectedArgs: {
-      book_details: { id: '2', hash: 'other', title: 'Preserved details' },
-      output_dir: '/offline/downloads',
-    },
-    payload: { file_path: '/offline/book.pdf' },
-  },
-  {
-    name: 'search_by_term',
-    args: {
-      term: 'filtered term', yearFrom: 1800, yearTo: 1899,
-      languages: ['german'], extensions: ['pdf'], count: 2,
-    },
-    expectedArgs: {
-      term: 'filtered term', year_from: 1800, year_to: 1899,
-      languages: ['german'], extensions: ['pdf'], limit: 2,
-    },
-  },
-  {
-    name: 'search_by_author',
-    args: {
-      author: 'Filtered Author', exact: true, yearFrom: 1980, yearTo: 2020,
-      languages: ['english'], extensions: ['epub'], count: 3,
-    },
-    expectedArgs: {
-      author: 'Filtered Author', exact: true, year_from: 1980, year_to: 2020,
-      languages: ['english'], extensions: ['epub'], limit: 3,
-    },
-  },
-  {
-    name: 'fetch_booklist',
-    args: { booklistId: '2', booklistHash: 'other', topic: 'other topic', page: 2 },
-    expectedArgs: { booklist_id: '2', booklist_hash: 'other', topic: 'other topic', page: 2 },
-  },
-  {
-    name: 'search_advanced',
-    args: { query: 'filtered advanced', exact: true, yearFrom: 2001, yearTo: 2021, count: 4 },
-    expectedArgs: { query: 'filtered advanced', exact: true, from_year: 2001, to_year: 2021, count: 4 },
-  },
-  {
-    name: 'search_multi_source',
-    args: { query: 'other sources', source: 'auto', count: 5 },
-    expectedArgs: { query: 'other sources', source: 'auto', count: 5 },
-  },
-];
-
-// Measured at ec91a32 with SDK 1.30.0; each tool gets 10% headroom.
-const characterBaselines = {
-  search_books: 1588,
-  full_text_search: 1517,
-  get_download_history: 542,
-  get_download_limits: 417,
-  get_recent_books: 585,
-  download_book_to_file: 1097,
-  get_book_metadata: 1323,
-  search_by_term: 1265,
-  search_by_author: 1346,
-  fetch_booklist: 848,
-  search_advanced: 1092,
-  search_multi_source: 993,
-};
-
-let client;
-let server;
-let advertised;
-async function connectServer(apiOverrides) {
-  await client?.close();
-  await server?.close();
-  jest.resetModules();
-  jest.unstable_unmockModule('../lib/zlibrary-api.js');
-  if (apiOverrides) {
-    const actualApi = await import('../dist/lib/zlibrary-api.js');
-    jest.unstable_mockModule('../lib/zlibrary-api.js', () => ({ ...actualApi, ...apiOverrides }));
-  }
-  const { createServer } = await import('../dist/index.js');
-  expect(typeof createServer).toBe('function');
-  server = createServer();
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  client = new Client({ name: 'surface-oracle', version: '1.0.0' });
-  await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
-  advertised = await client.listTools();
-}
+import { AjvJsonSchemaValidator } from '@modelcontextprotocol/sdk/validation/ajv';
+import { ErrorEnvelopeSchema } from '../dist/lib/tool-errors.js';
+const run = jest.fn();
+jest.unstable_mockModule('../lib/venv-manager.js', () => ({ getManagedPythonPath: async () => '/offline/python' }));
+jest.unstable_mockModule('../lib/python-runner.js', () => ({ runPythonBridge: run, LONG_BRIDGE_TIMEOUT_MS: 2400000 }));
+const { createServer } = await import('../dist/index.js');
+let server, client, previous;
+const book = { id: '1', hash: 'abc', title: 'Book', author: 'Author', extension: 'pdf', source: 'zlibrary' };
+const encode = value => [JSON.stringify({ content: [{ type: 'text', text: JSON.stringify(value) }] })];
 beforeEach(async () => {
-  runBridge.mockReset();
-  await connectServer();
+  previous = { ...process.env };
+  process.env.ZLIBRARY_SESSION_MODE = 'per-call';
+  process.env.ZLIBRARY_EMAIL = 'offline@example.invalid'; process.env.ZLIBRARY_PASSWORD = 'offline-password';
+  process.env.RETRY_MAX_RETRIES = '3';
+  run.mockReset();
+  server = createServer(); client = new Client({ name: 'boundary', version: '1' });
+  const [a, b] = InMemoryTransport.createLinkedPair();
+  await Promise.all([client.connect(a), server.connect(b)]);
 });
-afterEach(async () => {
-  await client?.close();
-  await server?.close();
-  client = server = undefined;
+afterEach(async () => { await client.close(); await server.close(); process.env = previous; });
+const call = async (name, args = {}) => (await client.callTool({ name, arguments: args })).structuredContent;
+test('tools/list stays under 6500 characters with success/error output schemas', async () => {
+  const list = await client.listTools();
+  expect(JSON.stringify(list).length).toBeLessThan(6500);
+  expect(list.tools.map(t => t.name)).toEqual(['search', 'get_book', 'download', 'get_limits', 'get_history']);
+  for (const t of list.tools) expect(t.outputSchema.oneOf).toHaveLength(2);
 });
-
-test('tools/list has a fixture for every advertised tool and bounded schema cost', () => {
-  // Catches new unexercised tools and schema/description bloat. Baseline from
-  // #196: 13,346 total characters at f779ee3; ±10% is the accepted envelope.
-  expect(advertised.tools.map((tool) => tool.name).sort()).toEqual(Object.keys(cases).sort());
-  const total = JSON.stringify(advertised).length;
-  expect(total).toBeGreaterThanOrEqual(Math.floor(12613 * 0.9));
-  expect(total).toBeLessThanOrEqual(Math.ceil(12613 * 1.1));
-  for (const tool of advertised.tools) {
-    expect(JSON.stringify(tool).length).toBeLessThanOrEqual(
-      Math.ceil(characterBaselines[tool.name] * 1.1),
-    );
-  }
+test('search forwards all normalized filters, author, limit and page through the real facade', async () => {
+  run.mockResolvedValue(encode({ books: [book] }));
+  const result = await call('search', { query: 'title', author: 'Writer', sources: ['zlibrary'], exact: true, year_from: 1900, year_to: 2000, languages: ['english'], formats: ['pdf'], limit: 3 });
+  expect(JSON.parse(run.mock.calls[0][1].args[1])).toEqual({ query: 'title', author: 'Writer', exact: true, from_year: 1900, to_year: 2000, languages: ['english'], extensions: ['pdf'], count: 3, page: 1 });
+  expect(result.rows[0]).toMatchObject({ title: 'Book', source: 'zlibrary' });
+  expect(result.rows[0].id).toBeUndefined();
 });
-
-async function callAdvertised(name, payloadOverride, fixtureOverride) {
-  // A missing or miswired registration must not pass merely because an error
-  // envelope is schema-valid: require successful dispatch to the real facade.
-  expect(advertised.tools.some((tool) => tool.name === name)).toBe(true);
-  const [defaultArgs, operation, defaultPayload] = cases[name];
-  const args = fixtureOverride?.args ?? defaultArgs;
-  const expectedArgs = fixtureOverride?.expectedArgs ?? expectedBridgeArgs[name];
-  const payload = payloadOverride ?? defaultPayload;
-  runBridge.mockResolvedValue([
-    JSON.stringify({ content: [{ type: 'text', text: JSON.stringify(payload) }] }),
-  ]);
-  const request = new AbortController();
-  const result = await client.callTool(
-    { name, arguments: args }, CallToolResultSchema, { signal: request.signal },
-  );
-  expect(CallToolResultSchema.safeParse(result).success).toBe(true);
-  expect(result.isError).not.toBe(true);
-  expect(result.content).toEqual([{ type: 'text', text: JSON.stringify(payload) }]);
-  expect(runBridge).toHaveBeenCalledTimes(1);
-  expect(runBridge.mock.calls[0][1].args[0]).toBe(operation);
-  expect(JSON.parse(runBridge.mock.calls[0][1].args[1])).toEqual(expectedArgs);
-  // The SDK creates a server-side request signal across the transport. It must
-  // reach the real runner options; it is not the client's object identity.
-  expect(runBridge.mock.calls[0][2]).toEqual(
-    expect.objectContaining({ signal: expect.any(AbortSignal) }),
-  );
-  expect(runBridge.mock.calls[0][2].signal.aborted).toBe(false);
-}
-
-for (const name of Object.keys(cases)) {
-  if (name !== 'get_recent_books' && name !== 'get_download_history') {
-    test(`${name} dispatches and returns an SDK-valid result`, () => callAdvertised(name));
-  }
-}
-
-for (const fixture of forwardingCases) {
-  test(`${fixture.name} forwards non-default fields`, () =>
-    callAdvertised(fixture.name, fixture.payload, fixture));
-}
-
-test('get_recent_books registration reaches the intended handler exactly once', async () => {
-  // Only the absent API export is supplied here. A miswired/removed production
-  // registration must fail this ordinary test, never be inverted by .failing.
-  const recentProbe = jest.fn(async (args, options) => {
-    await runBridge(
-      'python_bridge.py',
-      { args: ['get_recent_books', JSON.stringify(args)] },
-      options,
-    );
-    return { books: [] };
-  });
-  await connectServer({ getRecentBooks: recentProbe });
-  await callAdvertised('get_recent_books');
-  expect(recentProbe).toHaveBeenCalledTimes(1);
-  expect(recentProbe).toHaveBeenCalledWith({ count: 1 }, { signal: expect.any(AbortSignal) });
+test('get_book and download rehydrate only held refs, and fresh downloads use the guarded bridge path', async () => {
+  run.mockImplementation(async (_script, options) => encode(options.args[0] === 'search' ? { books: [book] } : options.args[0] === 'get_book_metadata_complete' ? { description: 'Details' } : { path: '/offline/book.pdf', bytes: 12, verified: 'sha256', reused: false, transfer_skipped: false, record: '/offline/book.pdf.acq.json' }));
+  const ref = (await call('search', { query: 'Book', sources: ['zlibrary'] })).rows[0].ref;
+  expect((await call('get_book', { ref })).description).toBe('Details');
+  const download = await call('download', { ref, output_dir: '/offline', filename: 'chosen.epub' });
+  expect(download.verified).toBe('sha256');
+  expect(run.mock.calls[2][1].args[0]).toBe('acquire_book');
+  expect(JSON.parse(run.mock.calls[2][1].args[1])).toMatchObject({ book_details: book, output_dir: '/offline', filename: 'chosen.epub', request: { ref, query: 'Book' } });
+});
+test('history pagination forwards the page and replay does not consume it', async () => {
+  run.mockResolvedValue(encode([book]));
+  const first = await call('get_history', { limit: 1 });
+  await call('get_history', { cursor: first.next_cursor });
+  await call('get_history', { cursor: first.next_cursor });
+  expect(run.mock.calls.map(c => JSON.parse(c[1].args[1]))).toEqual([{ count: 1, page: 1 }, { count: 1, page: 2 }, { count: 1, page: 2 }]);
+});
+test('local mode makes no bridge call, live mode translates quota fields', async () => {
+  await call('get_limits'); expect(run).not.toHaveBeenCalled();
+  run.mockResolvedValue(encode({ daily_limit: 10, downloads_today: 3, daily_remaining: 7 }));
+  expect((await call('get_limits', { mode: 'live', sources: ['zlibrary'] })).sources.zlibrary.limit).toMatchObject({ per_day: 10, used_today: 3, remaining: 7 });
+});
+test('download bridge failure never automatically retries or exposes stderr secrets', async () => {
+  run.mockResolvedValueOnce(encode({ books: [book] }));
+  const ref = (await call('search', { query: 'Book', sources: ['zlibrary'] })).rows[0].ref;
+  run.mockRejectedValue(Object.assign(new Error('provider SECRET'), { stderr: JSON.stringify({ error: 'SECRET', details: { provider: 'zlibrary', reason: 'read_timeout' } }) }));
+  const result = await call('download', { ref });
+  expect(result.error.retry).toBe('may_spend_quota');
+  expect(ErrorEnvelopeSchema.safeParse(result).success).toBe(true);
+  expect(JSON.stringify(result)).not.toContain('SECRET');
+  expect(run).toHaveBeenCalledTimes(2); // one search, one transfer attempt, no automatic quota spend
 });
 
-test('get_download_history dispatches exactly once to the correct operation', () =>
-  // An object avoids the independent #197 array-result defect. The real facade
-  // still has to reach the runner with the history operation, not another one.
-  callAdvertised('get_download_history', { books: [] }));
-
-// https://github.com/rookslog/zlibrary-mcp/issues/171 — repaired here. Keep the
-// ordinary real-facade result check as well as the independent wiring check.
-test('get_recent_books dispatches and returns an SDK-valid result', () =>
-  callAdvertised('get_recent_books'));
-
-// https://github.com/rookslog/zlibrary-mcp/issues/197 — repaired here. Arrays
-// must now round-trip successfully, with ordinary dispatch checked separately.
-test('get_download_history dispatches and returns an SDK-valid result', () =>
-  callAdvertised('get_download_history'));
-
-// Mutation caught: publishing scalar/null/array structuredContent causes an
-// SDK -32602 rejection before the client can see a valid tool response.
-for (const payload of [[], null, false, 0, '', 'backend string']) {
-  test(`history round-trip is schema-valid for ${JSON.stringify(payload)}`, async () => {
-    runBridge.mockResolvedValueOnce([
-      JSON.stringify({
-        content: [{ type: 'text', text: JSON.stringify(payload) }],
-      }),
-    ]);
-    const result = await client.callTool({ name: 'get_download_history', arguments: { count: 1 } });
-    expect(CallToolResultSchema.safeParse(result).success).toBe(true);
-    if (Array.isArray(payload)) {
-      expect(result.isError).not.toBe(true);
-      expect(result.content).toEqual([{ type: 'text', text: JSON.stringify(payload) }]);
-      expect(result.structuredContent).toEqual({ items: payload });
-    } else {
-      expect(result.isError).toBe(true);
-      expect(result.content[0].type).toBe('text');
-    }
-  });
-}
-
-test('object result wire bytes match the pre-fix baseline', async () => {
-  const payload = { books: [{ id: '1', title: 'Offline' }], nextPage: null };
-  runBridge.mockResolvedValueOnce([
-    JSON.stringify({
-      content: [{ type: 'text', text: JSON.stringify(payload) }],
-    }),
-  ]);
-  const result = await client.callTool({ name: 'get_download_history', arguments: {} });
-  // Literal captured/checked on the #196 base; no implementation helper
-  // computes the expectation. This same assertion must pass before and after.
-  expect(JSON.stringify(result)).toBe(
-    '{"content":[{"type":"text","text":"{\\"books\\":[{\\"id\\":\\"1\\",\\"title\\":\\"Offline\\"}],\\"nextPage\\":null}"}],"structuredContent":{"books":[{"id":"1","title":"Offline"}],"nextPage":null}}',
-  );
+test('error envelopes are validated independently of SDK isError bypass', async () => {
+  const validator = new AjvJsonSchemaValidator();
+  const list = await client.listTools();
+  const result = await client.callTool({ name: 'search', arguments: { limit: 0 } });
+  const validate = validator.getValidator(list.tools.find(t => t.name === 'search').outputSchema);
+  expect(validate(result.structuredContent).valid).toBe(true);
+  expect(validate({ error: { code: 'invalid_argument' } }).valid).toBe(false);
+  expect(ErrorEnvelopeSchema.safeParse({ error: { ...result.structuredContent.error, retry: 'probably' } }).success).toBe(false);
 });

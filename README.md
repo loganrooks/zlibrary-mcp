@@ -2,27 +2,29 @@
 
 [![CI](https://github.com/rookslog/zlibrary-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/rookslog/zlibrary-mcp/actions/workflows/ci.yml)
 [![npm version](https://img.shields.io/npm/v/zlibrary-mcp)](https://www.npmjs.com/package/zlibrary-mcp)
-[![License: MIT](https://img.shields.io/github/license/rookslog/zlibrary-mcp)](https://github.com/rookslog/zlibrary-mcp/blob/master/LICENSE)
+[![License: MIT](https://img.shields.io/github/license/rookslog/zlibrary-mcp)](LICENSE)
 
-A Model Context Protocol (MCP) server that gives AI assistants -- Claude Code, Claude Desktop, RooCode, Cline -- the ability to search for books and download the original files. The server reads from Z-Library and Library Genesis. It uses a Node.js/TypeScript MCP frontend and a Python bridge backend for acquisition.
+An acquisition server for books and articles: find an edition, inspect its metadata,
+and download the original file. Five MCP tools serve Library Genesis, Z-Library and
+Anna's Archive. Book contents never enter the tool response; paths refer to the
+server's disk. See [VISION.md](VISION.md) for the commitments and non-goals.
 
-For what this project is — and deliberately isn't — see [VISION.md](VISION.md).
+**2.0 is a breaking interface change.** Saved 1.x tool names are not aliases.
+See the complete [migration table](docs/interface-migration.md) and
+[API reference](docs/api.md). The npm package, executable, repository and client
+configuration keys keep their existing names; `serverInfo.name` is `book-acquisition`.
 
 ## Quick Start
 
-**Prerequisites:** Node.js 22+, Python 3.10+, and [UV](https://docs.astral.sh/uv/)
-(`curl -LsSf https://astral.sh/uv/install.sh | sh`)
+**Prerequisites:** Node.js 22+, Python 3.10+, [uv](https://docs.astral.sh/uv/).
 
 ```bash
 npm install -g zlibrary-mcp
-cd "$(npm root -g)/zlibrary-mcp" && bash setup-uv.sh --no-dev   # one-time core setup
+cd "$(npm root -g)/zlibrary-mcp"
+bash setup-uv.sh --no-dev
 ```
 
-This installs search, metadata, and downloads. Text processing is removed in 2.0;
-see [migration and preservation](docs/text-processing-migration.md) if you need it.
-See [Python dependencies](docs/optional-dependencies.md) for installation choices.
-
-Then add the server to your MCP client config (Claude Code `.mcp.json`, Claude Desktop `claude_desktop_config.json`):
+Add the server to your MCP client configuration:
 
 ```json
 {
@@ -34,500 +36,191 @@ Then add the server to your MCP client config (Claude Code `.mcp.json`, Claude D
 }
 ```
 
-This configuration gives you Library Genesis search and downloads. Library Genesis needs
-no account and applies no daily limit.
+No credentials are needed for Library Genesis. The server starts without a
+Z-Library account; it warns on stderr and keeps the other sources available.
+For Z-Library, add `ZLIBRARY_EMAIL` and `ZLIBRARY_PASSWORD` in the client's `env`.
+For Anna's Archive downloads, add `ANNAS_SECRET_KEY`; its search needs no key.
 
-To also use the Z-Library tools, add your credentials:
+## Available MCP Tools
 
-```json
-{
-  "mcpServers": {
-    "zlibrary": {
-      "command": "zlibrary-mcp",
-      "env": {
-        "ZLIBRARY_EMAIL": "your-email@example.com",
-        "ZLIBRARY_PASSWORD": "your-password"
-      }
-    }
-  }
-}
+| Tool | Purpose |
+|---|---|
+| `search` | Catalogue metadata search with an explicit ordered source list; compact rows and refs |
+| `get_book` | Inspect a row ref for edition metadata and field-origin evidence |
+| `download` | Acquire a ref to server disk; return a file path and acquisition record path |
+| `get_limits` | Local source capabilities by default; live account quota on request |
+| `get_history` | Z-Library account history, not a list of local files |
+
+```jsonc
+// Local configuration and source capabilities; no network call
+{}
+// search
+{ "query": "Distributed Systems", "sources": ["libgen", "zlibrary"], "limit": 5 }
+// get_book: copy the actual ref from a returned row
+{ "ref": "<returned ref>" }
+// download: use the same ref
+{ "ref": "<returned ref>", "filename": "distributed-systems.pdf" }
+// get_limits: only request live numbers when they affect a decision
+{ "mode": "live", "sources": ["zlibrary"] }
 ```
 
-The server starts without credentials. It writes a warning to stderr and names the tools
-that will fail. See [Sources](#sources) for what each source provides.
+`search` requires `query`, `author`, or both. With both, `exact` applies to the
+whole combined query; author-only exact search retains quoted-author matching.
+This is catalogue metadata search, **not search inside book text**.
 
-Developing or contributing? Install [from source](#option-b-from-source-for-development) instead.
+`sources` names 1–3 distinct sources in order. The server stops at the first
+source with rows and reports each attempt in `routing`. There is no hidden
+preferred source. Omitting `sources` requires an operator-configured default;
+otherwise `sources_required` includes the choices and their availability.
 
-## Architecture Overview
+Refs are opaque, in-memory handles shared by this process's clients. The most
+recent 5,000 row/cursor entries are held; reconnecting to the same process keeps
+them, restarting does not. On `ref_unavailable`, search and choose the edition
+again. Do not construct refs or pass book records back as tool arguments.
 
-```mermaid
-flowchart LR
-    subgraph "MCP Client"
-        A[Claude Desktop / Claude Code / RooCode]
-    end
-    subgraph "stdio Transport"
-        B[Node.js MCP Server<br/>src/index.ts]
-    end
-    subgraph "HTTP Transport"
-        SG[SuperGateway :8000]
-    end
-    subgraph "Python Bridge"
-        C[python_bridge.py]
-    end
-    subgraph "Sources"
-        E[Z-Library EAPI]
-        F[Library Genesis]
-        G[Anna's Archive]
-    end
-    A -->|stdio| B
-    A -->|SSE/HTTP| SG -->|stdio| B
-    B -->|PythonShell| C
-    C -->|httpx| E
-    C -->|SourceRouter| F
-    C -->|SourceRouter| G
-```
-
-- **Node.js/TypeScript MCP Server**: 12 acquisition tools registered via McpServer (MCP SDK 1.25+)
-- **Python Bridge**: Z-Library EAPI client (httpx), source routing, and file publication
-- **Source Router**: routes Library Genesis and Anna's Archive requests, with mirror
-  failover on downloads (`lib/sources/`). Z-Library keeps its own path until #40 lands.
-- **EAPI Transport**: JSON API endpoints at `/eapi/` bypass Cloudflare browser challenges
-- **UV-Based Python Environment**: Project-local `.venv/` with `uv.lock` for reproducible builds
-- **Vendored Z-Library Fork**: Custom EAPI client for search and file downloads
-
-## Available MCP Tools (12 Total)
-
-### Search Tools (7)
-
-| Tool | Description |
-|------|-------------|
-| `search_books` | Basic search by keyword with filters |
-| `full_text_search` | Search within book contents |
-| `search_by_term` | Conceptual navigation via terms |
-| `search_by_author` | Advanced author search |
-| `search_advanced` | Fuzzy match detection with separate exact/fuzzy results |
-| `search_multi_source` | Search Library Genesis or Anna's Archive (see [Sources](#sources)) |
-| `get_recent_books` | Recently added books |
-
-### Metadata Tools (1)
-
-| Tool | Description |
-|------|-------------|
-| `get_book_metadata` | Complete metadata extraction (terms, descriptions, ratings) |
-
-### Collection Tools (1)
-
-| Tool | Description |
-|------|-------------|
-| `fetch_booklist` | Expert-curated collection contents |
-
-### Download Tools (1)
-
-| Tool | Description |
-|------|-------------|
-| `download_book_to_file` | Download the original file and return its local path |
-
-### Utility Tools (2)
-
-| Tool | Description |
-|------|-------------|
-| `get_download_limits` | Check daily download quota |
-| `get_download_history` | View recent downloads |
-
-For complete parameter documentation, types, and examples, see [API Reference](docs/api.md).
+`limit` defaults to 10, maximum 50. Continue with **`cursor` alone**, with no
+other arguments. Cursors bind the operation, source, filters and page size;
+replaying one repeats the same position, including after a lost reply. Z-Library
+pages are re-queried, not frozen: upstream changes can duplicate or omit rows.
+Other sources expose one upstream page, sliced locally, with a stated row cap.
 
 ## Sources
 
-The server reads from three sources. Each source has different requirements and different
-capabilities.
+| Source | Configuration | Search | Download | Limit |
+|---|---|---|---|---|
+| `libgen` | None | Yes | Yes | No daily limit |
+| `zlibrary` | Account email and password | With account | With account | Provider daily quota |
+| `annas` | Key required only for download | Without key | With membership API key | Membership-dependent |
 
-| Source | Account | Daily limit | Search | Download |
-|--------|---------|-------------|--------|----------|
-| Library Genesis | No | None | Yes | Yes |
-| Z-Library | Yes | Approximately 10 books | Yes | Yes |
-| Anna's Archive | API key for downloads | Set by membership | Yes | Only with an API key |
+`get_limits` defaults to `mode: "local"`: no network, no account call. It reports
+configuration, search/download availability and supported operations for each
+source. `mode: "live"` adds Z-Library account numbers; a source failure remains
+in that source's `error` entry without discarding other reports. `none`, `daily`,
+`unknown` and `unparsed` are distinct limit kinds. Availability is local
+configuration, not a reachability probe. Only Z-Library supports account history.
 
-### Library Genesis
+LibGen resolves fresh links and tries mirrors by bytes actually served, not just
+by obtaining a key. Anna's Archive protects its free download route with browser
+verification; this server's shipped download route uses its API key. Keys are
+sent only to the trusted hosts in `lib/sources/config.py`. `also_available_on`
+is an upstream hint, not a promise that another source still has the file.
 
-Library Genesis needs no account and applies no daily limit. Use it when you reach the
-Z-Library limit, or when you do not want an account.
+## Download output
 
-To find a book, call `search_multi_source` with `source: "libgen"`. To download it, pass a
-result to `download_book_to_file`.
-
-```jsonc
-// 1. Search
-{ "query": "Phenomenology of Spirit", "source": "libgen", "count": 5 }
-
-// 2. Download a result. Pass the book object from step 1 as bookDetails.
-{ "bookDetails": { "md5": "...", "source": "libgen", "title": "...", "extension": "pdf" } }
+```json
+{
+  "path": "/server/downloads/book.pdf",
+  "bytes": 5680123,
+  "reused": false,
+  "transfer_skipped": false,
+  "verified": "sha256",
+  "record": "/server/downloads/book.pdf.acq.json"
+}
 ```
 
-The server resolves a download link at the moment you request the file. It tries the
-mirrors `libgen.li`, `libgen.vg`, and `libgen.la` in order. Each mirror sends the file
-from a different content delivery network (CDN) node, and these nodes fail independently.
-Therefore the server does not accept a mirror until that mirror sends file data. This
-behavior routes around a failed CDN node.
+The record is a versioned JSON sidecar containing edition fields, identifiers,
+provenance and a SHA-256 digest. Unknown edition fields are explicit `null`.
+A downstream library ingests the sidecar; the tool does not manage that library.
 
-Library Genesis download links expire in less than 2.5 hours. The server does not cache
-them. An expired link returns the intermediate web page instead of an error, so the server
-treats that response as a failure.
+Before authentication or transfer, `download` takes a per-destination exclusive
+lock and reads the receipt from disk. A matching identity and freshly recomputed
+SHA-256 skip the transfer without quota. `transfer_skipped: true` means no
+transfer; `reused: true` means bytes were fetched and an identical existing file
+was adopted, so quota may have been spent. Both cannot be true together.
 
-### Z-Library
+An intent receipt precedes the request. A digest checkpoint before publication
+allows recovery from a crash after publication but before finalization. A partial
+or missing file does not qualify for reuse. Different filenames/directories are
+different destinations. Pre-2.0 files have no receipts and may be fetched before
+post-transfer reuse. Different existing bytes are never silently overwritten.
 
-Z-Library needs an account. Set `ZLIBRARY_EMAIL` and `ZLIBRARY_PASSWORD` in your MCP client
-config. Without these variables, the Z-Library tools fail when you call them. The other
-tools continue to work.
+The default directory is `ZLIBRARY_OUTPUT_ROOT`, otherwise `./downloads`.
+`output_dir` must resolve inside the root when configured (including symlinks).
+`filename` is a sanitized basename; its extension is forced to the acquired
+format. The root guard admits arguments; it is not a sandbox against a local
+operator swapping directories during a call. Local filesystems with exclusive
+file creation support cross-process coalescing. An unavailable lock fails with
+`output_refused` instead of starting an uncoalesced transfer.
 
-Z-Library applies a daily download limit of approximately 10 books. Call
-`get_download_limits` to check your remaining quota.
-
-### Anna's Archive
-
-Anna's Archive search needs no account. Call `search_multi_source` with
-`source: "annas"`.
-
-Search without a key returns the title. It also returns the author, the year, the file
-format, the file size, and `also_available_on`, which lists the other sources that hold
-the same file.
-
-**Note:** all fields except the title are optional. Anna's Archive does not supply the
-same data for every record. An absent author, year, format or size is an empty string.
-An absent `also_available_on` field is not present in the result.
-
-**Note:** `also_available_on` is a hint, not a guarantee. Anna's Archive reports it, and
-the file can leave the other source later. Use it to prefer a source that has no daily
-limit. Do not depend on it.
-
-Anna's Archive downloads need a membership API key in `ANNAS_SECRET_KEY`. Without a key,
-the server cannot download from Anna's Archive. Anna's Archive protects its free download
-route with a browser verification challenge, and this server does not defeat that
-protection. Open the record URL in a web browser to download a file without a key.
-
-**Warning:** the fast-download API sends `ANNAS_SECRET_KEY` as a URL parameter. Therefore
-the server sends the key only to hosts in `ANNAS_TRUSTED_HOSTS` in `lib/sources/config.py`.
-Anna's Archive domains lapse, and other operators re-register them. Do not add a host to
-that list until you confirm the host is genuine.
-
-### Check source health
-
-```bash
-npm run doctor
-```
-
-This command tests each source and reports the result. The Library Genesis test resolves a
-download link and reads the first 2 KB of a file. Therefore it detects a broken download
-path, not only a reachable web page.
+`quota_estimate`, when present, labels the last live observation and deductions
+for issued transfers in this process. Other account clients can change the real
+count. An ambiguous download or cancellation invalidates the estimate. Downloads
+are not automatically retried: `retry` is `safe`, `may_spend_quota`, or `no`, and
+cancelled calls require fresh user intent. See [errors](docs/api.md#errors).
 
 ## Installation
 
-### Option A: npm (recommended)
-
-**Prerequisites:** Node.js 22+, Python 3.10+, [UV](https://docs.astral.sh/uv/)
-
-```bash
-npm install -g zlibrary-mcp
-```
-
-Then set up the Python environment inside the installed package (one-time):
-
-```bash
-cd "$(npm root -g)/zlibrary-mcp"
-curl -LsSf https://astral.sh/uv/install.sh | sh  # Install UV if needed
-bash setup-uv.sh --no-dev
-```
-
-The package ships the complete Python bridge (`lib/`, the vendored `zlibrary/`
-fork, `pyproject.toml`, `uv.lock`), so no clone is needed. Since v1.3.0 the
-release workflow verifies the tag against `package.json` and publishes with
-provenance, so the registry version tracks GitHub releases; if
-`npm view zlibrary-mcp version` ever trails the
-[latest release](https://github.com/rookslog/zlibrary-mcp/releases), that is a
-release-pipeline bug worth filing.
-
 ### Option B: From Source (for development)
 
-**Prerequisites:** Node.js 22+, Python 3.10+, [UV](https://docs.astral.sh/uv/)
-
 ```bash
-# 1. Install UV (one-time, if not already installed)
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# 2. Clone and build
 git clone https://github.com/rookslog/zlibrary-mcp.git
 cd zlibrary-mcp
-git lfs pull         # Hydrates LFS-tracked test PDFs (don't run `git lfs install`;
-                     # it conflicts with the repo's Husky-managed hooks)
-bash setup-uv.sh    # Creates .venv/ with core plus the dev group
-npm install          # Installs Node.js dependencies
-npm run build        # Compiles TypeScript to dist/
+npm install
+uv sync
+npm run build
 ```
 
-The source bootstrap installs acquisition dependencies and contributor tools. The
-retained Python suite collects without document-processing packages.
-End users can omit contributor tools; see [Python dependencies](docs/optional-dependencies.md).
+Point the client's command at `node`, with `args` containing the absolute path
+to `dist/index.js`. Python bridge files remain in `lib/`, not `dist/`.
+The Python environment uses uv, never a separate system installer. End users
+can omit development tools; see [Python dependencies](docs/optional-dependencies.md).
+Text processing is not part of 2.0; see [preservation and migration](docs/text-processing-migration.md).
+Existing downloaded and extracted files are not deleted.
 
-**MCP client configuration (stdio transport):**
-
-Claude Code (`.mcp.json` in your project root):
-
-```json
-{
-  "mcpServers": {
-    "zlibrary": {
-      "command": "node",
-      "args": ["/absolute/path/to/zlibrary-mcp/dist/index.js"],
-      "env": {
-        "ZLIBRARY_EMAIL": "your-email@example.com",
-        "ZLIBRARY_PASSWORD": "your-password"
-      }
-    }
-  }
-}
-```
-
-RooCode / Cline (`mcp_settings.json`):
-
-```json
-{
-  "mcpServers": {
-    "zlibrary-local": {
-      "command": "node",
-      "args": ["/absolute/path/to/zlibrary-mcp/dist/index.js"],
-      "env": {
-        "ZLIBRARY_EMAIL": "your-email@example.com",
-        "ZLIBRARY_PASSWORD": "your-password"
-      },
-      "transport": "stdio",
-      "enabled": true
-    }
-  }
-}
-```
-
-### Option C: Docker (HTTP transport)
-
-**Prerequisites:** Docker
-
-Versioned images are published to GHCR on every release (`latest`, `1.4`,
-`1.4.0`, …) — no clone or build needed:
+### Docker (HTTP transport)
 
 ```bash
 docker run -d --name zlibrary-mcp -p 8000:8000 \
-  -e ZLIBRARY_EMAIL="your-email@example.com" \
-  -e ZLIBRARY_PASSWORD="your-password" \
   -v "$PWD/downloads:/app/downloads" \
   ghcr.io/rookslog/zlibrary-mcp:latest
 ```
 
-The image wraps the stdio server in
-[SuperGateway](https://github.com/supercorp-ai/supergateway), exposing MCP over
-SSE at `http://localhost:8000/sse`. Verify it's serving:
-
-```bash
-curl -s -N --max-time 3 http://localhost:8000/sse | head -2
-# event: endpoint
-# data: /message?sessionId=...
-```
-
-The image includes acquisition dependencies only, matching the source and npm runtime.
-
-**Building from source instead** (adds a `/health` endpoint via compose):
-
-```bash
-git clone https://github.com/rookslog/zlibrary-mcp.git && cd zlibrary-mcp
-cp docker/env.example docker/.env   # then edit in your credentials
-docker compose -f docker/docker-compose.yaml up -d
-curl http://localhost:8000/health
-```
-
-**MCP client configuration (SSE/HTTP transport):**
-
-```json
-{
-  "mcpServers": {
-    "zlibrary": {
-      "command": "npx",
-      "args": ["-y", "supergateway", "--sse", "http://localhost:8000/sse"]
-    }
-  }
-}
-```
-
-## Download output
-
-`download_book_to_file` returns `{ "file_path": "/local/path/book.pdf" }` for
-the original file. Paths are local to the server; the tool does not return book
-contents or produce text, metadata sidecars, or note bundles. Existing files from
-older installations are left in place. See [migration](docs/text-processing-migration.md).
+Add account variables only for the sources you use. The container wraps stdio
+with SuperGateway at `http://localhost:8000/sse`. Remote clients receive paths on
+the **server**, not downloadable attachments or local client paths. There is no
+file-reading tool in this five-tool interface.
 
 ## Configuration
 
-Z-Library operations require credentials set as environment variables.
-Credential-free sources remain available without them:
+| Variable | Meaning |
+|---|---|
+| `ZLIBRARY_EMAIL`, `ZLIBRARY_PASSWORD` | Z-Library account; not required for other sources |
+| `ANNAS_SECRET_KEY` | Anna's Archive membership key, required for its downloads only |
+| `BOOK_SOURCE_DEFAULT_ORDER` | Optional comma-separated order, e.g. `libgen,zlibrary`; no repeats |
+| `ZLIBRARY_OUTPUT_ROOT` | Optional allowed output root and default download directory |
+| `ZLIBRARY_EAPI_DOMAIN` | Optional pinned EAPI domain |
+| `LOG_LEVEL` | `silent`, `error`, `warn`, `info` (default), `debug`; diagnostics use stderr |
+| `PYTHON_BRIDGE_TIMEOUT` | Ordinary bridge deadline in milliseconds |
+| `PYTHON_BRIDGE_LONG_TIMEOUT` | Acquisition deadline in milliseconds |
+| `ZLIBRARY_SESSION_MODE` | `memory` (default) or `per-call`; unknown modes fail at startup |
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `ZLIBRARY_EMAIL` | For Z-Library | Z-Library account email |
-| `ZLIBRARY_PASSWORD` | For Z-Library | Z-Library account password |
-| `ZLIBRARY_MIRROR` | No | Custom Z-Library mirror URL |
-
-Missing credentials produce a startup warning, not a fatal server error.
-
-### Z-Library session reuse
-
-The Node server owns one identity-bound EAPI session **in memory** for its
-lifetime. No session key is written to disk. A restart costs one login. Python
-children receive cookies over stdin and return updates on a separate private
-pipe (fd 3), never command arguments, tool-result stdout, or diagnostic stderr.
-The private output descriptor is not inherited by grandchildren.
-
-Only session acquisition (cold login or refresh) is single-flight. Once a
-session exists, EAPI operations run concurrently with their own immutable
-session/generation snapshots: a long download does not block a search. Each
-acquisition waiter has its own deadline/abort signal; an operation's budget starts
-when it holds a session. Node accepts updates and rejections only for the current
-account and generation. An abort cannot invalidate other warm callers. Changing
-the email never reuses the previous account's cookies; changing only the password
-leaves an accepted session valid. Alternative-source calls receive no Z-Library session. Explicit domain pins always win.
-
-The profile is checked on acquisition, after an idle gap, and on the call after
-an operation returns `success:0` (even when the tool normalizes it to empty
-results). A profile `success:0` is an authentication verdict. The first explicit
-rejection of a successfully acquired session permits one immediate refresh and
-one operation retry. A second rejection before the refreshed session survives
-the cooldown window triggers backoff, as do failed login attempts.
-
-Backoff grows **30, 60, 120, then 180 seconds** by default, measured from the last
-failed attempt or the last refresh. It resets once a session survives the window.
-Calls during backoff name the last sanitized authentication/login cause and the
-time remaining; they do not make another login attempt. Separate servers do not
-share this state. If they invalidate each other's sessions, each gets one
-immediate refresh, then repeated rejection is bounded by its own backoff. That
-provider behavior has not been measured.
-
-Transport uncertainty never causes login. An unpinned domain gets at most one
-same-cookie cross-domain recovery, with profile validation before adoption, only
-for connect errors/timeouts, walls or non-JSON replies. **Read timeouts, protocol
-errors and 5xx replies are not replayed on another domain.** A validated recovered
-domain is reported privately even if the operation then fails. Other operation
-error envelopes retain their per-call behavior. Tool results are not rewritten
-for password redaction; credential scrubbing applies to diagnostics.
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `ZLIBRARY_SESSION_MODE` | `memory` | `memory` or `per-call`; unknown values fail at startup |
-| `ZLIBRARY_SESSION_LOGIN_COOLDOWN_MS` | `180000` | Backoff cap and session-survival window, in milliseconds |
-| `ZLIBRARY_SESSION_IDLE_MS` | `300000` | Idle gap before profile validation |
-
-Timing overrides must be positive integers no greater than 2147483647; invalid
-values use the defaults. A cap below 30000 also caps the initial backoff. In
-`per-call` mode each EAPI invocation logs in normally, without memory reuse or
-its backoff. Disk/keychain modes are not implemented.
-
-### Logging
-
-Diagnostics go to **stderr**, never stdout: under the stdio transport stdout is the
-JSON-RPC channel, and anything else written there corrupts the protocol stream and
-causes clients to disconnect. Your MCP client captures stderr into its own logs.
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `LOG_LEVEL` | `info` | `silent`, `error`, `warn`, `info`, or `debug` |
-
-`debug` adds per-request argument tracing, which **includes your search queries**.
-Scrub client logs before attaching them to a bug report.
-
-### Diagnosing problems
-
-```bash
-npm run doctor
-```
-
-This probes Z-Library, Anna's Archive, and LibGen directly and reports which
-respond. Those are undocumented third-party services that change domains without
-notice, so an upstream outage and a bug in this server look identical from an MCP
-client. Run this before filing an issue — and see
-[TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) for the setup-related causes of a
-server that exits immediately.
-
-### Retry and Circuit Breaker
-
-All API operations include automatic retry with exponential backoff and circuit breaker protection. These are configurable via environment variables:
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `RETRY_MAX_RETRIES` | `3` | Maximum retry attempts |
-| `RETRY_INITIAL_DELAY` | `1000` | Initial retry delay (ms) |
-| `RETRY_MAX_DELAY` | `30000` | Maximum retry delay (ms) |
-| `RETRY_FACTOR` | `2` | Exponential backoff multiplier |
-| `CIRCUIT_BREAKER_THRESHOLD` | `5` | Failures before opening circuit |
-| `CIRCUIT_BREAKER_TIMEOUT` | `60000` | Time (ms) before retry after circuit opens |
-
-See [docs/RETRY_CONFIGURATION.md](docs/RETRY_CONFIGURATION.md) for details.
-
-Multi-source search, URL resolution, and complete file transfers have separate
-finite wall-clock budgets. On POSIX, aborting a bridge call cooperatively cancels
-Python cleanup before process-group escalation, so partial download artifacts are
-removed. Permanent Anna credential and quota errors fail immediately without
-consuming retry or shared circuit-breaker health budgets.
+Read operations retain the in-memory EAPI session owner and its bounded login
+refresh/backoff. Fresh acquisition authenticates **after** the disk receipt check;
+it uses per-call authentication so even a restarted server can reuse a local
+artifact without any account request. Credentials and cookies are never written
+to acquisition records. Debug logs can include queries; inspect before sharing.
+See [retry configuration](docs/RETRY_CONFIGURATION.md) for read-operation retry
+and circuit-breaker settings. The acquisition call never automatically retries.
 
 ## Development
 
-Build, test, and rehearsal commands require a source checkout. `audit:release`
-also needs Git history and GitHub access; installed `doctor` includes that source-only
-audit after its upstream probe. See [scripts](scripts/README.md).
-
-### Running Tests
-
-```bash
-# Node.js tests (Jest only -- npm test does not run pytest)
-npm test
-
-# Python tests -- fast suite (the routine command)
-uv run pytest -m "not slow and not integration and not performance"
-
-# Python tests -- full retained suite (live tests require credentials)
-uv run pytest
-
-# Specific Python test
-uv run pytest __tests__/python/test_python_bridge.py
-```
-
-### Building
-
 ```bash
 npm run build
+npm test
+uv run pytest -rs
+npm run test:rehearsal
+npx tsc --noEmit
+npx eslint src/
+uv run ruff check lib/
+bash scripts/validate-readme-tools.sh
 ```
 
-## FAQ
-
-### Why EAPI instead of HTML scraping?
-
-Z-Library deployed Cloudflare browser challenges (Jan 2026) that block all HTML page requests from automated clients. The EAPI JSON endpoints at `/eapi/` are not subject to these challenges, providing reliable programmatic access. See `docs/adr/ADR-005-EAPI-Migration.md`.
-
-### Why use `node` in .mcp.json instead of `uv`?
-
-The MCP server is a Node.js application. UV is only used during setup (`uv sync`) to create `.venv/` and install Python dependencies. At runtime, Node.js runs the MCP server which calls `.venv/bin/python` internally.
-
-```
-Setup:  uv sync --> creates .venv/
-Build:  npm run build --> compiles TypeScript to dist/
-Runtime: node dist/index.js --> runs MCP server --> calls .venv/bin/python internally
-```
-
-### What if I move the project directory?
-
-No problem. `.venv/` moves with the project (UV creates project-local environments).
-
-## Contributing
-
-Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for setup instructions, code style, testing, and PR workflow.
+Jest does not run pytest. Unit and offline rehearsal tests do not establish live
+provider health. `npm run doctor` probes upstream services and audits release
+records; `npm run audit:release` needs source history and GitHub access.
+See [troubleshooting](docs/TROUBLESHOOTING.md), [contributing](CONTRIBUTING.md),
+and [release process](docs/RELEASE_PROCESS.md).
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## Disclaimer
-
-This tool is provided for educational and research purposes only. Users are responsible for complying with all applicable laws and regulations regarding the downloading and use of copyrighted materials. Accessing Z-Library may be restricted in certain jurisdictions.
+[MIT](LICENSE).

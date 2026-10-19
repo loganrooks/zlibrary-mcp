@@ -7,15 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking: five-tool acquisition interface
+
+- Replaced the old tool names with `search`, `get_book`, `download`, `get_limits`,
+  `get_history`; old calls return typed migration errors without contacting providers.
+- Added ordered source routing, compact process-local refs, immutable replayable
+  cursors, bounded paging and consistent closed error envelopes with quota-aware retry hints.
+- Added no-network local source limits; account history remains distinct from local files.
+- Added intent/completion acquisition sidecars, SHA-256 re-hashing before reuse,
+  cross-process destination locks and crash recovery before receipt finalization.
+- Downloads return `path`, `bytes`, flags and `record`; full book records and all
+  processing arguments are no longer MCP inputs. Even a saved false processing
+  flag is rejected by the new MCP surface; the internal legacy API is unchanged.
+- Source-neutral server identity and tool descriptions; package/executable/client
+  keys are unchanged. See [tool migration](docs/interface-migration.md) and ADR-012.
+
 ### Breaking: acquisition-only 2.0
 
 - Removed local text processing, its tool, combined-download options, CLI paths,
   detectors, quality helpers, and processing-only tests/dependencies. Downloads
-  now return the original `file_path` without processing bundle keys.
+  return original files without processing bundles; the new MCP reply uses
+  `path` and `record` as described above.
 - Saved requests with `process_for_rag: true` (or a malformed value) or any
   `processed_output_format` fail before authentication, quota use, or transfer.
-  `process_for_rag: false` alone remains an unadvertised no-op; other unknown
-  download arguments fail explicitly.
+  `process_for_rag: false` alone remains a no-op only on the internal legacy
+  API; the new MCP tool rejects all removed fields explicitly.
 - The `rag` and `scholar` extras are gone. All current source, npm, container,
   and CI recipes use acquisition dependencies, plus contributor tools as needed.
 - **Migration:** stay on an isolated 1.4.x installation for text processing until

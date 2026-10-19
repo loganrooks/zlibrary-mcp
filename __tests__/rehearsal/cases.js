@@ -1,4 +1,6 @@
 export const requiredCases = [
+  'I1 five-tool download repeat hashes disk and avoids authentication and transfer',
+  'I2 lost-reply cursor replay repeats position and local limits cost no upstream call',
   'C8 fake binds and loads TLS without hostname resolution',
   'C9 startup deadline reports captured stderr and live process status',
   'C10 startup exit and spawn errors retain stderr and status',

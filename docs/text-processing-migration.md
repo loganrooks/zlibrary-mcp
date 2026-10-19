@@ -27,6 +27,11 @@ not a processing bundle. Remove consumers of `processed_file_path`,
   admission and true refusal so unknown-field stripping cannot silently download.
 - Other unknown top-level download arguments are refused. Pass the complete
   search-result object inside `bookDetails`.
+- The advertised download schema is closed (`additionalProperties: false`).
+  Clients that validate arguments against it will refuse saved calls carrying
+  `process_for_rag` or `processed_output_format` themselves, with their own
+  validation error rather than the removal message above; remove those fields
+  from saved calls.
 
 The `rag` and `scholar` install extras no longer exist. End users run
 `bash setup-uv.sh --no-dev`; contributors run `bash setup-uv.sh`; deployments

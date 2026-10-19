@@ -216,7 +216,7 @@ jobs:
             echo "$line" | jq -e '.jsonrpc == "2.0"' > /dev/null \
               || { echo "ERROR: non-MCP output on stdout: $line"; exit 1; }
           done < stdout.txt
-          head -1 stdout.txt | jq -e '.jsonrpc == "2.0" and .id == 1 and .result.protocolVersion != null and .result.serverInfo.name == "zlibrary-mcp" and .result.capabilities.tools != null'
+          head -1 stdout.txt | jq -e '.jsonrpc == "2.0" and .id == 1 and .result.protocolVersion != null and .result.serverInfo.name == "book-acquisition" and .result.capabilities.tools != null'
 
   docker:
     # Exercise the published image on PRs so Python/wheel drift is caught (#230).

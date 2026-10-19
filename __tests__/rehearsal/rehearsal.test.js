@@ -33,7 +33,8 @@ test('S1 sequential calls preserve identity and download exact bytes inside temp
     expect(file.startsWith((await realpath(h.downloads)) + path.sep)).toBe(true);
     expect(await readFile(file, 'utf8')).toBe('Offline rehearsal book 101.\n');
     const history = await h.call(c, 'get_history', { limit: 1 });
-    expect(history.rows[0].ref).toBeDefined();
+    const historyDetail = await h.call(c, 'get_book', { ref: history.rows[0].ref });
+    expect(historyDetail.identifiers.id).toBe('101');
   });
 });
 
@@ -58,6 +59,7 @@ const sourceSurvivalTest =
   expectedFixes.has('reuse') || expectedFixes.has('breaker') ? test : test.failing;
 let localResult;
 let alternateResult;
+let alternateDetail;
 loginTest('S2 session reuse: exactly one login (expected failure on master)', () => {
   expect(concurrentLogins).toBe(1);
 });
@@ -113,6 +115,9 @@ test('S4 authentication outage respects the selected login policy; listing survi
         { query: 'fixture', sources: ['libgen'], limit: 1 },
         true,
       );
+      if (!alternateResult.error) {
+        alternateDetail = await h.call(c, 'get_book', { ref: alternateResult.rows[0].ref });
+      }
       h.note('S4', {
         loginPolicy: reuse ? 'authentication cooldown' : 'master shared breaker',
         breaker: reuse
@@ -171,6 +176,7 @@ test('C5 fake rejects a search without cookies', async () => {
 
 sourceSurvivalTest('S4 Library Genesis search survives authentication failures', () => {
   expect(alternateResult.error).toBeUndefined();
+  expect(alternateDetail.identifiers.md5).toBe('0123456789abcdef0123456789abcdef');
   expect(alternateResult.rows[0]).toMatchObject({
     title: 'Rehearsal LibGen fixture',
     source: 'libgen',
@@ -190,6 +196,8 @@ test('S6 healthy Library Genesis search reaches the real parser and fixture', as
         title: 'Rehearsal LibGen fixture',
         source: 'libgen',
           });
+      const detail = await h.call(c, 'get_book', { ref: result.rows[0].ref });
+      expect(detail.identifiers.md5).toBe('0123456789abcdef0123456789abcdef');
       expect((await h.stats()).calls['/libgen/index.php']).toBe(1);
       expect((await h.stats()).logins).toBe(0);
     },

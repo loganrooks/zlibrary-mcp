@@ -320,12 +320,16 @@ export class AcquisitionTools {
     const b = selection.book;
     let detail: any = {};
     if (selection.source === 'zlibrary') {
-      this.configured(selection.source);
-      detail = await this.invoke(
-        'get_book_metadata_complete',
-        { book_id: String(b.id), book_hash: b.hash ?? b.book_hash },
-        options,
-      );
+      try {
+        this.configured(selection.source);
+        detail = await this.invoke(
+          'get_book_metadata_complete',
+          { book_id: String(b.id), book_hash: b.hash ?? b.book_hash },
+          options,
+        );
+      } catch (error) {
+        return errorEnvelope(error, 'get_book', selection.source);
+      }
     }
     const merged = { ...b, ...nonempty(detail) };
     const description = merged.description;

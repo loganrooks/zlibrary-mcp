@@ -107,6 +107,27 @@ def _read(path):
         return {}
 
 
+def _verified_artifact(record, directory):
+    """A receipt is usable only when its current artifact still matches it."""
+    if (
+        record.get("record_version") != 1
+        or record.get("state") not in {"complete", "intent"}
+        or not isinstance(record.get("path"), str)
+        or not record.get("sha256")
+    ):
+        return None
+    path = Path(record["path"])
+    if (
+        path.resolve().parent == directory
+        and not path.is_symlink()
+        and path.is_file()
+        and path.stat().st_size == record.get("bytes")
+        and _hash(path) == record["sha256"]
+    ):
+        return path
+    return None
+
+
 def _atomic_json(path, record):
     descriptor, temporary = tempfile.mkstemp(prefix=".receipt-", dir=path.parent)
     try:
@@ -267,28 +288,24 @@ async def acquire(
     )
     async with destination_lock(destination, budget):
         previous = _read(receipt_path)
-        path = Path(previous.get("path") or destination)
-        if (
-            previous.get("record_version") == 1
-            and previous.get("state") in {"complete", "intent"}
-            and previous.get("source") == source
-            and previous.get("identifiers") == identifiers
-            and path.resolve().parent == directory
-            and not path.is_symlink()
-            and previous.get("sha256")
-            and path.is_file()
-        ):
-            actual = _hash(path)
-            if actual == previous["sha256"] and path.stat().st_size == previous.get(
-                "bytes"
+        path = _verified_artifact(previous, directory)
+        if path is not None:
+            if (
+                previous.get("source") != source
+                or previous.get("identifiers") != identifiers
             ):
-                # An intent with a checkpointed hash can recover publication before finalization.
+                raise AcquisitionError(
+                    "output_refused",
+                    "Destination has a verified receipt for another selection",
+                )
+            record_path = Path(str(path) + ".acq.json")
+            if previous["state"] == "intent":
+                # Recover publication before finalization; complete receipts remain byte-stable.
                 previous.update(state="complete", transfer_skipped=True, reused=False)
-                record_path = Path(str(path) + ".acq.json")
                 _atomic_json(receipt_path, previous)
                 if record_path != receipt_path:
                     _atomic_json(record_path, previous)
-                return _reply(previous, record_path, True)
+            return _reply(previous, record_path, True)
         record = _record(book, source, identifiers, destination, request or {})
         _atomic_json(
             receipt_path, record
@@ -301,8 +318,21 @@ async def acquire(
                     "Published destination must remain inside the output directory",
                     issued=True,
                 )
+            target_receipt = _read(Path(str(target) + ".acq.json"))
+            if _verified_artifact(target_receipt, directory) is not None and (
+                target_receipt.get("source") != source
+                or target_receipt.get("identifiers") != identifiers
+            ):
+                raise AcquisitionError(
+                    "output_refused",
+                    "Published destination has a verified receipt for another selection",
+                    issued=True,
+                )
             record.update(
-                path=str(target), bytes=stage.stat().st_size, sha256=_hash(stage)
+                path=str(target),
+                bytes=stage.stat().st_size,
+                sha256=_hash(stage),
+                format=normalize_document_extension(target.suffix) or None,
             )
             _atomic_json(
                 receipt_path, record
@@ -321,6 +351,7 @@ async def acquire(
         # The checkpoint is called by the publication code. A fallback hash supports legacy transfers.
         record.update(
             path=str(final),
+            format=normalize_document_extension(final.suffix) or None,
             bytes=final.stat().st_size,
             sha256=_hash(final),
             state="complete",

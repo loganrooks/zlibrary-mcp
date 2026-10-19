@@ -116,7 +116,10 @@ export function classifyFailure(error: any, operation: string, source?: string):
     'not_found',
   ];
   let reason = allowedReasons.includes(candidate) ? candidate : 'unknown';
-  if (
+  // The bridge emits this exact allowlisted token for certificate/SSL failures.
+  // Never infer a public TLS cause from arbitrary upstream exception prose.
+  if (context.loginToken === 'TLS certificate verification failed') reason = 'tls_error';
+  else if (
     [
       'ConnectError',
       'ConnectTimeout',

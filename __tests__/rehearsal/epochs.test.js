@@ -73,7 +73,10 @@ test('TLS control rejects the disposable certificate when trust is not passed', 
     'TLS-untrusted',
     async (connect) => {
       const c = await connect();
-      expect((await h.call(c, 'search', { sources: ['zlibrary'], query: 'untrusted' }, true)).error.code).toMatch(/internal|provider_unreachable/);
+      const reply = await h.call(c, 'search', { sources: ['zlibrary'], query: 'untrusted' }, true);
+      expect(reply.error).toMatchObject({
+        code: 'provider_unreachable', source: 'zlibrary', detail: { reason: 'tls_error' },
+      });
       expect((await h.stats()).logins).toBe(0);
     },
     { untrusted: true },

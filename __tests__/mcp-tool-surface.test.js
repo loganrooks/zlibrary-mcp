@@ -76,3 +76,20 @@ test('error envelopes are validated independently of SDK isError bypass', async 
   expect(validate({ error: { code: 'invalid_argument' } }).valid).toBe(false);
   expect(ErrorEnvelopeSchema.safeParse({ error: { ...result.structuredContent.error, retry: 'probably' } }).success).toBe(false);
 });
+
+test('get_book subprocess failure retains selected source and sanitized timeout evidence', async () => {
+  process.env.RETRY_MAX_RETRIES = '0';
+  run.mockResolvedValueOnce(encode({ books: [book] }));
+  const ref = (await call('search', { query: 'Book', sources: ['zlibrary'] })).rows[0].ref;
+  run.mockRejectedValue(Object.assign(new Error('provider SECRET https://private.invalid'), {
+    stderr: JSON.stringify({ error: 'SECRET', type: 'ReadTimeout', details: { reason: 'read_timeout' } }),
+  }));
+  const reply = await client.callTool({ name: 'get_book', arguments: { ref } });
+  expect(reply.isError).toBe(true);
+  expect(reply.structuredContent.error).toMatchObject({
+    source: 'zlibrary', operation: 'get_book', code: 'provider_timeout', retry: 'safe', detail: { reason: 'read_timeout' },
+  });
+  expect(ErrorEnvelopeSchema.safeParse(reply.structuredContent).success).toBe(true);
+  expect(JSON.stringify(reply)).not.toMatch(/SECRET|private\.invalid/);
+  expect(run.mock.calls.at(-1)[1].args[0]).toBe('get_book_metadata_complete');
+});

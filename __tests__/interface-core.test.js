@@ -44,3 +44,19 @@ test('forced cross-generation suffix collision checks nonce before table lookup'
   equal.mint('r', { title: 'Different counter' });
   expect(() => equal.get(old, 'r')).toThrow(/unknown/);
 });
+
+test('only the allowlisted login certificate cause becomes typed TLS evidence', () => {
+  const tls = errorEnvelope({ context: {
+    reason: 'login_failed', pythonErrorType: 'ConnectError',
+    loginToken: 'TLS certificate verification failed',
+  } }, 'search', 'zlibrary');
+  expect(tls.error).toMatchObject({
+    source: 'zlibrary', code: 'provider_unreachable', retry: 'safe', detail: { reason: 'tls_error' },
+  });
+  expect(ErrorEnvelopeSchema.safeParse(tls).success).toBe(true);
+  const unrelated = errorEnvelope({ context: {
+    reason: 'internal', loginToken: 'SECRET ssl certificate https://private.invalid',
+  } }, 'search', 'zlibrary');
+  expect(unrelated.error).toMatchObject({ code: 'internal', detail: { reason: 'internal' } });
+  expect(JSON.stringify([tls, unrelated])).not.toMatch(/SECRET|private\.invalid/);
+});

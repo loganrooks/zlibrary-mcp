@@ -325,3 +325,155 @@ async def test_source_quota_and_provenance_reach_reply_and_sidecar(
     record = json.loads(Path(result["record"]).read_text())
     assert record["provenance"]["host"] == "download.example.invalid"
     assert record["provenance"]["route"] == "fast_download"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "failure", ["publication", "before_checkpoint", "corrected_target"]
+)
+async def test_identity_collision_preserves_original_receipt_and_third_call_skips(
+    tmp_path, monkeypatch, failure
+):
+    other_payload = b"%PDF-1.7\nother book bytes"
+    original = {**BOOK, "source": "libgen", "md5": hashlib.md5(PAYLOAD).hexdigest()}
+    other = {**original, "md5": hashlib.md5(other_payload).hexdigest()}
+    if failure == "corrected_target":
+        other["extension"] = "epub"
+    issued = []
+
+    async def fetch(book, directory):
+        issued.append(book["md5"])
+        if book["md5"] == other["md5"] and failure == "before_checkpoint":
+            raise RuntimeError("provider failed before checkpoint")
+        stage = Path(directory) / ".source-collision.pdf"
+        stage.write_bytes(PAYLOAD if book["md5"] == original["md5"] else other_payload)
+        return bridge._DownloadedPath(str(stage), "signature")
+
+    monkeypatch.setattr(bridge, "_fetch_from_source", fetch)
+    first = await acquire(
+        original, str(tmp_path), filename="chosen.pdf", transfer=bridge.download_book
+    )
+    receipt = Path(first["record"])
+    original_receipt = receipt.read_bytes()
+    with pytest.raises((AcquisitionError, FileExistsError, RuntimeError)):
+        await acquire(
+            other, str(tmp_path), filename="chosen.pdf", transfer=bridge.download_book
+        )
+    after_collision = receipt.read_bytes()
+    third = await acquire(
+        original, str(tmp_path), filename="chosen.pdf", transfer=bridge.download_book
+    )
+    assert third["transfer_skipped"] is True
+    assert issued == (
+        [original["md5"], other["md5"]]
+        if failure == "corrected_target"
+        else [original["md5"]]
+    )
+    assert after_collision == original_receipt == receipt.read_bytes()
+    assert Path(first["path"]).read_bytes() == PAYLOAD
+    assert json.loads(original_receipt)["state"] == "complete"
+    assert not list(tmp_path.glob("*.lock"))
+    assert not list(tmp_path.glob(".source-*"))
+
+
+@pytest.mark.asyncio
+async def test_actual_download_format_reaches_final_receipt(tmp_path, monkeypatch):
+    book = {
+        **BOOK,
+        "source": "libgen",
+        "md5": hashlib.md5(PAYLOAD).hexdigest(),
+        "extension": "epub",
+    }
+
+    async def fetch(*args):
+        stage = tmp_path / ".source-actual.pdf"
+        stage.write_bytes(PAYLOAD)
+        return bridge._DownloadedPath(str(stage), "signature")
+
+    monkeypatch.setattr(bridge, "_fetch_from_source", fetch)
+    result = await acquire(
+        book, str(tmp_path), filename="chosen.epub", transfer=bridge.download_book
+    )
+    record = json.loads(Path(result["record"]).read_text())
+    assert Path(result["path"]).suffix == ".pdf"
+    assert record["format"] == "pdf"
+    assert record["sha256"] == hashlib.sha256(PAYLOAD).hexdigest()
+    assert Path(result["path"]).read_bytes() == PAYLOAD
+    assert json.loads((tmp_path / "chosen.epub.acq.json").read_text()) == record
+
+
+FORMAT_WORKER = r"""
+import asyncio, os, sys
+from pathlib import Path
+from lib.acquisition import acquire
+sys.path.insert(0, str(Path('lib').resolve()))
+from lib import python_bridge as bridge
+async def fetch(*args):
+    stage = Path(sys.argv[1]) / '.source-actual.pdf'
+    stage.write_bytes(b'%PDF-1.7\noriginal bytes')
+    return bridge._DownloadedPath(str(stage), 'signature')
+bridge._fetch_from_source = fetch
+async def transfer(*args, **kwargs):
+    await bridge.download_book(*args, **kwargs)
+    os._exit(23)  # published by the real no-clobber code; acquire has not finalized
+asyncio.run(acquire({'source':'libgen', 'md5':sys.argv[2], 'title':'Book', 'extension':'epub'},
+                    sys.argv[1], filename='chosen.epub', transfer=transfer))
+"""
+
+
+@pytest.mark.asyncio
+async def test_actual_format_checkpoint_survives_real_process_death(tmp_path):
+    md5 = hashlib.md5(PAYLOAD).hexdigest()
+    process = subprocess.run(
+        [sys.executable, "-c", FORMAT_WORKER, str(tmp_path), md5],
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
+    assert process.returncode == 23, process.stderr
+    checkpoint = json.loads((tmp_path / "chosen.epub.acq.json").read_text())
+    assert checkpoint["state"] == "intent"
+    assert checkpoint["format"] == "pdf"
+    assert checkpoint["sha256"] == hashlib.sha256(PAYLOAD).hexdigest()
+    assert Path(checkpoint["path"]).suffix == ".pdf"
+    assert Path(checkpoint["path"]).read_bytes() == PAYLOAD
+    provider = AsyncMock(side_effect=AssertionError("must not contact upstream"))
+    result = await acquire(
+        {"source": "libgen", "md5": md5, "title": "Book", "extension": "epub"},
+        str(tmp_path),
+        filename="chosen.epub",
+        transfer=provider,
+    )
+    provider.assert_not_awaited()
+    assert result["transfer_skipped"] is True
+    complete = json.loads(Path(result["record"]).read_text())
+    assert complete["state"] == "complete"
+    assert complete["format"] == "pdf"
+    assert complete["sha256"] == checkpoint["sha256"]
+
+
+@pytest.mark.asyncio
+async def test_sha_mismatch_cannot_overwrite_different_bytes_through_real_publication(
+    tmp_path, monkeypatch
+):
+    book = {**BOOK, "source": "libgen", "md5": hashlib.md5(PAYLOAD).hexdigest()}
+
+    async def fetch(*args):
+        stage = tmp_path / ".source-tamper.pdf"
+        stage.write_bytes(PAYLOAD)
+        return bridge._DownloadedPath(str(stage), "signature")
+
+    provider = AsyncMock(side_effect=fetch)
+    monkeypatch.setattr(bridge, "_fetch_from_source", provider)
+    first = await acquire(
+        book, str(tmp_path), filename="chosen.pdf", transfer=bridge.download_book
+    )
+    altered = b"x" * len(PAYLOAD)
+    Path(first["path"]).write_bytes(altered)
+    with pytest.raises(FileExistsError, match="Refusing to replace"):
+        await acquire(
+            book, str(tmp_path), filename="chosen.pdf", transfer=bridge.download_book
+        )
+    assert provider.await_count == 2  # current-byte digest rejects blind receipt reuse
+    assert Path(first["path"]).read_bytes() == altered
+    assert not list(tmp_path.glob(".source-*"))

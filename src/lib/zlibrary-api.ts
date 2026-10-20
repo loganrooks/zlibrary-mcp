@@ -12,7 +12,7 @@ import {
   authRejected,
 } from './eapi-session.js';
 import { CircuitBreaker, type Admission } from './circuit-breaker.js';
-import { ZLibraryError, PythonBridgeError } from './errors.js';
+import { ZLibraryError, PythonBridgeError, BridgeTimeoutError } from './errors.js';
 import { logger } from './logger.js';
 import { getPythonLibDirectory } from './paths.js';
 import { runPythonBridge, LONG_BRIDGE_TIMEOUT_MS } from './python-runner.js';
@@ -623,7 +623,13 @@ async function callPythonFunction(
       },
     );
   const invoke = async (transport?: SessionInput, signal = callOptions.signal) => {
-    signal?.throwIfAborted();
+    if (signal?.aborted) {
+      const label = `python_bridge.${functionName}`;
+      throw new BridgeTimeoutError(`${label} aborted before it started`, {
+        label,
+        reason: 'aborted',
+      });
+    }
     // Account the logical call's final verdict, after its retry budget. A lazy
     // child is admitted once at its session request above, including owner
     // control children; receipt-only and intentional auth retries stay outside.

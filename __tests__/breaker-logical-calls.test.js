@@ -106,9 +106,17 @@ test.each([0, 60001])(
     const admissions = execute.mock.calls.length;
     const controller = new AbortController();
     controller.abort();
-    await expect(
-      api.searchMultiSource({ query: 'offline', source: 'libgen' }, { signal: controller.signal }),
-    ).rejects.toMatchObject({ name: 'AbortError' });
+    const failure = await api
+      .searchMultiSource({ query: 'offline', source: 'libgen' }, { signal: controller.signal })
+      .catch((error) => error);
+    const { errorEnvelope } = await import('../lib/tool-errors.js');
+    const { BridgeTimeoutError } = await import('../lib/errors.js');
+    expect(errorEnvelope(failure, 'search', 'libgen').error).toMatchObject({
+      code: 'cancelled',
+      retry: 'safe',
+      detail: { reason: 'aborted' },
+    });
+    expect(failure).toBeInstanceOf(BridgeTimeoutError);
     expect(execute).toHaveBeenCalledTimes(admissions);
     expect(runner).toHaveBeenCalledTimes(5);
     expect(health()).toEqual({ state: 'OPEN', failures: 5 });

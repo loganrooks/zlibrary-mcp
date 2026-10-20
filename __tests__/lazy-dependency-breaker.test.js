@@ -181,7 +181,7 @@ test('a lazy handoff refusal retains the breaker retry hint in the download enve
     code: 'breaker_open',
     retry: 'safe',
     retry_after_s: 60,
-    detail: { reason: 'breaker_open', request_issued: false },
+    detail: { reason: 'breaker_open', dependency: 'eapi', request_issued: false },
   });
   expect(runner).toHaveBeenCalledTimes(1);
   expect(demands).toBe(0);

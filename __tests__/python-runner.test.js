@@ -682,7 +682,7 @@ maybe('python-runner', () => {
     expect(String(error.stderr)).toContain('boom on stderr');
   });
 
-  test('keeps the latest 200 stderr lines so the final provider envelope remains parseable', async () => {
+  test('keeps the latest 32 stderr lines so the final provider envelope remains parseable', async () => {
     const { parseBridgeErrorEnvelope } = await import('../lib/python-bridge.js');
     const envelope = {
       error: 'libgen mirror did not accept a connection',
@@ -710,8 +710,8 @@ maybe('python-runner', () => {
       .catch((err) => err);
     const stderr = String(error.stderr).split('\n');
 
-    expect(stderr).toHaveLength(200);
-    expect(stderr[0]).toBe('diagnostic-2');
+    expect(stderr).toHaveLength(32);
+    expect(stderr[0]).toBe('diagnostic-170');
     expect(parseBridgeErrorEnvelope(error.stderr)).toEqual(envelope);
   });
 

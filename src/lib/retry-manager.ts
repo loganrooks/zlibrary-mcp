@@ -5,6 +5,7 @@
 
 import { setTimeout as wait } from 'node:timers/promises';
 import { logger } from './logger.js';
+import { readAuthDiagnostics } from './auth-diagnostics.js';
 
 export interface RetryOptions {
   signal?: AbortSignal;
@@ -24,7 +25,7 @@ export interface RetryOptions {
  * @throws The last error if all retries are exhausted
  */
 export async function withRetry<T>(
-  operation: () => Promise<T>,
+  operation: (attempt: number) => Promise<T>,
   options: RetryOptions = {},
 ): Promise<T> {
   const {
@@ -42,7 +43,7 @@ export async function withRetry<T>(
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       options.signal?.throwIfAborted();
-      return await operation();
+      return await operation(attempt + 1);
     } catch (error) {
       lastError = error;
 
@@ -51,13 +52,11 @@ export async function withRetry<T>(
       }
 
       // Log retry attempt
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      logger.warn(`Attempt ${attempt + 1} failed, retrying in ${delay}ms...`, {
-        error: errorMessage,
-        attempt: attempt + 1,
-        maxRetries,
-        delay,
-      });
+      const diagnostics = readAuthDiagnostics((error as any)?.context?.diagnostics);
+      logger.warn(
+        'Dependency retry',
+        JSON.stringify(diagnostics ?? { attempt: Math.min(65535, attempt + 1) }),
+      );
 
       // Call custom retry callback if provided
       if (onRetry) {

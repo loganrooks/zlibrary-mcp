@@ -101,10 +101,10 @@ runpy.run_path(${JSON.stringify(path.join(root, 'lib/python_bridge.py'))},run_na
   jest.resetModules();
   const failedApi = await import('../lib/zlibrary-api.js');
   await expect(failedApi.searchBooks({ query: 'offline' })).rejects.toThrow(
-    /HTTP 401.*Invalid credentials #1/,
+    /rejected the login.*HTTP 401/,
   );
   await expect(failedApi.searchBooks({ query: 'offline' })).rejects.toThrow(
-    /HTTP 401.*Invalid credentials #1.*next attempt allowed in/,
+    /HTTP 401.*Authentication rejected.*next attempt allowed in/,
   );
   expect(fs.readFileSync(countFile, 'utf8')).toBe('login\nlogin\nlogin\n');
   const publicValues =

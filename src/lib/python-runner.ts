@@ -29,6 +29,7 @@ import { readdirSync, readFileSync } from 'fs';
 import { logger } from './logger.js';
 import { BridgeKilledError, BridgeSpawnError, BridgeTimeoutError } from './errors.js';
 import { sanitizeSessionError } from './eapi-session.js';
+import { safeEapiFailureEnvelope } from './auth-diagnostics.js';
 
 /**
  * Read a positive-integer millisecond budget within Node's timer range.
@@ -44,7 +45,8 @@ import { sanitizeSessionError } from './eapi-session.js';
  * already safe here because it parses a float.
  */
 const MAX_TIMER_DELAY_MS = 2_147_483_647;
-const MAX_STDERR_LINES = 200;
+const MAX_STDERR_LINES = 32;
+const MAX_STDERR_BYTES = 8192;
 
 function positiveIntOrFallback(value: unknown, fallback: number): number {
   return Number.isSafeInteger(value) &&
@@ -584,6 +586,36 @@ export function runPythonBridge(
       // bridge-owned tree addressable without walking /proc.
       detached: process.platform === 'win32' ? options.detached : true,
     });
+    // PythonShell otherwise keeps an unbounded errorData string and an unbounded
+    // partial-line splitter, independent of our tail. Replace only its stderr
+    // data plumbing immediately after construction; keep its end/exit lifecycle.
+    shell.stderr.unpipe();
+    shell.stderr.removeAllListeners('data');
+    let pendingStderr = '';
+    let discardStderrLine = false;
+    shell.stderr.on('data', (chunk: string | Buffer) => {
+      const pieces = String(chunk).split('\n');
+      for (let index = 0; index < pieces.length; index++) {
+        const piece = pieces[index]!;
+        if (!discardStderrLine) {
+          if (Buffer.byteLength(pendingStderr) + Buffer.byteLength(piece) > MAX_STDERR_BYTES) {
+            pendingStderr = '';
+            discardStderrLine = true;
+          } else pendingStderr += piece;
+        }
+        if (index < pieces.length - 1) {
+          if (!discardStderrLine) shell.emit('stderr', pendingStderr.replace(/\r$/, ''));
+          pendingStderr = '';
+          discardStderrLine = false;
+        }
+      }
+    });
+    shell.stderr.prependOnceListener('end', () => {
+      if (pendingStderr && !discardStderrLine) shell.emit('stderr', pendingStderr);
+      pendingStderr = '';
+    });
+    // unpipe() pauses the source; attaching a new data listener does not undo it.
+    shell.stderr.resume();
     shell.on('error', onShellError);
     shell.childProcess.once('close', () => {
       childClosed = true;
@@ -818,6 +850,8 @@ export function runPythonBridge(
       // Leave the shell registered until terminate's grace window elapses so
       // a shutdown in the meantime still SIGKILLs it.
       clearTimeout(timer);
+      if (options.env?.ZLIBRARY_DIAGNOSTIC_EAPI === '1' && (error as any).context)
+        delete (error as any).context.stderr;
       if (runOptions.signal) runOptions.signal.removeEventListener('abort', onAbort);
       if (lazy || runOptions.sessionInput) {
         sanitizeSessionError(error, privateSecrets);
@@ -853,8 +887,14 @@ export function runPythonBridge(
     shell.on('stderr', (line: string) => {
       // Keep a bounded tail: provider envelopes are written last, after any
       // diagnostics, and downstream error classification needs that envelope.
+      // Oversized records are discarded whole, not truncated into valid-looking JSON.
+      if (Buffer.byteLength(line) > MAX_STDERR_BYTES) return;
       stderrLines.push(line);
-      if (stderrLines.length > MAX_STDERR_LINES) stderrLines.shift();
+      while (
+        stderrLines.length > MAX_STDERR_LINES ||
+        Buffer.byteLength(stderrLines.join('\n')) > MAX_STDERR_BYTES
+      )
+        stderrLines.shift();
     });
 
     const finish = async (err: any) => {
@@ -900,15 +940,35 @@ export function runPythonBridge(
           new BridgeKilledError(`${label} was terminated by ${signal}.${oomHint}`, signal, {
             label,
             signal,
-            stderr: stderrLines.join('\n'),
+            ...(options.env?.ZLIBRARY_DIAGNOSTIC_EAPI === '1'
+              ? {}
+              : { stderr: stderrLines.join('\n') }),
           }),
         );
         return;
       }
 
       if (err) {
-        if (stderrLines.length > 0 && !err.stderr) {
-          err.stderr = stderrLines.join('\n');
+        const retained = stderrLines.join('\n');
+        if (options.env?.ZLIBRARY_DIAGNOSTIC_EAPI === '1') {
+          let envelope: Record<string, any> | undefined;
+          for (const line of [...stderrLines].reverse()) {
+            if (Buffer.byteLength(line) > 2048) continue;
+            try {
+              envelope = safeEapiFailureEnvelope(JSON.parse(line));
+            } catch {
+              /* not a failure record */
+            }
+            if (envelope) break;
+          }
+          // PythonShell's message/stack/args/traceback can embed its complete raw buffers.
+          // Retain neither those properties nor their cause when crossing this boundary.
+          err = Object.assign(new Error('EAPI bridge request failed'), {
+            exitCode: err.exitCode,
+            stderr: envelope ? JSON.stringify(envelope) : '',
+          });
+        } else {
+          err.stderr = retained;
         }
         if (lazy) sanitizeSessionError(err, privateSecrets);
         reject(err);

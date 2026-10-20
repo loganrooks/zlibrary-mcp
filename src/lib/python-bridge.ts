@@ -5,6 +5,9 @@ import { getPythonLibDirectory, getPythonScriptPath } from './paths.js';
 import { LONG_BRIDGE_TIMEOUT_MS, runPythonBridge } from './python-runner.js';
 import type { RunBridgeOptions } from './python-runner.js';
 import { PythonBridgeError } from './errors.js';
+import { randomUUID } from 'node:crypto';
+import { needsEapi } from './eapi-session.js';
+import { readAuthDiagnostics, safeEapiFailureEnvelope } from './auth-diagnostics.js';
 
 const BRIDGE_SCRIPT_NAME = 'python_bridge.py';
 const LONG_RUNNING_FUNCTIONS = new Set(['download_book']);
@@ -14,6 +17,7 @@ export interface BridgeErrorEnvelope {
   type?: string;
   status_code?: number;
   details?: any;
+  diagnostics?: unknown;
 }
 
 const PERMANENT_CALLER_REASONS = new Set(['configuration_error', 'quota_exhausted']);
@@ -43,13 +47,18 @@ export function isBridgeDetailRetryable(details: any): boolean {
 /** Extract the final JSON provider-error envelope from mixed stderr logs. */
 export function parseBridgeErrorEnvelope(stderr: unknown): BridgeErrorEnvelope | null {
   if (typeof stderr !== 'string' || stderr.length === 0) return null;
-  const lines = stderr.split('\n');
+  const lines = stderr.split('\n').slice(-32);
   for (let index = lines.length - 1; index >= 0; index -= 1) {
     const line = (lines[index] ?? '').trim();
+    if (Buffer.byteLength(line) > 2048) continue;
     if (!line.startsWith('{')) continue;
     try {
       const parsed = JSON.parse(line);
-      if (parsed && typeof parsed.error === 'string') return parsed;
+      if (parsed && typeof parsed.error === 'string') {
+        if ('diagnostics' in parsed)
+          return (safeEapiFailureEnvelope(parsed) as BridgeErrorEnvelope) ?? null;
+        return parsed;
+      }
     } catch {
       // Diagnostic line, not the envelope.
     }
@@ -91,6 +100,17 @@ export async function callPythonFunction(
     pythonPath: pythonExecutable,
     scriptPath: getPythonLibDirectory(),
     args: [functionName, serializedArgs],
+    ...(needsEapi(functionName, args)
+      ? {
+          env: {
+            ...process.env,
+            ZLIBRARY_DIAGNOSTIC_ID: randomUUID(),
+            ZLIBRARY_DIAGNOSTIC_EAPI: '1',
+            ZLIBRARY_DIAGNOSTIC_ATTEMPT: '1',
+            ZLIBRARY_DIAGNOSTIC_REFRESH: '0',
+          },
+        }
+      : {}),
   };
 
   let output: string;
@@ -106,33 +126,28 @@ export async function callPythonFunction(
   } catch (error: any) {
     if (typeof error?.exitCode === 'number') {
       const envelope = parseBridgeErrorEnvelope(error.stderr);
-      const message = `Python process exited with code ${error.exitCode}: ${error.stderr ?? error.message}. Raw stdout: ${error.stdout ?? ''}`;
+      const message = `Python process exited with code ${error.exitCode}`;
       if (envelope) {
         throw new PythonBridgeError(
           message,
           {
             functionName,
-            args,
             details: envelope.details,
             pythonErrorType: envelope.type,
             httpStatus: envelope.status_code,
-            stderr: error.stderr,
-            originalError: error,
+            diagnostics: readAuthDiagnostics(envelope.diagnostics),
           },
           isBridgeDetailRetryable(envelope.details),
         );
       }
-      throw new Error(message, { cause: error });
+      throw new PythonBridgeError(message, { functionName }, false);
     }
     throw error;
   }
 
   try {
     return JSON.parse(output);
-  } catch (error: any) {
-    throw new Error(
-      `Failed to parse Python result JSON: ${error.message}. Raw output: ${output}. Stderr: `,
-      { cause: error },
-    );
+  } catch {
+    throw new PythonBridgeError('Failed to parse Python result JSON.', { functionName }, false);
   }
 }

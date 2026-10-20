@@ -1538,6 +1538,20 @@ async def _download_url_to_file(
     return completed_path
 
 
+def _provenance_hostname(value) -> Optional[str]:
+    """Keep mirror provenance to a hostname, even for URL-shaped configuration."""
+    if not isinstance(value, str) or not value.strip():
+        return None
+    value = value.strip()
+    try:
+        host = urlsplit(
+            value if "://" in value or value.startswith("//") else f"//{value}"
+        ).hostname
+    except ValueError:
+        return None
+    return host.lower() if host else None
+
+
 async def _fetch_from_source(book_details: dict, output_dir: str) -> str:
     """Resolve and fetch a non-Z-Library book. Returns the raw file path."""
     md5 = (book_details.get("md5") or "").strip().lower()
@@ -1606,7 +1620,7 @@ async def _fetch_from_source(book_details: dict, output_dir: str) -> str:
                         if provider == "annas"
                         else "mirror_download",
                         "host": active_host or None,
-                        "mirror": getattr(result, "mirror", "") or None,
+                        "mirror": _provenance_hostname(getattr(result, "mirror", "")),
                     }
                     if (
                         quota is not None
@@ -1755,7 +1769,6 @@ async def download_book(
             eapi_staging = tempfile.TemporaryDirectory(prefix=".eapi-", dir=output_dir)
             receipt_options = {}
             if publication_hook is not None:
-                eapi_provenance["mirror"] = getattr(eapi, "domain", None) or None
                 receipt_options["host_observer"] = observe_eapi_host
             original_download_path_str = await eapi.download_file(
                 book_id=int(book_id),
@@ -1763,6 +1776,11 @@ async def download_book(
                 output_dir=eapi_staging.name,
                 **receipt_options,
             )
+            if publication_hook is not None:
+                # Link resolution can recover onto a different EAPI domain.
+                eapi_provenance["mirror"] = _provenance_hostname(
+                    getattr(eapi, "domain", None)
+                )
 
         if (
             not original_download_path_str

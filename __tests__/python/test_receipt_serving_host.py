@@ -104,7 +104,7 @@ async def test_later_libgen_mirror_and_redirect_host_reach_receipt(
     record = json.loads(Path(result["record"]).read_text())
     assert record["provenance"] == {
         "route": "mirror_download",
-        "mirror": "la",
+        "mirror": "libgen.la",
         "host": "bytes.example.invalid",
     }
     assert [r.url.host for r in requests[:3]] == ["libgen.li", "libgen.vg", "libgen.la"]
@@ -121,7 +121,8 @@ async def test_annas_resolution_mirror_and_redirect_host_reach_receipt(
 ):
     """The Anna's API hostname must not replace the host serving the book."""
     config = SourceConfig(
-        annas_base_url="https://annas-archive.gl", annas_secret_key="offline"
+        annas_base_url="https://ANNAS-ARCHIVE.GL:8443/catalog",
+        annas_secret_key="offline",
     )
     adapter = AnnasArchiveAdapter(config)
 
@@ -167,15 +168,10 @@ async def test_annas_resolution_mirror_and_redirect_host_reach_receipt(
     }
 
 
-@pytest.mark.asyncio
-@pytest.mark.parametrize("reuse", [False, True], ids=["redirect", "receipt-reuse"])
-async def test_eapi_redirect_host_and_original_receipt_authority(
-    tmp_path, monkeypatch, reuse
-):
-    """EAPI must retain its response host; later reuse cannot stamp a new client domain."""
+@pytest.fixture
+def eapi_file_writer(monkeypatch):
+    """Keep real local writes while isolating the observed sandbox executor wait."""
 
-    # Isolate receipt assertions from the lane's observed aiofiles/executor wait.
-    # Keep actual local writes; the existing EAPI suite exercises its normal writer.
     @asynccontextmanager
     async def async_open(path, mode):
         with open(path, mode) as handle:
@@ -187,9 +183,25 @@ async def test_eapi_redirect_host_and_original_receipt_authority(
             yield Writer()
 
     monkeypatch.setattr("zlibrary.eapi.aiofiles.open", async_open)
-    eapi = EAPIClient(
-        domain="eapi.example.invalid", remix_userid="offline", remix_userkey="offline"
-    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("reuse", [False, True], ids=["redirect", "receipt-reuse"])
+@pytest.mark.parametrize(
+    "domain",
+    [
+        "eapi.example.invalid",
+        "EAPI.EXAMPLE.INVALID",
+        "https://EAPI.EXAMPLE.INVALID:8443/catalog?token=private",
+        "EAPI.EXAMPLE.INVALID/catalog",
+    ],
+)
+async def test_eapi_redirect_host_and_original_receipt_authority(
+    tmp_path, monkeypatch, reuse, domain, eapi_file_writer
+):
+    """EAPI must retain its response host; later reuse cannot stamp a new client domain."""
+
+    eapi = EAPIClient(domain=domain, remix_userid="offline", remix_userkey="offline")
     eapi.get_download_link = AsyncMock(
         return_value={"downloadLink": "https://resolved.example.invalid/book"}
     )
@@ -229,3 +241,89 @@ async def test_eapi_redirect_host_and_original_receipt_authority(
     }
     assert len(requests) == 2
     assert "host" not in result and "provenance" not in result
+
+
+@pytest.mark.asyncio
+async def test_eapi_receipt_names_domain_after_link_recovery(
+    tmp_path, monkeypatch, eapi_file_writer
+):
+    """Capturing domain before get_download_link loses the successful recovery host."""
+    eapi = EAPIClient("stale.example.invalid", "offline", "offline")
+
+    async def recover():
+        eapi.domain = "RECOVERED.EXAMPLE.INVALID"
+        return True
+
+    eapi.on_domain_failed = recover
+    monkeypatch.setattr(bridge, "get_eapi_client", AsyncMock(return_value=eapi))
+
+    def handler(request):
+        if request.url.host == "stale.example.invalid":
+            raise httpx.ConnectError("offline stale domain", request=request)
+        if request.url.host == "recovered.example.invalid":
+            assert request.url.path == "/eapi/book/123/offline/file"
+            return httpx.Response(
+                200, json={"downloadLink": "https://bytes.example.invalid/book.pdf"}
+            )
+        assert request.url.host == "bytes.example.invalid"
+        return httpx.Response(200, content=PAYLOAD)
+
+    requests = offline_http(monkeypatch, handler)
+    try:
+        result = await acquire(
+            {**BOOK, "source": "zlibrary", "id": "123", "hash": "offline"},
+            str(tmp_path),
+            transfer=bridge.download_book,
+        )
+    finally:
+        await eapi.close()
+    record = json.loads(Path(result["record"]).read_text())
+    assert record["provenance"] == {
+        "route": "eapi",
+        "mirror": "recovered.example.invalid",
+        "host": "bytes.example.invalid",
+    }
+    assert [r.url.host for r in requests] == [
+        "stale.example.invalid",
+        "recovered.example.invalid",
+        "bytes.example.invalid",
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("response_url", ["absent", None])
+async def test_eapi_observer_falls_back_to_request_host_without_response_url(
+    tmp_path, monkeypatch, eapi_file_writer, response_url
+):
+    """Removing request-host fallback must produce an empty observation and fail."""
+    eapi = EAPIClient("eapi.example.invalid", "offline", "offline")
+    request_url = "https://REQUEST.EXAMPLE.INVALID:8443/book?token=private"
+    eapi.get_download_link = AsyncMock(return_value={"downloadLink": request_url})
+
+    async def chunks():
+        yield PAYLOAD
+
+    response = SimpleNamespace(
+        headers={"content-disposition": 'attachment; filename="book.pdf"'},
+        raise_for_status=lambda: None,
+        aiter_bytes=chunks,
+    )
+    if response_url is None:
+        response.url = None
+
+    @asynccontextmanager
+    async def stream(method, url):
+        assert method == "GET" and url == request_url
+        yield response
+
+    @asynccontextmanager
+    async def client(**kwargs):
+        yield SimpleNamespace(stream=stream)
+
+    monkeypatch.setattr(httpx, "AsyncClient", client)
+    hosts = []
+    result = await eapi.download_file(
+        123, "offline", str(tmp_path), host_observer=hosts.append
+    )
+    assert Path(result).read_bytes() == PAYLOAD
+    assert hosts == ["request.example.invalid"]

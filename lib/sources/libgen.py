@@ -954,7 +954,7 @@ class LibgenAdapter(SourceAdapter):
                     url=url,
                     source=SourceType.LIBGEN,
                     quota_info=None,  # LibGen has no quota
-                    mirror=mirror,
+                    mirror=mirror_host(mirror),
                 )
 
         if failures:

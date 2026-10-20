@@ -13,7 +13,7 @@ let mapping = [['/app', root]];
 const translate = (s) => mapping.reduce((v, [from, to]) => v.replaceAll(from, to), s);
 function launch(command, childArgs, env, name, image, cwd) {
   const child = spawn(command, childArgs, { env, cwd, stdio: ['pipe', 'pipe', 'inherit'] });
-  if (name) fs.writeFileSync(record(name), JSON.stringify({ pid: child.pid, mapping }));
+  if (name) fs.writeFileSync(record(name), JSON.stringify({ pid: child.pid, mapping, env, image }));
   child.on('error', (e) => { process.stderr.write(e.message); process.exitCode = 1; });
   process.on('SIGTERM', () => child.kill('SIGTERM'));
   process.on('SIGINT', () => child.kill('SIGINT'));
@@ -59,6 +59,8 @@ function launch(command, childArgs, env, name, image, cwd) {
         response.result.serverInfo.version = '0.0.0-wrong';
       if (image === 'wrong-tools' && response.result?.tools)
         response.result.tools.pop();
+      if (image === 'wrong-schema' && response.result?.tools)
+        response.result.tools.find(t => t.name === 'download').inputSchema.properties.ref.type = 'number';
       if (image === 'wrong-envelope' && response.result?.content)
         response.result.content = [{ type: 'text', text: '{}' }];
       if (image === 'egress' && response.result?.content)
@@ -99,9 +101,14 @@ if (verb === 'run') {
   launch(translate(command), args.map(translate), env, name, image, cwd ? translate(cwd) : undefined);
 } else if (verb === 'exec') {
   const name = args.shift();
-  mapping = JSON.parse(fs.readFileSync(record(name))).mapping;
+  const container = JSON.parse(fs.readFileSync(record(name)));
+  mapping = container.mapping;
   const command = args.shift();
-  launch(translate(command), args.map(translate), { PATH: process.env.PATH }, null);
+  // Failure control: simulate a fence that didn't leave evidence. The real
+  // canary's unblocked-connect control is separately exercised without sockets.
+  if (container.image === 'missing-canary' && args.includes('/smoke/controls/egress-canary.py'))
+    process.exit(0);
+  launch(translate(command), args.map(translate), container.env, null);
 } else if (verb === 'rm') {
   if (args.shift() !== '--force') throw new Error('expected force cleanup');
   for (const name of args) {

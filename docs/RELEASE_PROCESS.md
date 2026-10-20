@@ -129,18 +129,24 @@ Every rule above is one of those failures, inverted.
 
 ### Publish ordering
 
-On a `v*` tag, `validate-release-notes` must succeed before `publish-npm`
-runs setup, build, and the existing Jest and pytest suites. npm publication
-follows those tests in the same job. `publish-docker` then requires successful
-`publish-npm` completion as well as validated notes, so GHCR publication waits
-for both tests and npm publication. A failed or skipped test gate blocks both
-publishers (#211).
+On a `v*` tag, `validate-release-notes` must succeed before `prepare-release`
+runs setup, build, the existing Jest and pytest suites, and a single npm pack.
+`publish-packages` requires that job and validated notes. It builds the image
+from the same tarball that npm will publish, loads it with its BuildKit
+provenance in Docker's containerd image store, checks its index digest, and runs
+the offline image smoke. Only then does it publish npm and push the exact tested
+image to GHCR, in that order (#291). A failed or skipped test gate or a failed
+image smoke blocks both publishers (#211).
 
-`github-release` still depends on validated notes and successful npm publication;
-it can run alongside Docker and does not wait for a GHCR push.
+`github-release` depends on validated notes and successful `publish-packages`
+completion, so it follows both registry publications. Tags, npm channel and
+`--latest` behavior are unchanged. A later registry failure can still leave a
+partial release; there is no cross-registry transaction.
 `__tests__/publish-workflow.test.js` parses the workflow and checks its dependency
 graph in the normal Jest CI suite, including failed, skipped, cancelled, and
-missing test-gate outcomes and the original Docker-bypass mutation. These are
+missing test-gate outcomes and the original Docker-bypass mutation. It also pins
+build → identity → smoke → npm → GHCR ordering, failure propagation, explicit
+provenance and the shared context helper. These are
 offline configuration checks, not an execution of GitHub's scheduler or a real
 registry publish; those remain untested until the release.
 

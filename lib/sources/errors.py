@@ -28,6 +28,7 @@ REASON_TEXT = {
     "http_error": "returned an HTTP error",
     "quota_exhausted": "has no downloads left on this account today",
     "protocol_error": "returned a malformed response",
+    "partial_transfer": "stopped after receiving only part of the file",
     "integrity_mismatch": "returned bytes that did not match the requested digest",
     "configuration_error": "cannot run with the supplied configuration",
     # Not a verdict on the host: it names the mirrors and providers the walk

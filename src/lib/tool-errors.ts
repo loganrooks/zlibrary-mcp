@@ -124,6 +124,7 @@ export function classifyFailure(error: any, operation: string, source?: string):
     'integrity_mismatch',
     'http_error',
     'protocol_error',
+    'partial_transfer',
     'not_found',
   ];
   let reason = allowedReasons.includes(candidate) ? candidate : 'unknown';
@@ -206,7 +207,7 @@ export function classifyFailure(error: any, operation: string, source?: string):
   else if (['read_timeout', 'search_timeout', 'walk_budget_exhausted'].includes(reason))
     code = 'provider_timeout';
   else if (reason === 'integrity_mismatch') code = 'integrity_mismatch';
-  else if (['http_error', 'protocol_error'].includes(reason)) code = 'provider_error';
+  else if (['http_error', 'protocol_error', 'partial_transfer'].includes(reason)) code = 'provider_error';
   else if (error?.code === 'CIRCUIT_BREAKER_OPEN') code = 'breaker_open';
   else if (['ValueError', 'TypeError'].includes(context.pythonErrorType)) code = 'invalid_argument';
   else if (detail.failures?.length) {

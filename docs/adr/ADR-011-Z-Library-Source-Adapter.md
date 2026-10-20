@@ -604,7 +604,7 @@ The transport and upstream reason codes introduced by PR #106 are retained:
 
 - `dns_failure`, `dns_timeout`, `connect_timeout`, `connect_refused`,
   `connect_error`, `tls_error`, `read_timeout`, `search_timeout`,
-  `http_error`, `quota_exhausted`, `protocol_error`, `integrity_mismatch`,
+  `http_error`, `quota_exhausted`, `protocol_error`, `integrity_mismatch`, `partial_transfer`,
   `configuration_error`, and `unknown`.
 
 `integrity_mismatch` and `configuration_error` are load-bearing and easy to

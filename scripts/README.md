@@ -126,6 +126,6 @@ node scripts/check-install-upgrades.mjs --offline-providers --control=delete-sta
 
 `--matrix all` means all cases in this acquisition-only upgrade check, not the
 historical proposed base/rag/scholar/Text installer matrix. No rag/scholar or
-Text installation is supplied. The current npm manifest still says 1.4.0;
-the check identifies candidate code by its packed hash, distinct runtime bytes
-and exact five-tool 2.0 surface, not a version bump performed by this script.
+Text installation is supplied. The release-prepared npm manifest says 2.0.0;
+the check also identifies candidate code by its packed hash, distinct runtime
+bytes and exact five-tool 2.0 surface. This script does not bump the version.

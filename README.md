@@ -209,6 +209,10 @@ file-reading tool in this five-tool interface.
 | `LOG_LEVEL` | `silent`, `error`, `warn`, `info` (default), `debug`; diagnostics use stderr |
 | `PYTHON_BRIDGE_TIMEOUT` | Ordinary bridge deadline in milliseconds |
 | `PYTHON_BRIDGE_LONG_TIMEOUT` | Acquisition deadline in milliseconds |
+| `BOOK_SOURCE_WALK_BUDGET` | Whole LibGen/alternative-source walk budget in seconds (default `165`), shared across mirrors and clamped below the owning bridge deadline; unattempted mirrors report `walk_budget_exhausted` |
+| `BOOK_SOURCE_TOTAL_TIMEOUT` | Per-source request budget in seconds (default `45`), bounded by the remaining walk budget |
+| `BOOK_SOURCE_PREFLIGHT` | DNS/TCP reachability probe (`true` by default); skipped when a proxy applies |
+| `BOOK_SOURCE_PREFLIGHT_TIMEOUT` | Aggregate DNS plus TCP probe budget in seconds (default `5`), shared across resolved addresses |
 | `ZLIBRARY_SESSION_MODE` | `memory` (default) or `per-call`; unknown modes fail at startup |
 
 In memory mode, reads and fresh Z-Library acquisitions share the same in-memory

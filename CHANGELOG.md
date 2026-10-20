@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0] - YYYY-MM-DD
+
 ### Breaking: five-tool acquisition interface
 
 - Replaced the old tool names with `search`, `get_book`, `download`, `get_limits`,
@@ -66,6 +68,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   four parked processing failures in issue #245.
 
 ### Added
+
+- Search and account-history result limits default to 10 and accept integers
+  from 1 through 50; larger result sets use bounded process-local cursors (#173).
+- LibGen search and download mirror walks share one wall-clock deadline across
+  the configured mirror and `li → vg → la`, without truncating the candidate
+  list (PR #153, #152). `BOOK_SOURCE_WALK_BUDGET` defaults to 165 seconds and is
+  clamped below the owning ordinary/download bridge deadline. Unattempted
+  mirrors are reported as `walk_budget_exhausted`, not as a host timeout (#284).
+  DNS plus TCP preflight share one aggregate `BOOK_SOURCE_PREFLIGHT_TIMEOUT`
+  budget (default 5 seconds), rather than a fresh timeout for every address.
+  See the README environment table, `.env.example` and retry configuration.
+- **Release-prep placeholder — #251 / PR #285:** typed, bounded authentication
+  diagnostics are not in this pinned tree. Replace this line with the landed
+  behavior and code references only after PR #285 merges; do not advertise it
+  as shipped before then.
 
 - `npm run audit:release` ([scripts/release-audit.mjs](scripts/release-audit.mjs)) and a
   weekly `Release Record Audit` workflow, checking that the project's record of itself is
@@ -165,7 +182,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Each provider has its own circuit breaker: Z-Library, LibGen and Anna's Archive
-  (ADR-011). An outage at one no longer refuses the others, and an ordered
+  (ADR-011, #192, PR #283). An outage at one no longer refuses the others, and an ordered
   `["annas","libgen"]` search reaches LibGen while Anna's is down. 1.4.0 ran one
   breaker for every bridge call.
 - `CONTEXT.md` added as the terminology glossary, splitting the overloaded term
@@ -514,7 +531,8 @@ source is privileged").
 - BUG-X/FIX comments cleaned from production code
 - Debug print statements converted to proper logging
 
-[Unreleased]: https://github.com/rookslog/zlibrary-mcp/compare/v1.4.0...HEAD
+[Unreleased]: https://github.com/rookslog/zlibrary-mcp/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/rookslog/zlibrary-mcp/compare/v1.4.0...v2.0.0
 [1.4.0]: https://github.com/rookslog/zlibrary-mcp/compare/v1.3.2...v1.4.0
 [1.3.2]: https://github.com/rookslog/zlibrary-mcp/compare/v1.3.1...v1.3.2
 [1.3.1]: https://github.com/rookslog/zlibrary-mcp/compare/v1.3.0...v1.3.1

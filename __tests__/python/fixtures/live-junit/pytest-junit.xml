@@ -1,0 +1,377 @@
+<?xml version='1.0' encoding='utf-8'?>
+<testsuites name="pytest tests"><testsuite name="pytest" errors="5" failures="8" skipped="0" tests="13"><testcase classname="offline_live_cases" name="test_connect_setup[ConnectError]"><error message="failed on setup with &quot;httpx.ConnectError&quot;">request = &lt;SubRequest 'refused' for &lt;Function test_connect_setup[ConnectError]&gt;&gt;
+
+    @pytest.fixture(params=[httpx.ConnectError, httpx.ConnectTimeout])
+    def refused(request):
+&gt;       raise request.param("")
+E       httpx.ConnectError
+
+&lt;scratch&gt;/cases.py:10: ConnectError</error></testcase><testcase classname="offline_live_cases" name="test_connect_setup[ConnectTimeout]"><error message="failed on setup with &quot;httpx.ConnectTimeout&quot;">request = &lt;SubRequest 'refused' for &lt;Function test_connect_setup[ConnectTimeout]&gt;&gt;
+
+    @pytest.fixture(params=[httpx.ConnectError, httpx.ConnectTimeout])
+    def refused(request):
+&gt;       raise request.param("")
+E       httpx.ConnectTimeout
+
+&lt;scratch&gt;/cases.py:10: ConnectTimeout</error></testcase><testcase classname="offline_live_cases" name="test_connect_message_setup"><error message="failed on setup with &quot;httpx.ConnectError: All connection attempts failed&quot;">@pytest.fixture
+    def refused_message():
+&gt;       raise httpx.ConnectError("All connection attempts failed")
+E       httpx.ConnectError: All connection attempts failed
+
+&lt;scratch&gt;/cases.py:19: ConnectError</error></testcase><testcase classname="offline_live_cases" name="test_connect_teardown"><error message="failed on teardown with &quot;httpx.ConnectError&quot;">@pytest.fixture
+    def refused_teardown():
+        yield
+&gt;       raise httpx.ConnectError("")
+E       httpx.ConnectError
+
+&lt;scratch&gt;/cases.py:29: ConnectError</error></testcase><testcase classname="offline_live_cases" name="test_connect_call"><failure message="httpx.ConnectError">def test_connect_call():
+&gt;       raise httpx.ConnectError("")
+E       httpx.ConnectError
+
+&lt;scratch&gt;/cases.py:37: ConnectError</failure></testcase><testcase classname="offline_live_cases" name="test_wall_call[z-library.ec]"><failure message="zlibrary.eapi.DiamWallError: DiamWall anti-bot wall detected on z-library.ec (HTTP 513 DiamWall block page): the domain blocks programmatic /eapi access. Set ZLIBRARY_EAPI_DOMAIN to a working domain (e.g. export ZLIBRARY_EAPI_DOMAIN=z-library.ec) or unset it to let the built-in fallback list pick one.">domain = 'z-library.ec'
+
+    @pytest.mark.parametrize("domain", ["z-library.ec", "z-library.sk", "z-library.ec.evil"])
+    def test_wall_call(domain):
+&gt;       decode_eapi_json(httpx.Response(513, text="DiamWall"), domain)
+
+&lt;scratch&gt;/cases.py:42: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+resp = &lt;Response [513 ]&gt;, domain = 'z-library.ec'
+
+    def decode_eapi_json(resp: httpx.Response, domain: str) -&gt; dict:
+        """Parse an /eapi response as JSON, classifying anti-bot walls explicitly.
+    
+        A healthy EAPI endpoint returns HTTP 200 with JSON. DiamWall-fronted
+        domains return a 307 self-redirect, 403/513/517 "Access Denied", or an
+        HTML block page — this raises DiamWallError for those so callers see
+        "anti-bot wall" instead of a bare JSONDecodeError or status error.
+        """
+        if resp.status_code == 200:
+            try:
+                payload = resp.json()
+                if _auth_rejected(payload):
+                    raise EAPIAuthenticationError(
+                        "EAPI authentication rejected",
+                        status_code=resp.status_code,
+                        token=sanitized_auth_token(payload.get("error")),
+                    )
+                return payload
+            except ValueError:
+                pass  # fall through to wall classification
+        body = resp.text
+        if "diamwall" in body.lower():
+            error = _diamwall_error(domain, f"HTTP {resp.status_code} DiamWall block page")
+            error.status_code = resp.status_code
+&gt;           raise error
+E           zlibrary.eapi.DiamWallError: DiamWall anti-bot wall detected on z-library.ec (HTTP 513 DiamWall block page): the domain blocks programmatic /eapi access. Set ZLIBRARY_EAPI_DOMAIN to a working domain (e.g. export ZLIBRARY_EAPI_DOMAIN=z-library.ec) or unset it to let the built-in fallback list pick one.
+
+zlibrary/src/zlibrary/eapi.py:112: DiamWallError</failure></testcase><testcase classname="offline_live_cases" name="test_wall_call[z-library.sk]"><failure message="zlibrary.eapi.DiamWallError: DiamWall anti-bot wall detected on z-library.sk (HTTP 513 DiamWall block page): the domain blocks programmatic /eapi access. Set ZLIBRARY_EAPI_DOMAIN to a working domain (e.g. export ZLIBRARY_EAPI_DOMAIN=z-library.ec) or unset it to let the built-in fallback list pick one.">domain = 'z-library.sk'
+
+    @pytest.mark.parametrize("domain", ["z-library.ec", "z-library.sk", "z-library.ec.evil"])
+    def test_wall_call(domain):
+&gt;       decode_eapi_json(httpx.Response(513, text="DiamWall"), domain)
+
+&lt;scratch&gt;/cases.py:42: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+resp = &lt;Response [513 ]&gt;, domain = 'z-library.sk'
+
+    def decode_eapi_json(resp: httpx.Response, domain: str) -&gt; dict:
+        """Parse an /eapi response as JSON, classifying anti-bot walls explicitly.
+    
+        A healthy EAPI endpoint returns HTTP 200 with JSON. DiamWall-fronted
+        domains return a 307 self-redirect, 403/513/517 "Access Denied", or an
+        HTML block page — this raises DiamWallError for those so callers see
+        "anti-bot wall" instead of a bare JSONDecodeError or status error.
+        """
+        if resp.status_code == 200:
+            try:
+                payload = resp.json()
+                if _auth_rejected(payload):
+                    raise EAPIAuthenticationError(
+                        "EAPI authentication rejected",
+                        status_code=resp.status_code,
+                        token=sanitized_auth_token(payload.get("error")),
+                    )
+                return payload
+            except ValueError:
+                pass  # fall through to wall classification
+        body = resp.text
+        if "diamwall" in body.lower():
+            error = _diamwall_error(domain, f"HTTP {resp.status_code} DiamWall block page")
+            error.status_code = resp.status_code
+&gt;           raise error
+E           zlibrary.eapi.DiamWallError: DiamWall anti-bot wall detected on z-library.sk (HTTP 513 DiamWall block page): the domain blocks programmatic /eapi access. Set ZLIBRARY_EAPI_DOMAIN to a working domain (e.g. export ZLIBRARY_EAPI_DOMAIN=z-library.ec) or unset it to let the built-in fallback list pick one.
+
+zlibrary/src/zlibrary/eapi.py:112: DiamWallError</failure></testcase><testcase classname="offline_live_cases" name="test_wall_call[z-library.ec.evil]"><failure message="zlibrary.eapi.DiamWallError: DiamWall anti-bot wall detected on z-library.ec.evil (HTTP 513 DiamWall block page): the domain blocks programmatic /eapi access. Set ZLIBRARY_EAPI_DOMAIN to a working domain (e.g. export ZLIBRARY_EAPI_DOMAIN=z-library.ec) or unset it to let the built-in fallback list pick one.">domain = 'z-library.ec.evil'
+
+    @pytest.mark.parametrize("domain", ["z-library.ec", "z-library.sk", "z-library.ec.evil"])
+    def test_wall_call(domain):
+&gt;       decode_eapi_json(httpx.Response(513, text="DiamWall"), domain)
+
+&lt;scratch&gt;/cases.py:42: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+resp = &lt;Response [513 ]&gt;, domain = 'z-library.ec.evil'
+
+    def decode_eapi_json(resp: httpx.Response, domain: str) -&gt; dict:
+        """Parse an /eapi response as JSON, classifying anti-bot walls explicitly.
+    
+        A healthy EAPI endpoint returns HTTP 200 with JSON. DiamWall-fronted
+        domains return a 307 self-redirect, 403/513/517 "Access Denied", or an
+        HTML block page — this raises DiamWallError for those so callers see
+        "anti-bot wall" instead of a bare JSONDecodeError or status error.
+        """
+        if resp.status_code == 200:
+            try:
+                payload = resp.json()
+                if _auth_rejected(payload):
+                    raise EAPIAuthenticationError(
+                        "EAPI authentication rejected",
+                        status_code=resp.status_code,
+                        token=sanitized_auth_token(payload.get("error")),
+                    )
+                return payload
+            except ValueError:
+                pass  # fall through to wall classification
+        body = resp.text
+        if "diamwall" in body.lower():
+            error = _diamwall_error(domain, f"HTTP {resp.status_code} DiamWall block page")
+            error.status_code = resp.status_code
+&gt;           raise error
+E           zlibrary.eapi.DiamWallError: DiamWall anti-bot wall detected on z-library.ec.evil (HTTP 513 DiamWall block page): the domain blocks programmatic /eapi access. Set ZLIBRARY_EAPI_DOMAIN to a working domain (e.g. export ZLIBRARY_EAPI_DOMAIN=z-library.ec) or unset it to let the built-in fallback list pick one.
+
+zlibrary/src/zlibrary/eapi.py:112: DiamWallError</failure></testcase><testcase classname="offline_live_cases" name="test_wall_setup"><error message="failed on setup with &quot;zlibrary.eapi.DiamWallError: DiamWall anti-bot wall detected on z-library.ec (HTTP 517 DiamWall block page): the domain blocks programmatic /eapi access. Set ZLIBRARY_EAPI_DOMAIN to a working domain (e.g. export ZLIBRARY_EAPI_DOMAIN=z-library.ec) or unset it to let the built-in fallback list pick one.&quot;">@pytest.fixture
+    def walled():
+&gt;       decode_eapi_json(httpx.Response(517, text="DiamWall"), "z-library.ec")
+
+&lt;scratch&gt;/cases.py:47: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+resp = &lt;Response [517 ]&gt;, domain = 'z-library.ec'
+
+    def decode_eapi_json(resp: httpx.Response, domain: str) -&gt; dict:
+        """Parse an /eapi response as JSON, classifying anti-bot walls explicitly.
+    
+        A healthy EAPI endpoint returns HTTP 200 with JSON. DiamWall-fronted
+        domains return a 307 self-redirect, 403/513/517 "Access Denied", or an
+        HTML block page — this raises DiamWallError for those so callers see
+        "anti-bot wall" instead of a bare JSONDecodeError or status error.
+        """
+        if resp.status_code == 200:
+            try:
+                payload = resp.json()
+                if _auth_rejected(payload):
+                    raise EAPIAuthenticationError(
+                        "EAPI authentication rejected",
+                        status_code=resp.status_code,
+                        token=sanitized_auth_token(payload.get("error")),
+                    )
+                return payload
+            except ValueError:
+                pass  # fall through to wall classification
+        body = resp.text
+        if "diamwall" in body.lower():
+            error = _diamwall_error(domain, f"HTTP {resp.status_code} DiamWall block page")
+            error.status_code = resp.status_code
+&gt;           raise error
+E           zlibrary.eapi.DiamWallError: DiamWall anti-bot wall detected on z-library.ec (HTTP 517 DiamWall block page): the domain blocks programmatic /eapi access. Set ZLIBRARY_EAPI_DOMAIN to a working domain (e.g. export ZLIBRARY_EAPI_DOMAIN=z-library.ec) or unset it to let the built-in fallback list pick one.
+
+zlibrary/src/zlibrary/eapi.py:112: DiamWallError</error></testcase><testcase classname="offline_live_cases" name="test_bare_status[403]"><failure message="zlibrary.eapi.DiamWallError: DiamWall anti-bot wall detected on z-library.ec (HTTP 403): the domain blocks programmatic /eapi access. Set ZLIBRARY_EAPI_DOMAIN to a working domain (e.g. export ZLIBRARY_EAPI_DOMAIN=z-library.ec) or unset it to let the built-in fallback list pick one.">status = 403
+
+    @pytest.mark.parametrize("status", [403, 513, 517])
+    def test_bare_status(status):
+&gt;       decode_eapi_json(httpx.Response(status, text="Access denied"), "z-library.ec")
+
+&lt;scratch&gt;/cases.py:56: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+resp = &lt;Response [403 Forbidden]&gt;, domain = 'z-library.ec'
+
+    def decode_eapi_json(resp: httpx.Response, domain: str) -&gt; dict:
+        """Parse an /eapi response as JSON, classifying anti-bot walls explicitly.
+    
+        A healthy EAPI endpoint returns HTTP 200 with JSON. DiamWall-fronted
+        domains return a 307 self-redirect, 403/513/517 "Access Denied", or an
+        HTML block page — this raises DiamWallError for those so callers see
+        "anti-bot wall" instead of a bare JSONDecodeError or status error.
+        """
+        if resp.status_code == 200:
+            try:
+                payload = resp.json()
+                if _auth_rejected(payload):
+                    raise EAPIAuthenticationError(
+                        "EAPI authentication rejected",
+                        status_code=resp.status_code,
+                        token=sanitized_auth_token(payload.get("error")),
+                    )
+                return payload
+            except ValueError:
+                pass  # fall through to wall classification
+        body = resp.text
+        if "diamwall" in body.lower():
+            error = _diamwall_error(domain, f"HTTP {resp.status_code} DiamWall block page")
+            error.status_code = resp.status_code
+            raise error
+        if resp.status_code == 401:
+            try:
+                payload = resp.json()
+            except ValueError:
+                payload = None
+            token = sanitized_auth_token(
+                payload.get("error") if isinstance(payload, dict) else None
+            )
+            raise EAPIAuthenticationError(
+                "EAPI authentication rejected", status_code=401, token=token
+            )
+        if resp.status_code == 400:
+            try:
+                payload = resp.json()
+                if _auth_rejected(payload):
+                    raise EAPIAuthenticationError(
+                        "EAPI authentication rejected",
+                        status_code=400,
+                        token=sanitized_auth_token(payload.get("error")),
+                    )
+            except ValueError:
+                pass
+        if resp.status_code in WALLED_STATUS_CODES:
+            error = _diamwall_error(domain, f"HTTP {resp.status_code}")
+            error.status_code = resp.status_code
+&gt;           raise error
+E           zlibrary.eapi.DiamWallError: DiamWall anti-bot wall detected on z-library.ec (HTTP 403): the domain blocks programmatic /eapi access. Set ZLIBRARY_EAPI_DOMAIN to a working domain (e.g. export ZLIBRARY_EAPI_DOMAIN=z-library.ec) or unset it to let the built-in fallback list pick one.
+
+zlibrary/src/zlibrary/eapi.py:138: DiamWallError</failure></testcase><testcase classname="offline_live_cases" name="test_bare_status[513]"><failure message="zlibrary.eapi.DiamWallError: DiamWall anti-bot wall detected on z-library.ec (HTTP 513): the domain blocks programmatic /eapi access. Set ZLIBRARY_EAPI_DOMAIN to a working domain (e.g. export ZLIBRARY_EAPI_DOMAIN=z-library.ec) or unset it to let the built-in fallback list pick one.">status = 513
+
+    @pytest.mark.parametrize("status", [403, 513, 517])
+    def test_bare_status(status):
+&gt;       decode_eapi_json(httpx.Response(status, text="Access denied"), "z-library.ec")
+
+&lt;scratch&gt;/cases.py:56: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+resp = &lt;Response [513 ]&gt;, domain = 'z-library.ec'
+
+    def decode_eapi_json(resp: httpx.Response, domain: str) -&gt; dict:
+        """Parse an /eapi response as JSON, classifying anti-bot walls explicitly.
+    
+        A healthy EAPI endpoint returns HTTP 200 with JSON. DiamWall-fronted
+        domains return a 307 self-redirect, 403/513/517 "Access Denied", or an
+        HTML block page — this raises DiamWallError for those so callers see
+        "anti-bot wall" instead of a bare JSONDecodeError or status error.
+        """
+        if resp.status_code == 200:
+            try:
+                payload = resp.json()
+                if _auth_rejected(payload):
+                    raise EAPIAuthenticationError(
+                        "EAPI authentication rejected",
+                        status_code=resp.status_code,
+                        token=sanitized_auth_token(payload.get("error")),
+                    )
+                return payload
+            except ValueError:
+                pass  # fall through to wall classification
+        body = resp.text
+        if "diamwall" in body.lower():
+            error = _diamwall_error(domain, f"HTTP {resp.status_code} DiamWall block page")
+            error.status_code = resp.status_code
+            raise error
+        if resp.status_code == 401:
+            try:
+                payload = resp.json()
+            except ValueError:
+                payload = None
+            token = sanitized_auth_token(
+                payload.get("error") if isinstance(payload, dict) else None
+            )
+            raise EAPIAuthenticationError(
+                "EAPI authentication rejected", status_code=401, token=token
+            )
+        if resp.status_code == 400:
+            try:
+                payload = resp.json()
+                if _auth_rejected(payload):
+                    raise EAPIAuthenticationError(
+                        "EAPI authentication rejected",
+                        status_code=400,
+                        token=sanitized_auth_token(payload.get("error")),
+                    )
+            except ValueError:
+                pass
+        if resp.status_code in WALLED_STATUS_CODES:
+            error = _diamwall_error(domain, f"HTTP {resp.status_code}")
+            error.status_code = resp.status_code
+&gt;           raise error
+E           zlibrary.eapi.DiamWallError: DiamWall anti-bot wall detected on z-library.ec (HTTP 513): the domain blocks programmatic /eapi access. Set ZLIBRARY_EAPI_DOMAIN to a working domain (e.g. export ZLIBRARY_EAPI_DOMAIN=z-library.ec) or unset it to let the built-in fallback list pick one.
+
+zlibrary/src/zlibrary/eapi.py:138: DiamWallError</failure></testcase><testcase classname="offline_live_cases" name="test_bare_status[517]"><failure message="zlibrary.eapi.DiamWallError: DiamWall anti-bot wall detected on z-library.ec (HTTP 517): the domain blocks programmatic /eapi access. Set ZLIBRARY_EAPI_DOMAIN to a working domain (e.g. export ZLIBRARY_EAPI_DOMAIN=z-library.ec) or unset it to let the built-in fallback list pick one.">status = 517
+
+    @pytest.mark.parametrize("status", [403, 513, 517])
+    def test_bare_status(status):
+&gt;       decode_eapi_json(httpx.Response(status, text="Access denied"), "z-library.ec")
+
+&lt;scratch&gt;/cases.py:56: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+resp = &lt;Response [517 ]&gt;, domain = 'z-library.ec'
+
+    def decode_eapi_json(resp: httpx.Response, domain: str) -&gt; dict:
+        """Parse an /eapi response as JSON, classifying anti-bot walls explicitly.
+    
+        A healthy EAPI endpoint returns HTTP 200 with JSON. DiamWall-fronted
+        domains return a 307 self-redirect, 403/513/517 "Access Denied", or an
+        HTML block page — this raises DiamWallError for those so callers see
+        "anti-bot wall" instead of a bare JSONDecodeError or status error.
+        """
+        if resp.status_code == 200:
+            try:
+                payload = resp.json()
+                if _auth_rejected(payload):
+                    raise EAPIAuthenticationError(
+                        "EAPI authentication rejected",
+                        status_code=resp.status_code,
+                        token=sanitized_auth_token(payload.get("error")),
+                    )
+                return payload
+            except ValueError:
+                pass  # fall through to wall classification
+        body = resp.text
+        if "diamwall" in body.lower():
+            error = _diamwall_error(domain, f"HTTP {resp.status_code} DiamWall block page")
+            error.status_code = resp.status_code
+            raise error
+        if resp.status_code == 401:
+            try:
+                payload = resp.json()
+            except ValueError:
+                payload = None
+            token = sanitized_auth_token(
+                payload.get("error") if isinstance(payload, dict) else None
+            )
+            raise EAPIAuthenticationError(
+                "EAPI authentication rejected", status_code=401, token=token
+            )
+        if resp.status_code == 400:
+            try:
+                payload = resp.json()
+                if _auth_rejected(payload):
+                    raise EAPIAuthenticationError(
+                        "EAPI authentication rejected",
+                        status_code=400,
+                        token=sanitized_auth_token(payload.get("error")),
+                    )
+            except ValueError:
+                pass
+        if resp.status_code in WALLED_STATUS_CODES:
+            error = _diamwall_error(domain, f"HTTP {resp.status_code}")
+            error.status_code = resp.status_code
+&gt;           raise error
+E           zlibrary.eapi.DiamWallError: DiamWall anti-bot wall detected on z-library.ec (HTTP 517): the domain blocks programmatic /eapi access. Set ZLIBRARY_EAPI_DOMAIN to a working domain (e.g. export ZLIBRARY_EAPI_DOMAIN=z-library.ec) or unset it to let the built-in fallback list pick one.
+
+zlibrary/src/zlibrary/eapi.py:138: DiamWallError</failure></testcase><testcase classname="offline_live_cases" name="test_drift"><failure message="KeyError: 'books'">def test_drift():
+&gt;       raise KeyError("books")
+E       KeyError: 'books'
+
+&lt;scratch&gt;/cases.py:60: KeyError</failure></testcase></testsuite></testsuites>

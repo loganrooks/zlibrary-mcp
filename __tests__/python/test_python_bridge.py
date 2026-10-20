@@ -385,6 +385,26 @@ class TestProfileEndpoints:
         assert result["daily_remaining"] == 0
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize("spend", [None, "unknown", "3", False, -1])
+    async def test_get_download_limits_never_invents_remaining_from_unknown_spend(
+        self, patch_eapi_client, spend
+    ):
+        patch_eapi_client.get_profile = AsyncMock(
+            return_value={"user": {"downloads_limit": 10, "downloads_today": spend}}
+        )
+        result = await get_download_limits()
+        assert result["daily_limit"] == 10
+        assert result["daily_remaining"] == "unknown"
+
+    @pytest.mark.asyncio
+    async def test_get_download_limits_cap_only_is_not_remaining(self, patch_eapi_client):
+        patch_eapi_client.get_profile = AsyncMock(
+            return_value={"user": {"downloads_limit": 10}}
+        )
+        result = await get_download_limits()
+        assert result["daily_remaining"] == "unknown"
+
+    @pytest.mark.asyncio
     async def test_get_download_limits_reports_unknown_if_the_shape_changes(
         self, patch_eapi_client
     ):

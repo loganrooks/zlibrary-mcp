@@ -87,13 +87,11 @@ def test_download_dir():
 class TestRealAuthentication:
     """Test real Z-Library authentication."""
 
-    async def test_authentication_succeeds(self, credentials):
+    async def test_authentication_succeeds(self, credentials, eapi_domain):
         """Should successfully authenticate with real credentials."""
         from zlibrary.eapi import EAPIClient
 
-        EAPI_DOMAIN = os.environ.get("ZLIBRARY_EAPI_DOMAIN", "z-library.sk")
-
-        client = EAPIClient(EAPI_DOMAIN)
+        client = EAPIClient(eapi_domain)
         login_result = await client.login(credentials["email"], credentials["password"])
 
         # Verify login succeeded
@@ -105,13 +103,11 @@ class TestRealAuthentication:
 
         await client.close()
 
-    async def test_authentication_fails_with_invalid_credentials(self):
+    async def test_authentication_fails_with_invalid_credentials(self, eapi_domain):
         """Should raise error or return failure with invalid credentials."""
         from zlibrary.eapi import EAPIClient
 
-        EAPI_DOMAIN = os.environ.get("ZLIBRARY_EAPI_DOMAIN", "z-library.sk")
-
-        client = EAPIClient(EAPI_DOMAIN)
+        client = EAPIClient(eapi_domain)
         try:
             login_result = await client.login("invalid@example.com", "wrongpassword")
         except Exception:
@@ -122,13 +118,11 @@ class TestRealAuthentication:
         finally:
             await client.close()
 
-    async def test_session_persistence(self, credentials):
+    async def test_session_persistence(self, credentials, eapi_domain):
         """Should maintain session across multiple operations."""
         from zlibrary.eapi import EAPIClient
 
-        EAPI_DOMAIN = os.environ.get("ZLIBRARY_EAPI_DOMAIN", "z-library.sk")
-
-        client = EAPIClient(EAPI_DOMAIN)
+        client = EAPIClient(eapi_domain)
         await client.login(credentials["email"], credentials["password"])
 
         # Perform multiple searches with same session

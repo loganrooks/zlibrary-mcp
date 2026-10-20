@@ -19,8 +19,16 @@ from zlibrary.eapi import EAPIClient  # noqa: E402
 import python_bridge  # noqa: E402
 
 
+@pytest.fixture(scope="module")
+def eapi_domain():
+    """Resolve the runtime default only when a live test requests a domain."""
+    from zlibrary.eapi import DEFAULT_EAPI_DOMAINS
+
+    return os.environ.get("ZLIBRARY_EAPI_DOMAIN", DEFAULT_EAPI_DOMAINS[0])
+
+
 @pytest_asyncio.fixture(scope="module", loop_scope="module")
-async def zlib_client():
+async def zlib_client(eapi_domain):
     """Pre-authenticated EAPIClient for integration tests.
 
     Reads credentials from environment variables.
@@ -34,9 +42,8 @@ async def zlib_client():
     """
     email = os.environ.get("ZLIBRARY_EMAIL", "")
     password = os.environ.get("ZLIBRARY_PASSWORD", "")
-    domain = os.environ.get("ZLIBRARY_EAPI_DOMAIN", "z-library.sk")
 
-    client = EAPIClient(domain)
+    client = EAPIClient(eapi_domain)
     login_result = await client.login(email, password)
     assert login_result.get("success") == 1, (
         f"zlib_client fixture: login failed — {login_result}"

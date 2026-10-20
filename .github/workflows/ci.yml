@@ -263,13 +263,35 @@ jobs:
     # Exercise the published image on PRs so Python/wheel drift is caught (#230).
     if: github.event_name == 'push' || github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
+        with:
+          lfs: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: astral-sh/setup-uv@v7
+        with:
+          python-version: '3.13'
+      - run: npm ci
+      - run: uv sync --frozen --no-dev
+      - run: npm run build
+      - name: Check smoke runner and failure controls without Docker
+        run: node --test __tests__/image-smoke.test.mjs
+      - name: Prepare release-tarball build context
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/image-context"
+          npm pack --ignore-scripts --pack-destination "$RUNNER_TEMP/image-context"
+          mv "$RUNNER_TEMP"/image-context/*.tgz "$RUNNER_TEMP/image-context/release.tgz"
+          cp package-lock.json "$RUNNER_TEMP/image-context/"
       - uses: docker/setup-buildx-action@v4
-      - name: Build Docker image
-        run: docker build -t zlibrary-mcp:ci -f docker/Dockerfile .
-      - name: Verify image contents
-        run: docker run --rm --entrypoint sh zlibrary-mcp:ci -c "test -f /app/dist/index.js && node -e 'console.log(\"OK\")'"
+      - name: Build Docker image from the release tarball
+        run: docker build --build-arg BUILD_INPUT=packed -t zlibrary-mcp:ci -f docker/Dockerfile "$RUNNER_TEMP/image-context"
+      - name: Offline SDK-to-container-Python journey
+        run: node scripts/image-smoke.mjs zlibrary-mcp:ci
 
   acquisition-windows:
     name: Offline acquisition leases (Windows)

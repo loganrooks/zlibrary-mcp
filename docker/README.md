@@ -73,3 +73,43 @@ SuperGateway wraps the stdio-based MCP server to provide HTTP transport, enablin
 - Remote access to the MCP server
 - Load balancing and proxying
 - Health monitoring
+
+## Offline release-image smoke
+
+Release CI packs once and uses that same tarball for npm publication and the
+Docker build. The image is loaded locally, tested, then pushed without rebuilding.
+PR CI runs the same packed-image journey. Source builds above remain supported.
+
+To reproduce from a checkout with dependencies already available (Node 22+,
+Docker and `openssl` required):
+
+```bash
+npm run build
+IMAGE_CONTEXT=$(mktemp -d)
+npm pack --ignore-scripts --pack-destination "$IMAGE_CONTEXT"
+mv "$IMAGE_CONTEXT"/*.tgz "$IMAGE_CONTEXT/release.tgz"
+cp package-lock.json "$IMAGE_CONTEXT/"
+docker build --build-arg BUILD_INPUT=packed \
+  -t zlibrary-mcp:smoke -f docker/Dockerfile "$IMAGE_CONTEXT"
+node scripts/image-smoke.mjs zlibrary-mcp:smoke
+```
+
+For an existing locally built candidate image, run only
+`node scripts/image-smoke.mjs <image>`. Its version must match this checkout's
+`package.json`. The runner never pulls an image.
+
+The SDK initializes the container's stdio server, checks the package version and
+exact five-tool surface, and searches a fixed synthetic catalogue through the
+image's Python bridge. A sidecar, using the same image, hosts the existing
+rehearsal HTTPS fake. It has `--network none`; the MCP container shares only that
+loopback namespace. Existing Node/Python fences reject unintended networking and
+any recorded attempt fails the smoke. Only harness/TLS/state are mounted; server
+and bridge files come from the image. All credentials and content are synthetic.
+Owned containers and temporary state are removed on success or failure.
+
+The smoke overrides the SuperGateway entrypoint to exercise stdio directly; it
+does not test HTTP transport, real providers, or every architecture. Without
+Docker, `node --test __tests__/image-smoke.test.mjs` runs the same SDK/bridge/fake
+journey against a Docker-command double (requires a built `dist/` and `.venv/`).
+That checks the runner's assertions and failure cleanup, not image construction
+or actual network namespaces/mounts.

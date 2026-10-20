@@ -61,8 +61,8 @@ Preflight is skipped when `HTTP_PROXY` or `HTTPS_PROXY` covers the target, with
 `NO_PROXY` honored. A direct DNS/TCP socket cannot represent a proxied request;
 letting that probe veto the real client would create a false outage.
 
-The preflight budget applies to two phases (DNS, then TCP). At the defaults, one
-provider attempt can cost at most `2 × 5s + 45s = 55s`. Those numbers size an
+The preflight budget covers DNS and the TCP connect together. At the defaults, one
+provider attempt can cost at most `5s + 45s = 50s`. Those numbers size an
 **attempt**. They do not size a walk, and the difference is what #152 was.
 
 A walk costs providers × mirrors, and both factors are operator input:
@@ -90,7 +90,9 @@ fallback stays a candidate, so `li → vg → la` failover survives a custom
 the next rather than consuming one of a fixed three. A mirror the deadline
 never reaches is reported with reason `walk_budget_exhausted`, naming the
 mirrors skipped — deliberately distinct from a timeout, which is a verdict
-about a host. This one is fixed by raising `BOOK_SOURCE_WALK_BUDGET`.
+about a host. Raise `BOOK_SOURCE_WALK_BUDGET` to fix it, unless the walk is
+already clamped to the owning bridge timer; then raise `PYTHON_BRIDGE_TIMEOUT`
+(or `PYTHON_BRIDGE_LONG_TIMEOUT` for downloads) instead.
 
 **Scope: provider walks, not whole tools or acquisitions.**
 `worst_case_search_seconds()` allocates one provider search walk plus bridge

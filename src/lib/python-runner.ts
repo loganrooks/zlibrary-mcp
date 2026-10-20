@@ -16,9 +16,9 @@
  *  - every live child is registered, and the registry is drained when the
  *    server itself exits.
  *
- * The Python side has its own per-provider budgets (lib/sources/config.py);
- * PYTHON_BRIDGE_TIMEOUT must stay above their worst-case sum, or the kill here
- * preempts a legitimate slow provider walk instead of catching a hang.
+ * The Python side bounds each provider walk with one deadline sized to this
+ * timer (lib/sources/config.py); a guard test checks the walk fits under it, so
+ * the kill here catches a hang instead of preempting a legitimate slow walk.
  */
 
 import type { Readable } from 'stream';

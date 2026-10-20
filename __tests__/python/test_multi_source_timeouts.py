@@ -216,7 +216,8 @@ class TestConfigTimeouts:
                 "const raw = process.env.PYTHON_BRIDGE_TIMEOUT?.trim(); "
                 "const value = raw && /^\\d+$/.test(raw) ? Number(raw) : NaN; "
                 "process.stdout.write(String(Number.isSafeInteger(value) && "
-                "value > 0 && value <= 2147483647 ? value / 1000 : 240));",
+                "value > 0 && value <= 2147483647 ? value / 1000 : "
+                f"{TestTheDocumentedTimeoutMarginIsEnforced._node_bridge_timeout_seconds()}));",
             ],
             check=True,
             capture_output=True,
@@ -827,6 +828,24 @@ class TestTheDocumentedTimeoutMarginIsEnforced:
             "reading python-runner.ts should currently yield 240s; if that "
             "default changed, this test and the margin move together, which "
             "is the whole point of reading it"
+        )
+
+    def test_python_copies_of_the_node_defaults_match_the_typescript_source(self):
+        """`config.py` keeps its own copies of Node's defaults for the env clamp.
+
+        Gate B (B-1): nothing bound them, so a long copy drifted to 4000 kept
+        every test green while Python, with PYTHON_BRIDGE_LONG_TIMEOUT unset,
+        would admit a provider chain Node's 2400s timer kills.
+        """
+        from lib.sources import config
+
+        assert (
+            config.DEFAULT_NODE_BRIDGE_TIMEOUT_SECONDS
+            == self._node_bridge_timeout_seconds()
+        )
+        assert (
+            config.DEFAULT_NODE_LONG_TIMEOUT_SECONDS
+            == self._node_long_timeout_seconds()
         )
 
     def test_the_worst_case_does_not_move_with_the_mirror_count(self):

@@ -105,10 +105,13 @@ The numeric-address TCP preflight remains useful but is no longer the only DNS s
 Search and URL resolution use the short provider-operation budget. A complete
 source-file transfer uses a separate finite download budget so a valid large
 book is not cancelled at the search deadline. The finite 2,400-second Node
-long-operation default composes 165 seconds of worst-case LibGen resolution,
-1,500 seconds of transfer, the 600-second OCR subprocess default, and 135
-seconds of finalization headroom. Per-phase HTTP limits and partial-file cleanup
-continue to apply inside that wall clock.
+long-operation default bounds the call. Inside it, the provider chain (resolution
+and transfer) is bounded at 1,500 seconds plus a startup allowance; that is the
+only part a guard checks (#152). The whole acquisition, including a wait for the
+destination lease, is not yet bounded end to end: see #280. (An earlier version
+of this note summed resolution, transfer, a 600-second OCR step and finalization;
+OCR is gone in 2.0.) Per-phase HTTP limits and partial-file cleanup continue to
+apply inside that wall clock.
 
 If an integration test demonstrates that httpx bypasses the bounded loop resolver in the installed dependency versions, stop and reconsider alternative B rather than adding another site patch.
 

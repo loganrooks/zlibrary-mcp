@@ -175,6 +175,14 @@ class _RequestsWithUA:
         self._state.last_response = response
 
     @property
+    def missing_edition_rows(self) -> int:
+        return getattr(self._state, "missing_edition_rows", 0)
+
+    @missing_edition_rows.setter
+    def missing_edition_rows(self, count: int) -> None:
+        self._state.missing_edition_rows = count
+
+    @property
     def user_agent(self) -> Optional[str]:
         return getattr(self._state, "user_agent", None)
 
@@ -261,6 +269,7 @@ def _get_books(self, table):
             and link.get_text(" ", strip=True)
         ]
         if not edition_links:
+            _search_requests.missing_edition_rows += 1
             continue
         edition_link = edition_links[0]
         raw_title = edition_link.get_text(" ", strip=True)
@@ -557,6 +566,7 @@ class LibgenAdapter(SourceAdapter):
                 # thread-local precisely so an abandoned earlier attempt
                 # cannot supply it.
                 _search_requests.last_response = None
+                _search_requests.missing_edition_rows = 0
                 # Set on the same thread that is about to issue the request,
                 # so this adapter's configured UA reaches the search path
                 # rather than the shim re-reading the environment.
@@ -565,10 +575,14 @@ class LibgenAdapter(SourceAdapter):
                 # search_title made author-bearing queries return nothing
                 # and got swamped on generic titles (#134).
                 results = LibgenSearch(mirror=mirror).search_default(query)
-                return results, _search_requests.last_response
+                return (
+                    results,
+                    _search_requests.last_response,
+                    _search_requests.missing_edition_rows,
+                )
 
             try:
-                results, page = await run_bounded(
+                results, page, missing_edition_rows = await run_bounded(
                     _search_sync,
                     budget,
                     provider=PROVIDER,
@@ -595,11 +609,15 @@ class LibgenAdapter(SourceAdapter):
                     failures.append(failure)
                     continue
 
-            return self._to_unified(results or [])
+            return self._to_unified(
+                results or [], missing_edition_rows=missing_edition_rows
+            )
 
         raise AllSourcesFailedError(f"LibGen search for {query!r}", failures)
 
-    def _to_unified(self, results) -> List[UnifiedBookResult]:
+    def _to_unified(
+        self, results, *, missing_edition_rows: int = 0
+    ) -> List[UnifiedBookResult]:
         """Convert libgen-api-enhanced books into UnifiedBookResult.
 
         Rows whose md5 is not a full 32-hex digest are still dropped: they
@@ -612,9 +630,12 @@ class LibgenAdapter(SourceAdapter):
             for book in results
             if not _MD5_HEX_RE.fullmatch(getattr(book, "md5", "") or "")
         )
-        if dropped:
+        if dropped or missing_edition_rows:
             logger.debug(
-                "LibGen search: dropped %d row(s) without a valid 32-hex md5",
+                "LibGen search: dropped %d row(s) "
+                "(%d without a direct edition link; %d without a valid 32-hex md5)",
+                dropped + missing_edition_rows,
+                missing_edition_rows,
                 dropped,
             )
         return [

@@ -218,9 +218,9 @@ export class AcquisitionTools {
         : {}),
     };
   }
-  private configured(source: Source, download = false) {
+  private configured(source: Source) {
     const c = this.capabilities(source);
-    if (!(download ? c.download_available : c.search_available))
+    if (!c.search_available)
       throw new ToolFailure('credentials_missing', 'Source configuration is missing.', {
         source,
         detail: {
@@ -228,14 +228,9 @@ export class AcquisitionTools {
           variables:
             source === 'zlibrary'
               ? ['ZLIBRARY_EMAIL', 'ZLIBRARY_PASSWORD']
-              : [
-                  ...(!(download
-                    ? trustedAnnasBase(this.env.ANNAS_BASE_URL)
-                    : usableAnnasBase(this.env.ANNAS_BASE_URL))
-                    ? ['ANNAS_BASE_URL']
-                    : []),
-                  ...(download && !this.env.ANNAS_SECRET_KEY ? ['ANNAS_SECRET_KEY'] : []),
-                ],
+              : !usableAnnasBase(this.env.ANNAS_BASE_URL)
+                ? ['ANNAS_BASE_URL']
+                : [],
         },
       });
   }
@@ -396,7 +391,9 @@ export class AcquisitionTools {
       url: merged.url ?? merged.href ?? merged.book_url,
       evidence: {
         detail: Object.keys(nonempty(detail)).filter((k) => !['id', 'book_hash'].includes(k)),
-        search: Object.keys(nonempty(b)).filter((k) => detail[k] == null || detail[k] === ''),
+        search: Object.keys(nonempty(b)).filter(
+          (k) => k !== 'content_type' && (detail[k] == null || detail[k] === ''),
+        ),
       },
     });
   }

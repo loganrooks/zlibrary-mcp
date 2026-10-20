@@ -100,23 +100,6 @@ for (const key of ['', 'synthetic-secret']) {
   });
 }
 
-test.each([
-  ['http://', '', ['ANNAS_BASE_URL', 'ANNAS_SECRET_KEY']],
-  ['http://', 'synthetic-key', ['ANNAS_BASE_URL']],
-  ['http://localhost:8080', '', ['ANNAS_BASE_URL', 'ANNAS_SECRET_KEY']],
-  ['http://localhost:8080', 'synthetic-key', ['ANNAS_BASE_URL']],
-  ['https://annas-archive.gl', '', ['ANNAS_SECRET_KEY']],
-])('Anna download guard lists every missing requirement for %j with key %j',
-  (base, key, variables) => {
-    const tools = new AcquisitionTools(jest.fn(), { ANNAS_BASE_URL: base, ANNAS_SECRET_KEY: key });
-    // The public download delegates admission to Python after offline receipt reuse.
-    expect(() => tools.configured('annas', true)).toThrow(expect.objectContaining({
-      code: 'credentials_missing', info: expect.objectContaining({
-        detail: { reason: 'configuration_error', variables },
-      }),
-    }));
-  });
-
 test('supported operations are symmetric across configured and unconfigured sources', async () => {
   const invoke = jest.fn();
   const empty = (await new AcquisitionTools(invoke, {}).call('get_limits')).sources;

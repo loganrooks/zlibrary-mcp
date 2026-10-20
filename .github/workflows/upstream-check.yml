@@ -33,7 +33,7 @@ jobs:
     outputs:
       report: ${{ steps.probe.outputs.report }}
       failed: ${{ steps.probe.outputs.failed }}
-      # Probe-observed block, with the domain retained for live classification.
+      # Probe-observed block, with the domain retained for live selection and reporting.
       # This cannot distinguish an IP refusal from a wall affecting everyone.
       zlib_blocked: ${{ steps.probe.outputs.zlib_blocked }}
       zlib_domain: ${{ steps.probe.outputs.zlib_domain }}
@@ -123,8 +123,8 @@ jobs:
           REACHABILITY_RESULT: ${{ needs.reachability.result }}
           LIVE_RESULT: ${{ needs.live_tests.result }}
           LIVE_STATUS: ${{ needs.live_tests.outputs.status }}
-          LIVE_BLOCKED: ${{ needs.live_tests.outputs.blocked }}
           ZLIB_BLOCKED: ${{ needs.reachability.outputs.zlib_blocked }}
+          ZLIB_PROBE_DOMAIN: ${{ needs.reachability.outputs.zlib_domain }}
         with:
           script: |
             const title = 'Upstream contract check failing';
@@ -136,8 +136,8 @@ jobs:
               '',
               `- reachability job: **${process.env.REACHABILITY_RESULT}**`,
               `- live integration job: **${process.env.LIVE_STATUS || process.env.LIVE_RESULT}**`,
-              ...(process.env.LIVE_BLOCKED === 'true' || process.env.ZLIB_BLOCKED === 'true'
-                ? ["- Z-Library: anti-bot wall corroborated by the reachability probe for the same domain. An IP-specific refusal versus a domain-wide wall is undetermined. Other failures below remain actionable."]
+              ...(process.env.ZLIB_BLOCKED === 'true'
+                ? [`- Z-Library reachability probe reported an anti-bot wall on ${process.env.ZLIB_PROBE_DOMAIN}; live suite skipped.`]
                 : []),
               `- run: ${runUrl}`,
               '',

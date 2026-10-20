@@ -148,6 +148,7 @@ export function classifyFailure(error: any, operation: string, source?: string):
   else if (reason === 'not_found') code = 'not_found';
   else if (reason === 'timeout' || error?.code === 'BRIDGE_TIMEOUT')
     code = operation === 'download' ? 'outcome_unknown' : 'provider_timeout';
+  else if (operation === 'download' && error?.code === 'BRIDGE_KILLED') code = 'outcome_unknown';
   else if (
     ['auth_rejected', 'login_failed'].includes(reason) ||
     context.pythonErrorType === 'EAPIAuthenticationError'
@@ -217,7 +218,10 @@ export function classifyFailure(error: any, operation: string, source?: string):
       ...(occupied
         ? {
             recovery:
-              'The destination already holds a file with no matching receipt; move or rename it or choose another output_dir.',
+              'The destination already holds a file with no matching receipt; move or rename it or choose another output_dir.' +
+              (detail.request_issued === true && source !== 'libgen'
+                ? ' This attempt may already have used a download.'
+                : ''),
           }
         : {}),
       ...(Number.isFinite(context.retryAfterMs)

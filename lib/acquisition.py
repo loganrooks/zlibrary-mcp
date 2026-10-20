@@ -430,11 +430,12 @@ def _refuse_foreign(record, target, directory, source, identifiers, *, issued=Fa
         )
 
 
-def _refuse_occupied(target):
+def _refuse_occupied(target, *, issued=False):
     if target.exists():
         raise AcquisitionError(
             "output_refused",
             "Destination already holds a file with no matching receipt; move or rename it or choose another output_dir",
+            issued=issued,
             occupied=True,
         )
 
@@ -450,7 +451,7 @@ async def acquire(
     directory.mkdir(parents=True, exist_ok=True)
     receipt_path = Path(str(destination) + ".acq.json")
     budget = max(
-        1.0, float(os.environ.get("PYTHON_BRIDGE_LONG_TIMEOUT", "600000")) / 1000
+        1.0, float(os.environ.get("PYTHON_BRIDGE_LONG_TIMEOUT", "2400000")) / 1000
     )
     async with destination_lock(destination, budget):
         with ExitStack() as leases:
@@ -562,6 +563,7 @@ async def acquire(
                     if canonical_path != receipt_path:
                         _atomic_json(receipt_path, authority)
                 else:
+                    _refuse_occupied(target, issued=True)
                     _atomic_json(
                         canonical_path, record
                     )  # canonical hashed intent FIRST

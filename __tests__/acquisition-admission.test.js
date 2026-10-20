@@ -176,3 +176,51 @@ test.each(
     });
   },
 );
+
+test.each(['identical', 'different'])(
+  'real SDK corrected target with %s unreceipted bytes is refused after issuance',
+  async (state) => {
+    const row = (await call('search', { query: 'Seneca Letters', sources: ['zlibrary'] }))
+      .structuredContent.rows[0];
+    const first = await call('download', { ref: row.ref, filename: 'chosen.pdf' });
+    expect(first.isError).not.toBe(true);
+    const target = first.structuredContent.path;
+    await fs.unlink(first.structuredContent.record);
+    if (state === 'different') await fs.writeFile(target, 'foreign canonical bytes');
+    const original = await fs.readFile(target);
+    // Sparse catalogue metadata predicts .bin; the real EAPI response names a PDF.
+    server.tools.refs.get(row.ref, 'r').book.extension = '';
+    const before = await h.stats();
+    demands = 0;
+
+    const reply = await call('download', { ref: row.ref, filename: 'chosen.bin' });
+
+    expect(reply.isError).toBe(true);
+    expect(reply.structuredContent.error).toMatchObject({
+      code: 'output_refused',
+      source: 'zlibrary',
+      retry: 'no',
+      detail: { reason: 'output_refused', request_issued: true },
+    });
+    expect(reply.structuredContent.error.message.length).toBeLessThanOrEqual(199);
+    expect(reply.structuredContent.error.recovery.length).toBeLessThanOrEqual(199);
+    expect(reply.structuredContent.error.recovery).toMatch(/may already have used a download/i);
+    expect(reply.structuredContent.error.recovery).toMatch(/move|rename/i);
+    expect(reply.structuredContent.error.recovery).toContain('output_dir');
+    expect(demands).toBe(1);
+    expect((await h.stats()).quotaSpent - before.quotaSpent).toBe(1);
+    expect(await fs.readFile(target)).toEqual(original);
+    await expect(fs.stat(`${target}.acq.json`)).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(
+      JSON.parse(await fs.readFile(path.join(directory, 'chosen.bin.acq.json'))),
+    ).toMatchObject({
+      state: 'intent',
+      path: path.join(directory, 'chosen.bin'),
+      sha256: null,
+    });
+    expect((await fs.readdir(directory)).filter((name) => name.startsWith('.eapi-'))).toEqual([]);
+    await expect(fs.stat(path.join(directory, 'egress-trap.txt'))).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+  },
+);

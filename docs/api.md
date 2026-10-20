@@ -166,8 +166,8 @@ validate the closed envelope even though the SDK does not validate error outputs
 | `unsupported_operation` | Source does not support the operation |
 | `credentials_missing` | Required account or key not configured |
 | `auth_failed` | Account/key rejection |
-| `quota_exhausted` | Provider reported its daily limit reached |
-| `not_found` | Provider explicitly reported absence; empty search is not absence |
+| `quota_exhausted` | Anna's keyed-download router reports quota metadata with zero remaining. Z-Library EAPI download daily-limit failures currently surface as `provider_error` or `internal`, not this code |
+| `not_found` | Maps an explicit structured `not_found` reason; no current source adapter emits it. Z-Library EAPI download absence currently surfaces as `provider_error` or `internal`; empty search is not absence |
 | `provider_unreachable` | DNS, connect or TLS failure |
 | `provider_timeout` | Provider operation exceeded its budget |
 | `provider_error` | Bad status/body, block page, HTML instead of file |

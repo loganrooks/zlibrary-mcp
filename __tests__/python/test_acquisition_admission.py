@@ -3,6 +3,9 @@
 import hashlib
 import json
 from pathlib import Path
+import re
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 from lib import acquisition as acq
@@ -163,3 +166,106 @@ async def test_deleted_receipt_artifact_redownloads_once(tmp_path, source, corre
         assert record["path"] == repeated["path"]
         assert record["bytes"] == len(PAYLOAD)
         assert record["sha256"] == hashlib.sha256(PAYLOAD).hexdigest()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("source", ["libgen", "zlibrary"])
+@pytest.mark.parametrize("state", ["identical", "different", "verified"])
+async def test_corrected_target_requires_verified_same_identity_receipt(
+    tmp_path, monkeypatch, source, state
+):
+    book = admission_book(source, corrected=True)
+    target = tmp_path / "chosen.pdf"
+    canonical = tmp_path / "chosen.pdf.acq.json"
+    predicted = tmp_path / "chosen.epub"
+    if state == "verified":
+        await acq.acquire(
+            {**book, "extension": "pdf"},
+            str(tmp_path),
+            filename="chosen.pdf",
+            transfer=publication_transfer(tmp_path, []),
+        )
+    else:
+        target.write_bytes(PAYLOAD if state == "identical" else b"foreign bytes")
+    original = target.read_bytes()
+    original_receipt = canonical.read_bytes() if canonical.exists() else None
+    stages, publications = [], []
+
+    def stage_file(directory, name):
+        stage = Path(directory) / name
+        stage.write_bytes(PAYLOAD)
+        stages.append(stage)
+        return bridge._DownloadedPath(str(stage), "signature")
+
+    async def fetch_source(book, directory):
+        return stage_file(directory, ".source-corrected.pdf")
+
+    async def fetch_eapi(*, output_dir, **kwargs):
+        return stage_file(output_dir, "received.pdf")
+
+    source_fetch = AsyncMock(side_effect=fetch_source)
+    eapi_fetch = AsyncMock(side_effect=fetch_eapi)
+    monkeypatch.setattr(bridge, "_fetch_from_source", source_fetch)
+    monkeypatch.setattr(
+        bridge,
+        "get_eapi_client",
+        AsyncMock(return_value=SimpleNamespace(download_file=eapi_fetch)),
+    )
+    publish = bridge._publish_or_reuse
+
+    def observe_publication(*args):
+        publications.append(True)
+        return publish(*args)
+
+    monkeypatch.setattr(bridge, "_publish_or_reuse", observe_publication)
+    if state == "verified":
+        reply = await acq.acquire(
+            book, str(tmp_path), filename="chosen.epub", transfer=bridge.download_book
+        )
+        assert reply["reused"] is True
+        assert reply["transfer_skipped"] is False
+        assert publications == [True]
+        assert canonical.read_bytes() == original_receipt
+        assert (tmp_path / "chosen.epub.acq.json").read_bytes() == original_receipt
+    else:
+        with pytest.raises(acq.AcquisitionError) as error:
+            await acq.acquire(
+                book,
+                str(tmp_path),
+                filename="chosen.epub",
+                transfer=bridge.download_book,
+            )
+        assert error.value.to_dict() == {
+            "reason": "output_refused",
+            "request_issued": True,
+            "destination_occupied": True,
+        }
+        assert len(str(error.value)) <= 199
+        assert publications == []
+        assert not canonical.exists()
+        intent = json.loads((tmp_path / "chosen.epub.acq.json").read_text())
+        assert intent["state"] == "intent"
+        assert intent["path"] == str(predicted)
+        assert intent["sha256"] is None
+    assert target.read_bytes() == original
+    assert not predicted.exists()
+    assert source_fetch.await_count + eapi_fetch.await_count == 1
+    assert len(stages) == 1
+    assert all(not stage.exists() for stage in stages)
+    assert not list(tmp_path.glob(".eapi-*"))
+
+
+def test_destination_lease_default_matches_long_bridge_timeout():
+    root = Path(__file__).resolve().parents[2]
+    python_source = (root / "lib/acquisition.py").read_text()
+    runner_source = (root / "src/lib/python-runner.ts").read_text()
+    lease = re.search(
+        r'os\.environ\.get\("PYTHON_BRIDGE_LONG_TIMEOUT",\s*"(\d+)"\)',
+        python_source,
+    )
+    bridge = re.search(
+        r"positiveIntEnv\('PYTHON_BRIDGE_LONG_TIMEOUT',\s*(\d+)\)",
+        runner_source,
+    )
+    assert lease is not None and bridge is not None
+    assert int(lease.group(1)) == int(bridge.group(1))

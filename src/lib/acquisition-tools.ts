@@ -273,8 +273,9 @@ export class AcquisitionTools {
       if (!parsed.success)
         throw new ToolFailure('invalid_argument', 'Arguments do not match the tool schema.', {
           detail: { reason: 'schema', fields: parsed.error.issues.map((i) => i.path.join('.')) },
-          recovery:
-            name === 'download'
+          recovery: parsed.error.issues.some((i) => i.path[0] === 'limit')
+            ? 'Set limit to an integer from 1 to 50 (default 10); use paging with next_cursor passed as cursor for more.'
+            : name === 'download'
               ? 'Pass ref, optional output_dir and filename only; text processing was removed in 2.0.'
               : 'Use snake_case arguments; count becomes limit and source order is sources.',
         });

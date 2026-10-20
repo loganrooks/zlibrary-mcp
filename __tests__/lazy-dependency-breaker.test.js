@@ -165,6 +165,29 @@ test('open EAPI admits the lazy child but refuses a non-hit before owner demand 
   expect(health()).toEqual({ state: 'OPEN', failures: 3 });
 });
 
+test('a lazy handoff refusal retains the breaker retry hint in the download envelope', async () => {
+  process.env.CIRCUIT_BREAKER_THRESHOLD = '1';
+  jest.resetModules();
+  api = await import('../lib/zlibrary-api.js');
+  const { errorEnvelope } = await import('../lib/tool-errors.js');
+  jest.spyOn(Date, 'now').mockReturnValue(1700000000000);
+  loginFailure = outage();
+  await expect(acquire()).rejects.toThrow('offline outage');
+  runner.mockClear();
+  demands = transfers = 0;
+
+  const failure = await acquire().catch((error) => error);
+  expect(errorEnvelope(failure, 'download', 'zlibrary').error).toMatchObject({
+    code: 'breaker_open',
+    retry: 'safe',
+    retry_after_s: 60,
+    detail: { reason: 'breaker_open', request_issued: false },
+  });
+  expect(runner).toHaveBeenCalledTimes(1);
+  expect(demands).toBe(0);
+  expect(transfers).toBe(0);
+});
+
 test('receipt hits interleaved with provider failures do not prevent EAPI opening', async () => {
   operationFailure = true;
   for (let i = 1; i <= 3; i++) {

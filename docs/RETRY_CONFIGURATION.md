@@ -211,10 +211,10 @@ The circuit breaker protects against cascading failures:
    are refused with the ordinary `breaker_open` error while the probe holds the
    circuit. A memory-mode Z-Library download settles its probe as a success at the
    session grant, when the owner hands its transfer a valid session; the transfer
-   then counts like any CLOSED call. A probe whose call has the long download budget holds the circuit
-   for at most `PYTHON_BRIDGE_TIMEOUT`; after that further callers are admitted,
-   and the probe still delivers its own verdict. Calls with the ordinary budget
-   hold the circuit until their verdict.
+   then counts like any CLOSED call. Every probe, including an ordinary call
+   with retries, holds the circuit for at most one `PYTHON_BRIDGE_TIMEOUT` window
+   (240 seconds by default); after that further callers are admitted, and the
+   probe still delivers its own verdict. Retrying does not renew the hold.
 4. **Probe verdict**: success closes the circuit; a counted failure re-opens it for
    a fresh timeout; a probe that says nothing about health (cancelled, a
    non-transient error, a verified receipt) leaves it OPEN with the timeout spent,
@@ -232,8 +232,15 @@ four attempts adds one failure, and a call that recovers on a retry adds none.
 The default threshold remains five failed logical calls; with three retries this
 allows up to twenty failed attempts before opening. Non-transient final errors
 and caller cancellation, including cancellation during backoff, add no failure.
-A HALF_OPEN probe keeps its admission across retries and delivers one final
-verdict. Existing long-probe hold limits still apply.
+A HALF_OPEN probe delivers one final verdict across retries, but its exclusive
+hold ends at the ordinary bridge window even if retries or a long download are
+still running. Already-aborted calls are rejected before breaker admission.
+
+An OPEN refusal exposes the remaining breaker cooldown as `retry_after_s`.
+During an exclusive HALF_OPEN hold, that hint instead uses the hold's remaining
+time, rounded up to seconds; it stays positive while the hold is live. This
+hint also survives the error wrap at a lazy Z-Library session handoff. A session
+grant or an earlier probe verdict can release the hold before the hint expires.
 
 An OPEN-breaker refusal never starts or extends the session owner's login
 cooldown (#261). A login that actually runs and fails still uses that policy;

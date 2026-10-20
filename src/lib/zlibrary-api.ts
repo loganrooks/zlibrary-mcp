@@ -105,9 +105,8 @@ const LONG_RUNNING_FUNCTIONS = new Set(['download_book', 'acquire_book']);
 
 /**
  * The ordinary bridge budget, parsed as python-runner parses
- * PYTHON_BRIDGE_TIMEOUT. A long-budget HALF_OPEN probe holds the breaker
- * exclusively for at most this long, so a slow download cannot refuse every
- * other call for the whole long budget.
+ * PYTHON_BRIDGE_TIMEOUT. Every HALF_OPEN probe holds the breaker exclusively
+ * for at most this long, even if its transfer or retry sequence takes longer.
  */
 const ORDINARY_BRIDGE_TIMEOUT_MS = (() => {
   const raw = process.env.PYTHON_BRIDGE_TIMEOUT?.trim();
@@ -210,11 +209,8 @@ async function callPythonFunction(
         ? 'eapi'
         : sourceScope(functionName, args)
     ]!;
-  const budget =
-    callOptions.timeoutMs ?? defaultTimeoutFor(functionName) ?? ORDINARY_BRIDGE_TIMEOUT_MS;
-  // Short calls keep the one-probe rule until their verdict.
   const boundProbe = (admission: Admission) => {
-    if (budget > ORDINARY_BRIDGE_TIMEOUT_MS) admission.holdFor(ORDINARY_BRIDGE_TIMEOUT_MS);
+    admission.holdFor(ORDINARY_BRIDGE_TIMEOUT_MS);
   };
   const invokeWithRetry = (transport?: SessionInput, signal = callOptions.signal) =>
     withRetry(
@@ -598,6 +594,7 @@ async function callPythonFunction(
                   functionName,
                   stderr: err.stderr,
                   details: err.context?.details,
+                  retryAfterMs: err.context?.retryAfterMs,
                   originalError: err,
                 },
               ),
@@ -625,7 +622,8 @@ async function callPythonFunction(
         shouldRetry: isRetryableError,
       },
     );
-  const invoke = (transport?: SessionInput, signal = callOptions.signal) => {
+  const invoke = async (transport?: SessionInput, signal = callOptions.signal) => {
+    signal?.throwIfAborted();
     // Account the logical call's final verdict, after its retry budget. A lazy
     // child is admitted once at its session request above, including owner
     // control children; receipt-only and intentional auth retries stay outside.

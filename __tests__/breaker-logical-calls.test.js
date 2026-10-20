@@ -18,6 +18,7 @@ beforeEach(async () => {
     RETRY_MAX_DELAY: '1',
     CIRCUIT_BREAKER_THRESHOLD: '5',
     CIRCUIT_BREAKER_TIMEOUT: '60000',
+    PYTHON_BRIDGE_TIMEOUT: '240000',
     LOG_LEVEL: 'error',
   });
   jest.resetModules();
@@ -39,9 +40,80 @@ beforeEach(async () => {
   api = await import('../lib/zlibrary-api.js');
 });
 afterEach(() => {
+  jest.useRealTimers();
   jest.restoreAllMocks();
   process.env = saved;
 });
+
+test.each(['hint', 'bounded hold'])(
+  'an ordinary retrying HALF_OPEN probe supplies a %s',
+  async (property) => {
+    jest.useFakeTimers();
+    process.env.RETRY_MAX_RETRIES = '0';
+    runner.mockRejectedValue(outage());
+    for (let i = 0; i < 5; i++) await expect(search()).rejects.toThrow();
+    await jest.advanceTimersByTimeAsync(60001);
+    process.env.RETRY_MAX_RETRIES = '1';
+    let release, started;
+    const retryStarted = new Promise((resolve) => {
+      started = resolve;
+    });
+    runner
+      .mockReset()
+      .mockRejectedValueOnce(outage())
+      .mockImplementationOnce(() => {
+        started();
+        return new Promise((resolve) => {
+          release = resolve;
+        });
+      })
+      .mockResolvedValue(envelope({ books: [] }));
+    const probe = search();
+    // Retry backoff uses node:timers/promises (real); the breaker clock is fake.
+    await retryStarted;
+    try {
+      expect(health()).toEqual({ state: 'HALF_OPEN', failures: 5 });
+      if (property === 'hint') {
+        const { errorEnvelope } = await import('../lib/tool-errors.js');
+        const refused = await search().catch((error) => error);
+        expect(errorEnvelope(refused, 'search').error.retry_after_s).toBe(240);
+        await jest.advanceTimersByTimeAsync(239999);
+        const lastMillisecond = await search().catch((error) => error);
+        expect(errorEnvelope(lastMillisecond, 'search').error.retry_after_s).toBe(1);
+        expect(runner).toHaveBeenCalledTimes(2);
+      } else {
+        await jest.advanceTimersByTimeAsync(240000);
+        await expect(search()).resolves.toEqual({ books: [] });
+        expect(runner).toHaveBeenCalledTimes(3);
+      }
+    } finally {
+      release(envelope({ books: [] }));
+      await probe;
+    }
+    expect(health()).toEqual({ state: 'CLOSED', failures: 0 });
+  },
+);
+
+test.each([0, 60001])(
+  'an already-aborted call cannot take breaker admission at +%i ms',
+  async (elapsed) => {
+    jest.useFakeTimers();
+    process.env.RETRY_MAX_RETRIES = '0';
+    runner.mockRejectedValue(outage());
+    for (let i = 0; i < 5; i++) await expect(search()).rejects.toThrow();
+    await jest.advanceTimersByTimeAsync(elapsed);
+    const execute = breaker.execute;
+    const admissions = execute.mock.calls.length;
+    const controller = new AbortController();
+    controller.abort();
+    await expect(
+      api.searchMultiSource({ query: 'offline', source: 'libgen' }, { signal: controller.signal }),
+    ).rejects.toMatchObject({ name: 'AbortError' });
+    expect(execute).toHaveBeenCalledTimes(admissions);
+    expect(runner).toHaveBeenCalledTimes(5);
+    expect(health()).toEqual({ state: 'OPEN', failures: 5 });
+  },
+);
 
 test.each(['libgen', 'eapi'])(
   '%s counts four exhausted attempts as one failed call',

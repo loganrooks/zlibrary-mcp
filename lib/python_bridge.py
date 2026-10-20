@@ -926,8 +926,9 @@ async def get_download_limits():
     `downloads_today` above the cap.
 
     Returns:
-        dict with daily_limit, daily_remaining (both int, or "unknown" if the
-        response shape changes again), plus downloads_today and is_premium.
+        dict with daily_limit (reported value, or "unknown" when absent),
+        daily_remaining (int only when cap and spend are non-negative,
+        non-bool ints; otherwise "unknown"), plus downloads_today and is_premium.
     """
     eapi = await get_eapi_client()
     profile = await eapi.get_profile()
@@ -937,10 +938,8 @@ async def get_download_limits():
     used = user.get("downloads_today")
 
     remaining = "unknown"
-    if isinstance(limit, int) and isinstance(used, int):
+    if type(limit) is int and type(used) is int and limit >= 0 and used >= 0:
         remaining = max(0, limit - used)
-    elif isinstance(limit, int):
-        remaining = limit
 
     if limit is None:
         logger.warning(

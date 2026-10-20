@@ -14,7 +14,7 @@ import {
   getSessionMode,
   authRejected,
 } from './eapi-session.js';
-import { CircuitBreaker } from './circuit-breaker.js';
+import { CircuitBreaker, type Admission } from './circuit-breaker.js';
 import { ZLibraryError, PythonBridgeError } from './errors.js';
 import { logger } from './logger.js';
 import { getPythonLibDirectory } from './paths.js';
@@ -32,6 +32,22 @@ const BRIDGE_SCRIPT_PATH = getPythonLibDirectory();
 const BRIDGE_SCRIPT_NAME = 'python_bridge.py';
 
 const eapiSessions = new EapiSessionOwner();
+
+/**
+ * A lazy waiter's view of a shared owner denial it did not trigger. The waiter
+ * that ran the failing control child accounts it; the rest carry no verdict.
+ */
+class SharedOwnerDenial {
+  constructor(readonly error: unknown) {}
+}
+/** Owner control-child (login/validate) failures, which the owner hands to every waiter. */
+const controlFailures = new WeakSet<object>();
+function markControl<T>(work: Promise<T>): Promise<T> {
+  return work.catch((error) => {
+    if (error && typeof error === 'object') controlFailures.add(error);
+    throw error;
+  });
+}
 
 // Python owns alternative-source failover, so LibGen/Anna/auto share one scope.
 const dependencyBreakers = Object.fromEntries(
@@ -55,6 +71,10 @@ const dependencyBreakers = Object.fromEntries(
             : error;
         return isTransientDependencyError(evidence);
       },
+      // A verified receipt never contacts a provider, so it neither heals nor
+      // probes (#267); a waiter's shared owner denial is not its verdict (#272).
+      isNeutral: (result: any) =>
+        result instanceof SharedOwnerDenial || result?.transfer_skipped === true,
     }),
   ]),
 );
@@ -67,6 +87,18 @@ const dependencyBreakers = Object.fromEntries(
  * are still bounded (PYTHON_BRIDGE_LONG_TIMEOUT), just far more generously.
  */
 const LONG_RUNNING_FUNCTIONS = new Set(['download_book', 'acquire_book']);
+
+/**
+ * The ordinary bridge budget, parsed as python-runner parses
+ * PYTHON_BRIDGE_TIMEOUT. A long-budget HALF_OPEN probe holds the breaker
+ * exclusively for at most this long, so a slow download cannot refuse every
+ * other call for the whole long budget.
+ */
+const ORDINARY_BRIDGE_TIMEOUT_MS = (() => {
+  const raw = process.env.PYTHON_BRIDGE_TIMEOUT?.trim();
+  const value = raw && /^\d+$/.test(raw) ? Number(raw) : NaN;
+  return Number.isSafeInteger(value) && value > 0 && value <= 2147483647 ? value : 240000;
+})();
 
 /**
  * Default wall-clock budget for a bridge function, in ms.
@@ -116,8 +148,15 @@ async function callPythonFunction(
       String(args.book_details?.source || '').toLowerCase(),
     );
   const lazyAcquisition = memory && acquisitionUsesEapi;
+  const receiptOnly = functionName === 'acquire_book' && args.receipt_only === true;
   const breaker =
     dependencyBreakers[needsEapi(functionName, args) || acquisitionUsesEapi ? 'eapi' : 'libgen']!;
+  const budget =
+    callOptions.timeoutMs ?? defaultTimeoutFor(functionName) ?? ORDINARY_BRIDGE_TIMEOUT_MS;
+  // Short calls keep the one-probe rule until their verdict.
+  const boundProbe = (admission: Admission) => {
+    if (budget > ORDINARY_BRIDGE_TIMEOUT_MS) admission.holdFor(ORDINARY_BRIDGE_TIMEOUT_MS);
+  };
   const invoke = (transport?: SessionInput, signal = callOptions.signal) =>
     withRetry(
       async () => {
@@ -182,32 +221,58 @@ async function callPythonFunction(
                     // One admission and one health verdict per lazy acquisition. A
                     // deadline spent before the grant aborts the owner work and is
                     // not counted, as on the non-lazy shared-session path.
-                    ownerWork = breaker.execute(() =>
-                      eapiSessions.run(
-                        identity,
-                        async (input, authSignal) => {
-                          if (input.action !== 'operation') {
-                            const work = invoke(input, authSignal);
-                            controlWork.push(work);
-                            return work;
-                          }
-                          const handoff = () => {
-                            if (activeTransport)
-                              throw new PythonBridgeError('Duplicate private handoff', {}, false);
-                            activeTransport = Object.freeze({ ...input });
-                            channel.grant({ ...activeTransport });
-                            // Decode independently; never await owner completion in the raw runner.
-                            return operation;
-                          };
-                          return handoff();
-                        },
-                        {
-                          signal: lazySignal,
-                          timeoutMs: callOptions.timeoutMs ?? defaultTimeoutFor(functionName),
-                          operationMode: 'at-most-once',
-                        },
-                      ),
-                    );
+                    // A shared owner control failure counts once, for the waiter
+                    // whose child produced it; other waiters carry no verdict (#272).
+                    const produced = new Set<unknown>();
+                    // As a HALF_OPEN probe it settles at the grant, when the owner
+                    // hands over a session; the transfer then counts as a CLOSED call.
+                    ownerWork = breaker
+                      .execute((admission) => {
+                        boundProbe(admission);
+                        return eapiSessions
+                          .run(
+                            identity,
+                            async (input, authSignal) => {
+                              try {
+                                if (input.action !== 'operation') {
+                                  const work = markControl(invoke(input, authSignal));
+                                  controlWork.push(work);
+                                  return await work;
+                                }
+                                const handoff = () => {
+                                  if (activeTransport)
+                                    throw new PythonBridgeError(
+                                      'Duplicate private handoff',
+                                      {},
+                                      false,
+                                    );
+                                  activeTransport = Object.freeze({ ...input });
+                                  admission.confirm();
+                                  channel.grant({ ...activeTransport });
+                                  // Decode independently; never await owner completion in the raw runner.
+                                  return operation;
+                                };
+                                return await handoff();
+                              } catch (error) {
+                                produced.add(error);
+                                throw error;
+                              }
+                            },
+                            {
+                              signal: lazySignal,
+                              timeoutMs: callOptions.timeoutMs ?? defaultTimeoutFor(functionName),
+                              operationMode: 'at-most-once',
+                            },
+                          )
+                          .catch((error) => {
+                            if (produced.has(error) || !controlFailures.has(error)) throw error;
+                            return new SharedOwnerDenial(error);
+                          });
+                      })
+                      .then((result) => {
+                        if (result instanceof SharedOwnerDenial) throw result.error;
+                        return result;
+                      });
                     void ownerWork.catch((error) => {
                       denied = error;
                       if (!activeTransport) channel.deny(error);
@@ -436,7 +501,13 @@ async function callPythonFunction(
         };
         // A lazy child may only read a local receipt. Admit/account once at
         // its session request above, including all owner control children.
-        return lazyAcquisition || transport?.authRetry ? execute() : breaker.execute(execute);
+        // A receipt-only child never contacts a provider (#267).
+        return lazyAcquisition || receiptOnly || transport?.authRetry
+          ? execute()
+          : breaker.execute((admission) => {
+              boundProbe(admission);
+              return execute();
+            });
       },
       {
         signal,
@@ -450,12 +521,30 @@ async function callPythonFunction(
         shouldRetry: isRetryableError,
       },
     );
-  return reuse
-    ? eapiSessions.run(identity, invoke, {
+  if (reuse)
+    return eapiSessions.run(
+      identity,
+      (input, signal) =>
+        input.action === 'operation' ? invoke(input, signal) : markControl(invoke(input, signal)),
+      {
         signal: callOptions.signal,
         timeoutMs: callOptions.timeoutMs ?? defaultTimeoutFor(functionName),
-      })
-    : invoke();
+      },
+    );
+  if (functionName !== 'acquire_book' || lazyAcquisition || receiptOnly) return invoke();
+  // #267: a verified receipt is local, so an open breaker must not hide it. Only
+  // a refused acquisition pays for the receipt-only child, and any non-hit there
+  // (miss, refusal, its own failure) is answered with the original refusal.
+  return invoke().catch(async (refusal) => {
+    if (refusal?.code !== 'CIRCUIT_BREAKER_OPEN') throw refusal;
+    const hit = await callPythonFunction(
+      functionName,
+      { ...args, receipt_only: true },
+      callOptions,
+    ).catch(() => undefined);
+    if (hit?.transfer_skipped === true) return hit;
+    throw refusal;
+  });
 }
 
 // Define interfaces for function arguments for better type safety

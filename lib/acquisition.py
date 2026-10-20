@@ -441,9 +441,21 @@ def _refuse_occupied(target, *, issued=False):
 
 
 async def acquire(
-    book_details, output_dir=None, filename=None, request=None, *, transfer
+    book_details,
+    output_dir=None,
+    filename=None,
+    request=None,
+    receipt_only=False,
+    *,
+    transfer,
 ):
-    """Lease initial and canonical destinations through publication and every receipt write."""
+    """Lease initial and canonical destinations through publication and every receipt write.
+
+    With ``receipt_only`` a verified receipt is served exactly as usual; otherwise
+    the usual pre-intent refusal is raised or ``{"receipt_hit": False}`` returned,
+    before an intent is written or ``transfer`` is called. The parent uses it when
+    its breaker refuses provider work.
+    """
     book = dict(book_details)
     directory = output_directory(output_dir)
     destination = _guard_target(directory / destination_name(book, filename), directory)
@@ -494,10 +506,14 @@ async def acquire(
                     if receipt_path != canonical_path and previous != candidate:
                         _atomic_json(receipt_path, candidate)
                     return _reply(candidate, canonical_path, True)
+                if receipt_only:
+                    return {"receipt_hit": False}
                 _refuse_occupied(target)
             else:
                 _refuse_foreign(previous, destination, directory, source, identifiers)
 
+            if receipt_only:
+                return {"receipt_hit": False}  # no intent, no provider work
             _refuse_occupied(destination)
             record = _record(book, source, identifiers, destination, request or {})
             _atomic_json(receipt_path, record)  # before authentication/provider work

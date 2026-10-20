@@ -63,7 +63,7 @@ from lib import enhanced_metadata
 
 # Import multi-source router
 from lib.sources.router import SourceRouter
-from lib.sources.config import SourceConfig, get_source_config
+from lib.sources.config import SourceConfig, get_preflight_timeout, get_source_config
 from lib.sources.errors import (
     AllSourcesFailedError,
     ProviderResponseError,
@@ -100,6 +100,7 @@ _eapi_client: EAPIClient = None
 
 # Module-level source router (for multi-source search)
 _source_router: SourceRouter = None
+_source_router_for_download = False
 
 
 def _install_cooperative_signal_handlers():
@@ -1322,14 +1323,14 @@ async def _fetch_from_source(book_details: dict, output_dir: str) -> str:
             "md5 — pass a result from search_multi_source."
         )
 
-    router = await get_source_router()
+    router = await get_source_router(for_download=True)
     selection = (
         "libgen" if source == "libgen" else "annas" if "annas" in source else "auto"
     )
     if not _MD5_RE.fullmatch(md5):
         raise ValueError("Source downloads require a normalized 32-hex MD5")
 
-    config = getattr(router, "config", None) or get_source_config()
+    config = getattr(router, "config", None) or get_source_config(for_download=True)
     active_host = ""
     failures = []
     seen_failure_ids = set()
@@ -1751,19 +1752,24 @@ async def get_recent_books(count: int = 10) -> dict:
 # ===== PHASE 12: MULTI-SOURCE SEARCH (Anna's Archive + LibGen) =====
 
 
-async def get_source_router() -> SourceRouter:
+async def get_source_router(*, for_download: bool = False) -> SourceRouter:
     """Get or create the source router.
 
     Creates a SourceRouter instance using configuration from environment
-    variables. The router is cached at module level for reuse.
+    variables. The router is cached for its ordinary or long owning operation;
+    changing owner closes the old router before admitting a new provider walk.
 
     Returns:
         Configured SourceRouter instance
     """
-    global _source_router
+    global _source_router, _source_router_for_download
+    if _source_router is not None and _source_router_for_download != for_download:
+        await _source_router.close()
+        _source_router = None
     if _source_router is None:
-        config = get_source_config()
+        config = get_source_config(for_download=for_download)
         _source_router = SourceRouter(config)
+        _source_router_for_download = for_download
     return _source_router
 
 
@@ -1874,7 +1880,7 @@ async def main():
         # Install before authentication and dispatch: httpx/AnyIO resolves
         # again even after source preflight, and its default executor is joined
         # during asyncio.run() shutdown.
-        resolver_timeout = get_source_config().preflight_timeout
+        resolver_timeout = get_preflight_timeout()
         async with bounded_resolver(resolver_timeout):
             if needs_eapi or (
                 _session_input is not None

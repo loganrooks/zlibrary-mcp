@@ -166,9 +166,9 @@ async function open(scope) {
   operationFailure = true;
   for (let i = 0; i < 3; i++)
     await expect(
-      scope === 'libgen'
-        ? api.searchMultiSource({ query: 'x', source: 'libgen' })
-        : api.getDownloadLimits(),
+      scope === 'eapi'
+        ? api.getDownloadLimits()
+        : api.searchMultiSource({ query: 'x', source: scope }),
     ).rejects.toThrow(/offline/);
   expect(health()).toEqual({ state: 'OPEN', failures: 3 });
   operationFailure = false;
@@ -180,7 +180,7 @@ async function open(scope) {
 
 const nonLazy = [
   ['libgen', 'libgen', {}],
-  ['annas', 'libgen', {}],
+  ['annas', 'annas', {}],
   ['zlibrary', 'eapi', { ZLIBRARY_SESSION_MODE: 'per-call' }],
 ];
 

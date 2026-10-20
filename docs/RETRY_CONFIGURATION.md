@@ -54,20 +54,80 @@ the outer Node budget must remain larger than the worst-case inner provider walk
 
 The Node runner falls back to defaults for malformed, non-positive, non-finite,
 and oversized timer values. Node timers accept at most `2,147,483,647`
-milliseconds; that exact value is valid. The Python acquisition path separately
-parses `PYTHON_BRIDGE_LONG_TIMEOUT` and does not yet share that validation:
-use a valid positive numeric value rather than relying on fallback.
+milliseconds; that exact value is valid. The Python acquisition path parses
+`PYTHON_BRIDGE_LONG_TIMEOUT` the same way, with the same trimming and the same
+fallback, so a malformed value never refuses downloads.
 
 Preflight is skipped when `HTTP_PROXY` or `HTTPS_PROXY` covers the target, with
 `NO_PROXY` honored. A direct DNS/TCP socket cannot represent a proxied request;
 letting that probe veto the real client would create a false outage.
 
-The preflight budget applies to two phases (DNS, then TCP). At the defaults, one
-provider attempt can cost at most `2 × 5s + 45s = 55s`. LibGen can walk three
-mirrors and `auto` can add Anna's Archive, so the worst-case search budget is
-`4 × 55s = 220s`, below the 240-second ordinary bridge budget. Raise
-`PYTHON_BRIDGE_TIMEOUT` whenever provider budgets make that composition larger;
-otherwise the outer process-tree kill can preempt legitimate fallback work.
+The preflight budget covers DNS and the TCP connect together. At the defaults, one
+provider attempt can cost at most `5s + 45s = 50s`. Those numbers size an
+**attempt**. They do not size a walk, and the difference is what #152 was.
+
+A walk costs providers × mirrors, and both factors are operator input:
+`LIBGEN_MIRROR` set to something outside `("li", "vg", "la")` adds a fourth
+mirror, and `BOOK_SOURCE_FALLBACK_ENABLED` decides whether `auto` adds Anna's.
+Any product written down here goes stale the moment either moves — this
+document said `4 × 55s = 220s` for months while the real figure under a custom
+mirror was 275s, against a 240-second bridge budget. Node killed the subprocess
+and the operator saw a generic timeout instead of the attributed per-mirror
+failures the error taxonomy exists to produce.
+
+**The walk is bounded by a wall clock instead.** `SourceRouter` creates one
+`WalkDeadline` per search or download and passes it to every adapter; each
+attempt draws `min(its own budget, what the walk has left)` from it. So:
+
+| Setting | Default | Bounds |
+|---|---|---|
+| `BOOK_SOURCE_WALK_BUDGET` | `165` (seconds) | one whole walk, across every provider and mirror |
+| `BOOK_SOURCE_TOTAL_TIMEOUT` | `45` (seconds) | one attempt, clamped by whatever the walk has left |
+
+The worst case is now `BOOK_SOURCE_WALK_BUDGET`, independent of how many
+mirrors or providers exist. Mirrors are **not** capped: every configured
+fallback stays a candidate, so `li → vg → la` failover survives a custom
+`LIBGEN_MIRROR`, and a mirror that fails its preflight in 5s leaves room for
+the next rather than consuming one of a fixed three. A mirror the deadline
+never reaches is reported with reason `walk_budget_exhausted`, naming the
+mirrors skipped — deliberately distinct from a timeout, which is a verdict
+about a host. Raise `BOOK_SOURCE_WALK_BUDGET` to fix it, unless the walk is
+already clamped to the owning bridge timer; then raise `PYTHON_BRIDGE_TIMEOUT`
+(or `PYTHON_BRIDGE_LONG_TIMEOUT` for downloads) instead.
+
+**Scope: provider walks, not whole tools or acquisitions.**
+`worst_case_search_seconds()` allocates one provider search walk plus bridge
+overhead; `worst_case_download_seconds()` allocates one provider download chain
+plus overhead. Tests compare these allocations strictly below the owning Node
+budgets parsed from `src/lib/python-runner.ts`. Raising a default Python budget
+past its owner fails the guard; environment overrides are clamped at admission.
+
+Source configuration uses `PYTHON_BRIDGE_TIMEOUT` for searches and
+`PYTHON_BRIDGE_LONG_TIMEOUT` for downloads. Overhead is
+`min(30s, owning timer / 8)`; the walk is clamped below the remainder by 1 ms.
+A 15s source call therefore has 1.875s overhead and at most 13.124s of walk,
+not a fixed 30s admission charge. Adapters refuse a slice too short for useful
+work with `walk_budget_exhausted` and provider/mirror attribution. A timer
+with no positive remainder after overhead and the 1ms margin is a configuration
+error before provider contact. Overhead is an allocation, not a measured
+cold-start guarantee. Arbitrary per-call runner timeout overrides are outside
+this environment-based admission contract.
+
+The 2.0 public `search` tries each requested source in its own bridge child:
+LibGen and Anna's use explicit-source `search_multi_source`; Z-Library uses
+separate EAPI calls. An L/A child defaults to a 165s walk + 30s overhead,
+leaving 45s under its 240s owner. The public tool does not combine those
+children into one Python `auto` walk or claim a whole-tool 240s deadline.
+
+The provider download chain has a separate 1500s default because a large book
+can exceed a per-attempt search budget. This timeout wraps resolution **and**
+transfer; do not add the 165s resolution walk again. With 30s overhead its
+allocation is 1530s, leaving 870s under the default 2400s long owner. Download
+configuration also clamps the chain timeout to that owner's remainder.
+This is **not** a whole-acquisition bound: destination lease waiting,
+receipt verification and finalization are excluded. A shared deadline across
+those phases is tracked separately in [#280](https://github.com/rookslog/zlibrary-mcp/issues/280).
+Text processing does not ship in 2.0; there is no OCR allocation here.
 
 Source downloads have a separate 1,500-second default because a valid large
 book can exceed the 45-second search and URL-resolution budget. The 2,400-second
@@ -158,8 +218,13 @@ Under the [ratified #192 rule](https://github.com/rookslog/zlibrary-mcp/issues/1
 read-timeout, integrity, and mixed permanent/transient details. Python owns its
 provider walk. Transient aggregate leaves still count as dependency-health evidence.
 
-Breakers are independent: EAPI, Library Genesis/Anna/auto (one Python-owned source
-walk). Only positively classified transient health failures count:
+Breakers are independent, one per provider: EAPI, Library Genesis, and Anna's Archive
+([ADR-011](adr/ADR-011-Z-Library-Source-Adapter.md)). Each 2.0 search or download
+bridge call names one source, so an Anna's outage never refuses LibGen, nor the
+reverse; an ordered `["annas","libgen"]` search still reaches LibGen while Anna's is
+open. A bridge-level `auto` walk, which no 2.0 tool sends, covers both providers in
+one Python call and so keeps a fourth breaker of its own. Only positively classified
+transient health failures count:
 transport/timeouts, HTTP 408/429/5xx, integrity failures, and spawn resource pressure.
 HTTP source details need a numeric status or the adapter's exact `HTTP NNN` token;
 unknown statuses/reasons, TLS/config/auth/caller/parse errors, missing interpreter,

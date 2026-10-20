@@ -1068,7 +1068,11 @@ def _md5_digest():
 
 def _publish_no_replace(source: Path, destination: Path) -> None:
     """Atomically publish one owned file without replacing an existing path."""
+    from lib.acquisition import _check_deadline, _mark_published
+
+    _check_deadline("publication")
     os.link(source, destination)
+    _mark_published()
     source.unlink()
 
 
@@ -1108,6 +1112,9 @@ def _publish_or_reuse(source: Path, destination: Path, expected_md5: str = "") -
         pass
     try:
         if _artifacts_match(source, destination, expected_md5):
+            from lib.acquisition import _mark_published
+
+            _mark_published()
             return True
         raise FileExistsError(
             f"Refusing to replace {destination}: the existing file differs from the "
@@ -1939,7 +1946,11 @@ async def main():
             error_info["details"].setdefault("operation", operation)
         error_info = _safe_diagnostic(error_info)
         diagnostics = None
-        if (
+        if not (
+            function_name == "acquire_book"
+            and isinstance(e, AcquisitionError)
+            and e.reason == "walk_budget_exhausted"
+        ) and (
             needs_eapi
             or _session_input is not None
             or _eapi_client is not None
@@ -1969,6 +1980,7 @@ async def main():
                             "outcome_unknown",
                             "http_error",
                             "read_timeout",
+                            "walk_budget_exhausted",
                             "connect_timeout",
                             "configuration_error",
                             "output_refused",

@@ -6,6 +6,7 @@ concurrently swapping directories. Receipts are not authorization tokens.
 
 import asyncio
 from contextlib import asynccontextmanager, ExitStack
+from contextvars import ContextVar
 from datetime import datetime, timezone
 import errno
 import hashlib
@@ -15,9 +16,40 @@ from pathlib import Path
 import re
 import stat
 import tempfile
-import time
 
 from lib.filename_utils import create_unified_filename, normalize_document_extension
+from lib.sources.config import WALK_OVERHEAD_ALLOWANCE, WALK_BUDGET_SAFETY_MARGIN
+from lib.sources.net import WalkDeadline
+
+# Scope, not another timer: every helper consults this same WalkDeadline.
+# Context-local because concurrent acquisitions must never share issuance/time.
+_acquisition_scope = ContextVar("acquisition_scope", default=None)
+
+
+def _mark_published():
+    """The commit point ends cooperative refusal; the Node owner stays the hard stop."""
+    scope = _acquisition_scope.get()
+    if scope is not None:
+        scope["published"] = True
+
+
+def _check_deadline(phase=None, *, minimum=WALK_BUDGET_SAFETY_MARGIN):
+    # After commit, even consulting the clock can only turn success into an
+    # error or strand its receipt. Finish under the reserved slice/Node owner.
+    scope = _acquisition_scope.get()
+    if scope is None or scope["published"]:
+        return None
+    if phase is not None:
+        scope["phase"] = phase
+    left = scope["deadline"].remaining()
+    if left < minimum:
+        raise AcquisitionError(
+            "walk_budget_exhausted",
+            f"Acquisition deadline exhausted during {scope['phase']}",
+            issued=scope["issued"],
+        )
+    return left
+
 
 try:
     import fcntl
@@ -106,14 +138,18 @@ def _identity(book):
 
 
 def _hash(path):
+    _check_deadline()
     digest = hashlib.sha256()
     with path.open("rb") as stream:
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            _check_deadline()
             digest.update(chunk)
+    _check_deadline()
     return digest.hexdigest()
 
 
 def _read(path, *, issued=False):
+    _check_deadline()
     try:
         if not stat.S_ISREG(path.lstat().st_mode):
             raise AcquisitionError(
@@ -153,12 +189,15 @@ def _verified_artifact(record, directory):
 
 
 def _atomic_json(path, record):
+    _check_deadline()
     descriptor, temporary = tempfile.mkstemp(prefix=".receipt-", dir=path.parent)
     try:
         with os.fdopen(descriptor, "w") as stream:
             json.dump(record, stream, ensure_ascii=False)
             stream.flush()
+            _check_deadline()
             os.fsync(stream.fileno())
+        _check_deadline()
         os.replace(temporary, path)
         # Persist the directory entry as well as the receipt bytes on POSIX.
         if os.name == "posix":
@@ -333,16 +372,19 @@ class DestinationLease:
 
 @asynccontextmanager
 async def destination_lock(path, budget):
-    deadline = time.monotonic() + budget
+    scope = _acquisition_scope.get()
+    deadline = scope["deadline"] if scope else WalkDeadline(budget)
     while True:
+        _check_deadline("destination lease")
         lease = DestinationLease(path, budget)
         try:
             lease.__enter__()
             break
         except AcquisitionError as error:
-            if error.reason != "breaker_open" or time.monotonic() >= deadline:
+            if error.reason != "breaker_open" or deadline.expired():
+                _check_deadline("destination lease")
                 raise
-            await asyncio.sleep(0.05)
+            await asyncio.sleep(min(0.05, deadline.remaining()))
     try:
         yield lease
     finally:
@@ -457,10 +499,47 @@ def _long_bridge_budget():
     # Past 10 digits the value is out of range anyway; checking the length first
     # also keeps int() under Python's digit-count limit.
     value = int(digits) if 0 < len(digits) <= 10 else 0
-    return max(1.0, (value if 0 < value <= 2_147_483_647 else default) / 1000)
+    return (value if 0 < value <= 2_147_483_647 else default) / 1000
 
 
 async def acquire(
+    book_details,
+    output_dir=None,
+    filename=None,
+    request=None,
+    receipt_only=False,
+    *,
+    transfer,
+):
+    """One long deadline until commit, reserving time to finish receipt publication.
+
+    Reserve bridge overhead exactly as the source walk does. Blocking filesystem
+    syscalls are cooperative boundaries, not cancellable workers: no detached
+    write may race the next holder after this call releases its destination.
+    """
+    owner = _long_bridge_budget()
+    budget = max(
+        0.0,
+        owner - min(WALK_OVERHEAD_ALLOWANCE, owner / 8) - WALK_BUDGET_SAFETY_MARGIN,
+    )
+    token = _acquisition_scope.set(
+        {
+            "deadline": WalkDeadline(budget),
+            "issued": False,
+            "published": False,
+            "phase": "admission",
+        }
+    )
+    try:
+        _check_deadline()
+        return await _acquire(
+            book_details, output_dir, filename, request, receipt_only, transfer=transfer
+        )
+    finally:
+        _acquisition_scope.reset(token)
+
+
+async def _acquire(
     book_details,
     output_dir=None,
     filename=None,
@@ -511,6 +590,7 @@ async def acquire(
                 candidate = canonical if canonical else previous
                 path = _verified_artifact(candidate, directory)
                 if path == target and _same_identity(candidate, source, identifiers):
+                    _mark_published()  # finish any receipt repair for this usable artifact
                     promoted = candidate["state"] == "intent"
                     if promoted:
                         candidate = {
@@ -551,6 +631,7 @@ async def acquire(
                     checkpoint_valid, \
                     authority, \
                     record
+                _check_deadline("publication checkpoint")
                 checkpoint_count += 1
                 checkpoint_valid = False
                 if checkpoint_count != 1:
@@ -610,9 +691,42 @@ async def acquire(
                 checkpoint_target = target
                 checkpoint_valid = True
 
-            result = await transfer(
-                book, str(directory), filename=filename, publication_hook=checkpoint
+            scope = _acquisition_scope.get()
+            # Keep a bounded finalization slice inside the same clock, not a
+            # fresh allowance after transfer. A sub-second transfer is not a
+            # useful attempt (the provider walks make the same distinction).
+            finalize_reserve = min(135.0, scope["deadline"].budget / 8)
+            left = _check_deadline(
+                "resolution and transfer", minimum=1.0 + finalize_reserve
             )
+            scope["issued"] = True  # callback admission: never replay its outcome
+            task = asyncio.create_task(
+                transfer(
+                    book, str(directory), filename=filename, publication_hook=checkpoint
+                )
+            )
+            try:
+                try:
+                    # A timeout must inspect the commit point before cancelling:
+                    # a committed transfer owns its finalization through reply.
+                    result = await asyncio.wait_for(
+                        asyncio.shield(task), left - finalize_reserve
+                    )
+                except asyncio.TimeoutError:
+                    if task.done():
+                        result = task.result()  # preserve a provider-owned TimeoutError
+                    elif scope["published"]:
+                        result = await task
+                    else:
+                        raise AcquisitionError(
+                            "walk_budget_exhausted",
+                            "Acquisition deadline exhausted during resolution and transfer",
+                            issued=True,
+                        ) from None
+            finally:
+                if not task.done():
+                    task.cancel()
+                    await asyncio.gather(task, return_exceptions=True)
             if checkpoint_count != 1 or not checkpoint_valid:
                 raise AcquisitionError(
                     "internal",
@@ -626,6 +740,7 @@ async def acquire(
                     "Transfer returned a different or missing checkpoint target",
                     issued=True,
                 )
+            _mark_published()  # also support transfer callbacks publishing by other means
             if (
                 _hash(final) != record["sha256"]
                 or final.stat().st_size != record["bytes"]

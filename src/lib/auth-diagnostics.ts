@@ -94,6 +94,7 @@ export function safeEapiFailureEnvelope(value: any): Record<string, any> | undef
       configuration_error: 'Missing source configuration',
       breaker_open: 'Acquisition is busy; try again later',
       integrity_mismatch: 'Acquisition integrity check failed',
+      walk_budget_exhausted: 'Acquisition deadline exhausted; try again later',
     };
     const reason = value?.details?.reason;
     if (value?.type !== 'AcquisitionError' || typeof reason !== 'string' || !messages[reason])
@@ -158,6 +159,7 @@ export function safeEapiFailureEnvelope(value: any): Record<string, any> | undef
       'outcome_unknown',
       'http_error',
       'read_timeout',
+      'walk_budget_exhausted',
       'connect_timeout',
       'configuration_error',
       'output_refused',

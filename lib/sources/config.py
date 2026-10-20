@@ -45,16 +45,18 @@ DEFAULT_TOTAL_TIMEOUT = 45.0
 # A source URL can legitimately serve a multi-hundred-megabyte book. Keep its
 # provider-chain wall clock finite but separate from the per-attempt search
 # budget. `_fetch_from_source` wraps resolution AND transfer in this timeout;
-# resolution is not another sequential allocation. This does not bound lease
-# wait or acquisition finalization (whole-acquisition deadline: #280).
+# resolution is not another sequential allocation. Acquisition adds an outer
+# WalkDeadline across lease wait and this chain, reserving finalization time.
+# Once publication commits, receipts finish under the Node hard stop (#280).
 DEFAULT_DOWNLOAD_TIMEOUT = 1500.0
 DEFAULT_PREFLIGHT_TIMEOUT = 5.0
 
 # The ceiling on a whole search or download-resolution walk, however many
 # providers and mirrors it spans. By default search allocates 165s + 30s
 # overhead under its 240s owner; download resolution runs INSIDE the 1500s
-# provider-chain timeout under its 2400s owner. Neither is a whole-acquisition
-# bound (#280). Tests compare these scopes to live TypeScript constants.
+# provider-chain timeout under its 2400s owner. The acquisition clock, not this
+# inner walk, governs admission until commit; Node bounds committed finalization.
+# Tests compare the owner defaults to live TypeScript constants.
 # This is also, deliberately, the same
 # clock the capped three-mirror walk used to cost — the change is that the cap
 # is gone, so a mirror that fails its preflight in 5s now leaves room for the
@@ -203,7 +205,7 @@ def worst_case_download_seconds(config: "SourceConfig") -> float:
 
     Candidate resolution already runs inside download_timeout, so adding its
     walk again would double-count. Lease wait and finalization are excluded;
-    this guard says nothing about their composition with the provider chain.
+    acquisition.acquire composes those phases under its shared outer clock.
     """
     return config.download_timeout + config.bridge_overhead
 

@@ -26,7 +26,6 @@ import python_bridge  # Import the module itself
 from lib.sources.errors import (
     AllSourcesFailedError,
     ProviderResponseError,
-    ProviderTimeoutError,
     ProviderUnreachableError,
 )
 from lib.sources.models import DownloadResult, SourceType
@@ -1046,7 +1045,7 @@ class TestDownloadBook:
         )
         mocker.patch("httpx.AsyncClient", Client)
 
-        with pytest.raises(ProviderTimeoutError):
+        with pytest.raises(ProviderResponseError):
             await python_bridge._fetch_from_source(
                 {"md5": "0" * 32, "source": "libgen"}, str(tmp_path)
             )
@@ -1128,7 +1127,7 @@ class TestDownloadBook:
 
         assert [failure.reason for failure in excinfo.value.failures] == [
             "connect_error",
-            "read_timeout",
+            "partial_transfer",
         ]
         assert [failure.host for failure in excinfo.value.failures] == [
             "first-cdn.example",
@@ -1725,7 +1724,7 @@ asyncio.run(python_bridge.main())
         mocker.patch("python_bridge.get_source_config", return_value=config)
         mocker.patch("httpx.AsyncClient", OverBudgetClient)
 
-        with pytest.raises(ProviderTimeoutError) as excinfo:
+        with pytest.raises(ProviderResponseError) as excinfo:
             await python_bridge._download_url_to_file(
                 "https://mirror.example/get",
                 str(tmp_path),
@@ -1733,7 +1732,7 @@ asyncio.run(python_bridge.main())
                 "libgen",
             )
 
-        assert excinfo.value.reason == "read_timeout"
+        assert excinfo.value.reason == "partial_transfer"
         assert excinfo.value.host == "cdn.example"
         assert not [path for path in tmp_path.iterdir() if path.suffix == ".part"]
 
@@ -2566,6 +2565,220 @@ class TestPartialTransferRecovery:
     """A transfer that dies mid-body resumes instead of restarting (#135)."""
 
     @pytest.mark.asyncio
+    async def test_resume_http_error_keeps_exact_status_detail(self, tmp_path, mocker):
+        transport = ScriptedTransport(
+            [
+                ScriptedResponse(body=RESUME_BODY, fail_after=5000),
+                ScriptedResponse(status_code=503),
+            ]
+        ).install(mocker)
+        with pytest.raises(ProviderResponseError) as caught:
+            await python_bridge._download_url_to_file(
+                "https://mirror.example/get", str(tmp_path), RESUME_DIGEST, "libgen"
+            )
+        assert caught.value.reason == "http_error"
+        assert caught.value.detail == "HTTP 503"
+        assert transport.ranges == [None, "bytes=5000-"]
+        assert not list(tmp_path.iterdir())
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("attempts", [1, 2])
+    async def test_short_206_continues_until_complete_or_budget_ends(
+        self, attempts, tmp_path, mocker
+    ):
+        """A valid 5000-5999/20000 slice is incomplete, not corrupt."""
+        body = b"%PDF-1.7\n" + b"x" * 19991
+        digest = hashlib.md5(body).hexdigest()
+        responses = [
+            ScriptedResponse(body=body, fail_after=5000),
+            ScriptedResponse(
+                body=body[5000:6000],
+                status_code=206,
+                headers={"content-range": "bytes 5000-5999/20000"},
+            ),
+        ]
+        if attempts == 2:
+            responses.append(
+                ScriptedResponse(
+                    body=body[6000:],
+                    status_code=206,
+                    headers={"content-range": "bytes 6000-19999/20000"},
+                )
+            )
+        transport = ScriptedTransport(responses).install(mocker)
+        config = python_bridge.get_source_config()
+        config.download_resume_attempts = attempts
+        operation = python_bridge._download_url_to_file(
+            "https://mirror.example/get", str(tmp_path), digest, "libgen", config=config
+        )
+        if attempts == 2:
+            result = await operation
+            assert Path(result).read_bytes() == body
+            assert transport.ranges == [None, "bytes=5000-", "bytes=6000-"]
+        else:
+            with pytest.raises(ProviderResponseError) as caught:
+                await operation
+            assert caught.value.reason == "partial_transfer"
+            assert "bytes_received=6000 resumes_tried=1" in caught.value.detail
+            assert transport.ranges == [None, "bytes=5000-"]
+            assert not list(tmp_path.iterdir())
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("outer", [False, True], ids=["direct", "provider-chain"])
+    async def test_short_206_deadline_reports_partial_transfer(
+        self, outer, tmp_path, mocker
+    ):
+        class PausedResponse(ScriptedResponse):
+            async def __aenter__(self):
+                await asyncio.sleep(30)
+
+        transport = ScriptedTransport(
+            [
+                ScriptedResponse(body=RESUME_BODY, fail_after=5000),
+                ScriptedResponse(
+                    body=RESUME_BODY[5000:6000],
+                    status_code=206,
+                    headers={"content-range": f"bytes 5000-5999/{len(RESUME_BODY)}"},
+                ),
+                PausedResponse(),
+            ]
+        ).install(mocker)
+        config = python_bridge.get_source_config()
+        config.download_timeout = 0.03
+
+        async def candidates(_md5, source):
+            yield DownloadResult(
+                url="https://mirror.example/get", source=SourceType.LIBGEN
+            )
+            pytest.fail("deadline exhaustion must not start another mirror")
+
+        mocker.patch(
+            "python_bridge.get_source_router",
+            new=AsyncMock(
+                return_value=SimpleNamespace(
+                    iter_download_candidates=candidates,
+                    config=config,
+                )
+            ),
+        )
+        with pytest.raises(ProviderResponseError) as caught:
+            if outer:
+                await python_bridge._fetch_from_source(
+                    {"md5": RESUME_DIGEST, "source": "libgen"}, str(tmp_path)
+                )
+            else:
+                await python_bridge._download_url_to_file(
+                    "https://mirror.example/get",
+                    str(tmp_path),
+                    RESUME_DIGEST,
+                    "libgen",
+                    config=config,
+                )
+        assert caught.value.reason == "partial_transfer"
+        assert "bytes_received=6000 resumes_tried=2" in caught.value.detail
+        assert transport.ranges == [None, "bytes=5000-", "bytes=6000-"]
+        assert not list(tmp_path.iterdir())
+
+    @pytest.mark.asyncio
+    async def test_stream_close_failure_never_leaves_a_published_file(
+        self, tmp_path, mocker
+    ):
+        class CloseFailure(ScriptedResponse):
+            async def __aexit__(self, *_args):
+                raise httpx.ReadError("offline stream close failure")
+
+        ScriptedTransport([CloseFailure(body=RESUME_BODY)]).install(mocker)
+        config = python_bridge.get_source_config()
+        config.download_resume_attempts = 0
+        with pytest.raises(ProviderResponseError) as caught:
+            await python_bridge._download_url_to_file(
+                "https://mirror.example/get",
+                str(tmp_path),
+                RESUME_DIGEST,
+                "libgen",
+                config=config,
+            )
+        assert caught.value.reason == "partial_transfer"
+        assert not list(tmp_path.iterdir())
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("resume_status", [503, 206])
+    async def test_real_httpx_redirected_resume_keeps_status_and_declared_length(
+        self, resume_status, tmp_path, mocker
+    ):
+        """Real httpx follows each redirect and sends Range to the CDN."""
+        body = RESUME_BODY * 10
+        digest = hashlib.md5(body).hexdigest()
+        requests = []
+
+        class DroppedBody(httpx.AsyncByteStream):
+            async def __aiter__(self):
+                yield body[:65536]
+                raise httpx.RemoteProtocolError("offline dropped body")
+
+        def handler(request):
+            requests.append((request.url.host, request.headers.get("Range")))
+            if request.url.host == "mirror.example":
+                return httpx.Response(
+                    302, headers={"Location": "https://cdn.example/book"}
+                )
+            if request.headers.get("Range") is None:
+                return httpx.Response(
+                    200,
+                    headers={
+                        "Content-Type": "application/pdf",
+                        "Content-Length": str(len(body)),
+                    },
+                    stream=DroppedBody(),
+                )
+            if resume_status == 503:
+                return httpx.Response(503, headers={"Content-Length": "0"})
+            start = 65536 if request.headers["Range"] == "bytes=65536-" else 66536
+            end = 66536 if start == 65536 else len(body)
+            return httpx.Response(
+                206,
+                headers={
+                    "Content-Type": "application/pdf",
+                    "Content-Length": str(end - start),
+                    "Content-Range": f"bytes {start}-{end - 1}/{len(body)}",
+                },
+                content=body[start:end],
+            )
+
+        client_type = httpx.AsyncClient
+        mocker.patch(
+            "httpx.AsyncClient",
+            side_effect=lambda **kwargs: client_type(
+                **kwargs, transport=httpx.MockTransport(handler), trust_env=False
+            ),
+        )
+        operation = python_bridge._download_url_to_file(
+            "https://mirror.example/get", str(tmp_path), digest, "libgen"
+        )
+        expected_requests = [
+            ("mirror.example", None),
+            ("cdn.example", None),
+            ("mirror.example", "bytes=65536-"),
+            ("cdn.example", "bytes=65536-"),
+        ]
+        if resume_status == 503:
+            with pytest.raises(ProviderResponseError) as caught:
+                await operation
+            assert caught.value.detail == "HTTP 503"
+            assert caught.value.host == "cdn.example"
+            assert not list(tmp_path.iterdir())
+        else:
+            result = await operation
+            assert Path(result).read_bytes() == body
+            expected_requests.extend(
+                [
+                    ("mirror.example", "bytes=66536-"),
+                    ("cdn.example", "bytes=66536-"),
+                ]
+            )
+        assert requests == expected_requests
+
+    @pytest.mark.asyncio
     async def test_dropped_transfer_resumes_from_the_staged_offset(
         self, tmp_path, mocker
     ):
@@ -2840,7 +3053,7 @@ class TestPartialTransferRecovery:
                 )
             ),
         )
-        with pytest.raises(ProviderTimeoutError) as caught:
+        with pytest.raises(ProviderResponseError) as caught:
             if outer:
                 await python_bridge._fetch_from_source(
                     {"md5": RESUME_DIGEST, "source": "libgen"}, str(tmp_path)
@@ -2850,7 +3063,7 @@ class TestPartialTransferRecovery:
                     "https://first.example/book", str(tmp_path), RESUME_DIGEST, "libgen"
                 )
         assert transport.ranges == [None, f"bytes={RESUME_CUT}-"]
-        assert caught.value.reason == "read_timeout"
+        assert caught.value.reason == "partial_transfer"
         assert "partial transfer" in caught.value.detail
         assert f"bytes_received={RESUME_CUT + 6}" in caught.value.detail
         assert "resumes_tried=1" in caught.value.detail
@@ -2860,7 +3073,17 @@ class TestPartialTransferRecovery:
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
-        "configured, retries", [(None, 2), ("0", 0), ("1", 1), ("bad", 2), ("-1", 2)]
+        "configured, retries",
+        [
+            (None, 2),
+            ("0", 0),
+            ("1", 1),
+            ("bad", 2),
+            ("-1", 2),
+            ("", 2),
+            (" 3 ", 3),
+            ("1000000", 10),
+        ],
     )
     async def test_retry_budget_and_partial_diagnosis_reach_mirror_detail(
         self, configured, retries, tmp_path, mocker, monkeypatch

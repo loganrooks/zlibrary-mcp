@@ -46,6 +46,7 @@ the outer Node budget must remain larger than the worst-case inner provider walk
 | `BOOK_SOURCE_READ_TIMEOUT` | `30` | Response-read budget per phase, in seconds |
 | `BOOK_SOURCE_TOTAL_TIMEOUT` | `45` | Wall-clock budget for one provider operation, in seconds |
 | `BOOK_SOURCE_DOWNLOAD_TIMEOUT` | `1500` | One wall-clock budget for the complete source candidate walk (resolution plus full-transfer attempts), in seconds |
+| `BOOK_SOURCE_DOWNLOAD_RESUME_ATTEMPTS` | `2` | Maximum extra requests for recovery within one source transfer; `0` disables recovery, values above `10` are capped at `10`, and empty, invalid or negative values use `2`. Recovery uses the same download deadline. |
 | `BOOK_SOURCE_PREFLIGHT` | `true` | Probe DNS and TCP before a provider request |
 | `BOOK_SOURCE_PREFLIGHT_TIMEOUT` | `5` | Budget per DNS or TCP probe phase, in seconds |
 | `PYTHON_BRIDGE_TIMEOUT` | `240000` | Ordinary Python bridge wall-clock budget, in milliseconds |

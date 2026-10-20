@@ -52,14 +52,24 @@ describe('partial source transfer diagnosis', () => {
   test('preserves bridge byte/resume detail and maps the reason into the existing per-mirror envelope', async () => {
     const details = {
       operation: 'download',
-      failures: [{
-        provider: 'libgen', host: 'cdn.example', reason: 'partial_transfer',
-        detail: 'partial transfer: bytes_received=8000 resumes_tried=2; peer closed SECRET',
-      }],
+      failures: [
+        {
+          provider: 'libgen',
+          host: 'cdn.example',
+          reason: 'partial_transfer',
+          detail: 'partial transfer: bytes_received=8000 resumes_tried=2; peer closed SECRET',
+        },
+      ],
     };
-    runPythonBridge.mockRejectedValue(Object.assign(new Error('synthetic child failure'), {
-      stderr: JSON.stringify({ error: 'source transfer failed', type: 'AllSourcesFailedError', details }),
-    }));
+    runPythonBridge.mockRejectedValue(
+      Object.assign(new Error('synthetic child failure'), {
+        stderr: JSON.stringify({
+          error: 'source transfer failed',
+          type: 'AllSourcesFailedError',
+          details,
+        }),
+      }),
+    );
     const caught = await downloadError();
     expect(caught).toBeInstanceOf(errors.PythonBridgeError);
     expect(caught.context.details).toEqual(details);
@@ -72,6 +82,33 @@ describe('partial source transfer diagnosis', () => {
       { source: 'libgen', outcome: 'failed', code: 'provider_error', reason: 'partial_transfer' },
     ]);
     expect(isTransientDependencyError(caught)).toBe(true);
-    expect(JSON.stringify(publicError)).not.toMatch(/SECRET|cdn\.example/);
+    expect(JSON.stringify(publicError)).not.toMatch(
+      /SECRET|cdn\.example|bytes_received|resumes_tried/,
+    );
+  });
+
+  test('a resume HTTP 503 remains transient for breaker accounting', async () => {
+    runPythonBridge.mockRejectedValue(
+      Object.assign(new Error('synthetic child failure'), {
+        stderr: JSON.stringify({
+          error: 'source transfer failed',
+          type: 'AllSourcesFailedError',
+          details: {
+            operation: 'download',
+            failures: [
+              {
+                provider: 'libgen',
+                host: 'cdn.example',
+                reason: 'http_error',
+                detail: 'HTTP 503',
+              },
+            ],
+          },
+        }),
+      }),
+    );
+    const caught = await downloadError();
+    const { isTransientDependencyError } = await import('../dist/lib/retry-manager.js');
+    expect(isTransientDependencyError(caught)).toBe(true);
   });
 });

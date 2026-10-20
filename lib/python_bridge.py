@@ -1257,6 +1257,7 @@ async def _download_url_to_file(
                                 )
 
                             expected_length = None
+                            expected_total = None
                             if status == 206:
                                 match = re.fullmatch(
                                     r"bytes (\d+)-(\d+)/(\d+|\*)",
@@ -1280,6 +1281,8 @@ async def _download_url_to_file(
                                         reason="protocol_error",
                                     )
                                 expected_length = int(match[2]) - offset + 1
+                                if match[3] != "*":
+                                    expected_total = int(match[3])
                             elif status == 200:
                                 # A server ignoring Range sent a full file.
                                 # Truncation occurs before its first body byte.
@@ -1347,43 +1350,12 @@ async def _download_url_to_file(
                                     attempt_path.write_bytes(b"")
                                 raise
 
-                            # Re-read the whole owned file, including the prefix.
-                            # Yield between blocks so the same timer can cancel
-                            # validation as well as the response stream.
-                            digest = _md5_digest()
-                            signature = bytearray()
-                            with open(attempt_path, "rb") as handle:
-                                while chunk := handle.read(65536):
-                                    digest.update(chunk)
-                                    if len(signature) < 4096:
-                                        signature.extend(chunk[: 4096 - len(signature)])
-                                    await asyncio.sleep(0)
-                            if _looks_like_html(bytes(signature)):
-                                raise ProviderResponseError(
-                                    provider,
-                                    active_host,
-                                    f"HTML body for {md5}; download key may have expired",
-                                    reason="protocol_error",
-                                )
-                            actual_md5 = digest.hexdigest()
-                            if actual_md5 != expected_md5:
-                                raise ProviderResponseError(
-                                    provider,
-                                    active_host,
-                                    f"expected={expected_md5} actual={actual_md5}",
-                                    reason="integrity_mismatch",
-                                )
-                            extension, extension_evidence = _response_extension(
-                                response.headers,
-                                str(response_url or url),
-                                bytes(signature),
-                            )
-                            completed_path = attempt_path.with_suffix(
-                                f".{extension}" if extension else ""
-                            )
-                            _publish_no_replace(attempt_path, completed_path)
-                            return written, _DownloadedPath(
-                                str(completed_path), extension_evidence
+                        # A valid 206 may cover only part of the remainder.
+                        # Close it before requesting the next staged offset;
+                        # the normal recovery gate charges each extra request.
+                        if expected_total is not None and written < expected_total:
+                            raise httpx.RemoteProtocolError(
+                                f"range ended at {written} of {expected_total} bytes"
                             )
                     except (
                         httpx.ReadError,
@@ -1400,6 +1372,45 @@ async def _download_url_to_file(
                         # This cancellation point uses the caller's existing
                         # timer; there is no new budget per retry or mirror.
                         await asyncio.sleep(0)
+                        continue
+                    break
+
+                # Re-read the whole owned file, including the prefix.
+                # Yield between blocks so the same timer can cancel
+                # validation as well as the response stream.
+                digest = _md5_digest()
+                signature = bytearray()
+                with open(attempt_path, "rb") as handle:
+                    while chunk := handle.read(65536):
+                        digest.update(chunk)
+                        if len(signature) < 4096:
+                            signature.extend(chunk[: 4096 - len(signature)])
+                        await asyncio.sleep(0)
+                if _looks_like_html(bytes(signature)):
+                    raise ProviderResponseError(
+                        provider,
+                        active_host,
+                        f"HTML body for {md5}; download key may have expired",
+                        reason="protocol_error",
+                    )
+                actual_md5 = digest.hexdigest()
+                if actual_md5 != expected_md5:
+                    raise ProviderResponseError(
+                        provider,
+                        active_host,
+                        f"expected={expected_md5} actual={actual_md5}",
+                        reason="integrity_mismatch",
+                    )
+                extension, extension_evidence = _response_extension(
+                    response.headers,
+                    str(response_url or url),
+                    bytes(signature),
+                )
+                completed_path = attempt_path.with_suffix(
+                    f".{extension}" if extension else ""
+                )
+                _publish_no_replace(attempt_path, completed_path)
+                return written, _DownloadedPath(str(completed_path), extension_evidence)
         except BaseException:
             attempt_path.unlink(missing_ok=True)
             raise
@@ -1417,11 +1428,14 @@ async def _download_url_to_file(
             written, completed_path = await stream_to_disk()
     except SourceError as exc:
         if isinstance(exc, ProviderTimeoutError) and exc.reason == "search_timeout":
-            raise ProviderTimeoutError(
+            error_type = (
+                ProviderResponseError if bytes_received else ProviderTimeoutError
+            )
+            raise error_type(
                 provider,
                 active_host,
                 progress_detail(exc.detail),
-                reason="read_timeout",
+                reason="partial_transfer" if bytes_received else "read_timeout",
             ) from exc
         if bytes_received:
             raise type(exc)(
@@ -1461,7 +1475,10 @@ async def _download_url_to_file(
             else ProviderResponseError
         )
         raise error_type(
-            provider, failure_host, progress_detail(detail), reason=reason
+            provider,
+            failure_host,
+            detail if reason == "http_error" else progress_detail(detail),
+            reason=reason,
         ) from exc
 
     if written == 0:
@@ -1596,8 +1613,12 @@ async def _fetch_from_source(book_details: dict, output_dir: str) -> str:
                     f"partial transfer: bytes_received={received} "
                     f"resumes_tried={resumes}; {detail}"
                 )
-            terminal_timeout = ProviderTimeoutError(
-                selection, active_host or exc.host, detail, reason="read_timeout"
+            error_type = ProviderResponseError if received else ProviderTimeoutError
+            terminal_timeout = error_type(
+                selection,
+                active_host or exc.host,
+                detail,
+                reason="partial_transfer" if received else "read_timeout",
             )
             if failures:
                 record(terminal_timeout)
@@ -2152,6 +2173,7 @@ async def main():
                             "outcome_unknown",
                             "http_error",
                             "read_timeout",
+                            "partial_transfer",
                             "walk_budget_exhausted",
                             "connect_timeout",
                             "configuration_error",

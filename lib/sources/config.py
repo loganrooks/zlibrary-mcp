@@ -10,7 +10,7 @@ Environment variables:
     BOOK_SOURCE_READ_TIMEOUT: Response-read budget, seconds (default: 30)
     BOOK_SOURCE_TOTAL_TIMEOUT: Per-provider wall-clock budget, seconds (default: 45)
     BOOK_SOURCE_DOWNLOAD_TIMEOUT: Full source-file transfer budget, seconds (default: 1500)
-    BOOK_SOURCE_DOWNLOAD_RESUME_ATTEMPTS: Extra same-call transfer attempts (default: 2)
+    BOOK_SOURCE_DOWNLOAD_RESUME_ATTEMPTS: Extra same-call transfer attempts (default: 2, max: 10)
     BOOK_SOURCE_PREFLIGHT: Probe host reachability before searching (default: true)
     BOOK_SOURCE_PREFLIGHT_TIMEOUT: Budget per probe phase, seconds (default: 5)
 """
@@ -231,12 +231,12 @@ def _positive_float(name: str, default: float) -> float:
 
 
 def _resume_attempts() -> int:
-    """Zero disables recovery; invalid budgets retain the small default."""
+    """Zero disables recovery; invalid budgets default to two, capped at ten."""
     try:
         value = int(os.environ.get("BOOK_SOURCE_DOWNLOAD_RESUME_ATTEMPTS", "2"))
     except ValueError:
         return 2
-    return value if value >= 0 else 2
+    return min(value, 10) if value >= 0 else 2
 
 
 def get_preflight_timeout() -> float:

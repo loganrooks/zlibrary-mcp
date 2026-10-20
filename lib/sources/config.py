@@ -24,24 +24,55 @@ from dataclasses import dataclass
 # mirrors, and because the LibGen library's own request cannot be interrupted
 # once started (see lib/sources/net.run_bounded).
 #
-# These compose. The preflight budget is per PHASE and there are two (DNS, then
-# TCP), so one provider attempt costs at worst 2*preflight + total = 55s. LibGen
-# walks up to three mirrors and an `auto` search adds Anna's on top, giving a
-# worst case of 4 x 55s = 220s. PYTHON_BRIDGE_TIMEOUT on the Node side (240s)
-# has to stay above that — a subprocess kill that fires first would preempt a
-# legitimate slow walk rather than catch a hang. Raising any value here without
-# raising that one narrows a margin that is already only 20s.
+# These compose, and for months this comment tried to state how. It said one
+# provider attempt costs 2*preflight + total = 55s, that LibGen walks three
+# mirrors, that an `auto` search adds Anna's, and therefore 4 x 55s = 220s
+# against a 240s PYTHON_BRIDGE_TIMEOUT. Every clause was true and the total was
+# wrong: a custom LIBGEN_MIRROR prepends a fourth mirror, making it 275s, so the
+# Node side killed the subprocess and the operator got a generic timeout instead
+# of the per-mirror failures the walk had collected (#152).
+#
+# The repair is not a better sum. A walk costs providers x mirrors, both of
+# which move with configuration, so any hand-maintained product drifts the
+# moment either factor does. The walk is bounded by a WALL CLOCK instead:
+# `WalkDeadline` (net.py) is created once per walk and every attempt draws from
+# it, so the worst case is WALK_BUDGET regardless of how many mirrors or
+# providers exist. The numbers below therefore size individual ATTEMPTS; only
+# WALK_BUDGET sizes the walk, and only it has to stay under the Node budget.
 DEFAULT_CONNECT_TIMEOUT = 10.0
 DEFAULT_READ_TIMEOUT = 30.0
 DEFAULT_TOTAL_TIMEOUT = 45.0
 # A source URL can legitimately serve a multi-hundred-megabyte book. Keep its
-# full-transfer wall clock finite but separate from the 45-second search and
-# URL-resolution budget. The independent 40-minute Node budget allows 165
-# seconds for worst-case LibGen resolution, 25 minutes for transfer, 10 minutes
-# for OCR, and 135 seconds for finalization without coupling Python config to a
-# TypeScript constant.
+# provider-chain wall clock finite but separate from the per-attempt search
+# budget. `_fetch_from_source` wraps resolution AND transfer in this timeout;
+# resolution is not another sequential allocation. This does not bound lease
+# wait or acquisition finalization (whole-acquisition deadline: #280).
 DEFAULT_DOWNLOAD_TIMEOUT = 1500.0
 DEFAULT_PREFLIGHT_TIMEOUT = 5.0
+
+# The ceiling on a whole search or download-resolution walk, however many
+# providers and mirrors it spans. By default search allocates 165s + 30s
+# overhead under its 240s owner; download resolution runs INSIDE the 1500s
+# provider-chain timeout under its 2400s owner. Neither is a whole-acquisition
+# bound (#280). Tests compare these scopes to live TypeScript constants.
+# This is also, deliberately, the same
+# clock the capped three-mirror walk used to cost — the change is that the cap
+# is gone, so a mirror that fails its preflight in 5s now leaves room for the
+# fourth instead of consuming one of only three slots.
+DEFAULT_WALK_BUDGET = 165.0
+
+# Allowance around the provider walk, not a measured cold-start guarantee.
+# Reserve at most 1/8 of the owning timer so healthy short calls still work.
+WALK_OVERHEAD_ALLOWANCE = 30.0
+DEFAULT_NODE_BRIDGE_TIMEOUT_SECONDS = 240.0
+DEFAULT_NODE_LONG_TIMEOUT_SECONDS = 2400.0
+MAX_NODE_TIMER_DELAY_MS = 2_147_483_647
+WALK_BUDGET_SAFETY_MARGIN = 0.001
+_ECMASCRIPT_TRIM_CHARS = (
+    "\u0009\u000a\u000b\u000c\u000d\u0020\u00a0\u1680\u2000\u2001\u2002"
+    "\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f"
+    "\u205f\u3000\ufeff"
+)
 
 # Hosts operated by the Anna's Archive project, per the mirror list the live
 # site itself advertises (verified 2026-07-24: .gl/.pk/.gd serve real search
@@ -123,6 +154,9 @@ class SourceConfig:
         download_timeout: Seconds allowed for a complete source-file transfer
         preflight_enabled: Probe host reachability before the real request
         preflight_timeout: Seconds allowed for each probe phase
+        walk_budget: Seconds allowed for a WHOLE walk, across every
+            provider and mirror it touches, not a whole acquisition (#280).
+        bridge_overhead: Allowance around this provider walk, scaled to its owner
     """
 
     annas_secret_key: str = ""
@@ -137,11 +171,41 @@ class SourceConfig:
     download_timeout: float = DEFAULT_DOWNLOAD_TIMEOUT
     preflight_enabled: bool = True
     preflight_timeout: float = DEFAULT_PREFLIGHT_TIMEOUT
+    walk_budget: float = DEFAULT_WALK_BUDGET
+    bridge_overhead: float = WALK_OVERHEAD_ALLOWANCE
 
     @property
     def has_annas_key(self) -> bool:
         """Check if Anna's Archive API key is configured."""
         return bool(self.annas_secret_key)
+
+
+def worst_case_search_seconds(config: "SourceConfig") -> float:
+    """Provider search walk plus overhead allocation, not a whole MCP tool.
+
+    Now a sum of exactly two terms, neither of which depends on how many
+    mirrors or providers exist: the walk's own ceiling, and what the bridge
+    costs around it. That independence is the point. The previous version
+    multiplied a per-attempt cost by a mirror count and a provider count, and
+    was wrong for months because a custom `LIBGEN_MIRROR` changed one of the
+    factors and nothing recomputed the product (#152). Adding Z-Library to the
+    `auto` walk under #40 would have broken it again.
+
+    A test compares this to `PYTHON_BRIDGE_TIMEOUT` in `python-runner.ts`, so
+    raising `BOOK_SOURCE_WALK_BUDGET` past what the Node side allows fails the
+    build instead of producing a killed subprocess in production.
+    """
+    return config.walk_budget + config.bridge_overhead
+
+
+def worst_case_download_seconds(config: "SourceConfig") -> float:
+    """Provider download chain plus overhead, NOT a whole acquisition (#280).
+
+    Candidate resolution already runs inside download_timeout, so adding its
+    walk again would double-count. Lease wait and finalization are excluded;
+    this guard says nothing about their composition with the provider chain.
+    """
+    return config.download_timeout + config.bridge_overhead
 
 
 def _positive_float(name: str, default: float) -> float:
@@ -161,12 +225,57 @@ def _positive_float(name: str, default: float) -> float:
     return value if math.isfinite(value) and value > 0 else default
 
 
-def get_source_config() -> SourceConfig:
+def get_preflight_timeout() -> float:
+    """Read the resolver/probe budget without admitting a source walk.
+
+    EAPI authentication and receipt-only acquisition also install the bounded
+    resolver. They do not own a source walk or use its ordinary bridge budget.
+    """
+    return _positive_float("BOOK_SOURCE_PREFLIGHT_TIMEOUT", DEFAULT_PREFLIGHT_TIMEOUT)
+
+
+def _ecmascript_trim(value: str) -> str:
+    """Match JavaScript String.prototype.trim for environment values."""
+    return value.strip(_ECMASCRIPT_TRIM_CHARS)
+
+
+def _node_bridge_timeout_seconds(*, for_download: bool = False) -> float:
+    """Match Node's positive-integer bridge-timeout environment parsing."""
+    name = "PYTHON_BRIDGE_LONG_TIMEOUT" if for_download else "PYTHON_BRIDGE_TIMEOUT"
+    default = (
+        DEFAULT_NODE_LONG_TIMEOUT_SECONDS
+        if for_download
+        else DEFAULT_NODE_BRIDGE_TIMEOUT_SECONDS
+    )
+    raw = _ecmascript_trim(os.environ.get(name, ""))
+    if not raw or not raw.isascii() or not raw.isdecimal():
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        return default
+    if value <= 0 or value > MAX_NODE_TIMER_DELAY_MS:
+        return default
+    return value / 1000.0
+
+
+def get_source_config(*, for_download: bool = False) -> SourceConfig:
     """Load configuration from environment variables.
 
     Returns a fresh SourceConfig each call (not cached) to support
-    environment variable changes during testing.
+    environment variable changes during testing. Downloads use the long
+    owner; short timers scale overhead rather than rejecting all source work.
+    Adapters refuse uninformative remaining slices with provider attribution.
     """
+    owner = _node_bridge_timeout_seconds(for_download=for_download)
+    overhead = min(WALK_OVERHEAD_ALLOWANCE, owner / 8.0)
+    available = owner - overhead - WALK_BUDGET_SAFETY_MARGIN
+    if available <= 0:
+        name = "PYTHON_BRIDGE_LONG_TIMEOUT" if for_download else "PYTHON_BRIDGE_TIMEOUT"
+        raise ValueError(f"{name} leaves no time for a source walk after overhead")
+    download_timeout = _positive_float(
+        "BOOK_SOURCE_DOWNLOAD_TIMEOUT", DEFAULT_DOWNLOAD_TIMEOUT
+    )
     return SourceConfig(
         annas_secret_key=os.environ.get("ANNAS_SECRET_KEY", ""),
         annas_base_url=os.environ.get("ANNAS_BASE_URL", DEFAULT_ANNAS_BASE_URL),
@@ -184,12 +293,15 @@ def get_source_config() -> SourceConfig:
         total_timeout=_positive_float(
             "BOOK_SOURCE_TOTAL_TIMEOUT", DEFAULT_TOTAL_TIMEOUT
         ),
-        download_timeout=_positive_float(
-            "BOOK_SOURCE_DOWNLOAD_TIMEOUT", DEFAULT_DOWNLOAD_TIMEOUT
+        download_timeout=(
+            min(download_timeout, available) if for_download else download_timeout
         ),
         preflight_enabled=os.environ.get("BOOK_SOURCE_PREFLIGHT", "true").lower()
         == "true",
-        preflight_timeout=_positive_float(
-            "BOOK_SOURCE_PREFLIGHT_TIMEOUT", DEFAULT_PREFLIGHT_TIMEOUT
+        preflight_timeout=get_preflight_timeout(),
+        walk_budget=min(
+            _positive_float("BOOK_SOURCE_WALK_BUDGET", DEFAULT_WALK_BUDGET),
+            available,
         ),
+        bridge_overhead=overhead,
     )

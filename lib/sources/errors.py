@@ -30,6 +30,13 @@ REASON_TEXT = {
     "protocol_error": "returned a malformed response",
     "integrity_mismatch": "returned bytes that did not match the requested digest",
     "configuration_error": "cannot run with the supplied configuration",
+    # Not a verdict on the host: it names the mirrors and providers the walk
+    # never got to. Distinct from a timeout precisely so an operator can tell
+    # "this mirror is slow" from "the walk ran out of clock before its turn"
+    # — the second is fixed by raising BOOK_SOURCE_WALK_BUDGET (or the owning
+    # PYTHON_BRIDGE_*TIMEOUT when the walk is clamped to it), the first is
+    # not (#152).
+    "walk_budget_exhausted": "was not attempted before the walk ran out of time",
     "unknown": "failed for an unclassified reason",
 }
 

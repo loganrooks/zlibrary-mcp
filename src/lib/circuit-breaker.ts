@@ -8,7 +8,27 @@ import { logger } from './logger.js';
 
 export type CircuitState = 'CLOSED' | 'OPEN' | 'HALF_OPEN';
 
+export type BreakerDependency = 'eapi' | 'source_walk' | 'local';
+
+export class CircuitBreakerOpenError extends Error {
+  readonly code = 'CIRCUIT_BREAKER_OPEN';
+  readonly context;
+
+  constructor(
+    public readonly dependency: BreakerDependency,
+    retryAfterMs: number,
+  ) {
+    super('Circuit breaker is OPEN');
+    this.name = 'CircuitBreakerOpenError';
+    this.context = {
+      retryAfterMs,
+      details: { reason: 'breaker_open', request_issued: false },
+    };
+  }
+}
+
 export interface CircuitBreakerOptions {
+  dependency?: BreakerDependency;
   threshold?: number;
   timeout?: number;
   onStateChange?: (oldState: CircuitState, newState: CircuitState) => void;
@@ -51,6 +71,7 @@ interface Probe {
 }
 
 export class CircuitBreaker {
+  private readonly dependency: BreakerDependency;
   private failureCount = 0;
   private lastFailureTime: number | null = null;
   private state: CircuitState = 'CLOSED';
@@ -63,6 +84,7 @@ export class CircuitBreaker {
   private probe: Probe | null = null;
 
   constructor(options: CircuitBreakerOptions = {}) {
+    this.dependency = options.dependency ?? 'local';
     this.threshold = options.threshold ?? 5;
     this.timeout = options.timeout ?? 60000;
     this.onStateChange = options.onStateChange;
@@ -127,17 +149,11 @@ export class CircuitBreaker {
     }
   }
 
-  private openError(): Error {
-    return Object.assign(new Error('Circuit breaker is OPEN'), {
-      code: 'CIRCUIT_BREAKER_OPEN',
-      context: {
-        retryAfterMs: Math.max(
-          0,
-          this.timeout - (Date.now() - (this.lastFailureTime ?? Date.now())),
-        ),
-        details: { reason: 'breaker_open', request_issued: false },
-      },
-    });
+  private openError(): CircuitBreakerOpenError {
+    return new CircuitBreakerOpenError(
+      this.dependency,
+      Math.max(0, this.timeout - (Date.now() - (this.lastFailureTime ?? Date.now()))),
+    );
   }
 
   /** A probe that learned nothing leaves the circuit as it found it: OPEN, cooldown spent. */

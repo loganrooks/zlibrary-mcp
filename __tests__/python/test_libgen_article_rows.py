@@ -10,6 +10,7 @@ from libgen_api_enhanced.book import Book
 from libgen_api_enhanced.search_request import SearchRequest
 import pytest
 
+from lib.auth_diagnostics import DiagnosticLogFilter
 from lib.sources.config import SourceConfig
 from lib.sources.libgen import LibgenAdapter
 
@@ -162,6 +163,20 @@ def test_installed_book_constructor_matches_parser_positional_contract():
 async def test_search_drop_diagnostic_counts_parser_and_md5_rows(
     no_edition, invalid_md5, caplog, monkeypatch
 ):
+    # As a library consumer, bypass bridge-only filters on zlibrary.sources
+    # and pytest's reused caplog handler. monkeypatch restores both after each case.
+    logger = logging.getLogger("zlibrary.sources")
+    monkeypatch.setattr(
+        logger,
+        "filters",
+        [f for f in logger.filters if not isinstance(f, DiagnosticLogFilter)],
+    )
+    monkeypatch.setattr(
+        caplog.handler,
+        "filters",
+        [f for f in caplog.handler.filters if not isinstance(f, DiagnosticLogFilter)],
+    )
+
     async def inline_worker(func, *_args, **_kwargs):
         return func()
 

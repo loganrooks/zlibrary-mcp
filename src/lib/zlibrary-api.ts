@@ -89,9 +89,13 @@ const dependencyBreakers = Object.fromEntries(
  * @returns `libgen`, `annas`, or `auto` for a search with no named source
  */
 function sourceScope(functionName: string, args: Record<string, any>): string {
-  const source = String(
-    (functionName === 'search_multi_source' ? args.source : args.book_details?.source) || '',
-  ).toLowerCase();
+  if (functionName === 'search_multi_source') {
+    // As lib/sources/router.py routes it: exact `auto` walks both providers,
+    // exact `annas` reaches Anna's, and every other spelling reaches LibGen.
+    const source = args.source ?? 'auto';
+    return source === 'auto' ? 'auto' : source === 'annas' ? 'annas' : 'libgen';
+  }
+  const source = String(args.book_details?.source || '').toLowerCase();
   if (source === 'libgen') return 'libgen';
   return source === 'annas' || source === 'annas_archive' ? 'annas' : 'auto';
 }

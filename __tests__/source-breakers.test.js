@@ -165,3 +165,15 @@ test('an internal auto walk has its own scope, apart from both named sources', a
       books: [{ source }],
     });
 });
+
+test('a raw search spelling the Python router sends to LibGen counts on the LibGen breaker', async () => {
+  // Gate A, A1: lib/sources/router.py routes every spelling but `auto` and
+  // `annas` to LibGen, so Anna's breaker must not decide those calls.
+  await load();
+  await fiveOutages('annas');
+  for (const source of ['annas_archive', 'Annas', 'libgen']) {
+    const before = runner.mock.calls.length;
+    await expect(api.searchMultiSource({ query: 'x', source })).resolves.toBeDefined();
+    expect(runner.mock.calls.length).toBe(before + 1);
+  }
+});

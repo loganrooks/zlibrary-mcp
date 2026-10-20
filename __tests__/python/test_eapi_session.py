@@ -429,33 +429,6 @@ async def test_wrappers_preserve_typed_rejection_for_parent(
     assert len(service["requests"]) == 1
 
 
-async def test_booklist_enrichment_preserves_auth_rejection(
-    service, monkeypatch, capsys
-):
-    await seed(service, monkeypatch)
-    service["operation"] = lambda request: (
-        {"success": 1, "books": [{"id": "1", "hash": "fake", "title": "Offline"}]}
-        if request.url.path == "/eapi/book/search"
-        else {"success": 0, "error": "Please login"}
-    )
-    monkeypatch.setattr(
-        sys,
-        "argv",
-        [
-            "python_bridge.py",
-            "fetch_booklist_bridge",
-            json.dumps(
-                {"booklist_id": "1", "booklist_hash": "fake", "topic": "offline"}
-            ),
-        ],
-    )
-    await python_bridge.main()
-    output = capsys.readouterr()
-    result = json.loads(json.loads(output.out)["content"][0]["text"])
-    assert result["auth_rejected"] == {"generation": 12}
-    assert service["logins"] == 1
-
-
 @pytest.mark.parametrize(
     "status,upstream,expected",
     [

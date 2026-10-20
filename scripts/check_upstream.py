@@ -683,6 +683,7 @@ def emit_github_output(report: str, failed: bool, zlib_blocked: bool = False) ->
         # The live-suite job gates on this: logging in through a wall would
         # both fail spuriously and burn the ~10/hour login rate limit.
         handle.write(f"zlib_blocked={'true' if zlib_blocked else 'false'}\n")
+        handle.write(f"zlib_domain={ZLIB_DOMAIN}\n")
         # Heredoc form so multi-line reports survive intact.
         handle.write("report<<PROBE_EOF\n")
         handle.write(report + "\n")

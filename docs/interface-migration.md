@@ -43,6 +43,12 @@ No author post-filter is promised. Unsupported source filters are reported in
 | full-text `search_type` | Removed with the misleading text-search tool |
 | unstructured tool errors | Closed `{error}` envelope and three-way `retry` |
 
+`routing.served_by` is absent when a search returns no rows; `fell_back` is
+false on that empty page. `get_limits.operations` describes supported operations
+even for unconfigured sources. Use `search_available` and `download_available`
+for current local availability. A known daily cap without known spend does not
+produce a `remaining` count.
+
 Saved full records/IDs must not be replayed as download inputs. Search again and
 choose the edition, then use its current ref. Refs do not survive process
 restart. Durable library integration reads `.acq.json` records, not refs or

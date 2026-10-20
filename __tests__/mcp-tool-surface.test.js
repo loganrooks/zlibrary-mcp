@@ -2,7 +2,7 @@ import { jest, test, expect, beforeEach, afterEach } from '@jest/globals';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { AjvJsonSchemaValidator } from '@modelcontextprotocol/sdk/validation/ajv';
-import { ErrorEnvelopeSchema } from '../dist/lib/tool-errors.js';
+import { ERROR_CODES, ErrorEnvelopeSchema } from '../dist/lib/tool-errors.js';
 const run = jest.fn();
 jest.unstable_mockModule('../lib/venv-manager.js', () => ({ getManagedPythonPath: async () => '/offline/python' }));
 jest.unstable_mockModule('../lib/python-runner.js', () => ({ runPythonBridge: run, LONG_BRIDGE_TIMEOUT_MS: 2400000 }));
@@ -25,8 +25,247 @@ const call = async (name, args = {}) => (await client.callTool({ name, arguments
 test('tools/list stays under 6500 characters with success/error output schemas', async () => {
   const list = await client.listTools();
   expect(JSON.stringify(list).length).toBeLessThan(6500);
+  expect(JSON.stringify(list).length).toBe(6493);
+  expect(ERROR_CODES).toHaveLength(19);
   expect(list.tools.map(t => t.name)).toEqual(['search', 'get_book', 'download', 'get_limits', 'get_history']);
   for (const t of list.tools) expect(t.outputSchema.oneOf).toHaveLength(2);
+});
+test('tools/list retains current annotations, descriptions, schemas and server identity on the wire', async () => {
+  expect(client.getServerVersion()).toEqual({
+    name: 'book-acquisition',
+    version: expect.any(String),
+  });
+  expect(client.getServerVersion().version.length).toBeGreaterThan(0);
+  expect(client.getServerCapabilities()).toEqual({ tools: {} });
+  const { tools } = await client.listTools();
+  const annotations = {
+    search: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
+    get_book: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
+    download: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true,
+    },
+    get_limits: { readOnlyHint: true, idempotentHint: false, openWorldHint: true },
+    get_history: { readOnlyHint: true, idempotentHint: false, openWorldHint: true },
+  };
+  const validator = new AjvJsonSchemaValidator();
+  for (const tool of tools) {
+    expect(tool.name).toMatch(/^[a-z][a-z0-9_]*$/);
+    expect(tool.name).not.toContain('__');
+    expect(tool.description.length).toBeGreaterThan(10);
+    expect(tool.description.toLowerCase()).not.toMatch(/todo|placeholder/);
+    expect(tool.annotations).toEqual(annotations[tool.name]);
+    expect(tool.inputSchema.type).toBe('object');
+    expect(tool.inputSchema.properties).toEqual(expect.any(Object));
+    expect(() => validator.getValidator(tool.inputSchema)).not.toThrow();
+    expect(() => validator.getValidator(tool.outputSchema)).not.toThrow();
+  }
+  expect(tools.find((t) => t.name === 'search').inputSchema.properties).toEqual(
+    expect.objectContaining({
+      query: expect.any(Object),
+      languages: expect.any(Object),
+      formats: expect.any(Object),
+      year_from: expect.any(Object),
+    }),
+  );
+  for (const name of ['get_book', 'download']) {
+    expect(tools.find((t) => t.name === name).inputSchema.required).toContain('ref');
+  }
+});
+
+test.each([
+  ['search', { query: 'Book', sources: ['zlibrary'], limit: 0 }],
+  ['get_book', {}],
+  ['download', {}],
+  ['get_limits', { mode: 'invalid-mode' }],
+  ['get_history', { limit: 'not-a-number' }],
+])('%s enforces its advertised input schema before bridge work', async (name, args) => {
+  const { tools } = await client.listTools();
+  const validate = new AjvJsonSchemaValidator().getValidator(
+    tools.find((t) => t.name === name).inputSchema,
+  );
+  expect(validate(args).valid).toBe(false);
+  const result = await client.callTool({ name, arguments: args });
+  expect(result.isError).toBe(true);
+  expect(result.structuredContent.error).toMatchObject({
+    code: 'invalid_argument',
+    operation: name,
+  });
+  expect(ErrorEnvelopeSchema.safeParse(result.structuredContent).success).toBe(true);
+  expect(JSON.parse(result.content[0].text)).toEqual(result.structuredContent);
+  expect(run).not.toHaveBeenCalled();
+});
+
+// Only successful SDK calls enter the coverage ledger; listing an argument in a
+// disconnected fixture cannot satisfy the advertised-field guard.
+function assertInputCoverage(tools, fixtures) {
+  for (const tool of tools) {
+    const covered = new Set(
+      fixtures.filter((f) => f.name === tool.name).flatMap((f) => Object.keys(f.args)),
+    );
+    const missing = Object.keys(tool.inputSchema.properties).filter((key) => !covered.has(key));
+    expect({ tool: tool.name, missing }).toEqual({ tool: tool.name, missing: [] });
+  }
+}
+
+function assertRunnerOptions(options, operation, timeoutMs) {
+  expect(Object.keys(options).sort()).toEqual([
+    'label', 'onSession', 'onSessionNeeded', 'sessionInput', 'signal', 'timeoutMs',
+  ]);
+  expect(options).toEqual({
+    timeoutMs,
+    signal: expect.any(AbortSignal),
+    label: `python_bridge.${operation}`,
+    sessionInput: undefined,
+    onSession: undefined,
+    onSessionNeeded: undefined,
+  });
+}
+
+test('every advertised input field is exercised through SDK calls with literal bridge payloads and exact options', async () => {
+  const downloadReply = {
+    path: '/offline/book.pdf',
+    bytes: 12,
+    verified: 'sha256',
+    reused: false,
+    transfer_skipped: false,
+    record: '/offline/book.pdf.acq.json',
+  };
+  run.mockImplementation(async (_script, options) => {
+    switch (options.args[0]) {
+      case 'search':
+        return encode({ books: [book] });
+      case 'get_book_metadata_complete':
+        return encode({ description: 'Details' });
+      case 'acquire_book':
+        return encode(downloadReply);
+      case 'get_download_limits':
+        return encode({ daily_limit: 10, downloads_today: 3, daily_remaining: 7 });
+      case 'get_download_history':
+        return encode([book]);
+      default:
+        throw new Error(`Unplanned fixture operation: ${options.args[0]}`);
+    }
+  });
+  const fixtures = [];
+  const exercise = async (name, args, operation, payload, timeoutMs) => {
+    const before = run.mock.calls.length;
+    const reply = await client.callTool({ name, arguments: args });
+    expect(reply.isError).not.toBe(true);
+    expect(JSON.parse(reply.content[0].text)).toEqual(reply.structuredContent);
+    expect(run.mock.calls.length).toBe(before + 1);
+    const [, bridge, options] = run.mock.calls.at(-1);
+    expect(bridge.args[0]).toBe(operation);
+    expect(JSON.parse(bridge.args[1])).toEqual(payload);
+    assertRunnerOptions(options, operation, timeoutMs);
+    fixtures.push({ name, args });
+    return reply.structuredContent;
+  };
+  const searchArgs = {
+    query: 'title',
+    author: 'Writer',
+    sources: ['zlibrary'],
+    exact: true,
+    year_from: 1900,
+    year_to: 2000,
+    languages: ['english'],
+    formats: ['pdf'],
+    limit: 1,
+  };
+  const searchPayload = {
+    query: 'title',
+    author: 'Writer',
+    exact: true,
+    from_year: 1900,
+    to_year: 2000,
+    languages: ['english'],
+    extensions: ['pdf'],
+    count: 1,
+    page: 1,
+  };
+  const first = await exercise('search', searchArgs, 'search', searchPayload);
+  expect(first.next_cursor).toEqual(expect.any(String));
+  await exercise('search', { cursor: first.next_cursor }, 'search', { ...searchPayload, page: 2 });
+  const ref = first.rows[0].ref;
+  const details = await exercise('get_book', { ref }, 'get_book_metadata_complete', {
+    book_id: '1',
+    book_hash: 'abc',
+  });
+  expect(details.description).toBe('Details');
+  const receipt = await exercise(
+    'download',
+    { ref, output_dir: '/offline', filename: 'chosen.epub' },
+    'acquire_book',
+    {
+      book_details: book,
+      output_dir: '/offline',
+      filename: 'chosen.epub',
+      request: { ref, query: 'title Writer' },
+    },
+    2400000,
+  );
+  expect(receipt).toEqual(downloadReply);
+  const limits = await exercise(
+    'get_limits',
+    { mode: 'live', sources: ['zlibrary'] },
+    'get_download_limits',
+    {},
+  );
+  expect(limits.sources.zlibrary.limit.remaining).toBe(7);
+  const history = await exercise(
+    'get_history',
+    { source: 'zlibrary', limit: 1 },
+    'get_download_history',
+    { count: 1, page: 1 },
+  );
+  expect(history.next_cursor).toEqual(expect.any(String));
+  await exercise('get_history', { cursor: history.next_cursor }, 'get_download_history', {
+    count: 1,
+    page: 2,
+  });
+  const { tools } = await client.listTools();
+  assertInputCoverage(tools, fixtures);
+
+  // A schema addition without an executed fixture must trip the same guard.
+  const addedField = structuredClone(tools);
+  addedField.find((t) => t.name === 'search').inputSchema.properties.unexercised = {
+    type: 'string',
+  };
+  expect(() => assertInputCoverage(addedField, fixtures)).toThrow();
+});
+
+test('cancelling an in-flight SDK request aborts that runner signal and leaves the next request live', async () => {
+  const started = Promise.withResolvers();
+  const bridge = Promise.withResolvers();
+  run.mockImplementationOnce((_script, _options, options) => {
+    started.resolve(options.signal);
+    return bridge.promise;
+  });
+  const controller = new AbortController();
+  const pending = client.callTool(
+    { name: 'search', arguments: { query: 'cancel me', sources: ['zlibrary'] } },
+    undefined,
+    { signal: controller.signal },
+  );
+  const rejected = expect(pending).rejects.toThrow(/cancel this request/);
+  try {
+    const signal = await started.promise;
+    expect(signal.aborted).toBe(false);
+    controller.abort(new Error('cancel this request'));
+    await rejected;
+    expect(signal.aborted).toBe(true);
+  } finally {
+    controller.abort();
+    bridge.resolve(encode({ books: [] }));
+    await rejected;
+  }
+  run.mockResolvedValue(encode({ books: [book] }));
+  expect(
+    (await call('search', { query: 'next request', sources: ['zlibrary'] })).rows,
+  ).toHaveLength(1);
+  expect(run.mock.calls.at(-1)[2].signal.aborted).toBe(false);
 });
 test('search forwards all normalized filters, author, limit and page through the real facade', async () => {
   run.mockResolvedValue(encode({ books: [book] }));

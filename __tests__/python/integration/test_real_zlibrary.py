@@ -89,9 +89,9 @@ class TestRealAuthentication:
 
     async def test_authentication_succeeds(self, credentials):
         """Should successfully authenticate with real credentials."""
-        from zlibrary.eapi import EAPIClient
+        from zlibrary.eapi import DEFAULT_EAPI_DOMAINS, EAPIClient
 
-        EAPI_DOMAIN = os.environ.get("ZLIBRARY_EAPI_DOMAIN", "z-library.sk")
+        EAPI_DOMAIN = os.environ.get("ZLIBRARY_EAPI_DOMAIN", DEFAULT_EAPI_DOMAINS[0])
 
         client = EAPIClient(EAPI_DOMAIN)
         login_result = await client.login(credentials["email"], credentials["password"])
@@ -107,9 +107,9 @@ class TestRealAuthentication:
 
     async def test_authentication_fails_with_invalid_credentials(self):
         """Should raise error or return failure with invalid credentials."""
-        from zlibrary.eapi import EAPIClient
+        from zlibrary.eapi import DEFAULT_EAPI_DOMAINS, EAPIClient
 
-        EAPI_DOMAIN = os.environ.get("ZLIBRARY_EAPI_DOMAIN", "z-library.sk")
+        EAPI_DOMAIN = os.environ.get("ZLIBRARY_EAPI_DOMAIN", DEFAULT_EAPI_DOMAINS[0])
 
         client = EAPIClient(EAPI_DOMAIN)
         try:
@@ -124,9 +124,9 @@ class TestRealAuthentication:
 
     async def test_session_persistence(self, credentials):
         """Should maintain session across multiple operations."""
-        from zlibrary.eapi import EAPIClient
+        from zlibrary.eapi import DEFAULT_EAPI_DOMAINS, EAPIClient
 
-        EAPI_DOMAIN = os.environ.get("ZLIBRARY_EAPI_DOMAIN", "z-library.sk")
+        EAPI_DOMAIN = os.environ.get("ZLIBRARY_EAPI_DOMAIN", DEFAULT_EAPI_DOMAINS[0])
 
         client = EAPIClient(EAPI_DOMAIN)
         await client.login(credentials["email"], credentials["password"])

@@ -13,7 +13,23 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "classify_live_tests.py"
-BLOCK_REASON = "blocked by the anti-bot wall on this runner's IP, not upstream drift"
+BLOCK_REASON = (
+    "anti-bot wall corroborated by the reachability probe for the same domain"
+)
+RECORDED = ET.parse(ROOT / "__tests__/python/fixtures/live-junit/pytest-junit.xml")
+
+
+def recorded_problem(name):
+    case = next(c for c in RECORDED.iter("testcase") if c.get("name") == name)
+    problem = next(p for p in case if p.tag in ("failure", "error"))
+    return problem.tag, problem.get("message")
+
+
+@pytest.fixture(autouse=True)
+def corroborated_probe(monkeypatch):
+    monkeypatch.setenv("ZLIB_BLOCKED", "true")
+    monkeypatch.setenv("ZLIB_PROBE_DOMAIN", "z-library.ec")
+    monkeypatch.setenv("ZLIBRARY_EAPI_DOMAIN", "z-library.ec")
 
 
 @pytest.fixture(scope="module")
@@ -37,14 +53,19 @@ def write_report(tmp_path, problems=(), *, skipped=False):
     return report
 
 
-WALL = ("failure", "zlibrary.eapi.DiamWallError: HTTP 517 DiamWall block page")
-CONNECT_SETUP = (
-    "error",
-    'failed on setup with "httpx.ConnectError: All connection attempts failed"',
+WALL = recorded_problem("test_wall_call[z-library.ec]")
+CONNECT_SETUP = recorded_problem("test_connect_setup[ConnectError]")
+
+
+@pytest.mark.parametrize(
+    "problem",
+    [
+        WALL,
+        CONNECT_SETUP,
+        recorded_problem("test_wall_setup"),
+        recorded_problem("test_connect_message_setup"),
+    ],
 )
-
-
-@pytest.mark.parametrize("problem", [WALL, CONNECT_SETUP])
 def test_blocked_only_is_not_failure(classifier, tmp_path, problem):
     result = classifier.classify(1, write_report(tmp_path, [problem]))
     assert result["status"] == "blocked"
@@ -59,8 +80,8 @@ def test_blocked_only_is_not_failure(classifier, tmp_path, problem):
         ("failure", "KeyError: 'books'"),
         ("failure", "json.decoder.JSONDecodeError: Expecting value"),
         ("failure", "ValueError: parser regression"),
-        ("failure", "httpx.ConnectError: connection during a test call"),
-        ("error", 'failed on teardown with "httpx.ConnectError: connection"'),
+        recorded_problem("test_connect_call"),
+        recorded_problem("test_connect_teardown"),
         ("error", 'failed on setup with "KeyError: books"'),
         ("error", "collection failure: ImportError"),
         ("failure", "AssertionError: expected DiamWallError but parser regressed"),
@@ -134,10 +155,10 @@ def test_actual_pytest_reports_are_classified_offline(classifier, tmp_path):
     """Exercise pytest's real setup/call messages, not only hand-written XML."""
     source = tmp_path / "test_synthetic.py"
     source.write_text(
-        "import pytest\nimport httpx\nfrom zlibrary.eapi import DiamWallError\n"
+        "import pytest\nimport httpx\nfrom zlibrary.eapi import decode_eapi_json\n"
         "@pytest.fixture\ndef refused():\n    raise httpx.ConnectError('offline')\n"
         "def test_setup(refused):\n    pass\n"
-        "def test_wall():\n    raise DiamWallError('HTTP 517 DiamWall block page')\n"
+        "def test_wall():\n    decode_eapi_json(httpx.Response(517, text='DiamWall'), 'z-library.ec')\n"
         "def test_drift():\n    assert 'books' in {'success': 1}\n"
     )
     report = tmp_path / "actual.xml"
@@ -186,7 +207,7 @@ def workflow():
 
 @pytest.mark.parametrize(
     "problems,expected",
-    [([WALL], "blocked"), ([WALL, ("failure", "KeyError: books")], "failed")],
+    [([WALL], "failed"), ([WALL, ("failure", "KeyError: books")], "failed")],
 )
 def test_workflow_live_step_classifies_and_retains_evidence(
     workflow, tmp_path, problems, expected
@@ -209,6 +230,25 @@ def test_workflow_live_step_classifies_and_retains_evidence(
     step = next(
         s for s in workflow["jobs"]["live_tests"]["steps"] if s.get("id") == "live"
     )
+    contexts = {
+        "secrets": {
+            "ZLIBRARY_EMAIL": "offline@example.test",
+            "ZLIBRARY_PASSWORD": "offline",
+        },
+        "needs": {
+            "reachability": {
+                "outputs": {"zlib_blocked": "false", "zlib_domain": "z-library.ec"}
+            }
+        },
+    }
+    step_env = {}
+    for key, expression in step["env"].items():
+        value = contexts
+        for part in expression.removeprefix("${{ ").removesuffix(" }}").split("."):
+            value = value[part]
+        step_env[key] = value
+    assert step_env["ZLIBRARY_EAPI_DOMAIN"] == "z-library.ec"
+    assert step_env["ZLIB_PROBE_DOMAIN"] == "z-library.ec"
     run = subprocess.run(
         ["bash", "-e", "-o", "pipefail", "-c", step["run"]],
         cwd=tmp_path,
@@ -217,9 +257,7 @@ def test_workflow_live_step_classifies_and_retains_evidence(
         env={
             **os.environ,
             "PATH": f"{tmp_path}:{os.environ['PATH']}",
-            "ZLIBRARY_EMAIL": "offline@example.test",
-            "ZLIBRARY_PASSWORD": "offline",
-            "ZLIB_BLOCKED": "false",
+            **step_env,
             "GITHUB_OUTPUT": str(output),
             "GITHUB_STEP_SUMMARY": str(tmp_path / "summary"),
             "SYNTHETIC_REPORT": str(report),
@@ -227,7 +265,7 @@ def test_workflow_live_step_classifies_and_retains_evidence(
     )
     assert run.returncode == 0, run.stdout + run.stderr
     assert f"status={expected}\n" in output.read_text()
-    assert "blocked=true\n" in output.read_text()
+    assert "blocked=false\n" in output.read_text()
     assert "offline pytest log" in (tmp_path / "live.log").read_text()
 
 
@@ -293,3 +331,76 @@ Object.assign(process.env, data.env);
     assert result["enabled"] is failed
     if failed:
         assert (BLOCK_REASON in result["body"]) is blocked
+        assert "runner's IP" not in result["body"]
+
+
+@pytest.mark.parametrize(
+    "probe_blocked,probe_domain",
+    [("false", "z-library.ec"), ("true", "z-library.sk"), ("true", "")],
+)
+def test_wall_requires_same_domain_probe_block(
+    classifier, tmp_path, monkeypatch, probe_blocked, probe_domain
+):
+    monkeypatch.setenv("ZLIB_BLOCKED", probe_blocked)
+    monkeypatch.setenv("ZLIB_PROBE_DOMAIN", probe_domain)
+    result = classifier.classify(1, write_report(tmp_path, [WALL]))
+    assert result["status"] == "failed"
+    assert result["blocked"] is False
+    assert "runner's IP" not in result["detail"]
+
+
+@pytest.mark.parametrize(
+    "name", ["test_wall_call[z-library.sk]", "test_wall_call[z-library.ec.evil]"]
+)
+def test_other_wall_domains_are_failures(classifier, tmp_path, name):
+    result = classifier.classify(1, write_report(tmp_path, [recorded_problem(name)]))
+    assert result["status"] == "failed"
+    assert result["blocked"] is False
+
+
+@pytest.mark.parametrize(
+    "name", ["test_bare_status[403]", "test_bare_status[513]", "test_bare_status[517]"]
+)
+def test_bare_status_is_not_a_body_marker_wall(classifier, tmp_path, name):
+    result = classifier.classify(1, write_report(tmp_path, [recorded_problem(name)]))
+    assert result["status"] == "failed"
+    assert result["blocked"] is False
+
+
+@pytest.mark.parametrize(
+    "name", ["test_connect_setup[ConnectError]", "test_connect_setup[ConnectTimeout]"]
+)
+def test_real_bare_setup_connect_shapes(classifier, tmp_path, name):
+    result = classifier.classify(1, write_report(tmp_path, [recorded_problem(name)]))
+    assert result["status"] == "blocked"
+    assert result["blocked"] is True
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "test_connect_setup[ConnectError]",
+        "test_connect_setup[ConnectTimeout]",
+        "test_connect_message_setup",
+    ],
+)
+def test_connect_setup_without_probe_block_is_failure(
+    classifier, tmp_path, monkeypatch, name
+):
+    report = write_report(tmp_path, [recorded_problem(name)])
+    for probe_blocked, status in [("true", "blocked"), ("false", "failed")]:
+        monkeypatch.setenv("ZLIB_BLOCKED", probe_blocked)
+        result = classifier.classify(1, report)
+        assert result["status"] == status
+        assert result["blocked"] is (status == "blocked")
+
+
+def test_setup_connect_on_another_live_domain_is_failure(
+    classifier, tmp_path, monkeypatch
+):
+    monkeypatch.setenv("ZLIBRARY_EAPI_DOMAIN", "z-library.sk")
+    result = classifier.classify(
+        1, write_report(tmp_path, [recorded_problem("test_connect_message_setup")])
+    )
+    assert result["status"] == "failed"
+    assert result["blocked"] is False

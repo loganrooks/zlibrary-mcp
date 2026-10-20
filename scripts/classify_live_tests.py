@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Classify the live pytest JUnit report without confusing an IP wall with drift.
+"""Classify live pytest results using same-domain reachability evidence.
 
 The workflow captures pytest's exit code and uses these outputs to fail the job
 only for real failures. This command itself succeeds after emitting a classified
@@ -9,25 +9,35 @@ failure; malformed/missing evidence is a failure, never a block or pass.
 import argparse
 import os
 from pathlib import Path
+import re
 import xml.etree.ElementTree as ET
 
 
-BLOCK_REASON = "blocked by the anti-bot wall on this runner's IP, not upstream drift"
+BLOCK_REASON = (
+    "anti-bot wall corroborated by the reachability probe for the same domain"
+)
 
 
-def is_blocked(problem: ET.Element) -> bool:
+def is_blocked(problem: ET.Element, probe_domain: str, live_domain: str) -> bool:
     """Match the terminal exception, not source/traceback mentions of a wall.
 
-    ConnectError is treated as an IP refusal only at fixture setup, per #250's
-    diagnosis. Call/teardown connect failures remain actionable. Pytest puts the
-    phase and terminal exception in the JUnit message attribute.
+    Called only when the probe reported a block. Setup transport errors also
+    require the configured live domain to match; call/teardown errors remain
+    actionable. A wall must name the probe domain and the body-marker branch.
     """
     message = problem.get("message", "")
     setup = problem.tag == "error" and message.startswith('failed on setup with "')
     if setup:
-        message = message.removeprefix('failed on setup with "')
-    return message.startswith(("zlibrary.eapi.DiamWallError:", "DiamWallError:")) or (
-        setup and message.startswith("httpx.ConnectError:")
+        message = message.removeprefix('failed on setup with "').removesuffix('"')
+    wall = re.match(
+        r"(?:zlibrary\.eapi\.)?DiamWallError: DiamWall anti-bot wall detected on "
+        r"([^\s()]+) \(HTTP \d+ DiamWall block page\)",
+        message,
+    )
+    return bool(wall and wall.group(1) == probe_domain) or (
+        setup
+        and live_domain == probe_domain
+        and message.partition(":")[0] in ("httpx.ConnectError", "httpx.ConnectTimeout")
     )
 
 
@@ -43,7 +53,12 @@ def classify(exit_code: int, report: Path) -> dict[str, object]:
 
     cases = list(root.iter("testcase"))
     problems = [p for p in root.iter() if p.tag in ("error", "failure")]
-    blocked_count = sum(is_blocked(p) for p in problems)
+    probe_domain = os.environ.get("ZLIB_PROBE_DOMAIN", "")
+    live_domain = os.environ.get("ZLIBRARY_EAPI_DOMAIN", "")
+    probe_blocked = os.environ.get("ZLIB_BLOCKED") == "true" and bool(probe_domain)
+    blocked_count = sum(
+        probe_blocked and is_blocked(p, probe_domain, live_domain) for p in problems
+    )
     failed_count = len(problems) - blocked_count
     # Interruptions, collection errors, usage errors and empty suites cannot be
     # explained away by a block seen elsewhere in a partial report.
@@ -55,7 +70,7 @@ def classify(exit_code: int, report: Path) -> dict[str, object]:
         status = "failed"
     detail = f"Live suite: {status}; {failed_count} failure(s), {blocked_count} blocked result(s); pytest exit {exit_code}."
     if blocked_count:
-        detail += f" Z-Library: {BLOCK_REASON}."
+        detail += f" Z-Library: {BLOCK_REASON} ({probe_domain})."
     return {"status": status, "blocked": bool(blocked_count), "detail": detail}
 
 

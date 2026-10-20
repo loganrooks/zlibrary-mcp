@@ -33,10 +33,10 @@ jobs:
     outputs:
       report: ${{ steps.probe.outputs.report }}
       failed: ${{ steps.probe.outputs.failed }}
-      # Z-Library refuses this network's IP (anti-bot wall / datacenter
-      # blocking). Distinct from drift: the contract may be intact for
-      # clients the wall admits, so this must not fail jobs or file issues.
+      # Probe-observed block, with the domain retained for live classification.
+      # This cannot distinguish an IP refusal from a wall affecting everyone.
       zlib_blocked: ${{ steps.probe.outputs.zlib_blocked }}
+      zlib_domain: ${{ steps.probe.outputs.zlib_domain }}
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup
@@ -74,9 +74,11 @@ jobs:
           ZLIBRARY_EMAIL: ${{ secrets.ZLIBRARY_EMAIL }}
           ZLIBRARY_PASSWORD: ${{ secrets.ZLIBRARY_PASSWORD }}
           ZLIB_BLOCKED: ${{ needs.reachability.outputs.zlib_blocked }}
+          ZLIB_PROBE_DOMAIN: ${{ needs.reachability.outputs.zlib_domain }}
+          ZLIBRARY_EAPI_DOMAIN: ${{ needs.reachability.outputs.zlib_domain }}
         run: |
           if [ "$ZLIB_BLOCKED" = "true" ]; then
-            echo "::warning::Z-Library refuses this network's IP (anti-bot/datacenter block) — live suite skipped. This is not upstream drift; run npm run doctor from a residential network to discriminate."
+            echo "::warning::Z-Library reachability probe reported a block on $ZLIB_PROBE_DOMAIN — live suite skipped. Run npm run doctor from another network to distinguish an IP refusal from a domain-wide wall."
             echo "status=blocked" >> "$GITHUB_OUTPUT"
             echo "blocked=true" >> "$GITHUB_OUTPUT"
             exit 0
@@ -135,7 +137,7 @@ jobs:
               `- reachability job: **${process.env.REACHABILITY_RESULT}**`,
               `- live integration job: **${process.env.LIVE_STATUS || process.env.LIVE_RESULT}**`,
               ...(process.env.LIVE_BLOCKED === 'true' || process.env.ZLIB_BLOCKED === 'true'
-                ? ["- Z-Library: blocked by the anti-bot wall on this runner's IP, not upstream drift. Other failures below remain actionable."]
+                ? ["- Z-Library: anti-bot wall corroborated by the reachability probe for the same domain. An IP-specific refusal versus a domain-wide wall is undetermined. Other failures below remain actionable."]
                 : []),
               `- run: ${runUrl}`,
               '',

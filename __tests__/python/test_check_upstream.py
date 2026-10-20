@@ -179,6 +179,7 @@ def test_github_output_carries_zlib_blocked_flag(check_upstream, tmp_path, monke
     written = out.read_text(encoding="utf-8")
     assert "failed=false\n" in written
     assert "zlib_blocked=true\n" in written
+    assert f"zlib_domain={check_upstream.ZLIB_DOMAIN}\n" in written
 
 
 ADS_PAGE = (

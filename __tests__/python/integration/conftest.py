@@ -14,7 +14,7 @@ import pytest_asyncio
 # Add project lib/ to path so zlibrary imports resolve
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "lib"))
 
-from zlibrary.eapi import EAPIClient  # noqa: E402
+from zlibrary.eapi import DEFAULT_EAPI_DOMAINS, EAPIClient  # noqa: E402
 
 import python_bridge  # noqa: E402
 
@@ -34,7 +34,7 @@ async def zlib_client():
     """
     email = os.environ.get("ZLIBRARY_EMAIL", "")
     password = os.environ.get("ZLIBRARY_PASSWORD", "")
-    domain = os.environ.get("ZLIBRARY_EAPI_DOMAIN", "z-library.sk")
+    domain = os.environ.get("ZLIBRARY_EAPI_DOMAIN", DEFAULT_EAPI_DOMAINS[0])
 
     client = EAPIClient(domain)
     login_result = await client.login(email, password)

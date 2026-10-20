@@ -24,7 +24,7 @@ def eapi_domain():
     """Resolve the runtime default only when a live test requests a domain."""
     from zlibrary.eapi import DEFAULT_EAPI_DOMAINS
 
-    return os.environ.get("ZLIBRARY_EAPI_DOMAIN", DEFAULT_EAPI_DOMAINS[0])
+    return os.environ.get("ZLIBRARY_EAPI_DOMAIN") or DEFAULT_EAPI_DOMAINS[0]
 
 
 @pytest_asyncio.fixture(scope="module", loop_scope="module")

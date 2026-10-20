@@ -50,7 +50,7 @@ describe('Python Bridge', () => {
     ).resolves.toEqual({ success: true, data: 'test data' });
   });
 
-  test('preserves the public non-zero-exit error shape', async () => {
+  test('non-zero-exit errors omit raw child buffers', async () => {
     const bridgeError = Object.assign(new Error('process exited with code 1'), {
       exitCode: 1,
       stderr: 'Python error message',
@@ -59,7 +59,7 @@ describe('Python Bridge', () => {
     const { pythonBridge } = await setup({ bridgeError });
 
     await expect(pythonBridge.callPythonFunction('test_function', ['arg1'])).rejects.toThrow(
-      'Python process exited with code 1: Python error message. Raw stdout:',
+      'Python process exited with code 1',
     );
   });
 
@@ -83,6 +83,32 @@ describe('Python Bridge', () => {
 
     expect(error.context.details).toEqual(details);
     expect(error.retryable).toBe(false);
+  });
+
+  test('EAPI failures in the lower bridge facade discard raw buffers and arguments', async () => {
+    const diagnostics = {
+      failure_kind: 'ambiguous_status',
+      http_status: 400,
+      attempt: 1,
+      refresh_count: 0,
+      request_id: '00000000-0000-4000-8000-000000000001',
+    };
+    const bridgeError = Object.assign(new Error('i251-token'), {
+      exitCode: 1,
+      stdout: 'i251-token',
+      stderr: JSON.stringify({
+        error: 'i251-token',
+        type: 'HTTPStatusError',
+        diagnostics,
+        body: 'i251-token',
+      }),
+    });
+    const { pythonBridge } = await setup({ bridgeError });
+    const error = await pythonBridge
+      .callPythonFunction('search', { query: 'i251-token' })
+      .catch((e) => e);
+    expect(String(error.stack) + JSON.stringify(error)).not.toContain('i251-token');
+    expect(error.context.diagnostics).toEqual(diagnostics);
   });
 
   test('treats all-permanent quota/configuration aggregates as non-retryable', async () => {
@@ -109,11 +135,11 @@ describe('Python Bridge', () => {
     expect(pythonBridge.isBridgeDetailRetryable(details)).toBe(false);
   });
 
-  test('preserves the public JSON parse error shape', async () => {
+  test('JSON parse errors omit raw output and parser excerpts', async () => {
     const { pythonBridge } = await setup({ bridgeResult: ['Invalid JSON{'] });
 
     await expect(pythonBridge.callPythonFunction('test_function', [])).rejects.toThrow(
-      /^Failed to parse Python result JSON: .*?\. Raw output: Invalid JSON\{\. Stderr: $/,
+      'Failed to parse Python result JSON.',
     );
   });
 
@@ -125,16 +151,13 @@ describe('Python Bridge', () => {
     );
   });
 
-  test.each(['download_book'])(
-    'uses the long bridge default for %s',
-    async (functionName) => {
-      const { pythonBridge, runPythonBridge } = await setup();
+  test.each(['download_book'])('uses the long bridge default for %s', async (functionName) => {
+    const { pythonBridge, runPythonBridge } = await setup();
 
-      await pythonBridge.callPythonFunction(functionName, {});
+    await pythonBridge.callPythonFunction(functionName, {});
 
-      expect(runPythonBridge.mock.calls[0][2].timeoutMs).toBe(2400000);
-    },
-  );
+    expect(runPythonBridge.mock.calls[0][2].timeoutMs).toBe(2400000);
+  });
 
   test('leaves ordinary bridge calls on the runner default', async () => {
     const { pythonBridge, runPythonBridge } = await setup();

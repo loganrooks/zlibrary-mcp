@@ -107,7 +107,9 @@ def decode_eapi_json(resp: httpx.Response, domain: str) -> dict:
             pass  # fall through to wall classification
     body = resp.text
     if "diamwall" in body.lower():
-        raise _diamwall_error(domain, f"HTTP {resp.status_code} DiamWall block page")
+        error = _diamwall_error(domain, f"HTTP {resp.status_code} DiamWall block page")
+        error.status_code = resp.status_code
+        raise error
     if resp.status_code == 401:
         try:
             payload = resp.json()
@@ -131,12 +133,13 @@ def decode_eapi_json(resp: httpx.Response, domain: str) -> dict:
         except ValueError:
             pass
     if resp.status_code in WALLED_STATUS_CODES:
-        raise _diamwall_error(domain, f"HTTP {resp.status_code}")
+        error = _diamwall_error(domain, f"HTTP {resp.status_code}")
+        error.status_code = resp.status_code
+        raise error
     resp.raise_for_status()
-    raise NonJSONResponseError(
-        f"Expected JSON from {domain}, got non-JSON HTTP {resp.status_code} "
-        f"response (possible block page or upstream contract change)"
-    )
+    error = NonJSONResponseError("Expected EAPI JSON, got a non-JSON response")
+    error.status_code = resp.status_code
+    raise error
 
 
 async def probe_eapi_domain(

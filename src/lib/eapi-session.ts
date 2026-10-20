@@ -1,4 +1,5 @@
 import { BridgeTimeoutError, PythonBridgeError } from './errors.js';
+import { readAuthDiagnostics, type AuthDiagnostics } from './auth-diagnostics.js';
 
 export interface EapiSession {
   identity: string;
@@ -49,13 +50,16 @@ interface LoginFailure {
   cause: string;
   acquiredAt?: number;
   refreshed: boolean;
+  diagnostics?: AuthDiagnostics;
 }
 function loginCause(error: any): string {
   const status = error?.context?.loginStatus;
-  const rejected =
-    error?.context?.reason === 'auth_rejected' ||
-    (error?.context?.reason === 'login_failed' &&
-      (status === 200 || (status >= 400 && status < 500)));
+  const diagnostics = readAuthDiagnostics(error?.context?.diagnostics);
+  const rejected = diagnostics
+    ? diagnostics.failure_kind === 'auth_rejected'
+    : error?.context?.reason === 'auth_rejected' ||
+      (error?.context?.reason === 'login_failed' &&
+        (status === 200 || (status >= 400 && status < 500)));
   let cause = rejected ? 'Z-Library rejected the login' : 'Z-Library login failed';
   if (Number.isInteger(status) && status >= 100 && status <= 599) cause += ` (HTTP ${status})`;
   const token =
@@ -181,12 +185,13 @@ export class EapiSessionOwner {
     );
     state.retryAt = since + delay;
     state.cause = loginCause(error);
+    state.diagnostics = readAuthDiagnostics((error as any)?.context?.diagnostics);
   }
   private backoffError(state: LoginFailure): PythonBridgeError {
     const remaining = Math.max(0, state.retryAt - Date.now());
     return new PythonBridgeError(
       `${state.cause}; next attempt allowed in ${Math.ceil(remaining / 1000)} s`,
-      { reason: 'auth_backoff', retryAfterMs: remaining },
+      { reason: 'auth_backoff', retryAfterMs: remaining, diagnostics: state.diagnostics },
       false,
     );
   }
@@ -360,6 +365,16 @@ export function sanitizeSessionError(error: any, secrets: string[]): void {
       if (['env', 'stdout', 'sessionInput', '_eapi_session', 'ZLIBRARY_EAPI_SESSION'].includes(key))
         delete value[key];
       else if (['code', 'reason', 'name', 'type', 'pythonErrorType', 'errnoCode'].includes(key))
+        continue;
+      else if (key === 'diagnostics' && readAuthDiagnostics(value[key])) continue;
+      else if (
+        key === 'loginToken' &&
+        [
+          'Authentication rejected',
+          'Upstream request failed',
+          'TLS certificate verification failed',
+        ].includes(value[key])
+      )
         continue;
       else if (typeof value[key] === 'string') {
         for (const secret of secrets.filter(Boolean))

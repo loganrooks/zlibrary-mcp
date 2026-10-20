@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { readAuthDiagnostics } from './auth-diagnostics.js';
 
 export const ERROR_CODES = [
   'invalid_argument',
@@ -65,6 +66,12 @@ const recoveries: Partial<Record<ErrorCode, string>> = {
 export function errorEnvelope(error: unknown, operation: string, source?: string) {
   const e = error instanceof ToolFailure ? error : classifyFailure(error, operation, source);
   const info = e.info;
+  const detail = { ...info.detail };
+  if ('diagnostics' in detail) {
+    const diagnostics = readAuthDiagnostics(detail.diagnostics);
+    if (diagnostics) detail.diagnostics = diagnostics;
+    else delete detail.diagnostics;
+  }
   const attempted = info.source ?? source;
   // Do not expose upstream exception text, URLs, bearer values, or stacks.
   const message = `${attempted ? `${attempted}: ` : ''}${e.message}`.slice(0, 199);
@@ -83,13 +90,14 @@ export function errorEnvelope(error: unknown, operation: string, source?: string
           : recoveries[e.code]) ??
         'Try another source or candidate; report persistent provider drift.',
       attempts: info.attempts ?? [],
-      detail: info.detail ?? {},
+      detail,
     },
   });
 }
 export function classifyFailure(error: any, operation: string, source?: string): ToolFailure {
   if (error instanceof ToolFailure) return error;
   const context = error?.context ?? {};
+  const diagnostics = readAuthDiagnostics(context.diagnostics);
   const detail = context.details ?? {};
   const candidate = detail.reason ?? context.reason ?? 'unknown';
   const allowedReasons = [
@@ -141,6 +149,26 @@ export function classifyFailure(error: any, operation: string, source?: string):
         HTTPStatusError: 'http_error',
       } as Record<string, string>
     )[context.pythonErrorType];
+  // Fill only an unknown cause: explicit timeout/abort/acquisition decisions
+  // keep their existing codes and download issuance semantics.
+  if (reason === 'unknown' && diagnostics?.failure_kind === 'transport')
+    reason =
+      (
+        {
+          WriteTimeout: 'read_timeout',
+          PoolTimeout: 'connect_timeout',
+          RemoteProtocolError: 'protocol_error',
+        } as Record<string, string>
+      )[context.pythonErrorType] ?? 'connect_error';
+  if (diagnostics && ['login_failed', 'auth_rejected'].includes(reason))
+    reason =
+      diagnostics.failure_kind === 'auth_rejected'
+        ? 'auth_rejected'
+        : diagnostics.failure_kind === 'transport'
+          ? 'connect_error'
+          : diagnostics.http_status === undefined
+            ? 'protocol_error'
+            : 'http_error';
   const before = detail.request_issued === false;
   let code: ErrorCode = 'internal';
   if (reason === 'aborted') code = 'cancelled';
@@ -229,6 +257,7 @@ export function classifyFailure(error: any, operation: string, source?: string):
         : {}),
       detail: {
         reason,
+        ...(diagnostics ? { diagnostics } : {}),
         ...(typeof detail.request_issued === 'boolean'
           ? { request_issued: detail.request_issued }
           : {}),

@@ -492,12 +492,18 @@ export class AcquisitionTools {
         : failures.every((f) => f.code === 'unsupported_operation')
           ? 'unsupported_operation'
           : 'all_sources_failed';
+      const diagnostics = failures.find((failure) => failure.info.detail?.diagnostics)?.info.detail
+        .diagnostics;
       throw new ToolFailure(
         code,
         answered
           ? 'Some sources answered empty; others did not answer.'
           : 'No requested source completed the operation.',
-        { attempts, retry: failures.some((f) => f.info.retry === 'safe') ? 'safe' : 'no' },
+        {
+          attempts,
+          retry: failures.some((f) => f.info.retry === 'safe') ? 'safe' : 'no',
+          ...(diagnostics ? { detail: { diagnostics } } : {}),
+        },
       );
     }
     const rows = books.map((book) => {

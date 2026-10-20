@@ -1,11 +1,8 @@
 import type { SessionInput } from './eapi-session.js';
 import type { Options as PythonShellOptions } from 'python-shell';
-import * as path from 'path';
+import { randomUUID } from 'node:crypto';
+import { authDiagnosticsFor, readAuthDiagnostics } from './auth-diagnostics.js';
 import { getManagedPythonPath } from './venv-manager.js'; // Import ESM style
-import { appendFile as appendFileAsyncFS, mkdir as mkdirAsyncFS } from 'fs/promises'; // Import fs/promises for async file operations, aliased
-// Removed unused https, http imports
-// path is already imported on line 2
-import { fileURLToPath } from 'url';
 import { withRetry, isRetryableError, isTransientDependencyError } from './retry-manager.js';
 import {
   EapiSessionOwner,
@@ -20,10 +17,6 @@ import { logger } from './logger.js';
 import { getPythonLibDirectory } from './paths.js';
 import { runPythonBridge, LONG_BRIDGE_TIMEOUT_MS } from './python-runner.js';
 import { isBridgeDetailRetryable, parseBridgeErrorEnvelope } from './python-bridge.js';
-
-// Recreate __dirname for ESM
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 // Path to the Python bridge script
 // Calculate path relative to the compiled JS file location (dist/lib)
@@ -169,6 +162,39 @@ async function callPythonFunction(
       String(args.book_details?.source || '').toLowerCase(),
     );
   const lazyAcquisition = memory && acquisitionUsesEapi;
+  const diagnosticEapi = needsEapi(functionName, args) || acquisitionUsesEapi;
+  const requestId = randomUUID();
+  const finishCall = (work: Promise<any>) =>
+    work.catch((error: any) => {
+      if (controlFailures.has(error)) {
+        const shared = error;
+        error = Object.create(
+          Object.getPrototypeOf(shared),
+          Object.getOwnPropertyDescriptors(shared),
+        );
+        Object.defineProperty(error, 'stack', {
+          value: shared.stack,
+          writable: true,
+          configurable: true,
+        });
+        error.context = { ...shared.context };
+      }
+      if (
+        diagnosticEapi &&
+        !(error?.context?.pythonErrorType === 'AcquisitionError' && !error.context.diagnostics)
+      ) {
+        const prior = readAuthDiagnostics(error?.context?.diagnostics);
+        const diagnostics = authDiagnosticsFor(
+          error,
+          requestId,
+          prior?.attempt ?? 1,
+          prior?.refresh_count ?? 0,
+        );
+        if (error && typeof error === 'object') (error.context ??= {}).diagnostics = diagnostics;
+        logger.warn('EAPI failure', JSON.stringify(diagnostics));
+      }
+      throw error;
+    });
   const receiptOnly = functionName === 'acquire_book' && args.receipt_only === true;
   const breaker =
     dependencyBreakers[
@@ -184,7 +210,7 @@ async function callPythonFunction(
   };
   const invoke = (transport?: SessionInput, signal = callOptions.signal) =>
     withRetry(
-      async () => {
+      async (attempt) => {
         const execute = async () => {
           const lazy = lazyAcquisition && !transport;
           let activeTransport = transport;
@@ -214,6 +240,19 @@ async function callPythonFunction(
             // Serialize arguments as JSON *before* creating options
             const serializedArgs = JSON.stringify(args);
             const childEnv = { ...configuredEnv };
+            for (const key of [
+              'ZLIBRARY_DIAGNOSTIC_ID',
+              'ZLIBRARY_DIAGNOSTIC_ATTEMPT',
+              'ZLIBRARY_DIAGNOSTIC_REFRESH',
+              'ZLIBRARY_DIAGNOSTIC_EAPI',
+            ])
+              delete childEnv[key];
+            if (diagnosticEapi) {
+              childEnv.ZLIBRARY_DIAGNOSTIC_ID = requestId;
+              childEnv.ZLIBRARY_DIAGNOSTIC_ATTEMPT = String(Math.min(65535, attempt));
+              childEnv.ZLIBRARY_DIAGNOSTIC_REFRESH = transport?.authRetry ? '1' : '0';
+              childEnv.ZLIBRARY_DIAGNOSTIC_EAPI = '1';
+            }
             delete childEnv.ZLIBRARY_EAPI_SESSION;
             delete childEnv.ZLIBRARY_EAPI_CHANNEL;
             delete childEnv.ZLIBRARY_EAPI_HANDOFF_TIMEOUT_MS;
@@ -310,7 +349,6 @@ async function callPythonFunction(
             if (!results || results.length === 0) {
               throw new PythonBridgeError(`No output received from Python script.`, {
                 functionName,
-                args,
               });
             }
 
@@ -327,7 +365,7 @@ async function callPythonFunction(
             } catch {
               throw new PythonBridgeError(
                 `Failed to parse initial JSON output from Python script.`,
-                { functionName, args },
+                { functionName },
                 false, // Parse errors are not retryable
               );
             }
@@ -341,7 +379,7 @@ async function callPythonFunction(
             ) {
               throw new PythonBridgeError(
                 `Invalid MCP response structure received from Python script.`,
-                { functionName, args, rawOutput: stdoutString },
+                { functionName },
                 false, // Structure errors are not retryable
               );
             }
@@ -351,10 +389,10 @@ async function callPythonFunction(
             try {
               // Second parse: Get the actual result object from the nested string
               resultData = JSON.parse(nestedJsonString);
-            } catch (parseError: any) {
+            } catch {
               throw new PythonBridgeError(
-                `Failed to parse nested JSON result from Python script: ${parseError.message}`,
-                { functionName, args, nestedString: nestedJsonString },
+                'Failed to parse nested JSON result from Python script.',
+                { functionName },
                 false, // Parse errors are not retryable
               );
             }
@@ -368,6 +406,7 @@ async function callPythonFunction(
                   loginStatus: failure.status_code,
                   pythonErrorType: resultData.type,
                   loginToken: failure.token,
+                  diagnostics: readAuthDiagnostics(resultData.diagnostics),
                 },
                 false,
               );
@@ -376,10 +415,12 @@ async function callPythonFunction(
               activeTransport &&
               resultData?.auth_rejected?.generation === activeTransport.generation
             ) {
-              throw authRejected(
+              const rejected = authRejected(
                 activeTransport.generation,
                 String(resultData.error || 'EAPI authentication rejected'),
               );
+              rejected.context!.diagnostics = readAuthDiagnostics(resultData.diagnostics);
+              throw rejected;
             }
             // Check if the *actual* Python result contained an error structure
             if (
@@ -392,10 +433,10 @@ async function callPythonFunction(
                 `Python bridge execution failed for ${functionName}: ${resultData.error}`,
                 {
                   functionName,
-                  args,
                   details: resultData.details,
                   pythonErrorType: resultData.type,
                   httpStatus: resultData.status_code,
+                  diagnostics: readAuthDiagnostics(resultData.diagnostics),
                 },
                 isBridgeDetailRetryable(resultData.details),
               );
@@ -410,6 +451,25 @@ async function callPythonFunction(
             return resultData;
           } catch (caught: any) {
             let err = caught;
+            // The acquisition owner shares control failures with other waiters.
+            // Add caller diagnostics to a copy, never to the producing error.
+            if (
+              transport &&
+              transport.action !== 'operation' &&
+              caught &&
+              typeof caught === 'object'
+            ) {
+              err = Object.create(
+                Object.getPrototypeOf(caught),
+                Object.getOwnPropertyDescriptors(caught),
+              );
+              Object.defineProperty(err, 'stack', {
+                value: caught.stack,
+                writable: true,
+                configurable: true,
+              });
+              err.context = { ...caught.context };
+            }
             // Capture runner's internal corruption identity before owner replacement.
             const protocolCorrupted = caught?.privateSessionProtocolCorruption === true;
             if (lazy) {
@@ -468,10 +528,26 @@ async function callPythonFunction(
               (sessionUpdate as any)?.remix_userkey || '',
               eapiSessions.get(identity)?.remix_userkey || '',
             ]);
+            const annotated = (failure: any) => {
+              if (
+                diagnosticEapi &&
+                !(
+                  failure.context?.pythonErrorType === 'AcquisitionError' &&
+                  !failure.context?.diagnostics
+                )
+              )
+                (failure.context ??= {}).diagnostics = authDiagnosticsFor(
+                  failure,
+                  requestId,
+                  attempt,
+                  activeTransport?.authRetry ? 1 : 0,
+                );
+              return failure;
+            };
 
             // If it's already a ZLibraryError, just rethrow
             if (err instanceof ZLibraryError) {
-              throw err;
+              throw annotated(err);
             }
 
             // The bridge writes a JSON envelope to stderr on failure. When the
@@ -484,36 +560,39 @@ async function callPythonFunction(
             const stderrOutput = err.stderr ? ` Stderr: ${err.stderr}` : '';
 
             if (bridgeError) {
-              throw new PythonBridgeError(
-                `${functionName} failed: ${bridgeError.error}`,
-                {
-                  functionName,
-                  args,
-                  details: {
-                    ...err.context?.details,
-                    ...bridgeError.details,
-                    ...(activeTransport ? { request_issued: true } : {}),
+              throw annotated(
+                new PythonBridgeError(
+                  `${functionName} failed: ${bridgeError.error}`,
+                  {
+                    functionName,
+                    details: {
+                      ...err.context?.details,
+                      ...bridgeError.details,
+                      ...(activeTransport ? { request_issued: true } : {}),
+                    },
+                    pythonErrorType: bridgeError.type,
+                    httpStatus: bridgeError.status_code,
+                    diagnostics: readAuthDiagnostics(bridgeError.diagnostics),
+                    stderr: err.stderr,
+                    originalError: err,
                   },
-                  pythonErrorType: bridgeError.type,
-                  httpStatus: bridgeError.status_code,
-                  stderr: err.stderr,
-                  originalError: err,
-                },
-                // A details-bearing envelope has already used Python failover.
-                isBridgeDetailRetryable(bridgeError.details),
+                  // A details-bearing envelope has already used Python failover.
+                  isBridgeDetailRetryable(bridgeError.details),
+                ),
               );
             }
 
             // Wrap in PythonBridgeError with context
-            throw new PythonBridgeError(
-              `Python bridge execution failed for ${functionName}: ${err.message || err}.${stderrOutput}`,
-              {
-                functionName,
-                args,
-                stderr: err.stderr,
-                details: err.context?.details,
-                originalError: err,
-              },
+            throw annotated(
+              new PythonBridgeError(
+                `Python bridge execution failed for ${functionName}: ${err.message || err}.${stderrOutput}`,
+                {
+                  functionName,
+                  stderr: err.stderr,
+                  details: err.context?.details,
+                  originalError: err,
+                },
+              ),
             );
           } finally {
             if (lazy) {
@@ -547,29 +626,34 @@ async function callPythonFunction(
       },
     );
   if (reuse)
-    return eapiSessions.run(
-      identity,
-      (input, signal) =>
-        input.action === 'operation' ? invoke(input, signal) : markControl(invoke(input, signal)),
-      {
-        signal: callOptions.signal,
-        timeoutMs: callOptions.timeoutMs ?? defaultTimeoutFor(functionName),
-      },
+    return finishCall(
+      eapiSessions.run(
+        identity,
+        (input, signal) =>
+          input.action === 'operation' ? invoke(input, signal) : markControl(invoke(input, signal)),
+        {
+          signal: callOptions.signal,
+          timeoutMs: callOptions.timeoutMs ?? defaultTimeoutFor(functionName),
+        },
+      ),
     );
-  if (functionName !== 'acquire_book' || lazyAcquisition || receiptOnly) return invoke();
+  if (functionName !== 'acquire_book' || lazyAcquisition || receiptOnly)
+    return finishCall(invoke());
   // #267: a verified receipt is local, so an open breaker must not hide it. Only
   // a refused acquisition pays for the receipt-only child, and any non-hit there
   // (miss, refusal, its own failure) is answered with the original refusal.
-  return invoke().catch(async (refusal) => {
-    if (refusal?.code !== 'CIRCUIT_BREAKER_OPEN') throw refusal;
-    const hit = await callPythonFunction(
-      functionName,
-      { ...args, receipt_only: true },
-      callOptions,
-    ).catch(() => undefined);
-    if (hit?.transfer_skipped === true) return hit;
-    throw refusal;
-  });
+  return finishCall(
+    invoke().catch(async (refusal) => {
+      if (refusal?.code !== 'CIRCUIT_BREAKER_OPEN') throw refusal;
+      const hit = await callPythonFunction(
+        functionName,
+        { ...args, receipt_only: true },
+        callOptions,
+      ).catch(() => undefined);
+      if (hit?.transfer_skipped === true) return hit;
+      throw refusal;
+    }),
+  );
 }
 
 // Define interfaces for function arguments for better type safety
@@ -655,16 +739,6 @@ export async function searchBooks(
     content_types: content_types,
     count: count,
   };
-  // Moved logging to after pythonArgs is defined
-  const searchBooksPythonArgsLog = `[${new Date().toISOString()}] Node.js searchBooks: Sending to callPythonFunction: ${JSON.stringify(pythonArgs)}\n`;
-  logger.debug(searchBooksPythonArgsLog.trim());
-  try {
-    const logFilePath = path.resolve(__dirname, '..', '..', 'logs', 'nodejs_debug.log');
-    await mkdirAsyncFS(path.dirname(logFilePath), { recursive: true });
-    await appendFileAsyncFS(logFilePath, searchBooksPythonArgsLog);
-  } catch (e) {
-    console.error('Failed to write to logs/nodejs_debug.log', e);
-  }
   return await callPythonFunction('search', pythonArgs, options);
 }
 /**
@@ -695,16 +769,6 @@ export async function fullTextSearch(
     content_types: content_types,
     count: count,
   };
-  // Moved logging to after pythonArgsFTS is defined
-  const ftsPythonArgsLog = `[${new Date().toISOString()}] Node.js fullTextSearch: Sending to callPythonFunction: ${JSON.stringify(pythonArgsFTS)}\n`;
-  logger.debug(ftsPythonArgsLog.trim());
-  try {
-    const logFilePath = path.resolve(__dirname, '..', '..', 'logs', 'nodejs_debug.log');
-    await mkdirAsyncFS(path.dirname(logFilePath), { recursive: true });
-    await appendFileAsyncFS(logFilePath, ftsPythonArgsLog);
-  } catch (e) {
-    console.error('Failed to write to logs/nodejs_debug.log', e);
-  }
   return await callPythonFunction('full_text_search', pythonArgsFTS, options);
 }
 

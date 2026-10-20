@@ -1,6 +1,7 @@
 """Exercise each live login path offline so stale defaults cannot hide as walls."""
 
 import importlib.util
+import sys
 from pathlib import Path
 from unittest.mock import AsyncMock
 
@@ -18,6 +19,14 @@ def load_module(name, path):
     return module
 
 
+@pytest.mark.parametrize(
+    "override,expected",
+    [
+        (None, zlibrary.eapi.DEFAULT_EAPI_DOMAINS[0]),
+        ("", zlibrary.eapi.DEFAULT_EAPI_DOMAINS[0]),
+        ("library.example.test", "library.example.test"),
+    ],
+)
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "entrypoint",
@@ -28,7 +37,9 @@ def load_module(name, path):
         "test_session_persistence",
     ],
 )
-async def test_live_login_uses_runtime_default_and_override(monkeypatch, entrypoint):
+async def test_live_login_uses_runtime_default_and_override(
+    monkeypatch, entrypoint, override, expected
+):
     live = load_module(
         "offline_real_zlibrary", ROOT / "integration/test_real_zlibrary.py"
     )
@@ -37,42 +48,59 @@ async def test_live_login_uses_runtime_default_and_override(monkeypatch, entrypo
     monkeypatch.setenv("ZLIBRARY_EMAIL", "offline@example.test")
     monkeypatch.setenv("ZLIBRARY_PASSWORD", "offline")
 
-    for override, expected in [
-        (None, zlibrary.eapi.DEFAULT_EAPI_DOMAINS[0]),
-        ("library.example.test", "library.example.test"),
-    ]:
-        if override:
-            monkeypatch.setenv("ZLIBRARY_EAPI_DOMAIN", override)
-        else:
-            monkeypatch.delenv("ZLIBRARY_EAPI_DOMAIN", raising=False)
+    if override is not None:
+        monkeypatch.setenv("ZLIBRARY_EAPI_DOMAIN", override)
+    else:
+        monkeypatch.delenv("ZLIBRARY_EAPI_DOMAIN", raising=False)
 
-        class OfflineClient:
-            def __init__(self, domain):
-                assert domain == expected
+    class OfflineClient:
+        def __init__(self, domain):
+            assert domain == expected
 
-            async def login(self, email, password):
-                return {"success": int(email != "invalid@example.com")}
+        async def login(self, email, password):
+            return {"success": int(email != "invalid@example.com")}
 
-            async def search(self, *args, **kwargs):
-                return {"books": []}
+        async def search(self, *args, **kwargs):
+            return {"books": []}
 
-            async def close(self):
-                pass
+        async def close(self):
+            pass
 
-        monkeypatch.setattr(zlibrary.eapi, "EAPIClient", OfflineClient)
-        monkeypatch.setattr(fixtures, "EAPIClient", OfflineClient)
-        domain = fixtures.eapi_domain.__wrapped__()
-        assert domain == expected
-        if entrypoint == "fixture":
-            generator = fixtures.zlib_client.__wrapped__(domain)
+    monkeypatch.setattr(zlibrary.eapi, "EAPIClient", OfflineClient)
+    monkeypatch.setattr(fixtures, "EAPIClient", OfflineClient)
+    domain = fixtures.eapi_domain.__wrapped__()
+    assert domain == expected
+    if entrypoint == "fixture":
+        generator = fixtures.zlib_client.__wrapped__(domain)
+        await anext(generator)
+        with pytest.raises(StopAsyncIteration):
             await anext(generator)
-            with pytest.raises(StopAsyncIteration):
-                await anext(generator)
+    else:
+        test = getattr(live.TestRealAuthentication(), entrypoint)
+        if entrypoint == "test_authentication_fails_with_invalid_credentials":
+            await test(domain)
         else:
-            test = getattr(live.TestRealAuthentication(), entrypoint)
-            if entrypoint == "test_authentication_fails_with_invalid_credentials":
-                await test(domain)
-            else:
-                await test(
-                    {"email": "offline@example.test", "password": "offline"}, domain
-                )
+            await test({"email": "offline@example.test", "password": "offline"}, domain)
+
+
+@pytest.mark.parametrize(
+    "override,expected",
+    [
+        (None, zlibrary.eapi.DEFAULT_EAPI_DOMAINS[0]),
+        ("", zlibrary.eapi.DEFAULT_EAPI_DOMAINS[0]),
+        ("library.example.test", "library.example.test"),
+    ],
+)
+def test_doctor_uses_runtime_default_and_override(monkeypatch, override, expected):
+    if override is None:
+        monkeypatch.delenv("ZLIBRARY_EAPI_DOMAIN", raising=False)
+    else:
+        monkeypatch.setenv("ZLIBRARY_EAPI_DOMAIN", override)
+    # Dataclass annotation resolution needs the module registered during import.
+    spec = importlib.util.spec_from_file_location(
+        "offline_domain_doctor", ROOT.parents[1] / "scripts/check_upstream.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    monkeypatch.setitem(sys.modules, spec.name, module)
+    spec.loader.exec_module(module)
+    assert module.ZLIB_DOMAIN == expected

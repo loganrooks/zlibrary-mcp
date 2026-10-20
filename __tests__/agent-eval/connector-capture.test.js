@@ -48,6 +48,58 @@ const tail =
 beforeEach(async () => {
   directory = await mkdtemp(path.join(os.tmpdir(), 'eval-capture-'));
 });
+async function reapResidualGroup(
+  pgid,
+  {
+    kill = process.kill,
+    sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+    now = () => performance.now(),
+    boundMs = 2000,
+    stepMs = 25,
+  } = {},
+) {
+  if (
+    !Number.isSafeInteger(pgid) ||
+    pgid < 1 ||
+    !Number.isSafeInteger(boundMs) ||
+    boundMs < 1 ||
+    !Number.isSafeInteger(stepMs) ||
+    stepMs < 1
+  )
+    throw new Error('positive owned PGID and teardown deadlines required');
+  const observations = [],
+    deadline = now() + boundMs;
+  let lastError = null;
+  const attempt = (signal) => {
+    try {
+      kill(-pgid, signal);
+      const result = signal === 0 ? 'alive' : 'sent';
+      observations.push({ signal, result });
+      return result;
+    } catch (error) {
+      if (!['EPERM', 'ESRCH'].includes(error.code)) throw error;
+      lastError = error.code;
+      observations.push({ signal, result: error.code });
+      return error.code;
+    }
+  };
+  const absent = () => ({ pgid, absent: true, observations });
+  if (attempt('SIGKILL') === 'ESRCH') return absent();
+  while (now() < deadline) {
+    await sleep(Math.min(stepMs, deadline - now()));
+    const state = attempt(0);
+    if (state === 'ESRCH') return absent();
+    // EPERM stays unknown: only a successful alive probe permits re-signaling.
+    // Neither re-signaling nor an unknown observation resets the total bound.
+    if (state === 'alive' && now() < deadline && attempt('SIGKILL') === 'ESRCH') return absent();
+  }
+  throw Object.assign(
+    new Error(
+      `process group ${pgid} not observed absent within ${boundMs}ms; last error ${lastError ?? 'none'}; observations ${JSON.stringify(observations)}`,
+    ),
+    { pgid, lastError, observations },
+  );
+}
 afterEach(async () => {
   const captures = await Promise.all(
     (await readdir(directory))
@@ -62,14 +114,118 @@ afterEach(async () => {
     )
       continue;
     if (!child.pid) continue;
-    try {
-      process.kill(-child.pid, 'SIGKILL');
-    } catch (error) {
-      if (error.code !== 'ESRCH') throw error;
-    }
+    await reapResidualGroup(child.pid);
   }
   await cp(directory, path.join(retained, path.basename(directory)), { recursive: true });
   await rm(directory, { recursive: true, force: true });
+});
+const teardownError = (code) => Object.assign(new Error('synthetic ' + code), { code });
+function teardownClock() {
+  let elapsed = 0;
+  return {
+    now: () => elapsed,
+    sleep: jest.fn(async (ms) => {
+      elapsed += ms;
+    }),
+    boundMs: 100,
+    stepMs: 25,
+  };
+}
+test('residual teardown transient EPERM resolves only after observed ESRCH', async () => {
+  const clock = teardownClock();
+  const kill = jest
+    .fn()
+    .mockImplementationOnce(() => {
+      throw teardownError('EPERM');
+    })
+    .mockImplementationOnce(() => {
+      throw teardownError('EPERM');
+    })
+    .mockImplementationOnce(() => {
+      throw teardownError('EPERM');
+    })
+    .mockImplementationOnce(() => {
+      throw teardownError('ESRCH');
+    });
+  expect(await reapResidualGroup(42424, { ...clock, kill })).toEqual({
+    pgid: 42424,
+    absent: true,
+    observations: [
+      { signal: 'SIGKILL', result: 'EPERM' },
+      { signal: 0, result: 'EPERM' },
+      { signal: 0, result: 'EPERM' },
+      { signal: 0, result: 'ESRCH' },
+    ],
+  });
+  expect(kill.mock.calls).toEqual(['SIGKILL', 0, 0, 0].map((signal) => [-42424, signal]));
+  expect(clock.now()).toBe(75);
+});
+test('residual teardown persistent EPERM throws bounded group/error/observation diagnostics', async () => {
+  const clock = teardownClock();
+  const kill = jest.fn(() => {
+    throw teardownError('EPERM');
+  });
+  let error;
+  try {
+    await reapResidualGroup(42424, { ...clock, kill });
+  } catch (caught) {
+    error = caught;
+  }
+  expect(error?.message).toMatch(/process group 42424.*EPERM.*observations/);
+  expect(error?.observations).toEqual([
+    { signal: 'SIGKILL', result: 'EPERM' },
+    ...Array.from({ length: 4 }, () => ({ signal: 0, result: 'EPERM' })),
+  ]);
+  expect(clock.now()).toBe(100);
+  expect(kill).toHaveBeenCalledTimes(5);
+});
+test('residual teardown alive probe re-sends KILL but succeeds only on ESRCH', async () => {
+  const clock = teardownClock();
+  const kill = jest
+    .fn()
+    .mockImplementationOnce(() => {})
+    .mockImplementationOnce(() => {})
+    .mockImplementationOnce(() => {})
+    .mockImplementationOnce(() => {
+      throw teardownError('ESRCH');
+    });
+  expect(await reapResidualGroup(42424, { ...clock, kill })).toEqual({
+    pgid: 42424,
+    absent: true,
+    observations: [
+      { signal: 'SIGKILL', result: 'sent' },
+      { signal: 0, result: 'alive' },
+      { signal: 'SIGKILL', result: 'sent' },
+      { signal: 0, result: 'ESRCH' },
+    ],
+  });
+  expect(kill.mock.calls).toEqual(['SIGKILL', 0, 'SIGKILL', 0].map((signal) => [-42424, signal]));
+  expect(clock.now()).toBe(50);
+});
+test('residual teardown other errors rethrow immediately from KILL, probe or re-signal', async () => {
+  for (const failAt of [1, 2, 3]) {
+    const clock = teardownClock(),
+      error = teardownError('EINVAL');
+    const kill = jest.fn(() => {
+      if (kill.mock.calls.length === failAt) throw error;
+    });
+    await expect(reapResidualGroup(42424, { ...clock, kill })).rejects.toBe(error);
+    expect(kill).toHaveBeenCalledTimes(failAt);
+    expect(clock.now()).toBe(failAt === 1 ? 0 : 25);
+  }
+});
+test('residual teardown first-KILL ESRCH resolves without sleep or probes', async () => {
+  const clock = teardownClock();
+  const kill = jest.fn(() => {
+    throw teardownError('ESRCH');
+  });
+  expect(await reapResidualGroup(42424, { ...clock, kill })).toEqual({
+    pgid: 42424,
+    absent: true,
+    observations: [{ signal: 'SIGKILL', result: 'ESRCH' }],
+  });
+  expect(kill.mock.calls).toEqual([[-42424, 'SIGKILL']]);
+  expect(clock.sleep).not.toHaveBeenCalled();
 });
 const inherited = (code) =>
   `const {spawn}=require('node:child_process');const c=spawn(process.execPath,['-e',${JSON.stringify(code)}],{stdio:['ignore',process.stdout,process.stderr]});process.stderr.write('OWNED_DESCENDANT='+c.pid+'\\n');c.unref();process.stdout.write(${JSON.stringify(head)});`;

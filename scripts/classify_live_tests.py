@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Classify live pytest results as passed or failed.
+"""Classify live pytest results as passed, skipped or failed.
 
 The workflow skips the live suite when its reachability probe reports a wall;
 any errors from a suite that actually ran remain actionable.
@@ -27,15 +27,23 @@ def classify(exit_code: int, report: Path) -> dict[str, object]:
 
     cases = list(root.iter("testcase"))
     problems = [p for p in root.iter() if p.tag in ("error", "failure")]
+    skipped = sum(case.find("skipped") is not None for case in cases)
+    passed = sum(
+        not any(child.tag in ("skipped", "error", "failure") for child in case)
+        for case in cases
+    )
     # Interruptions, collection errors, usage errors and empty suites cannot be
     # explained away by a block seen elsewhere in a partial report.
     if exit_code == 0 and cases and not problems:
-        status = "passed"
+        status = "skipped" if skipped == len(cases) else "passed"
     else:
         status = "failed"
     detail = (
         f"Live suite: {status}; {len(problems)} failure(s); pytest exit {exit_code}."
+        f" {passed} passed; {skipped} skipped."
     )
+    if status == "skipped":
+        detail += " No authenticated coverage: all testcases skipped."
     return {"status": status, "blocked": False, "detail": detail}
 
 
@@ -46,6 +54,10 @@ def main() -> int:
     args = parser.parse_args()
     result = classify(args.exit_code, args.junitxml)
     print(result["detail"])
+    if result["status"] == "skipped":
+        print(
+            "::warning::Live suite produced no authenticated coverage: all testcases skipped."
+        )
     if output := os.environ.get("GITHUB_OUTPUT"):
         with open(output, "a", encoding="utf-8") as handle:
             handle.write(f"status={result['status']}\n")

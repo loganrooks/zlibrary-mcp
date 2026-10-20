@@ -103,7 +103,7 @@ When an operation fails, the system will:
 - Attempt 1: 1000ms (1 second)
 - Attempt 2: 2000ms (2 seconds)
 - Attempt 3: 4000ms (4 seconds)
-- Attempt 4: 8000ms (8 seconds)
+- No fourth delay: the default is three retries (four total attempts).
 
 ### Circuit Breaker
 
@@ -111,7 +111,7 @@ The circuit breaker protects against cascading failures:
 
 1. **CLOSED** (normal): All operations pass through
 2. **OPEN** (failing): After threshold failures, circuit opens and rejects all operations
-3. **HALF_OPEN** (testing): After timeout, allows one operation to test if service recovered
+3. **HALF_OPEN** (testing): After timeout, allows work to test if the service recovered
 4. **Back to CLOSED**: If test succeeds, circuit closes and normal operation resumes
 
 ## Error Classification
@@ -122,9 +122,8 @@ These errors trigger retry logic:
 - Network errors (`NETWORK_ERROR`, `TIMEOUT`, `ECONNREFUSED`, `ETIMEDOUT`)
 - Server errors (`SERVER_ERROR`, `5xx` status codes)
 - Domain errors (`DOMAIN_ERROR`)
-- Transient Python errors (connection/network related)
-- Source integrity failures (`integrity_mismatch`), because a later mirror can
-  serve the requested digest even when one CDN returned the wrong bytes
+- Typed Python read/write failures and timeouts (not message keywords), HTTP 408/429/5xx,
+  and bridge spawn resource pressure (`EAGAIN`, `EMFILE`, `ENFILE`)
 
 ### Non-Retryable Errors
 
@@ -136,9 +135,34 @@ These errors fail immediately without retry:
 - Permanent provider state (`configuration_error`, `quota_exhausted`), including
   rejected Anna fast-download credentials and exhausted Anna quota
 
-Only aggregates whose every child is permanent caller state bypass retry and
-circuit-breaker accounting. Mixed permanent/transient aggregates remain health
-evidence and retain normal retry classification.
+Under the [ratified #192 rule](https://github.com/rookslog/zlibrary-mcp/issues/192),
+**any envelope carrying `details` gets no Node retry**, including null, unknown,
+read-timeout, integrity, and mixed permanent/transient details. Python owns its
+provider walk. Transient aggregate leaves still count as dependency-health evidence.
+
+Breakers are independent: EAPI, Library Genesis/Anna/auto (one Python-owned source
+walk), and local work. Only positively classified transient health failures count:
+transport/timeouts, HTTP 408/429/5xx, integrity failures, and spawn resource pressure.
+HTTP source details need a numeric status or the adapter's exact `HTTP NNN` token;
+unknown statuses/reasons, TLS/config/auth/caller/parse errors, missing interpreter,
+other permanent spawn errors and signal death neither count nor retry. A full
+bridge deadline counts in its scope but never retries; caller abort does neither.
+Bare Python `ConnectError` is ambiguous (transport versus TLS/config), so it does
+not count or retry without a more specific reason. Auth refresh/cooldown remains
+owned by the in-memory session policy. Its intentional auth-refresh retry runs
+outside both Node retry multiplication and circuit-breaker accounting.
+
+### Composed Node waiting budgets (defaults)
+
+Let B be 240 s for ordinary work, 2,400 s for download/processing. In default
+memory-session mode, EAPI has at most B for acquisition plus B for the operation
+(including validation, retries and one auth refresh): 480 s ordinary / 4,800 s long.
+Other calls (also EAPI in `per-call` mode) allow at most `4B + 7 s` across four
+attempts and 1/2/4 s backoff: 967 s ordinary / 9,607 s long. Details-bearing and
+full-deadline failures stop after one B, not four. These are configured waiting
+ceilings, not real-time guarantees for filesystem work, event-loop stalls or child
+teardown (up to 3 s kill grace). Custom retry/budget settings change these sums;
+MCP cancellation interrupts runner work and backoff rather than waiting them out.
 
 ## Usage Examples
 
@@ -203,13 +227,14 @@ Circuit breaker opened due to repeated failures {
 ### Code Example
 
 ```typescript
-import { withRetry, isRetryableError } from './retry-manager';
+import { withRetry, isRetryableError, isTransientDependencyError } from './retry-manager';
 import { CircuitBreaker } from './circuit-breaker';
 
 // Create circuit breaker
 const breaker = new CircuitBreaker({
   threshold: 5,
-  timeout: 60000
+  timeout: 60000,
+  isFailure: isTransientDependencyError
 });
 
 // Wrap operation with retry logic
@@ -258,7 +283,7 @@ const result = await withRetry(
 
 ### Default Settings Rationale
 
-- **3 retries**: Balances resilience with responsiveness (max ~15s with defaults)
+- **3 retries**: Four total attempts, with 7 s default backoff (plus operation time)
 - **1s initial delay**: Avoids overwhelming failing services
 - **30s max delay**: Prevents indefinite waits
 - **2x factor**: Reasonable exponential growth

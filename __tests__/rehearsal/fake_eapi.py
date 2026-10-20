@@ -44,6 +44,7 @@ MODES = {
     "operation401",
     "success0",
     "timeout",
+    "server503",
     "wall",
     "slow",
     "ambiguous400",
@@ -206,6 +207,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(
                 {"success": 0, "error": "ambiguous operation failure"}, 400
             )
+        if mode == "server503" and not login:
+            return self.reply({"error": "fixture service unavailable"}, 503)
         if mode == "wall" and not login:
             return self.reply(b"<html>DiamWall block page</html>", 403, "text/html")
         if mode == "success0" and not login:

@@ -1932,6 +1932,8 @@ async def main():
             "type": type(e).__name__,
             "traceback": traceback.format_exc(),
         }
+        if isinstance(e, httpx.HTTPStatusError):
+            error_info["status_code"] = e.response.status_code
         # Provider failures carry which source failed and why (DNS vs connect
         # timeout vs HTTP error). Pass that through as structured data so the
         # MCP caller can act on it instead of pattern-matching prose.

@@ -165,15 +165,15 @@ describe('Retry Manager', () => {
       expect(retryManager.isRetryableError({ code: 'DOMAIN_ERROR' })).toBe(true);
     });
 
-    test('should return true for transient Python errors', () => {
+    test('does not infer Python transience from message keywords', () => {
       const error = {
         code: 'PYTHON_ERROR',
         message: 'Connection timeout occurred'
       };
-      expect(retryManager.isRetryableError(error)).toBe(true);
+      expect(retryManager.isRetryableError(error)).toBe(false);
     });
 
-    test('should honor an explicit retryable=true before Python message heuristics', () => {
+    test('details veto an explicit retryable=true', () => {
       const error = {
         code: 'PYTHON_ERROR',
         message: 'Provider returned HTTP 503',
@@ -188,7 +188,7 @@ describe('Retry Manager', () => {
         },
       };
 
-      expect(retryManager.isRetryableError(error)).toBe(true);
+      expect(retryManager.isRetryableError(error)).toBe(false);
     });
 
     test('should honor an explicit retryable=false before retryable code heuristics', () => {

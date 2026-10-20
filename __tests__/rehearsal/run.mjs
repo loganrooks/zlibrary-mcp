@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, readFile, writeFile, readdir, rm } from 'node:fs/promis
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
+import { performance } from 'node:perf_hooks';
 import { assess, requiredCases } from './cases.js';
 import { snapshotSource } from './source-identity.js';
 import { expectedFixes, expectedOutcome } from './expectations.js';
@@ -18,60 +19,90 @@ await mkdir(stateDir);
 const output = path.join(recordDir, 'jest.json');
 const selfTest = process.argv.includes('--self-test-skipped');
 const sourceDriftTest = process.argv.includes('--self-test-source-drift');
+const deadlineTest = process.argv.includes('--self-test-deadline');
+const configuredDeadline = Number(process.env.REHEARSAL_DEADLINE_MS);
+const deadlineMs =
+  Number.isSafeInteger(configuredDeadline) && configuredDeadline > 0 && configuredDeadline <= 600000
+    ? configuredDeadline
+    : deadlineTest
+      ? 25
+      : 180000;
 let exitCode;
 try {
   const sourceStart = await snapshotSource(serverRoot);
   let result;
   let assertions;
+  let suiteTimings = [];
+  let resultsAvailable = false;
   if (selfTest || sourceDriftTest) {
     assertions = requiredCases.map((fullName, i) => ({
       fullName,
       status: selfTest && i === 0 ? 'pending' : 'passed',
     }));
-    result = { status: 0 };
+    result = { status: 0, elapsedMs: 0, interrupted: false, terminationReason: null };
+    resultsAvailable = true;
   } else {
     result = await new Promise((resolve) => {
+      const executionStarted = performance.now();
       const child = spawn(
         process.execPath,
-        [
-          '--experimental-vm-modules',
-          path.join(root, 'node_modules/jest/bin/jest.js'),
-          '--config',
-          path.join(root, '__tests__/rehearsal/jest.config.js'),
-          '--json',
-          '--outputFile',
-          output,
-          ...process.argv.slice(2),
-        ],
+        deadlineTest
+          ? ['-e', 'process.stdin.resume()']
+          : [
+              '--experimental-vm-modules',
+              path.join(root, 'node_modules/jest/bin/jest.js'),
+              '--config',
+              path.join(root, '__tests__/rehearsal/jest.config.js'),
+              '--json',
+              '--outputFile',
+              output,
+              ...process.argv.slice(2),
+            ],
         {
           cwd: root,
-          stdio: 'inherit',
+          // The control child follows this owner's stdin pipe even if the owner dies.
+          stdio: deadlineTest ? ['pipe', 'inherit', 'inherit'] : 'inherit',
           env: { ...process.env, REHEARSAL_RECORD_DIR: recordDir, REHEARSAL_TEMP_ROOT: stateDir },
         },
       );
-      let interrupted = false;
+      let terminationReason = null;
       let killTimer;
-      const stop = () => {
-        interrupted = true;
+      let finished = false;
+      const stop = (reason) => {
+        terminationReason ??= reason;
         child.kill('SIGTERM');
         killTimer ??= setTimeout(() => child.kill('SIGKILL'), 2000);
       };
-      process.once('SIGTERM', stop);
-      process.once('SIGINT', stop);
-      const timer = setTimeout(stop, 115000);
-      const finish = (status) => {
+      const onSignal = () => stop('interrupted');
+      process.once('SIGTERM', onSignal);
+      process.once('SIGINT', onSignal);
+      const timer = setTimeout(() => stop('deadline_exceeded'), deadlineMs);
+      const finish = (status, signal = null) => {
+        if (finished) return;
+        finished = true;
         clearTimeout(timer);
         clearTimeout(killTimer);
-        process.removeListener('SIGTERM', stop);
-        process.removeListener('SIGINT', stop);
-        resolve({ status: interrupted ? null : status });
+        process.removeListener('SIGTERM', onSignal);
+        process.removeListener('SIGINT', onSignal);
+        resolve({
+          status: terminationReason ? null : status,
+          signal,
+          interrupted: terminationReason !== null,
+          terminationReason,
+          elapsedMs: Math.round(performance.now() - executionStarted),
+        });
       };
       child.once('error', () => finish(null));
-      child.once('exit', (status) => finish(status));
+      child.once('exit', (status, signal) => finish(status, signal));
     });
     try {
       const report = JSON.parse(await readFile(output, 'utf8'));
       assertions = report.testResults.flatMap((t) => t.assertionResults);
+      suiteTimings = report.testResults.map((suite) => ({
+        file: path.basename(suite.name),
+        durationMs: suite.endTime - suite.startTime,
+      }));
+      resultsAvailable = true;
     } catch {
       assertions = [];
     }
@@ -108,13 +139,31 @@ try {
     sourceEndError,
     sourceStable,
     expectedFixes: [...expectedFixes],
-    aggregate: exitCode === 0 ? 'pass (expectations are per-fix)' : 'fail',
+    aggregate:
+      result.terminationReason === 'deadline_exceeded'
+        ? 'deadline_exceeded'
+        : exitCode === 0
+          ? 'pass (expectations are per-fix)'
+          : 'fail',
+    deadlineMs,
+    elapsedMs: result.elapsedMs,
+    interrupted: result.interrupted,
+    terminationReason: result.terminationReason,
+    childSignal: result.signal ?? null,
+    resultsAvailable,
+    resultsComplete: complete,
+    suiteTimings,
     expectedCaseCount: requiredCases.length,
-    executedCaseCount: cases.reduce((n, c) => n + c.executed, 0),
+    executedCaseCount: resultsAvailable ? cases.reduce((n, c) => n + c.executed, 0) : null,
     unexpectedSentinels,
     selfTestSkipped: selfTest,
     selfTestSourceDrift: sourceDriftTest,
-    cases: cases.map((c) => ({ ...c, expectedOutcome: expectedOutcome(c.name) })),
+    selfTestDeadline: deadlineTest,
+    cases: cases.map((c) => ({
+      ...c,
+      expectedOutcome: expectedOutcome(c.name),
+      durationMs: assertions.find((a) => a.fullName === c.name)?.duration ?? null,
+    })),
     suites,
     tempRoot: runTemp,
   };
@@ -123,9 +172,21 @@ try {
   );
   await mkdir(path.dirname(manifestPath), { recursive: true });
   await writeFile(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
-  process.stdout.write(
-    `Rehearsal aggregate: ${manifest.aggregate}; ${manifest.executedCaseCount}/${manifest.expectedCaseCount} required cases executed; source stable: ${sourceStable}.\n`,
-  );
+  if (result.interrupted) {
+    process.stderr.write(
+      `Rehearsal ${result.terminationReason}; elapsed ${result.elapsedMs} ms; budget ${deadlineMs} ms; results available: ${resultsAvailable}; required cases complete: ${complete}.\n`,
+    );
+    process.stdout.write(
+      `Rehearsal aggregate: ${manifest.aggregate}; ${result.terminationReason}; source stable: ${sourceStable}.\n`,
+    );
+  } else {
+    const progress = resultsAvailable
+      ? `${manifest.executedCaseCount}/${manifest.expectedCaseCount} required cases executed`
+      : 'Jest results unavailable';
+    process.stdout.write(
+      `Rehearsal aggregate: ${manifest.aggregate}; ${progress}; source stable: ${sourceStable}.\n`,
+    );
+  }
 } finally {
   await rm(runTemp, { recursive: true, force: true });
 }

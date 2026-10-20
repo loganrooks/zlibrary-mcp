@@ -53,6 +53,7 @@ beforeEach(async () => {
     ZLIBRARY_OUTPUT_ROOT: directory,
     MCP_READABLE_ROOTS: directory,
     ZLIBRARY_SESSION_MODE: 'memory',
+    CIRCUIT_BREAKER_THRESHOLD: '5',
     RETRY_MAX_RETRIES: '0',
     LOG_LEVEL: 'error',
   });
@@ -224,3 +225,47 @@ test.each(['identical', 'different'])(
     });
   },
 );
+
+test('open EAPI breaker refuses lazy download before demand or transfer while LibGen search works', async () => {
+  const row = (await call('search', { query: 'Seneca Letters', sources: ['zlibrary'] }))
+    .structuredContent.rows[0];
+  expect(row).toBeDefined();
+  await h.mode({ mode: 'server503' });
+  for (let i = 0; i < 5; i++) {
+    const failure = await call('search', { query: 'outage', sources: ['zlibrary'] });
+    expect(failure.isError).toBe(true);
+    expect(failure.structuredContent.error.attempts[0]).toMatchObject({
+      source: 'zlibrary',
+      code: 'provider_error',
+      reason: 'http_error',
+    });
+  }
+  const before = await h.stats();
+  const files = await fs.readdir(directory);
+  demands = 0;
+  const refused = await call('download', { ref: row.ref });
+  expect(refused.isError).toBe(true);
+  expect(refused.structuredContent.error).toMatchObject({
+    code: 'breaker_open',
+    source: 'zlibrary',
+    retry: 'safe',
+    detail: { reason: 'breaker_open', request_issued: false },
+  });
+  expect(demands).toBe(0);
+  expect(await h.stats()).toEqual(before);
+  expect(await fs.readdir(directory)).toEqual(files);
+  const alternate = await call('search', { query: 'fixture', sources: ['libgen'], limit: 1 });
+  expect(alternate.isError).not.toBe(true);
+  expect(alternate.structuredContent.rows[0]).toMatchObject({
+    title: 'Rehearsal LibGen fixture',
+    source: 'libgen',
+  });
+  const after = await h.stats();
+  expect(after.logins).toBe(before.logins);
+  expect(after.quotaSpent).toBe(before.quotaSpent);
+  expect(after.calls['/eapi/book/search']).toBe(before.calls['/eapi/book/search']);
+  expect(after.calls['/libgen/index.php']).toBe(1);
+  await expect(fs.stat(path.join(directory, 'egress-trap.txt'))).rejects.toMatchObject({
+    code: 'ENOENT',
+  });
+});

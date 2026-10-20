@@ -26,6 +26,9 @@ of `processed_file_path`, `metadata_file_path`, `footnotes_file_path`,
   or transfer. Other unknown top-level arguments are also refused.
 - The internal legacy API façade alone retains its earlier false no-op for
   non-MCP callers. It is not registered as a tool and is not a migration alias.
+- The advertised `download` schema is closed (`additionalProperties: false`).
+  Validating clients may reject saved processing arguments themselves; remove
+  those fields from saved calls before sending them.
 
 The `rag` and `scholar` install extras no longer exist. End users run
 `bash setup-uv.sh --no-dev`; contributors run `bash setup-uv.sh`; deployments

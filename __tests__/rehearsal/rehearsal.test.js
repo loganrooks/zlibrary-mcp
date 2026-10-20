@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, expect, test } from '@jest/globals';
-import { readFile, realpath, writeFile } from 'node:fs/promises';
+import { readFile, readdir, realpath } from 'node:fs/promises';
 import path from 'node:path';
+import { performance } from 'node:perf_hooks';
 import { Rehearsal } from './harness.js';
 import { expectedFixes } from './expectations.js';
 
@@ -251,3 +252,92 @@ test('I2 lost-reply cursor replay repeats position and local limits cost no upst
     expect(await h.stats()).toEqual(at);
   });
 });
+const breakerTest = expectedFixes.has('breaker') ? test : test.failing;
+breakerTest(
+  'S7 transient EAPI outage opens only EAPI; Library Genesis survives and saved processing is refused',
+  async () => {
+    await h.scenario(
+      'S7',
+      async (connect) => {
+        const started = performance.now();
+        const c = await connect();
+        const search = await h.call(c, 'search', { query: 'warm', sources: ['zlibrary'] });
+        expect((await h.stats()).logins).toBe(1);
+        await h.mode({ mode: 'server503' });
+        const warmed = performance.now();
+        // Independent warmed failures can overlap; await all five before probing OPEN.
+        const replies = await Promise.all(
+          Array.from({ length: 5 }, () =>
+            h.call(c, 'search', { query: 'outage', sources: ['zlibrary'] }, true),
+          ),
+        );
+        for (const reply of replies) {
+          expect(reply.error).toMatchObject({
+            code: 'provider_error',
+            source: 'zlibrary',
+            detail: { reason: 'http_error' },
+          });
+          expect(reply.error.message).not.toMatch(/authentication|rejected the login/i);
+        }
+        const failed = performance.now();
+        const before = await h.stats();
+        expect(before.logins).toBe(1);
+        expect(before.calls['/eapi/book/search']).toBe(6); // warm call + five outages
+        const blocked = await h.call(
+          c,
+          'search',
+          { query: 'blocked', sources: ['zlibrary'] },
+          true,
+        );
+        expect(blocked.error).toMatchObject({
+          code: 'breaker_open',
+          detail: { reason: 'breaker_open', request_issued: false },
+        });
+        expect(await h.stats()).toEqual(before);
+        const alternate = await h.call(c, 'search', {
+          query: 'fixture',
+          sources: ['libgen'],
+          limit: 1,
+        });
+        expect(alternate.rows[0]).toMatchObject({
+          title: 'Rehearsal LibGen fixture',
+          source: 'libgen',
+        });
+        const beforeRefusal = await h.stats();
+        const refused = await h.call(
+          c,
+          'download',
+          {
+            ref: search.rows[0].ref,
+            output_dir: h.downloads,
+            process_for_rag: true,
+          },
+          true,
+        );
+        expect(refused.error.code).toBe('invalid_argument');
+        expect(refused.error.recovery).toMatch(/text processing was removed in 2\.0/i);
+        expect(await h.stats()).toEqual(beforeRefusal);
+        expect(await readdir(h.downloads)).toEqual([]);
+        const after = await h.stats();
+        expect(after.logins).toBe(1);
+        expect(after.calls['/eapi/book/search']).toBe(6);
+        expect(after.calls['/libgen/index.php']).toBe(1);
+        h.scan(await c.listTools());
+        h.note('S7', {
+          outage: 'HTTP 503 (non-auth)',
+          breaker: 'EAPI OPEN after five failures',
+          blockedCallDispatched: false,
+          savedProcessing: 'refused before authentication or transfer; no files created',
+          alternateSources: 'Library Genesis works',
+          toolsList: 'works',
+          timingMs: {
+            connectAndWarm: Math.round(warmed - started),
+            fiveOutages: Math.round(failed - warmed),
+            blockedProbeAndFallback: Math.round(performance.now() - failed),
+          },
+        });
+      },
+      { libgen: true },
+    );
+  },
+);

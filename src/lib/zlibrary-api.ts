@@ -6,7 +6,7 @@ import { appendFile as appendFileAsyncFS, mkdir as mkdirAsyncFS } from 'fs/promi
 // Removed unused https, http imports
 // path is already imported on line 2
 import { fileURLToPath } from 'url';
-import { withRetry, isRetryableError } from './retry-manager.js';
+import { withRetry, isRetryableError, isTransientDependencyError } from './retry-manager.js';
 import {
   EapiSessionOwner,
   needsEapi,
@@ -15,15 +15,11 @@ import {
   authRejected,
 } from './eapi-session.js';
 import { CircuitBreaker } from './circuit-breaker.js';
-import { BridgeSpawnError, ZLibraryError, PythonBridgeError } from './errors.js';
+import { ZLibraryError, PythonBridgeError } from './errors.js';
 import { logger } from './logger.js';
 import { getPythonLibDirectory } from './paths.js';
 import { runPythonBridge, LONG_BRIDGE_TIMEOUT_MS } from './python-runner.js';
-import {
-  isBridgeDetailRetryable,
-  isPermanentBridgeDetail,
-  parseBridgeErrorEnvelope,
-} from './python-bridge.js';
+import { isBridgeDetailRetryable, parseBridgeErrorEnvelope } from './python-bridge.js';
 
 // Recreate __dirname for ESM
 const __filename = fileURLToPath(import.meta.url);
@@ -37,28 +33,35 @@ const BRIDGE_SCRIPT_NAME = 'python_bridge.py';
 
 const eapiSessions = new EapiSessionOwner();
 
-// Create a circuit breaker for all Python bridge operations
-const pythonBridgeCircuitBreaker = new CircuitBreaker({
-  threshold: parseInt(process.env.CIRCUIT_BREAKER_THRESHOLD || '5'),
-  timeout: parseInt(process.env.CIRCUIT_BREAKER_TIMEOUT || '60000'),
-  onStateChange: (oldState, newState) => {
-    logger.info(`Python bridge circuit breaker: ${oldState} -> ${newState}`);
-  },
-  // A client that cancels its own request has told us nothing about the
-  // bridge's health. Counting cancellations would mean five aborted searches
-  // open the breaker and fail every unrelated tool for the timeout window —
-  // turning a user's own impatience into an outage.
-  isFailure: (error) =>
-    error?.context?.reason !== 'aborted' &&
-    error?.context?.reason !== 'auth_rejected' &&
-    !(error instanceof BridgeSpawnError && error.errnoCode === 'ENOENT') &&
-    !isPermanentBridgeDetail(error?.context?.details),
-});
+// Python owns alternative-source failover, so LibGen/Anna/auto share one scope.
+const dependencyBreakers = Object.fromEntries(
+  ['eapi', 'libgen'].map((scope) => [
+    scope,
+    new CircuitBreaker({
+      threshold: parseInt(process.env.CIRCUIT_BREAKER_THRESHOLD || '5'),
+      timeout: parseInt(process.env.CIRCUIT_BREAKER_TIMEOUT || '60000'),
+      onStateChange: (oldState, newState) =>
+        logger.info(`${scope} circuit breaker: ${oldState} -> ${newState}`),
+      isFailure: (error: any) => {
+        const details = error?.context?.details;
+        // Issuance metadata is not a provider failure verdict. Keep it in the
+        // reply, but let master classify the original typed/status evidence.
+        const evidence =
+          details && Object.keys(details).every((key) => key === 'request_issued')
+            ? Object.assign(Object.create(error), {
+                context: { ...error.context, details: undefined },
+              })
+            : error;
+        return isTransientDependencyError(evidence);
+      },
+    }),
+  ]),
+);
 
 /**
- * Bridge functions whose work is bounded by file size and CPU, not by a
- * network round trip. Downloading a large book and OCR-ing a scanned one both
- * routinely outrun the ordinary budget, and killing them would turn a slow
+ * Bridge functions whose work is bounded by file size, not by a single
+ * network round trip. Downloading a large book can routinely outrun the
+ * ordinary budget, and killing it would turn a slow
  * success into a hard failure — the opposite of what the budget is for. They
  * are still bounded (PYTHON_BRIDGE_LONG_TIMEOUT), just far more generously.
  */
@@ -80,7 +83,7 @@ function defaultTimeoutFor(functionName: string): number | undefined {
 export interface CallOptions {
   /**
    * Wall-clock budget in ms. Defaults to PYTHON_BRIDGE_TIMEOUT, or
-   * PYTHON_BRIDGE_LONG_TIMEOUT for download/processing calls.
+   * PYTHON_BRIDGE_LONG_TIMEOUT for download calls.
    */
   timeoutMs?: number;
   /** Abort signal from the MCP request, so a cancelled call kills the child. */
@@ -106,12 +109,14 @@ async function callPythonFunction(
   const identity = configuredEnv.ZLIBRARY_EMAIL || '';
   const memory = getSessionMode() === 'memory';
   const reuse = needsEapi(functionName, args) && memory;
-  const lazyAcquisition =
-    memory &&
+  const acquisitionUsesEapi =
     functionName === 'acquire_book' &&
     !['libgen', 'annas', 'annas_archive'].includes(
       String(args.book_details?.source || '').toLowerCase(),
     );
+  const lazyAcquisition = memory && acquisitionUsesEapi;
+  const breaker =
+    dependencyBreakers[needsEapi(functionName, args) || acquisitionUsesEapi ? 'eapi' : 'libgen']!;
   const invoke = (transport?: SessionInput, signal = callOptions.signal) =>
     withRetry(
       async () => {
@@ -189,9 +194,8 @@ async function callPythonFunction(
                           // Decode independently; never await owner completion in the raw runner.
                           return operation;
                         };
-                        return input.authRetry
-                          ? handoff()
-                          : pythonBridgeCircuitBreaker.execute(handoff);
+                        // The whole lazy call is already admitted/accounted below.
+                        return handoff();
                       },
                       {
                         signal: lazySignal,
@@ -267,8 +271,8 @@ async function callPythonFunction(
                 {
                   reason: 'login_failed',
                   loginStatus: failure.status_code,
-                  loginToken: failure.token,
                   pythonErrorType: resultData.type,
+                  loginToken: failure.token,
                 },
                 false,
               );
@@ -296,6 +300,7 @@ async function callPythonFunction(
                   args,
                   details: resultData.details,
                   pythonErrorType: resultData.type,
+                  httpStatus: resultData.status_code,
                 },
                 isBridgeDetailRetryable(resultData.details),
               );
@@ -381,12 +386,11 @@ async function callPythonFunction(
                     ...(activeTransport ? { request_issued: true } : {}),
                   },
                   pythonErrorType: bridgeError.type,
+                  httpStatus: bridgeError.status_code,
                   stderr: err.stderr,
                   originalError: err,
                 },
-                // A provider that is not reachable at all will not become
-                // reachable inside the retry window; retrying just re-pays the
-                // probe. Response-level failures may be transient.
+                // A details-bearing envelope has already used Python failover.
                 isBridgeDetailRetryable(bridgeError.details),
               );
             }
@@ -411,9 +415,7 @@ async function callPythonFunction(
             }
           }
         };
-        return transport?.authRetry || (lazyAcquisition && !transport)
-          ? execute()
-          : pythonBridgeCircuitBreaker.execute(execute);
+        return transport?.authRetry ? execute() : breaker.execute(execute);
       },
       {
         signal,

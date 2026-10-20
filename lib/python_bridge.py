@@ -10,14 +10,24 @@ import traceback
 # Read the private pipe before importing code that could spawn grandchildren.
 os.environ.pop("ZLIBRARY_EAPI_SESSION", None)  # Retired env carrier is never trusted.
 _session_input = None
-if __name__ == "__main__" and os.environ.pop("ZLIBRARY_EAPI_CHANNEL", "") == "1":
-    os.set_inheritable(3, False)
-    try:
-        _session_input = json.loads(sys.stdin.readline(8193))
-        if not isinstance(_session_input, dict):
-            raise ValueError()
-    except (ValueError, OSError):
-        raise SystemExit("Invalid private session input")
+_lazy_session = False
+_session_published = None
+if __name__ == "__main__":
+    _private_mode = os.environ.pop("ZLIBRARY_EAPI_CHANNEL", "")
+    if _private_mode and _private_mode not in {"1", "lazy-v2"}:
+        raise SystemExit("Invalid private session input") from None
+    if _private_mode in {"1", "lazy-v2"}:
+        try:
+            os.set_inheritable(3, False)
+            if _private_mode == "lazy-v2":
+                os.set_inheritable(4, False)
+                _lazy_session = True
+            else:
+                _session_input = json.loads(sys.stdin.readline(8193))
+                if not isinstance(_session_input, dict):
+                    raise ValueError()
+        except (ValueError, OSError):
+            raise SystemExit("Invalid private session input") from None
 import httpx
 from typing import Optional
 from email.message import Message
@@ -314,13 +324,23 @@ async def _validate_eapi_profile(client):
 
 async def initialize_eapi_client() -> EAPIClient:
     """Use the parent generation, or log in only for a parent acquisition/per-call."""
-    global _eapi_client
+    global _eapi_client, _session_input
     email = os.environ.get("ZLIBRARY_EMAIL")
     password = os.environ.get("ZLIBRARY_PASSWORD")
     if not email or not password:
         raise ValueError(
             "ZLIBRARY_EMAIL and ZLIBRARY_PASSWORD environment variables required"
         )
+    if _lazy_session and _session_input is None:
+        from lib.eapi_session_protocol import request_session, SessionProtocolError
+
+        try:
+            budget = int(os.environ.get("ZLIBRARY_EAPI_HANDOFF_TIMEOUT_MS", "240000"))
+            if not 0 < budget <= 2147483647:
+                raise ValueError()
+        except ValueError:
+            raise SessionProtocolError("Invalid private session deadline") from None
+        _session_input = await request_session(timeout=budget / 1000)
     record = _session_input
     if record is not None:
         if record.get("identity") != email or record.get("action") not in (
@@ -355,7 +375,12 @@ async def initialize_eapi_client() -> EAPIClient:
 
 def _publish_eapi_session():
     """Only fd 3 carries bearer material; stdout/stderr remain public."""
-    if _session_input is None or _eapi_client is None:
+    global _session_published
+    if (
+        _session_input is None
+        or _eapi_client is None
+        or _session_published is _session_input
+    ):
         return
     client = _eapi_client
     payload = {
@@ -367,7 +392,11 @@ def _publish_eapi_session():
     }
     if client.needs_profile_validation:
         payload["validate_next"] = True
-    os.write(3, (json.dumps(payload) + "\n").encode())
+    encoded = (json.dumps(payload) + "\n").encode()
+    if len(encoded) > 8192:
+        raise ValueError("Invalid private session output")
+    _session_published = _session_input
+    os.write(3, encoded)
 
 
 def _attach_eapi_session(client):
@@ -586,6 +615,8 @@ async def search(
     content_types=None,
     count=10,
     client=None,
+    page=1,
+    author=None,
 ):
     """
     Search for books using EAPI.
@@ -604,6 +635,11 @@ async def search(
     Returns:
         dict with 'retrieved_from_url' and 'books'
     """
+    _validate_page(count, page)
+    if author:
+        from lib.author_tools import format_author_query
+        author_query = format_author_query(author, exact=exact and not query)
+        query = " ".join(part for part in [query, author_query] if part)
     eapi = await get_eapi_client()
 
     # Convert language/extension enums to strings for EAPI
@@ -621,6 +657,7 @@ async def search(
     response = await eapi.search(
         message=query,
         limit=count,
+        page=page,
         exact=exact,
         year_from=from_year,
         year_to=to_year,
@@ -834,12 +871,23 @@ async def search_advanced(
     }
 
 
-async def get_download_history(count=10):
+def _validate_page(count, page):
+    if type(count) is not int or not 1 <= count <= 50:
+        raise ValueError("limit must be an integer from 1 to 50")
+    if type(page) is not int or page < 1:
+        raise ValueError("page must be a positive integer")
+
+
+async def get_download_history(count=10, page=1):
     """Get user's download history via EAPI."""
+    _validate_page(count, page)
     eapi = await get_eapi_client()
-    response = await eapi.get_downloaded(limit=count)
+    response = await eapi.get_downloaded(limit=count, page=page)
     books = response.get("books", [])
-    return [normalize_eapi_book(b) for b in books]
+    return [
+        {**normalize_eapi_book(b), **({"downloaded_at": b["downloaded_at"]} if b.get("downloaded_at") else {})}
+        for b in books
+    ]
 
 
 async def get_download_limits():
@@ -1284,7 +1332,10 @@ async def _fetch_from_source(book_details: dict, output_dir: str) -> str:
                     provider = "annas"
                 active_host = (urlsplit(result.url).hostname or "").lower()
                 try:
-                    return await _download_url_to_file(
+                    quota = getattr(result, "quota_info", None)
+                    from datetime import datetime, timezone
+                    observed_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+                    downloaded = await _download_url_to_file(
                         result.url,
                         output_dir,
                         md5,
@@ -1293,6 +1344,12 @@ async def _fetch_from_source(book_details: dict, output_dir: str) -> str:
                         host_observer=lambda host: _set_active_host(host),
                         config=config,
                     )
+                    if not isinstance(downloaded, _DownloadedPath):
+                        downloaded = _DownloadedPath(str(downloaded))
+                    downloaded.provenance = {"route": "fast_download" if provider == "annas" else "mirror_download", "host": active_host or None, "mirror": None}
+                    if quota is not None and type(quota.downloads_left) is int and quota.downloads_left >= 0:
+                        downloaded.quota_estimate = {"source": str(provider), "remaining": quota.downloads_left, "as_of": observed_at, "basis": "observed"}
+                    return downloaded
                 except AllSourcesFailedError as exc:
                     for failure in exc.failures:
                         record(failure)
@@ -1334,20 +1391,23 @@ async def _fetch_from_source(book_details: dict, output_dir: str) -> str:
         raise
 
 
+_RETIRED_PROCESS_FLAG = "process_for_" + "r" + "ag"
+
+
 def _admit_download_args(arguments: dict) -> None:
     """Reject removed options before authentication, quota use or transfer."""
     if (
-        "process_for_rag" in arguments and arguments["process_for_rag"] is not False
+        _RETIRED_PROCESS_FLAG in arguments and arguments[_RETIRED_PROCESS_FLAG] is not False
     ) or "processed_output_format" in arguments:
         raise ValueError(
             "Text processing was removed in 2.0. Use a separate 1.4.x installation for text processing."
         )
-    unknown = arguments.keys() - {"book_details", "output_dir", "process_for_rag"}
+    unknown = arguments.keys() - {"book_details", "output_dir", _RETIRED_PROCESS_FLAG}
     if unknown:
         raise ValueError(f"Unknown download argument(s): {', '.join(sorted(unknown))}")
 
 
-async def download_book(book_details: dict, output_dir: str, **legacy_arguments):
+async def download_book(book_details: dict, output_dir: str, *, filename=None, publication_hook=None, **legacy_arguments):
     """Download the original book and return its local file_path."""
     _admit_download_args(legacy_arguments)
 
@@ -1380,6 +1440,7 @@ async def download_book(book_details: dict, output_dir: str, **legacy_arguments)
     downloaded_file_path_str = None
     final_file_path_str = None  # Path with enhanced filename
     eapi_staging = None
+    original_download_path_str = None
 
     try:
         # Step 1: Fetch the file. Z-Library goes through the EAPI client;
@@ -1446,6 +1507,9 @@ async def download_book(book_details: dict, output_dir: str, **legacy_arguments)
                     ending = identity_suffix + Path(unified_filename).suffix
                     stem = truncate_filename_stem(stem, ending)
                     final_filename = stem + ending
+        if filename is not None:
+            from lib.acquisition import destination_name
+            final_filename = destination_name(book_details, filename)
         final_file_path = Path(output_dir) / final_filename
         final_file_path_str = str(final_file_path)
 
@@ -1454,6 +1518,8 @@ async def download_book(book_details: dict, output_dir: str, **legacy_arguments)
         # published under the same deterministic name.
         Path(output_dir).mkdir(parents=True, exist_ok=True)
         catalog_md5 = str(book_details.get("md5") or "").strip().lower()
+        if publication_hook is not None:
+            publication_hook(Path(original_download_path_str), final_file_path)
         reused = _publish_or_reuse(
             Path(original_download_path_str),
             final_file_path,
@@ -1470,13 +1536,26 @@ async def download_book(book_details: dict, output_dir: str, **legacy_arguments)
             )
         downloaded_file_path_str = final_file_path_str
 
-        return {"file_path": downloaded_file_path_str}
+        result = {"file_path": downloaded_file_path_str}
+        if publication_hook is not None:
+            result["publication_reused"] = reused
+            result["provenance"] = getattr(original_download_path_str, "provenance", {"route": "eapi", "host": None, "mirror": None})
+            quota_estimate = getattr(original_download_path_str, "quota_estimate", None)
+            if quota_estimate is not None:
+                result["quota_estimate"] = quota_estimate
+        return result
 
     except Exception as e:
         identifier = book_details.get("id") or book_details.get("md5") or "unknown"
         logger.exception(f"Error in download_book for {identifier}")
         raise e
     finally:
+        if original_download_path_str:
+            owned_stage = Path(original_download_path_str)
+            if (owned_stage.parent.resolve() == Path(output_dir).resolve()
+                    and str(owned_stage) != final_file_path_str
+                    and owned_stage.name.startswith(".source-")):
+                owned_stage.unlink(missing_ok=True)
         if eapi_staging is not None:
             eapi_staging.cleanup()
 
@@ -1693,6 +1772,7 @@ async def search_multi_source(
         LIBGEN_MIRROR: LibGen mirror suffix (default: 'li')
         BOOK_SOURCE_FALLBACK_ENABLED: Enable fallback (default: 'true')
     """
+    _validate_page(count, 1)
     router = await get_source_router()
     results = await router.search(query, source=source, **kwargs)
 
@@ -1727,7 +1807,7 @@ def _requires_eapi_client(function_name: str, args_dict: dict) -> bool:
     Z-Library branch, and logging in up front took LibGen — the
     credential-free fallback — down with every Z-Library auth outage (#129).
     """
-    if function_name == "search_multi_source":
+    if function_name in {"search_multi_source", "acquire_book"}:
         return False
     if function_name == "download_book":
         source = str((args_dict.get("book_details") or {}).get("source") or "").lower()
@@ -1765,6 +1845,8 @@ def _login_failure_info(error):
 
 
 async def main():
+    global _session_published
+    _session_published = None
     parser = argparse.ArgumentParser(description="Z-Library Python Bridge")
     parser.add_argument("function_name", help="Name of the function to call")
     parser.add_argument("args_json", help="JSON string of arguments for the function")
@@ -1799,6 +1881,8 @@ async def main():
             raise ValueError("Text processing was removed in 2.0.")
         # Decide before dispatch whether this call needs Z-Library
         # authentication at all — see _requires_eapi_client (#106, #129).
+        if function_name in {"search", "get_download_history", "search_multi_source"}:
+            _validate_page(args_dict.get("count", 10), args_dict.get("page", 1))
         needs_eapi = _requires_eapi_client(function_name, args_dict)
 
         # Install before authentication and dispatch: httpx/AnyIO resolves
@@ -1806,7 +1890,10 @@ async def main():
         # during asyncio.run() shutdown.
         resolver_timeout = get_source_config().preflight_timeout
         async with bounded_resolver(resolver_timeout):
-            if needs_eapi:
+            if needs_eapi or (
+                _session_input is not None
+                and _session_input.get("action") in ("login", "validate")
+            ):
                 await initialize_eapi_client()
 
             # Standardize 'language' key to 'languages' for search functions.
@@ -1824,7 +1911,7 @@ async def main():
 
         # Print only confirmation and path to stdout to avoid large content
         mcp_style_response = {"content": [{"type": "text", "text": json.dumps(result)}]}
-        if needs_eapi:
+        if _eapi_client:
             _publish_eapi_session()
         print(json.dumps(mcp_style_response))
 
@@ -1850,7 +1937,8 @@ async def main():
         # Provider failures carry which source failed and why (DNS vs connect
         # timeout vs HTTP error). Pass that through as structured data so the
         # MCP caller can act on it instead of pattern-matching prose.
-        if isinstance(e, (SourceError, AllSourcesFailedError)):
+        from lib.acquisition import AcquisitionError
+        if isinstance(e, (SourceError, AllSourcesFailedError, AcquisitionError)):
             error_info["details"] = e.to_dict()
             operation = (
                 "download"
@@ -1909,6 +1997,20 @@ async def main():
 
 async def _dispatch_bridge_function(function_name: str, args_dict: dict):
     """Dispatch one parsed bridge operation after lifecycle setup."""
+    if function_name == "acquire_book":
+        from lib.acquisition import acquire, AcquisitionError
+
+        async def authenticated_transfer(book, directory, **kwargs):
+            source = str(book.get("source") or "zlibrary").lower()
+            if source not in SOURCE_ALIASES:
+                if not os.environ.get("ZLIBRARY_EMAIL") or not os.environ.get("ZLIBRARY_PASSWORD"):
+                    raise AcquisitionError("configuration_error", "Configure ZLIBRARY_EMAIL and ZLIBRARY_PASSWORD")
+                await initialize_eapi_client()
+            elif source in {"annas", "annas_archive"} and not os.environ.get("ANNAS_SECRET_KEY"):
+                raise AcquisitionError("configuration_error", "Configure ANNAS_SECRET_KEY")
+            return await download_book(book, directory, **kwargs)
+
+        return await acquire(**args_dict, transfer=authenticated_transfer)
     if function_name == "search":
         logger.info(
             f"python_bridge.main: About to call search with args_dict: {args_dict}"

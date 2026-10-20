@@ -323,3 +323,12 @@ describe('Circuit Breaker', () => {
     });
   });
 });
+
+test('open circuit exposes a typed cooldown instead of requiring message matching', async () => {
+  const { CircuitBreaker: Breaker } = await import('../dist/lib/circuit-breaker.js');
+  const breaker = new Breaker({ threshold: 1, timeout: 10000 });
+  await expect(breaker.execute(async () => { throw new Error('offline'); })).rejects.toThrow('offline');
+  const error = await breaker.execute(async () => 'must not execute').catch(e => e);
+  expect(error.code).toBe('CIRCUIT_BREAKER_OPEN');
+  expect(error.context.retryAfterMs).toBeGreaterThan(0);
+});

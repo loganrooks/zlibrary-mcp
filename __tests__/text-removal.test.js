@@ -38,13 +38,12 @@ for (const legacy of [
     expect(runBridge).not.toHaveBeenCalled();
   });
 }
-test('SDK passes raw false to admission and ignores it without forwarding processing fields', async () => {
+test('SDK rejects even saved false: old names have no aliases in 2.0', async () => {
   await connect();
-  runBridge.mockResolvedValue([JSON.stringify({ content: [{ type: 'text', text: JSON.stringify({ file_path: '/offline/book.pdf' }) }] })]);
   const result = await client.callTool({ name: 'download_book_to_file', arguments: { bookDetails, process_for_rag: false } });
-  expect(result.isError).not.toBe(true);
-  expect(result.structuredContent).toEqual({ file_path: '/offline/book.pdf' });
-  expect(JSON.parse(runBridge.mock.calls[0][1].args[1])).toEqual({ book_details: bookDetails, output_dir: './downloads' });
+  expect(result.isError).toBe(true);
+  expect(result.structuredContent.error.code).toBe('invalid_argument');
+  expect(runBridge).not.toHaveBeenCalled();
 });
 test('unknown download fields fail before subprocess', async () => {
   await connect();
@@ -55,7 +54,7 @@ test('unknown download fields fail before subprocess', async () => {
 test('tool listing no longer advertises processing and removed calls are unknown', async () => {
   await connect();
   const tools = await client.listTools();
-  expect(tools.tools).toHaveLength(12);
+  expect(tools.tools).toHaveLength(5);
   expect(JSON.stringify(tools)).not.toMatch(/process_for_rag|processed_output_format|process_document_for_rag/);
   const removed = await client.callTool({ name: 'process_document_for_rag', arguments: { file_path: '/offline/book.pdf' } });
   expect(removed.isError).toBe(true);
@@ -68,13 +67,12 @@ test('stale backend processing bundles cannot escape the acquisition-only API', 
   await expect(api.downloadBookToFile({ bookDetails })).rejects.toThrow(/unexpected.*processing/i);
 });
 
-test('download advertises a closed top-level schema while preserving full bookDetails', async () => {
+test('download advertises a closed ref-only schema', async () => {
   await connect();
   const { tools } = await client.listTools();
-  const { inputSchema } = tools.find((tool) => tool.name === 'download_book_to_file');
+  const { inputSchema } = tools.find((tool) => tool.name === 'download');
   expect(inputSchema.additionalProperties).toBe(false);
-  expect(Object.keys(inputSchema.properties).sort()).toEqual(['bookDetails', 'outputDir']);
-  expect(inputSchema.properties.bookDetails.additionalProperties).toBe(true);
+  expect(Object.keys(inputSchema.properties).sort()).toEqual(['filename', 'output_dir', 'ref']);
   expect(JSON.stringify(inputSchema)).not.toContain('"additionalProperties":{}');
 });
 

@@ -1,7 +1,7 @@
 """
 Unified filename generation utilities for Z-Library MCP.
 
-This module provides consistent filename generation across download and RAG processing.
+This module provides consistent filename generation across original-file acquisition.
 Format: {author-lastname}-{title-slug}-{book-id}.{ext}
 
 Design Decisions:
@@ -169,7 +169,7 @@ def create_unified_filename(
     publisher: str = "",
 ) -> str:
     """
-    Create unified filename for download or RAG processing.
+    Create unified filename for original-file acquisition.
 
     Format: {AuthorCamelCase}_{TitleCamelCase}[_{Year}][_{Lang}]_{BookID}[.suffix].{ext}
 
@@ -178,7 +178,7 @@ def create_unified_filename(
     Examples:
         With disambiguation: "OrwellGeorge_1984_1949_en_12345.epub"
         Without: "OrwellGeorge_1984_12345.epub"
-        RAG: "HanByungChul_TheBurnoutSociety_3505318.pdf.processed.markdown"
+        Download: "HanByungChul_TheBurnoutSociety_3505318.pdf"
 
     Args:
         book_details: Dictionary with 'author', 'title', 'id', optionally 'extension'

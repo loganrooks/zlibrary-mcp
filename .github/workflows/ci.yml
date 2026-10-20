@@ -218,7 +218,7 @@ jobs:
             echo "$line" | jq -e '.jsonrpc == "2.0"' > /dev/null \
               || { echo "ERROR: non-MCP output on stdout: $line"; exit 1; }
           done < stdout.txt
-          head -1 stdout.txt | jq -e '.jsonrpc == "2.0" and .id == 1 and .result.protocolVersion != null and .result.serverInfo.name == "zlibrary-mcp" and .result.capabilities.tools != null'
+          head -1 stdout.txt | jq -e '.jsonrpc == "2.0" and .id == 1 and .result.protocolVersion != null and .result.serverInfo.name == "book-acquisition" and .result.capabilities.tools != null'
 
   docker:
     # Exercise the published image on PRs so Python/wheel drift is caught (#230).
@@ -231,3 +231,42 @@ jobs:
         run: docker build -t zlibrary-mcp:ci -f docker/Dockerfile .
       - name: Verify image contents
         run: docker run --rm --entrypoint sh zlibrary-mcp:ci -c "test -f /app/dist/index.js && node -e 'console.log(\"OK\")'"
+
+  acquisition-windows:
+    name: Offline acquisition leases (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.10', '3.13']
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          lfs: false
+      - uses: astral-sh/setup-uv@v7
+        with:
+          python-version: ${{ matrix.python }}
+      - run: uv sync --frozen --group dev
+      - name: Verify native leases and canonical receipt recovery
+        run: uv run pytest __tests__/python/test_acquisition_locking.py __tests__/python/test_acquisition_receipts.py --no-cov -rs
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run build
+      - name: Verify lazy protocol on actual Windows Node and Python pipes
+        env:
+          LAZY_PROTOCOL_DIAGNOSTICS: '1'
+        run: node --experimental-vm-modules node_modules/jest/bin/jest.js __tests__/lazy-eapi-session.test.js --testNamePattern="native protocol" --runInBand --coverage=false
+      - name: Verify bounded Python session framing and deferred initialization
+        if: always()
+        run: uv run pytest __tests__/python/test_lazy_eapi_session.py --no-cov -rs
+      - name: Upload bounded synthetic native protocol diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-protocol-python-${{ matrix.python }}
+          path: test_output/native-protocol/*.json
+          if-no-files-found: warn

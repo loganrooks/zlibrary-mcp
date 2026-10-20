@@ -1,3 +1,9 @@
+> 2.0 acquisition exception: `download` calls the guarded `acquire_book` bridge
+> without automatic retries. Disk receipts are checked before authentication;
+> retry hints are `safe`, `may_spend_quota`, or `no`. Cancellation does not renew
+> intent. The retry settings below still apply to read operations and internal
+> legacy façades. See [API errors](api.md#errors) and [migration](interface-migration.md).
+
 # Retry Logic and Circuit Breaker Configuration
 
 ## Overview

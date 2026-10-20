@@ -6,32 +6,29 @@ The 2.0 server searches catalogues, fetches metadata, and downloads original
 files. Local text extraction, OCR, document-quality analysis, and their CLI
 helpers are removed. This is a major-version break, not a default-off feature.
 The operator chose to preserve the text implementation separately while the
-acquisition server is reduced and repaired. A new tool interface is separate
-work; this change keeps the other twelve tool names.
+acquisition server is reduced and repaired. The five-tool interface now replaces
+all old registrations; see the [tool migration table](interface-migration.md).
 
-Downloads return `{ "file_path": "..." }`, with any existing source fields,
-not a processing bundle. Remove consumers of `processed_file_path`,
-`metadata_file_path`, `footnotes_file_path`, `endnotes_file_path`,
-`citations_file_path`, `output_files`, `stats`, `content_types_produced`, and
-`processing_error` from new-download handling.
+`download` returns `path`, `bytes`, `reused`, `transfer_skipped`, `verified`, and
+`record` (the acquisition sidecar path), not a processing bundle. Remove consumers
+of `processed_file_path`, `metadata_file_path`, `footnotes_file_path`,
+`endnotes_file_path`, `citations_file_path`, `output_files`, `stats`,
+`content_types_produced`, and `processing_error` from new-download handling.
 
 ## Saved calls
 
-- `process_document_for_rag` is absent from `tools/list`; calling it returns
-  an unknown-tool error without provider contact.
-- `process_for_rag: true`, malformed flag values, and **any**
-  `processed_output_format` are refused before login, quota use, or byte transfer.
-  The error says text processing was removed in 2.0.
-- `process_for_rag: false` alone is accepted and ignored as a temporary,
-  unadvertised compatibility case. Real SDK round-trip tests cover both false
-  admission and true refusal so unknown-field stripping cannot silently download.
-- Other unknown top-level download arguments are refused. Pass the complete
-  search-result object inside `bookDetails`.
-- The advertised download schema is closed (`additionalProperties: false`).
-  Clients that validate arguments against it will refuse saved calls carrying
-  `process_for_rag` or `processed_output_format` themselves, with their own
-  validation error rather than the removal message above; remove those fields
-  from saved calls.
+- `process_document_for_rag` is absent from `tools/list`; calling it returns a
+  typed `invalid_argument` migration error without provider contact.
+- All old tool names are removed, including `download_book_to_file`. Search
+  again and pass the chosen row's `ref` to `download`, not `bookDetails`.
+- `process_for_rag` (including `false`), malformed flag values, and **any**
+  `processed_output_format` are invalid MCP arguments before login, quota use,
+  or transfer. Other unknown top-level arguments are also refused.
+- The internal legacy API façade alone retains its earlier false no-op for
+  non-MCP callers. It is not registered as a tool and is not a migration alias.
+- The advertised `download` schema is closed (`additionalProperties: false`).
+  Validating clients may reject saved processing arguments themselves; remove
+  those fields from saved calls before sending them.
 
 The `rag` and `scholar` install extras no longer exist. End users run
 `bash setup-uv.sh --no-dev`; contributors run `bash setup-uv.sh`; deployments
@@ -81,5 +78,6 @@ The retained test suites must collect without processing libraries. The import
 trap in `scripts/check_optional_imports.py --core-smoke` exercises fake-provider
 search, metadata, and download with parked imports forbidden. SDK tests reject
 saved options before any subprocess starts. These offline checks do not attest
-to live provider availability or qualify the operator's separately deployed
-reader/output-root guard. The tunnel deployment is unchanged by this removal.
+to live provider availability or qualify a separately deployed reader. The
+output-root guard is now in the acquisition path; deployment and publication
+remain separate from source-level changes.

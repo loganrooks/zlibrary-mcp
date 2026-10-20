@@ -1,481 +1,190 @@
-# API Reference
+# Acquisition MCP API
 
-This is the API reference for the **zlibrary-mcp** MCP (Model Context Protocol) server. Tools are invoked via MCP protocol -- not HTTP REST.
+The 2.0 server exposes exactly five tools using SDK 1.32.1 and protocol
+2025-11-25. Every result is a JSON object in `structuredContent` and a text
+block containing the identical JSON. Every tool declares success and error
+output schemas. Arguments are strict: unknown or removed fields return a typed
+`invalid_argument` before provider contact. See [migration](interface-migration.md).
 
-**Credentials.** Most tools read from Z-Library and need `ZLIBRARY_EMAIL` and `ZLIBRARY_PASSWORD` in the MCP client environment. Two tools do not:
+## search
 
-- `search_multi_source` reads from Library Genesis and Anna's Archive.
-- `download_book_to_file` needs no credentials when you pass it a Library Genesis result.
+Catalogue metadata, not the text inside a book. Give `query`, `author`, or both.
 
-The server starts without credentials. The Z-Library tools then fail when you call them, and the other tools continue to work.
+| Argument | Contract |
+|---|---|
+| `query` | Nonblank string, 1–500 characters |
+| `author` | Nonblank string, 1–200 characters; author-only exact names are quoted |
+| `sources` | Ordered, distinct array of 1–3 of `libgen`, `zlibrary`, `annas`; optional only with operator defaults |
+| `exact` | Boolean, default false; applies to the whole combined query, not just the title |
+| `year_from`, `year_to` | Inclusive integer year range |
+| `languages`, `formats` | String arrays; unsupported source filters are listed in attempts' `ignored` |
+| `limit` | Integer 1–50, default 10 |
+| `cursor` | Continuation, exclusive of every other argument |
 
-All tools return MCP content arrays in the format:
+Returns `rows`, `routing`, optional `next_cursor` and a steering `note`.
+Rows carry `ref`, `title`, `author`, `year`, `language`, `format`, `size_mb`,
+`pages`, `publisher`, `source`, `also_available_on` when known. Unknown scalars
+are omitted, not empty strings. Raw IDs, hashes and download URLs are not
+search row fields; `get_book` exposes identifiers when needed.
 
-```json
-{
-  "content": [{ "type": "text", "text": "<JSON string or error message>" }]
-}
-```
+`routing` reports `requested`, `served_by`, `fell_back`, and ordered `attempts`.
+Outcomes are `rows`, `empty`, `skipped`, `failed`; failures preserve typed codes
+and sub-reasons. Routing stops at the first source with rows. A continuation
+uses only that source: it never restarts fallback. All-empty is a successful
+empty page. Empty plus failure is `partial_failure`; all attempted sources
+failing is `all_sources_failed`. An explicit unconfigured source fails locally.
 
-On error, responses include `isError: true` and a descriptive error message.
+## get_book
 
-## Table of Contents
+Requires `ref` from a current search/history row. Returns the row fields plus
+known `isbn`, `series`, `edition`, `translator`, `categories`, `rating`,
+`description`, `identifiers`, `url`, and `evidence`. Description is capped at
+1,000 characters and marked `description_truncated` when cut.
+`evidence.detail` and `evidence.search` name the origin of metadata fields.
+Z-Library uses one detail request. Other sources expose their held row without
+promising additional detail-page metadata. No direct ID input is accepted.
 
-- [Search Tools](#search-tools)
-  - [search_books](#search_books)
-  - [full_text_search](#full_text_search)
-  - [search_by_term](#search_by_term)
-  - [search_by_author](#search_by_author)
-  - [search_advanced](#search_advanced)
-  - [search_multi_source](#search_multi_source)
-  - [get_recent_books](#get_recent_books)
-- [Metadata Tools](#metadata-tools)
-  - [get_book_metadata](#get_book_metadata)
-- [Collection Tools](#collection-tools)
-  - [fetch_booklist](#fetch_booklist)
-- [Download Tools](#download-tools)
-  - [download_book_to_file](#download_book_to_file)
-- [Utility Tools](#utility-tools)
-  - [get_download_limits](#get_download_limits)
-  - [get_download_history](#get_download_history)
+## download
 
----
+| Argument | Contract |
+|---|---|
+| `ref` | Required current row ref |
+| `output_dir` | Optional directory; relative paths resolve from the server working directory, not the output root. When `ZLIBRARY_OUTPUT_ROOT` is configured, the resolved path must be inside it. Default: configured root, otherwise `./downloads`. |
+| `filename` | Optional basename; sanitized and extension forced to acquired format |
 
-## Search Tools
+Returns `path`, `bytes`, `reused`, `transfer_skipped`, `verified: "sha256"`,
+`record`, and optional `quota_estimate`.
+`transfer_skipped` means this call read the receipt and hashed the current
+published bytes without contacting a provider. `reused` means a transfer occurred
+but an identical existing file was adopted; quota may have been counted.
+Different bytes are not overwritten. An occupied predicted destination without
+a matching verified receipt, or a modified receipt artifact, is refused with
+`output_refused` before intent, authentication or transfer; the file and prior
+receipt stay unchanged. Move or rename that file or choose another `output_dir`.
+A different filename/directory creates a new destination. `record` points to
+`<path>.acq.json`.
 
-### search_books
+Record version 1 includes `state` (`intent` or `complete`), file path, bytes,
+SHA-256, known MD5, source, nested provenance, edition metadata (explicit nulls
+for unknown fields), identifiers and request context. Intent is persisted
+before authentication/transfer. When the acquired format corrects the filename,
+the initial destination lease remains held and a non-waiting canonical-target
+lease covers publication and all receipt finalization. Canonical hashed intent
+is written before alias intent and publication. Alias recovery also leases the
+canonical target before verifying/finalizing it and rechecks its identity.
+Compatible complete canonical receipts and provenance remain authoritative and
+unchanged; verified foreign identities cannot adopt even identical bytes.
+Complete receipts are re-read and re-hashed per call, not trusted from a process
+cache. Unreadable receipts (including permission/I/O errors), symlink sidecars
+and nonregular sidecars fail closed with `output_refused`, preserving provenance.
+Missing, malformed-JSON and nonobject receipts retain the absent-receipt policy.
 
-**Description:** Search for books in Z-Library by title, author, or keywords. Returns matching books with metadata including title, author, year, format, and file size. Use `exact=true` for precise title matching. Filter results by year range, language, or file format.
+In memory mode, fresh Z-Library acquisitions join the same session owner and
+login/cooldown coordination as reads, only after held-lease receipt admission and
+durable intent. Receipt hits do not enter authentication, even with missing
+credentials, cooldown or a pending login. A granted transfer is at-most-once:
+authentication rejection cannot automatically refresh and replay it. Explicit
+`per-call` mode keeps per-call authentication; LibGen/Anna's paths are unchanged.
 
-**Parameters:**
+Per-destination leases coalesce independent processes on local filesystems.
+POSIX uses O_EXCL creation and `flock`, reclaiming stale holders only under an
+inode-checked lease and unlinking while held. Live holders are not stolen because
+a transfer is slow. Windows uses native nonblocking byte-range leases on
+persistent files, released on close or process death without stale-PID checks or
+unlink; a remaining file is not a held lease. Unsupported locking returns
+`output_refused`; there is no silent uncoalesced fallback. Network-filesystem lock
+semantics are not established here.
+Output-root checks include existing symlinks but do not defend against a local
+operator racing to replace directories.
 
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| query | string | Yes | -- | Search query |
-| exact | boolean | No | `false` | Whether to perform an exact match search |
-| fromYear | integer | No | -- | Filter by minimum publication year |
-| toYear | integer | No | -- | Filter by maximum publication year |
-| languages | string[] | No | `[]` | Filter by languages (e.g., `["english", "russian"]`) |
-| extensions | string[] | No | `[]` | Filter by file extensions (e.g., `["pdf", "epub"]`) |
-| content_types | string[] | No | `[]` | Filter by content types (e.g., `["book", "article"]`) |
-| count | integer | No | `10` | Number of results to return per page |
+Quota estimates exist only after an observed daily limit. Each issued fresh
+transfer decrements the process estimate; skipped transfers do not. Estimates
+have `source`, `remaining`, `as_of` (observation time), `basis` (`observed` or
+`decremented`). Other processes can change the account count. Unknown outcomes
+and potentially quota-spending cancellation invalidate estimates until another
+live observation. Acquisition is never automatically retried.
+Corrected-target contention refuses without waiting, potentially after a
+quota-counting transfer: `request_issued: true` maps to `retry: "may_spend_quota"`
+and invalidates the estimate. A refusal before transfer does not spend quota.
 
-**Returns:** JSON array of book objects, each containing fields such as `title`, `author`, `name`, `authors`, `year`, `extension`, `filesize`, and additional metadata.
+## get_limits
 
-**Example Usage:**
+Optional `sources` (same array contract as search; default all) and `mode`
+(`local`, default, or `live`). Local mode makes no network call. It returns
+optional `default_order` and a `sources` object. Each source has `configured`,
+`search_available`, `download_available`, `operations`, and `limit.kind`:
+`daily`, `none`, `unknown`, or `unparsed`.
 
-```json
-{
-  "tool": "search_books",
-  "arguments": {
-    "query": "Being and Time Heidegger",
-    "languages": ["english"],
-    "extensions": ["pdf", "epub"],
-    "count": 5
-  }
-}
-```
+Live Z-Library mode adds `per_day`, `used_today`, `remaining`, `premium`, `as_of`
+when available. A failed lookup stays in that source's `error` entry while other
+sources' reports remain usable. LibGen and Anna's local capability reports cost
+no account calls even in live mode. Availability is not a reachability check.
 
-**Error Cases:**
-- Invalid or missing `query` parameter
-- Authentication failure (invalid or expired Z-Library credentials)
-- Network errors (Z-Library unreachable, Cloudflare block)
-- Rate limiting by Z-Library
+## get_history
 
----
+Optional `source` (default and only supported source `zlibrary`), `limit`
+(1–50, default 10), or `cursor` alone. Returns `rows` and optional `next_cursor`.
+Rows have a ref only if upstream supplied sufficient download identity.
+`downloaded_at` appears only when supplied upstream. Ordering is provider order,
+not a promise of newest-first. Account history does not describe files on disk.
 
-### full_text_search
+## Refs and cursors
 
-**Description:** Search for books containing specific text within their content. Useful for finding books that discuss particular topics, quotes, or concepts.
+Refs are opaque kind/64-bit-process-nonce/monotonic-counter handles. Their
+length is not fixed; retaining full nonce strength and counter non-reuse takes
+precedence over an eight-character example. Two processes drawing the same
+nonce is a 2^-64 per-pair aliasing bound, not an absolute no-alias claim.
 
-**Parameters:**
+This process shares a 5,000-entry LRU across clients and holds 5,000 recent
+expired-handle tombstones. Unknown, expired and other-process refs all use
+`ref_unavailable`, with the reason and kind in `detail`. Wrong-kind input is
+`invalid_argument`. Reconnect keeps handles; restart does not. Search again and
+choose the edition again after unavailability. Refs are not authorization tokens.
 
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| query | string | Yes | -- | Text to search for in book content |
-| exact | boolean | No | `false` | Whether to perform an exact match search |
-| phrase | boolean | No | `true` | Whether to search for the exact phrase (requires at least 2 words) |
-| words | boolean | No | `false` | Whether to search for individual words |
-| languages | string[] | No | `[]` | Filter by languages (e.g., `["english", "russian"]`) |
-| extensions | string[] | No | `[]` | Filter by file extensions (e.g., `["pdf", "epub"]`) |
-| content_types | string[] | No | `[]` | Filter by content types (e.g., `["book", "article"]`) |
-| count | integer | No | `10` | Number of results to return per page |
+Cursors bind operation, resolved source order, normalized arguments, limit and
+position. They are immutable continuations: repeating one re-queries the same
+Z-Library page or re-slices the same held LibGen/Anna's page. A lost reply does
+not advance an iterator. Pages re-queried upstream are not snapshots.
 
-**Returns:** JSON array of book objects containing the searched text, with the same metadata fields as `search_books`.
-
-**Example Usage:**
-
-```json
-{
-  "tool": "full_text_search",
-  "arguments": {
-    "query": "transcendental unity of apperception",
-    "phrase": true,
-    "languages": ["english"]
-  }
-}
-```
-
-**Error Cases:**
-- Invalid or missing `query` parameter
-- Single-word query with `phrase=true` (requires at least 2 words)
-- Authentication failure
-- Network errors or rate limiting
-
----
-
-### search_by_term
-
-**Description:** Search for books by conceptual term. Books in Z-Library are tagged with 60+ conceptual terms (e.g., "phenomenology", "dialectic", "epistemology"). This enables conceptual navigation beyond keyword matching.
-
-**Parameters:**
-
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| term | string | Yes | -- | Conceptual term to search for (e.g., "dialectic", "phenomenology") |
-| yearFrom | integer | No | -- | Filter by minimum publication year |
-| yearTo | integer | No | -- | Filter by maximum publication year |
-| languages | string[] | No | `[]` | Filter by languages |
-| extensions | string[] | No | `[]` | Filter by file extensions |
-| count | integer | No | `25` | Number of results to return |
-
-**Returns:** JSON array of book objects tagged with the specified conceptual term.
-
-**Example Usage:**
-
-```json
-{
-  "tool": "search_by_term",
-  "arguments": {
-    "term": "phenomenology",
-    "yearFrom": 1900,
-    "yearTo": 2020,
-    "languages": ["english"],
-    "count": 15
-  }
-}
-```
-
-**Error Cases:**
-- Invalid or missing `term` parameter
-- Term not recognized by Z-Library (returns empty results, not an error)
-- Authentication failure
-- Network errors or rate limiting
-
----
-
-### search_by_author
-
-**Description:** Advanced author search with support for various name formats. Use `exact=true` for precise matching. Filter by publication year, language, or file format. Supports "Lastname, Firstname" format.
-
-**Parameters:**
-
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| author | string | Yes | -- | Author name (supports "Lastname, Firstname" format) |
-| exact | boolean | No | `false` | Use exact author name matching |
-| yearFrom | integer | No | -- | Filter by minimum publication year |
-| yearTo | integer | No | -- | Filter by maximum publication year |
-| languages | string[] | No | `[]` | Filter by languages |
-| extensions | string[] | No | `[]` | Filter by file extensions |
-| count | integer | No | `25` | Number of results to return |
-
-**Returns:** JSON array of book objects by the specified author.
-
-**Example Usage:**
+## Errors
 
 ```json
-{
-  "tool": "search_by_author",
-  "arguments": {
-    "author": "Hegel, Georg Wilhelm Friedrich",
-    "exact": true,
-    "extensions": ["pdf"],
-    "count": 20
-  }
-}
+{"error":{"code":"ref_unavailable","operation":"download","message":"Reference unavailable (expired).","retry":"no","recovery":"Search again and choose the edition again; use its new ref.","attempts":[],"detail":{"kind":"row","reason":"expired"}}}
 ```
 
-**Error Cases:**
-- Invalid or missing `author` parameter
-- Authentication failure
-- Network errors or rate limiting
-
----
-
-### search_advanced
-
-**Description:** Advanced search with automatic separation of exact matches from fuzzy/approximate matches. Returns two arrays: `exact_matches` and `fuzzy_matches`, making it easier to distinguish precise hits from related results.
-
-**Parameters:**
-
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| query | string | Yes | -- | Search query |
-| exact | boolean | No | `false` | Whether to perform exact match search |
-| yearFrom | integer | No | -- | Filter by minimum publication year |
-| yearTo | integer | No | -- | Filter by maximum publication year |
-| count | integer | No | `10` | Number of results to return |
-
-**Returns:** JSON object with two arrays:
-- `exact_matches`: Books that precisely match the query
-- `fuzzy_matches`: Books that approximately match the query
-
-Each entry contains standard book metadata fields.
-
-**Example Usage:**
-
-```json
-{
-  "tool": "search_advanced",
-  "arguments": {
-    "query": "Critique of Pure Reason",
-    "yearFrom": 1990,
-    "count": 10
-  }
-}
-```
-
-**Error Cases:**
-- Invalid or missing `query` parameter
-- Authentication failure
-- Network errors or rate limiting
-
----
-
-### search_multi_source
-
-**Description:** Search for books in Library Genesis or Anna's Archive. This tool is an alternative to the Z-Library search tools. It needs no Z-Library account.
-
-Results from this tool can be downloaded. Pass a result to `download_book_to_file` as `bookDetails`.
-
-**Note:** Anna's Archive results contain the MD5 hash and the record URL only, unless you set `ANNAS_SECRET_KEY`. Library Genesis results contain full metadata and can be downloaded without a key.
-
-**Parameters:**
-
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| query | string | Yes | -- | Search query |
-| source | enum | No | `"auto"` | Source selection: `"auto"` (Anna's Archive if key available, else LibGen), `"annas"` (force Anna's Archive), or `"libgen"` (force LibGen) |
-| count | integer | No | `10` | Maximum number of results to return |
-
-**Returns:** JSON array of book objects with the fields `md5`, `title`, `author`, `year`, `extension`, `size`, and `source`.
-
-**Note:** `download_url` is empty for Library Genesis results. The server resolves a download link only when you request the file, because a Library Genesis link expires in less than 2.5 hours.
-
-**Example Usage:**
-
-```json
-{
-  "tool": "search_multi_source",
-  "arguments": {
-    "query": "Phenomenology of Spirit",
-    "source": "auto",
-    "count": 5
-  }
-}
-```
-
-**Error Cases:**
-- Invalid or missing `query` parameter
-- Both sources unavailable (network errors, rate limiting)
-- Invalid `source` value (must be `"auto"`, `"annas"`, or `"libgen"`)
-
-**Note:** `source="annas"` works without an API key. Anna's Archive needs a key for downloads only.
-
----
-
-### get_recent_books
-
-**Description:** Get recently added books to Z-Library. Optionally filter by file format.
-
-**Parameters:**
-
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| count | positive integer | No | `10` | Number of books to return |
-| format | string | No | -- | Filter by file format (e.g., `"pdf"`, `"epub"`) |
-
-**Returns:** JSON object `{"books": [...]}` containing recently added book objects with standard metadata fields. `count` sets the size of the recent-book window; `format` filters that window by file extension and may return fewer than `count` books when other formats are present.
-
-**Example Usage:**
-
-```json
-{
-  "tool": "get_recent_books",
-  "arguments": {
-    "count": 20,
-    "format": "epub"
-  }
-}
-```
-
-**Error Cases:**
-- Authentication failure
-- Network errors or rate limiting
-
----
-
-## Metadata Tools
-
-### get_book_metadata
-
-**Description:** Get comprehensive metadata for a book. By default returns core fields: title, author, year, publisher, language, pages, isbn, rating, cover, categories, extension, filesize. Use the `include` parameter to add optional field groups: terms (60+ conceptual keywords), booklists (11+ curated collections), ipfs (IPFS CIDs), ratings (quality score), description (full text description).
-
-**Parameters:**
-
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| bookId | string | Yes | -- | Z-Library book ID |
-| bookHash | string | Yes | -- | Book hash (can be extracted from book URL) |
-| include | string[] | No | -- | Optional field groups to include beyond core defaults. Allowed values: `"terms"`, `"booklists"`, `"ipfs"`, `"ratings"`, `"description"` |
-
-**Returns:** JSON object with core metadata fields, plus any requested optional field groups.
-
-**Example Usage:**
-
-```json
-{
-  "tool": "get_book_metadata",
-  "arguments": {
-    "bookId": "12345678",
-    "bookHash": "abc123def456",
-    "include": ["terms", "description", "ratings"]
-  }
-}
-```
-
-**Error Cases:**
-- Invalid or missing `bookId` or `bookHash`
-- Book not found (invalid ID/hash combination)
-- Authentication failure
-- Network errors or rate limiting
-
----
-
-## Collection Tools
-
-### fetch_booklist
-
-**Description:** Fetch books from an expert-curated booklist. Z-Library books belong to 11+ booklists with up to 954 books per list. Get booklist IDs and hashes from the `get_book_metadata` tool (using `include: ["booklists"]`).
-
-**Parameters:**
-
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| booklistId | string | Yes | -- | Booklist ID from book metadata |
-| booklistHash | string | Yes | -- | Booklist hash from book metadata |
-| topic | string | Yes | -- | Booklist topic name |
-| page | integer | No | `1` | Page number for pagination |
-
-**Returns:** JSON object with the booklist title, topic, and an array of book objects in the collection.
-
-**Example Usage:**
-
-```json
-{
-  "tool": "fetch_booklist",
-  "arguments": {
-    "booklistId": "42",
-    "booklistHash": "abc123",
-    "topic": "Continental Philosophy",
-    "page": 1
-  }
-}
-```
-
-**Error Cases:**
-- Invalid or missing `booklistId`, `booklistHash`, or `topic`
-- Booklist not found
-- Authentication failure
-- Network errors or rate limiting
-
----
-
-## Download Tools
-
-### download_book_to_file
-
-Downloads the original file. Start with a search result; direct ID download is
-not supported. Returns paths on the server, not document contents.
-
-| Parameter | Type | Required | Default |
-|---|---|---|---|
-| `bookDetails` | object | yes | Full object returned by search |
-| `outputDir` | string | no | `./downloads` |
-
-```json
-{
-  "tool": "download_book_to_file",
-  "arguments": {
-    "bookDetails": {"id": "123", "hash": "search-result-hash", "extension": "pdf"},
-    "outputDir": "./downloads"
-  }
-}
-```
-
-The example illustrates the shape; pass the actual complete result from search.
-Multi-source results carry `source` and `md5` instead of a Z-Library ID/hash.
-
-```json
-{"file_path": "./downloads/Author_Title_123.pdf"}
-```
-
-Saved requests asking for text processing fail before authentication, quota use,
-or byte transfer. The old false flag alone is accepted and ignored, but is no
-longer advertised. Other unknown download fields are rejected. See
-[text-processing migration](text-processing-migration.md) for exact legacy fields.
-
-## Utility Tools
-
-### get_download_limits
-
-**Description:** Get the user's current Z-Library download limits. Shows daily download quota, downloads used today, and remaining downloads.
-
-**Parameters:**
-
-None. This tool takes no parameters.
-
-**Returns:** JSON object with download limit information: `daily_limit`, `downloads_today`, `remaining`.
-
-**Example Usage:**
-
-```json
-{
-  "tool": "get_download_limits",
-  "arguments": {}
-}
-```
-
-**Error Cases:**
-- Authentication failure
-- Network errors or rate limiting
-
----
-
-### get_download_history
-
-**Description:** Get the user's Z-Library download history. Returns a list of previously downloaded books with their metadata.
-
-**Parameters:**
-
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| count | integer | No | `10` | Number of results to return |
-
-**Returns:** JSON array of previously downloaded book objects with metadata.
-
-**Example Usage:**
-
-```json
-{
-  "tool": "get_download_history",
-  "arguments": {
-    "count": 20
-  }
-}
-```
-
-**Error Cases:**
-- Authentication failure
-- Network errors or rate limiting
+Tool errors have `isError: true`; they are not JSON-RPC protocol errors.
+`source` and `retry_after_s` are omitted when unknown. Messages are under 200
+characters without raw upstream stacks or credential-bearing URLs. `attempts`
+is always an array; `detail.reason` retains sub-reasons. Independent tests
+validate the closed envelope even though the SDK does not validate error outputs.
+
+| Code | Meaning |
+|---|---|
+| `invalid_argument` | Invalid/removed tool or argument, bounds or wrong handle kind |
+| `sources_required` | No source order was supplied/configured; choices are in `detail.available` |
+| `ref_unavailable` | Expired, other-process or unknown row/cursor |
+| `unsupported_operation` | Source does not support the operation |
+| `credentials_missing` | Required account or key not configured |
+| `auth_failed` | Account/key rejection |
+| `quota_exhausted` | Anna's keyed-download router reports quota metadata with zero remaining. Z-Library EAPI download daily-limit failures currently surface as `provider_error` or `internal`, not this code |
+| `not_found` | Maps an explicit structured `not_found` reason; no current source adapter emits it. Z-Library EAPI download absence currently surfaces as `provider_error` or `internal`; empty search is not absence |
+| `provider_unreachable` | DNS, connect or TLS failure |
+| `provider_timeout` | Provider operation exceeded its budget |
+| `provider_error` | Bad status/body, block page, HTML instead of file |
+| `integrity_mismatch` | Download digest differs |
+| `breaker_open` | Dependency/destination paused or authentication backoff |
+| `all_sources_failed` | All attempted sources failed |
+| `partial_failure` | Some empty answers and some failed sources |
+| `output_refused` | Output root or destination lock admission failed |
+| `cancelled` | Client cancelled; no automatic renewed intent |
+| `outcome_unknown` | Download may have been issued but outcome is uncertain |
+| `internal` | Other internal failure |
+
+`retry: safe` means a repeat cannot spend acquisition quota under the observed
+pre-request boundary, a matching receipt, or the quota-free LibGen download route. `may_spend_quota` means a request
+may have counted and another transfer can count again; check disk receipts first.
+`no` means repeating unchanged arguments/configuration will not help. Cancellation
+on quota-counting or unknown download routes is `safe` only when no request was
+issued; otherwise it is `may_spend_quota`. Retryable LibGen download failures are
+`safe` even after issuance. This is a quota statement, not permission to ignore
+rate limits; cancellation still requires fresh intent and no download auto-retries.

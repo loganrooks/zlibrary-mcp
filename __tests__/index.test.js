@@ -1,362 +1,43 @@
-import { jest, describe, beforeEach, test, expect, afterAll } from '@jest/globals';
-
-import { z } from 'zod'; // Import zod at top level
-// Import compiled JS at top level - toolRegistry needed for schema tests
-import { start, toolRegistry } from '../dist/index.js';
-
-// =================================
-// == TEST SUITES ==================
-// =================================
-
-describe('MCP Server', () => {
-  let mockServerInstance; // Declare instance variable for cleanup
-
-  beforeEach(() => {
-    mockServerInstance = null;
-    console.error = jest.fn();
-    console.log = jest.fn();
-  });
-
-  test('should initialize MCP server with metadata', async () => {
-    jest.resetModules();
-    jest.clearAllMocks();
-
-    let capturedServerArgs = null;
-    const mockTransport = { send: jest.fn() };
-    const mockMcpServer = {
-      connect: jest.fn().mockResolvedValue(undefined),
-      tool: jest.fn(),
-      registerTool: jest.fn(), // McpServer uses .tool() for registration
-      close: jest.fn(),
-    };
-    mockServerInstance = mockMcpServer;
-
-    // Mock SDK modules using McpServer from server/mcp.js
-    jest.unstable_mockModule('@modelcontextprotocol/sdk/server/mcp.js', () => ({
-      McpServer: jest.fn().mockImplementation((serverInfo) => {
-        capturedServerArgs = serverInfo;
-        return mockMcpServer;
-      }),
-    }));
-    jest.unstable_mockModule('@modelcontextprotocol/sdk/server/stdio.js', () => ({
-      StdioServerTransport: jest.fn().mockImplementation(() => mockTransport),
-    }));
-    // Mock venv-manager INSIDE the test
-    jest.unstable_mockModule('../lib/venv-manager.js', () => ({
-      ensureVenvReady: jest.fn().mockResolvedValue(undefined),
-      getManagedPythonPath: jest.fn().mockReturnValue('/fake/python'),
-    }));
-
-    // Dynamically import modules AFTER mocks are set
-    const { McpServer } = await import('@modelcontextprotocol/sdk/server/mcp.js');
-    const { start } = await import('../dist/index.js');
-
-    await start({ testing: true });
-
-    // Assert
-    expect(McpServer).toHaveBeenCalled();
-    // McpServer takes a single arg: { name, version }
-    expect(capturedServerArgs).toEqual({
-      name: "zlibrary-mcp",
-      version: expect.any(String),
-    });
-    // McpServer uses .tool() for registration — should be called for each tool
-    expect(mockMcpServer.tool).toHaveBeenCalled();
-    expect(mockMcpServer.tool.mock.calls.length).toBeGreaterThanOrEqual(11);
-    expect(mockMcpServer.connect).toHaveBeenCalledWith(mockTransport);
-    // Startup banner goes to stderr: stdout is reserved for JSON-RPC traffic.
-    expect(console.log).not.toHaveBeenCalled();
-    expect(console.error).toHaveBeenCalledWith(
-      expect.stringContaining('[info]'),
-      'Z-Library MCP server (ESM/TS) is running via Stdio...'
-    );
-  });
-
-  test('tools/list: McpServer should register all expected tools', async () => {
-    jest.resetModules();
-    jest.clearAllMocks();
-
-    const mockTransport = { send: jest.fn() };
-    const registeredToolNames = [];
-    const mockMcpServer = {
-      connect: jest.fn().mockResolvedValue(undefined),
-      tool: jest.fn((...args) => {
-        // server.tool(name, description, shape, annotations, handler)
-        registeredToolNames.push(args[0]);
-      }),
-      registerTool: jest.fn((name) => registeredToolNames.push(name)),
-      close: jest.fn(),
-    };
-    mockServerInstance = mockMcpServer;
-
-    jest.unstable_mockModule('@modelcontextprotocol/sdk/server/mcp.js', () => ({
-      McpServer: jest.fn().mockImplementation(() => mockMcpServer),
-    }));
-    jest.unstable_mockModule('@modelcontextprotocol/sdk/server/stdio.js', () => ({
-      StdioServerTransport: jest.fn().mockImplementation(() => mockTransport),
-    }));
-    jest.unstable_mockModule('../lib/venv-manager.js', () => ({
-      ensureVenvReady: jest.fn().mockResolvedValue(undefined),
-      getManagedPythonPath: jest.fn().mockReturnValue('/fake/python'),
-    }));
-
-    const { start } = await import('../dist/index.js');
-    await start({ testing: true });
-
-    // Verify all expected tools registered
-    expect(registeredToolNames).toContain('search_books');
-    expect(registeredToolNames).toContain('download_book_to_file');
-    expect(registeredToolNames).toContain('full_text_search');
-    expect(registeredToolNames).toContain('get_download_history');
-    expect(registeredToolNames).toContain('get_download_limits');
-    expect(registeredToolNames).toContain('get_recent_books');
-    expect(registeredToolNames).toContain('get_book_metadata');
-    expect(registeredToolNames).toContain('search_by_term');
-    expect(registeredToolNames).toContain('search_by_author');
-    expect(registeredToolNames).toContain('fetch_booklist');
-    expect(registeredToolNames).toContain('search_advanced');
-  });
-
-  test('should handle McpServer instantiation exceptions gracefully', async () => {
-    jest.resetModules();
-    jest.clearAllMocks();
-
-    const mockTransport = { send: jest.fn() };
-
-    jest.unstable_mockModule('@modelcontextprotocol/sdk/server/mcp.js', () => ({
-      McpServer: jest.fn().mockImplementationOnce(() => { throw new Error('Server instantiation error'); }),
-    }));
-    jest.unstable_mockModule('@modelcontextprotocol/sdk/server/stdio.js', () => ({
-      StdioServerTransport: jest.fn().mockImplementation(() => mockTransport),
-    }));
-    jest.unstable_mockModule('../lib/venv-manager.js', () => ({
-      ensureVenvReady: jest.fn().mockResolvedValue(undefined),
-      getManagedPythonPath: jest.fn().mockReturnValue('/fake/python'),
-    }));
-
-    const { McpServer } = await import('@modelcontextprotocol/sdk/server/mcp.js');
-    const { start } = await import('../dist/index.js');
-    await start({ testing: true });
-
-    expect(McpServer).toHaveBeenCalled();
-    expect(console.error).toHaveBeenCalledWith(
-      'Failed to start MCP server:',
-      expect.objectContaining({ message: 'Server instantiation error' })
-    );
-  });
-
-  afterAll(async () => {
-    if (mockServerInstance) {
-      if (typeof mockServerInstance.disconnect === 'function') {
-        await mockServerInstance.disconnect();
-      } else if (typeof mockServerInstance.close === 'function') {
-        await mockServerInstance.close();
-      }
-    }
-  });
-}); // End MCP Server describe
-
-
-describe('Tool Handlers (Direct)', () => {
-
- beforeEach(() => {
-   console.log = jest.fn();
-   console.error = jest.fn();
- });
-
-    // Import Zod for schema testing
-    // z is imported at the top level
-
-    describe('Tool Schemas', () => {
-      test('download_book_to_file schema should reflect v2.1 changes', () => {
-        // toolRegistry is imported at the top level
-        const schema = toolRegistry.download_book_to_file.schema;
-
-        // Check input schema properties (v2.1)
-        expect(schema.shape.bookDetails).toBeDefined();
-        expect(schema.shape.id).toBeUndefined(); // Ensure old 'id' is removed
-        expect(schema.shape.format).toBeUndefined(); // Ensure old 'format' is removed
-        expect(schema.shape.outputDir).toBeDefined();
-        expect(schema.shape.process_for_rag).toBeUndefined();
-        expect(schema.shape.processed_output_format).toBeUndefined();
-      });
-    }); // End Tool Schemas describe
-
-
- describe('Handler Logic', () => {
-
-   test('search_books handler should call zlibApi.searchBooks and handle success/error', async () => {
-     jest.resetModules();
-     jest.clearAllMocks();
-     const mockSearchBooks = jest.fn();
-     jest.unstable_mockModule('../lib/zlibrary-api.js', () => ({
-       searchBooks: mockSearchBooks,
-       downloadBookToFile: jest.fn(),
-       getDownloadInfo: jest.fn(),
-       fullTextSearch: jest.fn(),
-       getDownloadHistory: jest.fn(),
-       getDownloadLimits: jest.fn(),
-       getRecentBooks: jest.fn(),
-     }));
-
-     const { toolRegistry } = await import('../dist/index.js');
-     const zlibApi = await import('../lib/zlibrary-api.js');
-
-     const handler = toolRegistry.search_books.handler;
-     const mockArgs = { query: 'test', count: 5 };
-     const validatedArgs = toolRegistry.search_books.schema.parse(mockArgs);
-     const mockResult = [{ title: 'Result Book' }];
-     mockSearchBooks.mockResolvedValueOnce(mockResult);
-
-     const response = await handler(validatedArgs);
-
-     expect(mockSearchBooks).toHaveBeenCalledWith(validatedArgs, { signal: undefined });
-     expect(response).toEqual(mockResult);
-
-     // Error case
-     const error = new Error('API Failed');
-     mockSearchBooks.mockRejectedValueOnce(error);
-     const errorResponse = await handler(validatedArgs);
-     expect(errorResponse).toEqual({ error: { message: 'API Failed' } });
-   });
-
-    test('downloadBookToFile handler should call zlibApi.downloadBookToFile (v2.1)', async () => {
-       jest.resetModules();
-       jest.clearAllMocks();
-       const mockDownloadBookToFile = jest.fn();
-       jest.unstable_mockModule('../lib/zlibrary-api.js', () => ({
-         searchBooks: jest.fn(),
-         downloadBookToFile: mockDownloadBookToFile,
-         getDownloadInfo: jest.fn(),
-         fullTextSearch: jest.fn(),
-         getDownloadHistory: jest.fn(),
-         getDownloadLimits: jest.fn(),
-         getRecentBooks: jest.fn(),
-       }));
-
-       const { toolRegistry } = await import('../dist/index.js');
-       const zlibApi = await import('../lib/zlibrary-api.js');
-
-       const handler = toolRegistry.download_book_to_file.handler;
-       const mockBookDetailsArg = { id: 'book456', url: 'http://example.com/book/456/slug', title: 'Test Download' };
-       const mockArgs = { bookDetails: mockBookDetailsArg, outputDir: '/tmp/test' };
-       const validatedArgs = toolRegistry.download_book_to_file.schema.parse(mockArgs);
-       const mockResult = { file_path: '/tmp/test/book.epub' };
-       mockDownloadBookToFile.mockResolvedValueOnce(mockResult);
-
-       const response = await handler(validatedArgs);
-
-       expect(mockDownloadBookToFile).toHaveBeenCalledWith(validatedArgs, { signal: undefined });
-       expect(response).toEqual(mockResult);
-
-      // Error case
-      const error = new Error('Download Error');
-      mockDownloadBookToFile.mockRejectedValueOnce(error);
-      const errorResponse = await handler(validatedArgs);
-      expect(errorResponse).toEqual({ error: { message: 'Download Error' } });
-    });
-
-    test('fullTextSearch handler should call zlibApi.fullTextSearch', async () => {
-       jest.resetModules();
-       jest.clearAllMocks();
-       const mockFullTextSearch = jest.fn();
-       jest.unstable_mockModule('../lib/zlibrary-api.js', () => ({
-         searchBooks: jest.fn(),
-         downloadBookToFile: jest.fn(),
-         getDownloadInfo: jest.fn(),
-         fullTextSearch: mockFullTextSearch,
-         getDownloadHistory: jest.fn(),
-         getDownloadLimits: jest.fn(),
-         getRecentBooks: jest.fn(),
-       }));
-
-       const { toolRegistry } = await import('../dist/index.js');
-       const zlibApi = await import('../lib/zlibrary-api.js');
-
-       const handler = toolRegistry.full_text_search.handler;
-       const mockArgs = { query: 'search text' };
-       const validatedArgs = toolRegistry.full_text_search.schema.parse(mockArgs);
-       const mockResult = [{ title: 'Found Book' }];
-       mockFullTextSearch.mockResolvedValueOnce(mockResult);
-
-       const response = await handler(validatedArgs);
-
-       expect(mockFullTextSearch).toHaveBeenCalledWith(validatedArgs, { signal: undefined });
-        expect(response).toEqual(mockResult);
-
-       const error = new Error('FullText Error');
-       mockFullTextSearch.mockRejectedValueOnce(error);
-       const errorResponse = await handler(validatedArgs);
-       expect(errorResponse).toEqual({ error: { message: 'FullText Error' } });
-    });
-
-    test('getDownloadHistory handler should call zlibApi.getDownloadHistory', async () => {
-       jest.resetModules();
-       jest.clearAllMocks();
-       const mockGetDownloadHistory = jest.fn();
-       jest.unstable_mockModule('../lib/zlibrary-api.js', () => ({
-         searchBooks: jest.fn(),
-         downloadBookToFile: jest.fn(),
-         getDownloadInfo: jest.fn(),
-         fullTextSearch: jest.fn(),
-         getDownloadHistory: mockGetDownloadHistory,
-         getDownloadLimits: jest.fn(),
-         getRecentBooks: jest.fn(),
-       }));
-
-       const { toolRegistry } = await import('../dist/index.js');
-       const zlibApi = await import('../lib/zlibrary-api.js');
-
-       const handler = toolRegistry.get_download_history.handler;
-       const mockArgs = { count: 5 };
-       const validatedArgs = toolRegistry.get_download_history.schema.parse(mockArgs);
-       const mockResult = [{ id: 'hist1' }];
-       mockGetDownloadHistory.mockResolvedValueOnce(mockResult);
-
-       const response = await handler(validatedArgs);
-
-       expect(mockGetDownloadHistory).toHaveBeenCalledWith(validatedArgs, { signal: undefined });
-       expect(response).toEqual(mockResult);
-
-       const error = new Error('History Error');
-       mockGetDownloadHistory.mockRejectedValueOnce(error);
-       const errorResponse = await handler(validatedArgs);
-       expect(errorResponse).toEqual({ error: { message: 'History Error' } });
-    });
-
-    test('getDownloadLimits handler should call zlibApi.getDownloadLimits', async () => {
-       jest.resetModules();
-       jest.clearAllMocks();
-       const mockGetDownloadLimits = jest.fn();
-       jest.unstable_mockModule('../lib/zlibrary-api.js', () => ({
-         searchBooks: jest.fn(),
-         downloadBookToFile: jest.fn(),
-         getDownloadInfo: jest.fn(),
-         fullTextSearch: jest.fn(),
-         getDownloadHistory: jest.fn(),
-         getDownloadLimits: mockGetDownloadLimits,
-         getRecentBooks: jest.fn(),
-       }));
-
-       const { toolRegistry } = await import('../dist/index.js');
-       const zlibApi = await import('../lib/zlibrary-api.js');
-
-       const handler = toolRegistry.get_download_limits.handler;
-       const mockArgs = {};
-       const validatedArgs = toolRegistry.get_download_limits.schema.parse(mockArgs);
-       const mockResult = { daily: 5, used: 1 };
-       mockGetDownloadLimits.mockResolvedValueOnce(mockResult);
-
-       const response = await handler(validatedArgs);
-
-       expect(mockGetDownloadLimits).toHaveBeenCalledWith({ signal: undefined });
-       expect(response).toEqual(mockResult);
-
-       const error = new Error('Limits Error');
-       mockGetDownloadLimits.mockRejectedValueOnce(error);
-       const errorResponse = await handler(validatedArgs);
-       expect(errorResponse).toEqual({ error: { message: 'Limits Error' } });
-    });
-
-  }); // End Handler Logic describe
-}); // End Tool Handlers (Direct) describe
+import { test, expect, jest, afterEach } from '@jest/globals';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
+const resources = [];
+afterEach(async () => { for (const r of resources.splice(0)) await r.close(); jest.restoreAllMocks(); });
+async function connect() {
+  const { createServer } = await import('../dist/index.js');
+  const server = createServer();
+  const client = new Client({ name: 'interface-contract', version: '1' });
+  resources.push(client, server);
+  const [a, b] = InMemoryTransport.createLinkedPair();
+  await Promise.all([server.connect(b), client.connect(a)]);
+  return client;
+}
+test('initializes source-neutral metadata and keeps credential-free local tools available', async () => {
+  const client = await connect();
+  expect(client.getServerVersion().name).toBe('book-acquisition');
+  const result = await client.callTool({ name: 'get_limits', arguments: {} });
+  expect(result.structuredContent.sources.libgen.download_available).toBe(true);
+});
+test('structured errors and text are identical JSON records for schema failures and unknown names', async () => {
+  const client = await connect();
+  for (const call of [{ name: 'search', arguments: { count: 10 } }, { name: 'never_existed', arguments: {} }]) {
+    const result = await client.callTool(call);
+    expect(result.isError).toBe(true);
+    expect(result.structuredContent.error.code).toBe('invalid_argument');
+    expect(JSON.parse(result.content[0].text)).toEqual(result.structuredContent);
+  }
+});
+test('invalid privacy configuration is rejected before accepting requests', async () => {
+  const { createServer, start } = await import('../dist/index.js');
+  const previous = process.env.ZLIBRARY_SESSION_MODE;
+  const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+  process.env.ZLIBRARY_SESSION_MODE = 'invalid-mode';
+  try {
+    expect(() => createServer()).toThrow(/ZLIBRARY_SESSION_MODE/);
+    expect(await start({ testing: true })).toBeNull();
+    expect(log).toHaveBeenCalled();
+  } finally {
+    if (previous === undefined) delete process.env.ZLIBRARY_SESSION_MODE;
+    else process.env.ZLIBRARY_SESSION_MODE = previous;
+  }
+});

@@ -60,6 +60,11 @@ def extract_metadata_from_eapi(
             "quality_score": _safe_float(book.get("qualityScore")),
         }
 
+        # Preserve edition evidence only when the upstream actually exposes it.
+        for field in ("edition", "translator"):
+            if book.get(field):
+                metadata[field] = book[field]
+
         # ISBNs
         isbn = book.get("isbn", "") or ""
         metadata["isbn_10"] = None

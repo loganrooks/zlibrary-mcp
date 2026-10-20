@@ -28,6 +28,7 @@ import { spawnSync } from 'child_process';
 import { readdirSync, readFileSync } from 'fs';
 import { logger } from './logger.js';
 import { BridgeKilledError, BridgeSpawnError, BridgeTimeoutError } from './errors.js';
+import { sanitizeSessionError } from './eapi-session.js';
 
 /**
  * Read a positive-integer millisecond budget within Node's timer range.
@@ -350,6 +351,84 @@ export function installExitHooks(): void {
   }
 }
 
+export interface ProtocolDiagnostic {
+  phase:
+    | 'request-data'
+    | 'request-end'
+    | 'request-close'
+    | 'request-error'
+    | 'request-accepted'
+    | 'grant'
+    | 'deny'
+    | 'child-exit'
+    | 'child-close'
+    | 'stdin-end'
+    | 'stdin-finish'
+    | 'stdin-close'
+    | 'stdin-error'
+    | 'failure'
+    | 'completion';
+  sequence: number;
+  elapsedMs: number;
+  demanded: boolean;
+  granted: boolean;
+  settled: boolean;
+  count?: number;
+  code?: string;
+  errno?: number;
+}
+
+/** Internal corruption identity; never a public error-code or payload carrier. */
+export class PrivateSessionProtocolError extends Error {
+  readonly privateSessionProtocolCorruption = true;
+  constructor(message: string) {
+    super(message);
+    this.name = 'PrivateSessionProtocolError';
+  }
+}
+
+const DEMAND_BODY = Buffer.from('{"type":"session_needed","terminal":true}', 'ascii');
+const DEMAND_MAGIC = Buffer.from('ZLAD', 'ascii');
+
+/** Internal lazy-v2 decoder: commit is logical readiness, NOT child success.
+ * Each complete delivered chunk must contain exactly one canonical transaction.
+ * Later bytes remain violations before AND after grant; EOF is only final drain.
+ */
+export class PrivateDemandDecoder {
+  private pending = Buffer.alloc(0);
+  private committed = false;
+  private terminal = false;
+
+  push(chunk: Buffer): boolean {
+    if (!chunk.length) return false;
+    const invalid = () => new PrivateSessionProtocolError('Invalid private session request');
+    if (this.committed || this.terminal) throw invalid();
+    if (this.pending.length + chunk.length > 7 + DEMAND_BODY.length) throw invalid();
+    this.pending = Buffer.concat([this.pending, chunk]);
+    const data = this.pending;
+    const magicLength = Math.min(4, data.length);
+    if (!data.subarray(0, magicLength).equals(DEMAND_MAGIC.subarray(0, magicLength)))
+      throw invalid();
+    if (data.length >= 5 && data[4] !== 2) throw invalid();
+    if (
+      data.length >= 7 &&
+      (data.readUInt16BE(5) > 128 || data.readUInt16BE(5) !== DEMAND_BODY.length)
+    )
+      throw invalid();
+    if (data.length < 7 + DEMAND_BODY.length) return false;
+    if (!data.subarray(7).equals(DEMAND_BODY)) throw invalid();
+    this.committed = true;
+    this.pending = Buffer.alloc(0);
+    return true;
+  }
+
+  end(): void {
+    if (this.pending.length)
+      throw new PrivateSessionProtocolError('Invalid private session request');
+    this.terminal = true;
+  }
+}
+
 export interface RunBridgeOptions {
   /** Wall-clock budget in ms. Defaults to DEFAULT_BRIDGE_TIMEOUT_MS. */
   timeoutMs?: number;
@@ -360,6 +439,13 @@ export interface RunBridgeOptions {
   /** Internal stdin input / fd 3 output. Never included in argv or diagnostics. */
   sessionInput?: Record<string, unknown>;
   onSession?: (update: unknown) => void;
+  /** Opt-in synthetic metadata only, no streams/private frames/exception text. */
+  onProtocolDiagnostic?: (event: Readonly<ProtocolDiagnostic>) => void;
+  /** Internal post-admission demand, never a public tool/session snapshot. */
+  onSessionNeeded?: (channel: {
+    grant(input: Record<string, unknown>): void;
+    deny(error: Error): void;
+  }) => void;
 }
 
 /**
@@ -382,6 +468,9 @@ export function runPythonBridge(
     DEFAULT_BRIDGE_TIMEOUT_MS,
   );
   const label = runOptions.label ?? scriptName;
+  const lazy = !!runOptions.onSessionNeeded;
+  if (lazy && runOptions.sessionInput)
+    return Promise.reject(new Error('Conflicting private session modes'));
 
   installExitHooks();
 
@@ -406,6 +495,58 @@ export function runPythonBridge(
     const processState: { tree?: ProcessTreeRecord } = {};
     let cleanupCall = () => {};
     let failWith: (error: Error, why: string) => void = () => {};
+    let childClosed = false;
+    let closeChild!: () => void;
+    const childCloseDone = new Promise<void>((done) => {
+      closeChild = done;
+    });
+    let demanded = false;
+    let granted = false;
+    let diagnosticSequence = 0;
+    const diagnosticStart = performance.now();
+    const diagnostic = (phase: ProtocolDiagnostic['phase'], count?: number, error?: any) => {
+      if (!runOptions.onProtocolDiagnostic || diagnosticSequence >= 256) return;
+      try {
+        const event: ProtocolDiagnostic = {
+          phase,
+          sequence: ++diagnosticSequence,
+          elapsedMs: Math.max(0, Math.round(performance.now() - diagnosticStart)),
+          demanded,
+          granted,
+          settled,
+        };
+        if (Number.isSafeInteger(count)) event.count = Math.min(8193, Math.max(0, count!));
+        const code = error?.code;
+        if (typeof code === 'string')
+          event.code = [
+            'EPIPE',
+            'ECONNRESET',
+            'ECONNABORTED',
+            'ERR_STREAM_DESTROYED',
+            'ETIMEDOUT',
+            'ENOENT',
+            'SIGTERM',
+            'SIGKILL',
+            'SIGINT',
+            'SIGQUIT',
+          ].includes(code)
+            ? code
+            : 'OTHER';
+        if (
+          Number.isSafeInteger(error?.errno) &&
+          error.errno >= -(2 ** 31) &&
+          error.errno < 2 ** 32
+        )
+          event.errno = error.errno;
+        runOptions.onProtocolDiagnostic(Object.freeze(event));
+      } catch {
+        /* observational only */
+      }
+    };
+    const privateSecrets: string[] =
+      typeof runOptions.sessionInput?.remix_userkey === 'string'
+        ? [runOptions.sessionInput.remix_userkey]
+        : [];
 
     const onShellError = (error: NodeJS.ErrnoException) => {
       const errnoCode = error.code ?? 'UNKNOWN_SPAWN_ERROR';
@@ -427,12 +568,36 @@ export function runPythonBridge(
     const shell = new PythonShell(scriptName, {
       ...options,
       ...(runOptions.sessionInput ? { stdio: ['pipe', 'pipe', 'pipe', 'pipe'] } : {}),
+      ...(lazy
+        ? {
+            // Windows child stdin must support IOCP, including Python3.10.
+            stdio: ['overlapped', 'pipe', 'pipe', 'pipe', 'pipe'],
+            env: {
+              ...options.env,
+              ZLIBRARY_EAPI_CHANNEL: 'lazy-v2',
+              ZLIBRARY_EAPI_HANDOFF_TIMEOUT_MS: String(timeoutMs),
+            },
+          }
+        : {}),
       // On POSIX this creates a new session/process group whose id is the
       // Python pid. OCR and other grandchildren inherit it, making the whole
       // bridge-owned tree addressable without walking /proc.
       detached: process.platform === 'win32' ? options.detached : true,
     });
     shell.on('error', onShellError);
+    shell.childProcess.once('close', () => {
+      childClosed = true;
+      closeChild();
+      diagnostic('child-close');
+    });
+    if (runOptions.onProtocolDiagnostic) {
+      shell.childProcess.once('exit', (code, signal) =>
+        diagnostic('child-exit', code ?? undefined, { code: signal }),
+      );
+      shell.stdin.on('finish', () => diagnostic('stdin-finish'));
+      shell.stdin.on('close', () => diagnostic('stdin-close'));
+      shell.stdin.on('error', (error) => diagnostic('stdin-error', undefined, error));
+    }
 
     const pid = shell.childProcess?.pid;
     if (!pid) {
@@ -444,39 +609,167 @@ export function runPythonBridge(
       return;
     }
     let privateDone = Promise.resolve();
-    if (runOptions.sessionInput) {
+    let requestDone = Promise.resolve();
+    let requestTerminal = Promise.resolve();
+    let privateUpdate: unknown;
+    let hasPrivateUpdate = false;
+    if (runOptions.sessionInput || lazy) {
       const channel = shell.childProcess.stdio[3] as Readable;
       privateDone = new Promise<void>((done) => {
         let pending = '';
-        let delivered = false;
+        let terminal = false;
         channel.setEncoding('utf8');
         channel.on('data', (chunk: string) => {
-          pending += chunk;
-          if (pending.length > 8192) {
-            failWith(new Error('Invalid private session response'), 'private channel');
+          if (settled) return;
+          if (lazy && !granted) {
+            failWith(
+              new PrivateSessionProtocolError('Invalid private session response'),
+              'private channel',
+            );
             return;
           }
-          if (!pending.includes('\n')) return;
+          pending += chunk;
+          if (Buffer.byteLength(pending) > 8192) {
+            pending = '';
+            failWith(
+              new PrivateSessionProtocolError('Invalid private session response'),
+              'private channel',
+            );
+            return;
+          }
+          const newline = pending.indexOf('\n');
+          if (newline === -1) return;
           try {
-            if (delivered || pending.trim().split('\n').length !== 1) throw new Error();
-            delivered = true;
-            runOptions.onSession?.(JSON.parse(pending.trim()));
+            if (hasPrivateUpdate || newline !== pending.length - 1) throw new Error();
+            privateUpdate = JSON.parse(pending.slice(0, newline));
+            hasPrivateUpdate = true;
+            if (typeof (privateUpdate as any)?.remix_userkey === 'string')
+              privateSecrets.push((privateUpdate as any).remix_userkey);
             pending = '';
           } catch {
-            failWith(new Error('Invalid private session response'), 'private channel');
+            failWith(
+              new PrivateSessionProtocolError('Invalid private session response'),
+              'private channel',
+            );
           }
         });
-        channel.on('end', () => {
-          if (pending) failWith(new Error('Invalid private session response'), 'private channel');
+        const terminalPrivate = () => {
+          if (terminal) return;
+          terminal = true;
+          if (!settled && pending)
+            failWith(
+              new PrivateSessionProtocolError('Invalid private session response'),
+              'private channel',
+            );
           done();
-        });
+        };
+        channel.on('end', terminalPrivate);
+        channel.on('close', terminalPrivate);
         channel.on('error', () => {
-          done();
-          failWith(new Error('Private session channel closed'), 'private channel');
+          failWith(
+            new PrivateSessionProtocolError('Private session channel closed'),
+            'private channel',
+          );
+          terminalPrivate();
         });
       });
       shell.stdin.on('error', () => {}); // A dying leader may close stdin before reading.
-      shell.stdin.write(JSON.stringify(runOptions.sessionInput) + '\n');
+      if (runOptions.sessionInput)
+        shell.stdin.write(JSON.stringify(runOptions.sessionInput) + '\n');
+    }
+    if (lazy) {
+      const request = shell.childProcess.stdio[4] as Readable;
+      const decoder = new PrivateDemandDecoder();
+      let invalid = false;
+      let physicalTerminal = false;
+      let endRequest!: () => void;
+      requestTerminal = new Promise<void>((done) => {
+        endRequest = done;
+      });
+      requestDone = new Promise<void>((done) => {
+        const corrupt = (message = 'Invalid private session request') => {
+          invalid = true;
+          done();
+          failWith(new PrivateSessionProtocolError(message), 'private request');
+        };
+        request.on('data', (chunk: Buffer) => {
+          diagnostic('request-data', chunk.length);
+          if (settled) return;
+          try {
+            if (!decoder.push(chunk)) return;
+            demanded = true;
+            diagnostic('request-accepted');
+            done(); // Logical readiness only; physical drain still gates FINAL.
+            runOptions.onSessionNeeded!({
+              grant(input) {
+                if (
+                  settled ||
+                  invalid ||
+                  runOptions.signal?.aborted ||
+                  childClosed ||
+                  shell.childProcess.exitCode !== null ||
+                  shell.childProcess.signalCode !== null
+                )
+                  return;
+                if (granted) {
+                  failWith(
+                    new PrivateSessionProtocolError('Invalid private session handoff'),
+                    'private grant',
+                  );
+                  return;
+                }
+                const frame = JSON.stringify({ v: 1, type: 'session', input }) + '\n';
+                if (Buffer.byteLength(frame) > 8192) {
+                  failWith(
+                    new PrivateSessionProtocolError('Invalid private session handoff'),
+                    'private grant',
+                  );
+                  return;
+                }
+                granted = true; // Atomic once before the write; never replay.
+                diagnostic('grant');
+                if (typeof input.remix_userkey === 'string')
+                  privateSecrets.push(input.remix_userkey);
+                shell.stdin.end(frame, () => diagnostic('stdin-end'));
+              },
+              deny(error) {
+                if (settled) return;
+                diagnostic('deny');
+                shell.stdin.end('{"v":1,"type":"denied","code":"auth_unavailable"}\n', () =>
+                  diagnostic('stdin-end'),
+                );
+                failWith(error, 'private session denied');
+              },
+            });
+          } catch {
+            corrupt();
+          }
+        });
+        const terminalRequest = () => {
+          if (physicalTerminal) return;
+          physicalTerminal = true;
+          try {
+            if (!settled) decoder.end();
+          } catch {
+            corrupt();
+          }
+          done(); // Empty physical terminal is the receipt/no-demand case.
+          endRequest();
+        };
+        request.on('end', () => {
+          diagnostic('request-end');
+          terminalRequest();
+        });
+        request.on('close', () => {
+          diagnostic('request-close');
+          terminalRequest();
+        });
+        request.on('error', (error) => {
+          diagnostic('request-error', undefined, error);
+          corrupt('Private session request channel closed');
+          terminalRequest();
+        });
+      });
     }
 
     const treeRecord: ProcessTreeRecord = { shell, pid, label };
@@ -520,12 +813,24 @@ export function runPythonBridge(
     failWith = (error: Error, why: string) => {
       if (settled) return;
       settled = true;
+      diagnostic('failure', undefined, error);
       terminate(why);
       // Leave the shell registered until terminate's grace window elapses so
       // a shutdown in the meantime still SIGKILLs it.
       clearTimeout(timer);
       if (runOptions.signal) runOptions.signal.removeEventListener('abort', onAbort);
-      reject(error);
+      if (lazy || runOptions.sessionInput) {
+        sanitizeSessionError(error, privateSecrets);
+        const finishFailure = () => {
+          shell.stdin.destroy();
+          (shell.childProcess.stdio[3] as Readable)?.destroy();
+          (shell.childProcess.stdio[4] as Readable)?.destroy();
+          monitorTree(treeRecord);
+          reject(error);
+        };
+        if (childClosed) finishFailure();
+        else shell.childProcess.once('close', finishFailure);
+      } else reject(error);
     };
 
     function onAbort() {
@@ -552,14 +857,34 @@ export function runPythonBridge(
       if (stderrLines.length > MAX_STDERR_LINES) stderrLines.shift();
     });
 
-    shell.end(async (err: any) => {
-      if (runOptions.sessionInput) await privateDone;
+    const finish = async (err: any) => {
+      if (runOptions.sessionInput || lazy)
+        await Promise.all([childCloseDone, privateDone, requestDone, requestTerminal]);
       if (settled) {
         cleanupCall();
         monitorTree(treeRecord);
         return;
       }
+      if (lazy && demanded && !granted) {
+        failWith(
+          new PrivateSessionProtocolError('Private session handoff incomplete'),
+          'private grant',
+        );
+        return;
+      }
+      if (hasPrivateUpdate) {
+        try {
+          runOptions.onSession?.(privateUpdate);
+        } catch {
+          failWith(
+            new PrivateSessionProtocolError('Invalid private session response'),
+            'private channel',
+          );
+          return;
+        }
+      }
       settled = true;
+      diagnostic('completion');
       cleanupCall();
       // A successful direct child can leave detached-stdio descendants in its
       // process group. Preserve its output/result, but bound ownership of the
@@ -585,11 +910,22 @@ export function runPythonBridge(
         if (stderrLines.length > 0 && !err.stderr) {
           err.stderr = stderrLines.join('\n');
         }
+        if (lazy) sanitizeSessionError(err, privateSecrets);
         reject(err);
       } else {
         resolve(output);
       }
-    });
+    };
+    if (lazy) {
+      // PythonShell.end closes stdin; lazy children must keep it until grant/denial.
+      let pythonError: Error | undefined;
+      shell.on('pythonError', (error) => {
+        pythonError = error;
+      });
+      shell.once('close', () => {
+        void finish(pythonError);
+      });
+    } else shell.end(finish);
   });
 }
 

@@ -84,16 +84,16 @@ production.
 
 Two behavioural decisions that are easy to reverse by accident:
 
-- **Downloads start from a search result, and there is no direct-from-ID path.**
-  `download_book_to_file` takes the `bookDetails` object a search returned.
-  `lib/python_bridge.py::download_book` then routes multi-source results through
-  `SourceRouter` and Z-Library results through `EAPIClient.download_file`, whose link
-  comes from the JSON EAPI. **Neither path scrapes a book detail page** — the
-  detail-page scraping described in [ADR-002](docs/adr/ADR-002-Download-Workflow-Redesign.md)
-  predates the Phase 7 EAPI migration and no longer exists in the code. The part of
-  ADR-002 that still holds is the search-result-first workflow, not the mechanism.
-- **`get_book_by_id` is deprecated** as unreliable ([ADR-003](docs/adr/ADR-003-Handle-ID-Lookup-Failure.md)).
-  Find books with `search_books`.
+- **Selections are process-local refs, not caller-supplied records or IDs.**
+  The five public tools are `search`, `get_book`, `download`, `get_limits` and
+  `get_history`. `get_book` and `download` accept a current row's `ref`;
+  acquisition goes through the bridge's `acquire_book` operation. Existing
+  internal legacy facades are not registered MCP aliases. For saved-call
+  migration and receipt/reuse semantics, read
+  [the interface migration](docs/interface-migration.md).
+- **There is no direct-from-ID public lookup.** Find and select a row with
+  `search`; account history can also provide downloadable refs. The unstable-ID
+  rationale remains in [ADR-003](docs/adr/ADR-003-Handle-ID-Lookup-Failure.md).
 
 The full tool list lives in `README.md` and is checked against the code by
 `scripts/validate-readme-tools.sh` in CI — add a tool, update the README in the same
@@ -163,7 +163,7 @@ defect with a clock on it, and `npm run audit:release` will say so.
 
 **Secrets** live in the environment, never in code or committed files. `ZLIBRARY_EMAIL`
 and `ZLIBRARY_PASSWORD` are **required for Z-Library operations only**, not for the server
-as a whole: `src/index.ts::validateCredentials` deliberately warns and continues when they
+as a whole: `src/index.ts::start` deliberately warns and continues when they
 are absent, because LibGen search and download need no account. A credential-free LibGen
 setup is supported — do not turn that warning into fatal startup validation.
 `ZLIBRARY_MIRROR` is optional.

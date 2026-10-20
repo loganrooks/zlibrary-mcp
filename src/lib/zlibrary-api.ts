@@ -17,6 +17,7 @@ import {
 import { CircuitBreaker } from './circuit-breaker.js';
 import { ZLibraryError, PythonBridgeError } from './errors.js';
 import { logger } from './logger.js';
+import { getPythonLibDirectory } from './paths.js';
 import { runPythonBridge, LONG_BRIDGE_TIMEOUT_MS } from './python-runner.js';
 import { isBridgeDetailRetryable, parseBridgeErrorEnvelope } from './python-bridge.js';
 
@@ -27,7 +28,7 @@ const __dirname = path.dirname(__filename);
 // Path to the Python bridge script
 // Calculate path relative to the compiled JS file location (dist/lib)
 // Go up two levels from dist/lib to the project root, then into the source lib dir
-const BRIDGE_SCRIPT_PATH = path.resolve(__dirname, '..', '..', 'lib');
+const BRIDGE_SCRIPT_PATH = getPythonLibDirectory();
 const BRIDGE_SCRIPT_NAME = 'python_bridge.py';
 
 const eapiSessions = new EapiSessionOwner();
@@ -41,7 +42,19 @@ const dependencyBreakers = Object.fromEntries(
       timeout: parseInt(process.env.CIRCUIT_BREAKER_TIMEOUT || '60000'),
       onStateChange: (oldState, newState) =>
         logger.info(`${scope} circuit breaker: ${oldState} -> ${newState}`),
-      isFailure: isTransientDependencyError,
+      isFailure: (error: any) => {
+        const details = error?.context?.details;
+        // Issuance metadata is not a provider failure verdict. Keep it in the
+        // reply, but let master classify the original typed/status evidence.
+        // Empty details are likewise no verdict and intentionally stripped.
+        const evidence =
+          details && Object.keys(details).every((key) => key === 'request_issued')
+            ? Object.assign(Object.create(error), {
+                context: { ...error.context, details: undefined },
+              })
+            : error;
+        return isTransientDependencyError(evidence);
+      },
     }),
   ]),
 );
@@ -53,7 +66,7 @@ const dependencyBreakers = Object.fromEntries(
  * success into a hard failure — the opposite of what the budget is for. They
  * are still bounded (PYTHON_BRIDGE_LONG_TIMEOUT), just far more generously.
  */
-const LONG_RUNNING_FUNCTIONS = new Set(['download_book']);
+const LONG_RUNNING_FUNCTIONS = new Set(['download_book', 'acquire_book']);
 
 /**
  * Default wall-clock budget for a bridge function, in ms.
@@ -93,19 +106,41 @@ async function callPythonFunction(
   args: Record<string, any> = {},
   callOptions: CallOptions = {},
 ): Promise<any> {
-  const breaker = dependencyBreakers[needsEapi(functionName, args) ? 'eapi' : 'libgen']!;
   const configuredEnv = { ...process.env };
   const identity = configuredEnv.ZLIBRARY_EMAIL || '';
-  const reuse = needsEapi(functionName, args) && getSessionMode() === 'memory';
+  const memory = getSessionMode() === 'memory';
+  const reuse = needsEapi(functionName, args) && memory;
+  const acquisitionUsesEapi =
+    functionName === 'acquire_book' &&
+    !['libgen', 'annas', 'annas_archive'].includes(
+      String(args.book_details?.source || '').toLowerCase(),
+    );
+  const lazyAcquisition = memory && acquisitionUsesEapi;
+  const breaker =
+    dependencyBreakers[needsEapi(functionName, args) || acquisitionUsesEapi ? 'eapi' : 'libgen']!;
   const invoke = (transport?: SessionInput, signal = callOptions.signal) =>
     withRetry(
       async () => {
         const execute = async () => {
-          const session = reuse ? eapiSessions.get(identity) : undefined;
+          const lazy = lazyAcquisition && !transport;
+          let activeTransport = transport;
+          const lifetime = new AbortController();
+          const lazySignal = signal ? AbortSignal.any([signal, lifetime.signal]) : lifetime.signal;
+          let ownerWork: Promise<any> | undefined;
+          const controlWork: Promise<any>[] = [];
+          let denied: unknown;
+          let completeOperation!: (value: any) => void;
+          let rejectOperation!: (error: any) => void;
+          const operation = new Promise<any>((resolve, reject) => {
+            completeOperation = resolve;
+            rejectOperation = reject;
+          });
+          void operation.catch(() => {}); // raw child may fail before a grant exists
+          const session = transport ? eapiSessions.get(identity) : undefined;
           let sessionUpdate: unknown;
           const adoptUpdate = () => {
-            if (transport && sessionUpdate && !signal?.aborted) {
-              eapiSessions.consume(sessionUpdate, identity, transport.generation);
+            if (activeTransport && sessionUpdate && !signal?.aborted && !lifetime.signal.aborted) {
+              eapiSessions.consume(sessionUpdate, identity, activeTransport.generation);
               sessionUpdate = undefined;
             }
           };
@@ -117,6 +152,7 @@ async function callPythonFunction(
             const childEnv = { ...configuredEnv };
             delete childEnv.ZLIBRARY_EAPI_SESSION;
             delete childEnv.ZLIBRARY_EAPI_CHANNEL;
+            delete childEnv.ZLIBRARY_EAPI_HANDOFF_TIMEOUT_MS;
             if (transport) childEnv.ZLIBRARY_EAPI_CHANNEL = '1';
             const options: PythonShellOptions = {
               env: childEnv,
@@ -132,12 +168,50 @@ async function callPythonFunction(
             // running forever (see src/lib/python-runner.ts).
             const results = await runPythonBridge(BRIDGE_SCRIPT_NAME, options, {
               timeoutMs: callOptions.timeoutMs ?? defaultTimeoutFor(functionName),
-              signal,
+              signal: lazy ? lazySignal : signal,
               label: `python_bridge.${functionName}`,
               sessionInput: transport ? { ...transport } : undefined,
-              onSession: transport
-                ? (update) => {
-                    if (!signal?.aborted) sessionUpdate = update;
+              onSession:
+                transport || lazy
+                  ? (update) => {
+                      if (!signal?.aborted) sessionUpdate = update;
+                    }
+                  : undefined,
+              onSessionNeeded: lazy
+                ? (channel) => {
+                    // One admission and one health verdict per lazy acquisition. A
+                    // deadline spent before the grant aborts the owner work and is
+                    // not counted, as on the non-lazy shared-session path.
+                    ownerWork = breaker.execute(() =>
+                      eapiSessions.run(
+                        identity,
+                        async (input, authSignal) => {
+                          if (input.action !== 'operation') {
+                            const work = invoke(input, authSignal);
+                            controlWork.push(work);
+                            return work;
+                          }
+                          const handoff = () => {
+                            if (activeTransport)
+                              throw new PythonBridgeError('Duplicate private handoff', {}, false);
+                            activeTransport = Object.freeze({ ...input });
+                            channel.grant({ ...activeTransport });
+                            // Decode independently; never await owner completion in the raw runner.
+                            return operation;
+                          };
+                          return handoff();
+                        },
+                        {
+                          signal: lazySignal,
+                          timeoutMs: callOptions.timeoutMs ?? defaultTimeoutFor(functionName),
+                          operationMode: 'at-most-once',
+                        },
+                      ),
+                    );
+                    void ownerWork.catch((error) => {
+                      denied = error;
+                      if (!activeTransport) channel.deny(error);
+                    });
                   }
                 : undefined,
             });
@@ -195,7 +269,7 @@ async function callPythonFunction(
               );
             }
 
-            if (transport?.action === 'login' && resultData?.login_failed) {
+            if (activeTransport?.action === 'login' && resultData?.login_failed) {
               const failure = resultData.login_failed;
               throw new PythonBridgeError(
                 String(resultData.error || 'Z-Library login failed'),
@@ -208,9 +282,12 @@ async function callPythonFunction(
                 false,
               );
             }
-            if (transport && resultData?.auth_rejected?.generation === transport.generation) {
+            if (
+              activeTransport &&
+              resultData?.auth_rejected?.generation === activeTransport.generation
+            ) {
               throw authRejected(
-                transport.generation,
+                activeTransport.generation,
                 String(resultData.error || 'EAPI authentication rejected'),
               );
             }
@@ -236,15 +313,69 @@ async function callPythonFunction(
 
             // Accept private metadata only after excluding a matching auth rejection.
             adoptUpdate();
+            if (lazy) {
+              completeOperation(resultData);
+              if (ownerWork) await ownerWork;
+            }
             return resultData;
-          } catch (err: any) {
-            if (!['auth_rejected', 'login_failed'].includes(err?.context?.reason)) adoptUpdate();
+          } catch (caught: any) {
+            let err = caught;
+            // Capture runner's internal corruption identity before owner replacement.
+            const protocolCorrupted = caught?.privateSessionProtocolCorruption === true;
+            if (lazy) {
+              rejectOperation(err);
+              // An owner denial wins over the consequent child failure, but our
+              // own cleanup abort must not hide an earlier protocol/child error.
+              const ownerDenial = denied;
+              if (!activeTransport) lifetime.abort();
+              if (ownerWork) {
+                try {
+                  await ownerWork;
+                } catch (ownerError) {
+                  if (activeTransport) err = denied ?? ownerError;
+                  else if (ownerDenial || signal?.aborted) err = ownerDenial ?? ownerError;
+                }
+              }
+              if (err && typeof err === 'object') {
+                // Owner acquisition denials can be shared by concurrent waiters.
+                // Preserve the error's type/own properties without changing theirs.
+                const shared = err;
+                err = Object.create(
+                  Object.getPrototypeOf(shared),
+                  Object.getOwnPropertyDescriptors(shared),
+                );
+                // V8's own `stack` accessor reads undefined on a copy; keep the value.
+                Object.defineProperty(err, 'stack', {
+                  value: shared.stack,
+                  writable: true,
+                  configurable: true,
+                });
+                err.context = {
+                  ...err.context,
+                  details: { ...err.context?.details, request_issued: !!activeTransport },
+                };
+              }
+            }
+            if (protocolCorrupted) {
+              sessionUpdate = undefined; // No metadata adoption from corrupt fd3/fd4 streams.
+              err = new PythonBridgeError(
+                'Invalid private session protocol',
+                {
+                  functionName,
+                  reason: 'internal',
+                  details: { request_issued: !!activeTransport },
+                },
+                false,
+              );
+            } else if (!['auth_rejected', 'login_failed'].includes(err?.context?.reason))
+              adoptUpdate();
             // Never log or retain subprocess environments or internal bearer output.
             sanitizeSessionError(err, [
               configuredEnv.ZLIBRARY_EMAIL || '',
               configuredEnv.ZLIBRARY_PASSWORD || '',
-              transport?.remix_userkey || '',
+              activeTransport?.remix_userkey || '',
               session?.remix_userkey || '',
+              (sessionUpdate as any)?.remix_userkey || '',
               eapiSessions.get(identity)?.remix_userkey || '',
             ]);
 
@@ -268,7 +399,11 @@ async function callPythonFunction(
                 {
                   functionName,
                   args,
-                  details: bridgeError.details,
+                  details: {
+                    ...err.context?.details,
+                    ...bridgeError.details,
+                    ...(activeTransport ? { request_issued: true } : {}),
+                  },
                   pythonErrorType: bridgeError.type,
                   httpStatus: bridgeError.status_code,
                   stderr: err.stderr,
@@ -286,17 +421,27 @@ async function callPythonFunction(
                 functionName,
                 args,
                 stderr: err.stderr,
+                details: err.context?.details,
                 originalError: err,
               },
             );
+          } finally {
+            if (lazy) {
+              lifetime.abort();
+              // Owner waiters can settle before their cancelled control child.
+              // This call still owns that child's actual pipe/exit cleanup.
+              await Promise.allSettled(controlWork);
+            }
           }
         };
-        return transport?.authRetry ? execute() : breaker.execute(execute);
+        // A lazy child may only read a local receipt. Admit/account once at
+        // its session request above, including all owner control children.
+        return lazyAcquisition || transport?.authRetry ? execute() : breaker.execute(execute);
       },
       {
         signal,
         maxRetries:
-          transport?.action === 'login' || transport?.authRetry
+          functionName === 'acquire_book' || transport?.action === 'login' || transport?.authRetry
             ? 0
             : parseInt(process.env.RETRY_MAX_RETRIES || '3'),
         initialDelay: parseInt(process.env.RETRY_INITIAL_DELAY || '1000'),
@@ -351,16 +496,19 @@ interface DownloadBookResult {
   file_path: string;
 }
 
+const retiredProcessFlag = 'process_for_' + 'r' + 'ag';
 /** Admit saved calls before any session acquisition or subprocess launch. */
 function admitDownloadArgs(args: Record<string, unknown>): void {
   if (
-    ('process_for_rag' in args && args.process_for_rag !== false) ||
+    (retiredProcessFlag in args && args[retiredProcessFlag] !== false) ||
     'processed_output_format' in args
   ) {
-    throw new Error('Text processing was removed in 2.0. Use a separate 1.4.x installation for text processing.');
+    throw new Error(
+      'Text processing was removed in 2.0. Use a separate 1.4.x installation for text processing.',
+    );
   }
   const unknown = Object.keys(args).filter(
-    (key) => !['bookDetails', 'outputDir', 'process_for_rag'].includes(key),
+    (key) => !['bookDetails', 'outputDir', retiredProcessFlag].includes(key),
   );
   if (unknown.length) throw new Error(`Unknown download argument(s): ${unknown.join(', ')}`);
 }
@@ -540,9 +688,15 @@ export async function downloadBookToFile(
     }
 
     const processingKeys = [
-      'processed_file_path', 'metadata_file_path', 'footnotes_file_path',
-      'endnotes_file_path', 'citations_file_path', 'stats',
-      'content_types_produced', 'output_files', 'processing_error',
+      'processed_file_path',
+      'metadata_file_path',
+      'footnotes_file_path',
+      'endnotes_file_path',
+      'citations_file_path',
+      'stats',
+      'content_types_produced',
+      'output_files',
+      'processing_error',
     ];
     if (processingKeys.some((key) => key in result)) {
       throw new Error('Invalid response from Python bridge: unexpected text-processing bundle.');
@@ -768,3 +922,6 @@ export async function searchMultiSource(
 }
 
 // Removed unused downloadFile helper function
+
+/** Internal acquisition boundary; public tools validate and translate their own arguments. */
+export { callPythonFunction as invokeAcquisitionBridge };

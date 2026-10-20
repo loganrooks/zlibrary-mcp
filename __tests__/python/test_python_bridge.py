@@ -2604,7 +2604,10 @@ class TestPartialTransferRecovery:
             requested_range = request.headers.get("Range")
             requests.append(requested_range)
             if requested_range is None:
-                return httpx.Response(200, stream=DroppedBody())
+                if len(requests) == 1:
+                    return httpx.Response(200, stream=DroppedBody())
+                assert terminal == "416"
+                return httpx.Response(200, content=body)
             if requested_range == "bytes=65536-":
                 return httpx.Response(
                     206,
@@ -2625,8 +2628,6 @@ class TestPartialTransferRecovery:
                 )
             return httpx.Response(416, headers={"Content-Range": "bytes */66536"})
 
-        if terminal == "416":
-            expected = body[:66536]
         client_type = httpx.AsyncClient
         mocker.patch(
             "httpx.AsyncClient",
@@ -2635,7 +2636,7 @@ class TestPartialTransferRecovery:
             ),
         )
         config = python_bridge.get_source_config()
-        config.download_resume_attempts = 1 if terminal == "budget" else 2
+        config.download_resume_attempts = {"budget": 1, "416": 3}.get(terminal, 2)
         operation = python_bridge._download_url_to_file(
             "https://mirror.example/book",
             str(tmp_path),
@@ -2647,8 +2648,8 @@ class TestPartialTransferRecovery:
         assert Path(result).read_bytes() == expected
         assert list(tmp_path.iterdir()) == [Path(result)]
         assert requests == [None, "bytes=65536-"] + (
-            [] if terminal in {"budget", "416"} else ["bytes=66536-"]
-        )
+            [] if terminal == "budget" else ["bytes=66536-"]
+        ) + ([None] if terminal == "416" else [])
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("next_headers", [{"content-range": "bytes */*"}, {}])
@@ -2720,10 +2721,10 @@ class TestPartialTransferRecovery:
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("digest", ["", "not-an-md5"])
-    async def test_download_without_expected_digest_fails_before_transfer(
+    async def test_download_rejects_invalid_md5_before_transfer(
         self, digest, tmp_path, mocker
     ):
-        """Missing digest authority cannot create a stage or contact a provider."""
+        """Required-MD5 validation rejects empty or invalid input before transfer."""
         ScriptedTransport([]).install(mocker)
         output = tmp_path / "download"
         with pytest.raises(ValueError, match="normalized 32-hex MD5"):
@@ -2734,7 +2735,7 @@ class TestPartialTransferRecovery:
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("outer", [False, True], ids=["direct", "provider-chain"])
-    @pytest.mark.parametrize("terminal", ["200", "206", "416"])
+    @pytest.mark.parametrize("terminal", ["200", "206", "416", "wildcard"])
     async def test_completed_body_validation_deadline_stays_timeout(
         self, terminal, outer, tmp_path, mocker
     ):
@@ -2747,7 +2748,11 @@ class TestPartialTransferRecovery:
                     body=RESUME_BODY[RESUME_CUT:],
                     status_code=206,
                     headers={
-                        "content-range": content_range(RESUME_CUT, len(RESUME_BODY))
+                        "content-range": (
+                            f"bytes {RESUME_CUT}-{len(RESUME_BODY) - 1}/*"
+                            if terminal == "wildcard"
+                            else content_range(RESUME_CUT, len(RESUME_BODY))
+                        )
                     },
                     fail_after=len(RESUME_BODY) - RESUME_CUT
                     if terminal == "416"
@@ -2808,7 +2813,73 @@ class TestPartialTransferRecovery:
                 )
         assert caught.value.reason == "read_timeout"
         assert hashing
-        assert len(transport.requests) == {"200": 1, "206": 2, "416": 3}[terminal]
+        expected_requests = {"200": 1, "206": 2, "416": 3, "wildcard": 2}
+        assert len(transport.requests) == expected_requests[terminal]
+        assert not list(tmp_path.iterdir())
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("outer", [False, True], ids=["direct", "provider-chain"])
+    async def test_wildcard_mismatch_recovery_deadline_is_partial_transfer(
+        self, outer, tmp_path, mocker
+    ):
+        """A mismatching stage is incomplete again while awaiting more bytes."""
+        corrupt = RESUME_BODY[:-1] + b"!"
+
+        class PausingResponse(ScriptedResponse):
+            async def __aenter__(self):
+                await asyncio.sleep(30)
+                return self
+
+        transport = ScriptedTransport(
+            [
+                ScriptedResponse(body=corrupt, fail_after=RESUME_CUT),
+                ScriptedResponse(
+                    body=corrupt[RESUME_CUT:],
+                    status_code=206,
+                    headers={
+                        "content-range": f"bytes {RESUME_CUT}-{len(corrupt) - 1}/*"
+                    },
+                ),
+                PausingResponse(),
+            ]
+        ).install(mocker)
+        config = python_bridge.get_source_config()
+        config.download_timeout = 0.03
+        config.download_resume_attempts = 2
+
+        async def candidates(_md5, source):
+            yield DownloadResult(
+                url="https://mirror.example/book", source=SourceType.LIBGEN
+            )
+            pytest.fail("the shared deadline must not admit another mirror")
+
+        mocker.patch(
+            "python_bridge.get_source_router",
+            new=AsyncMock(
+                return_value=SimpleNamespace(
+                    iter_download_candidates=candidates, config=config
+                )
+            ),
+        )
+        with pytest.raises(ProviderResponseError) as caught:
+            if outer:
+                await python_bridge._fetch_from_source(
+                    {"md5": RESUME_DIGEST, "source": "libgen"}, str(tmp_path)
+                )
+            else:
+                await python_bridge._download_url_to_file(
+                    "https://mirror.example/book",
+                    str(tmp_path),
+                    RESUME_DIGEST,
+                    "libgen",
+                    config=config,
+                )
+        assert caught.value.reason == "partial_transfer"
+        assert transport.ranges == [
+            None,
+            f"bytes={RESUME_CUT}-",
+            f"bytes={len(corrupt)}-",
+        ]
         assert not list(tmp_path.iterdir())
 
     @pytest.mark.asyncio

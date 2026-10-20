@@ -1392,12 +1392,18 @@ async def _download_url_to_file(
                             # A fully delivered wildcard slice may already
                             # complete the file. Only its expected digest can
                             # establish that without another server response.
+                            # Hashing is completed-body validation for both
+                            # the local deadline and the caller's progress view.
+                            body_complete = True
+                            observe_progress()
                             digest = _md5_digest()
                             with open(attempt_path, "rb") as handle:
                                 while chunk := handle.read(65536):
                                     digest.update(chunk)
                                     await asyncio.sleep(0)
                             if digest.hexdigest() != expected_md5:
+                                body_complete = False
+                                observe_progress()
                                 raise httpx.RemoteProtocolError(
                                     f"range ended at {written} with unknown total"
                                 )

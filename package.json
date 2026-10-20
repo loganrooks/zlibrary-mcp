@@ -64,6 +64,7 @@
     "tsconfig.json",
     "docs/RELEASE_PROCESS.md",
     "docs/text-processing-migration.md",
+    "docs/interface-migration.md",
     "docs/api.md",
     "scripts/README.md",
     "VISION.md",

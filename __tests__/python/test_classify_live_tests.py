@@ -103,6 +103,35 @@ def test_passing_suite(classifier, tmp_path):
     assert classifier.classify(0, write_report(tmp_path))["status"] == "passed"
 
 
+def test_all_skipped_suite_claims_no_authenticated_coverage(classifier, tmp_path):
+    result = classifier.classify(0, write_report(tmp_path, skipped=True))
+    assert result["blocked"] is False
+    assert result["status"] == "skipped"
+    assert "0 passed; 1 skipped" in result["detail"]
+    assert "no authenticated coverage" in result["detail"].lower()
+
+
+def test_partly_skipped_suite_reports_pass_and_skip_counts(classifier, tmp_path):
+    report = write_report(tmp_path, skipped=True)
+    tree = ET.parse(report)
+    suite = tree.find("testsuite")
+    ET.SubElement(suite, "testcase", name="test_pass_one")
+    ET.SubElement(suite, "testcase", name="test_pass_two")
+    tree.write(report)
+    result = classifier.classify(0, report)
+    assert result["status"] == "passed"
+    assert result["blocked"] is False
+    assert "2 passed; 1 skipped" in result["detail"]
+
+
+@pytest.mark.parametrize("exit_code", [1, 2, 3, 4, 5, -9, 127])
+def test_skips_do_not_hide_nonzero_exit_codes(classifier, tmp_path, exit_code):
+    assert (
+        classifier.classify(exit_code, write_report(tmp_path, skipped=True))["status"]
+        == "failed"
+    )
+
+
 def test_cli_emits_status_block_flag_and_summary(tmp_path):
     report = write_report(tmp_path, [CONNECT_SETUP])
     output = tmp_path / "github-output"
@@ -121,6 +150,35 @@ def test_cli_emits_status_block_flag_and_summary(tmp_path):
     assert "status=failed\n" in output.read_text()
     assert "blocked=false\n" in output.read_text()
     assert "Live suite: failed; 1 failure(s); pytest exit 1." in summary.read_text()
+
+
+@pytest.mark.parametrize("skipped", [True, False])
+def test_cli_warns_only_for_skipped_authenticated_coverage(tmp_path, skipped):
+    report = write_report(tmp_path, skipped=skipped)
+    output = tmp_path / "github-output"
+    summary = tmp_path / "summary"
+    run = subprocess.run(
+        [sys.executable, str(SCRIPT), "--exit-code", "0", "--junitxml", str(report)],
+        env={
+            **os.environ,
+            "GITHUB_OUTPUT": str(output),
+            "GITHUB_STEP_SUMMARY": str(summary),
+        },
+        capture_output=True,
+        text=True,
+    )
+    assert run.returncode == 0, run.stderr
+    status = "skipped" if skipped else "passed"
+    assert output.read_text() == f"status={status}\nblocked=false\n"
+    assert f"Live suite: {status};" in summary.read_text()
+    warnings = [
+        line for line in run.stdout.splitlines() if line.startswith("::warning::")
+    ]
+    if skipped:
+        assert len(warnings) == 1
+        assert "live suite produced no authenticated coverage" in warnings[0].lower()
+    else:
+        assert warnings == []
 
 
 def test_actual_pytest_reports_are_classified_offline(classifier, tmp_path):
@@ -178,13 +236,18 @@ def workflow():
 
 
 @pytest.mark.parametrize(
-    "problems,expected",
-    [([WALL], "failed"), ([WALL, ("failure", "KeyError: books")], "failed")],
+    "problems,skipped,exit_code,expected",
+    [
+        ([WALL], False, 1, "failed"),
+        ([WALL, ("failure", "KeyError: books")], False, 1, "failed"),
+        ([], True, 0, "skipped"),
+        ([], False, 0, "passed"),
+    ],
 )
 def test_workflow_live_step_classifies_and_retains_evidence(
-    workflow, tmp_path, problems, expected
+    workflow, tmp_path, problems, skipped, exit_code, expected
 ):
-    report = write_report(tmp_path, problems)
+    report = write_report(tmp_path, problems, skipped=skipped)
     report = report.rename(tmp_path / "recorded.xml")
     output = tmp_path / "github-output"
     fake_uv = tmp_path / "uv"
@@ -194,7 +257,7 @@ def test_workflow_live_step_classifies_and_retains_evidence(
         f"#!{sys.executable}\nimport os, sys, shutil\nfrom pathlib import Path\n"
         "if sys.argv[1:3] == ['run', 'pytest']:\n"
         "    shutil.copyfile(os.environ['SYNTHETIC_REPORT'], 'live.xml')\n"
-        "    print('offline pytest log')\n    sys.exit(1)\n"
+        f"    print('offline pytest log')\n    sys.exit({exit_code})\n"
         "assert sys.argv[1:3] == ['run', 'python']\n"
         f"os.execv(sys.executable, [sys.executable, str(Path({str(ROOT)!r}) / sys.argv[3]), *sys.argv[4:]])\n"
     )
@@ -239,6 +302,9 @@ def test_workflow_live_step_classifies_and_retains_evidence(
     assert f"status={expected}\n" in output.read_text()
     assert "blocked=false\n" in output.read_text()
     assert "offline pytest log" in (tmp_path / "live.log").read_text()
+    if expected == "skipped":
+        assert "no authenticated coverage" in run.stdout.lower()
+        assert "0 passed; 1 skipped" in (tmp_path / "summary").read_text()
 
 
 @pytest.mark.parametrize(

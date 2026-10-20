@@ -18,7 +18,8 @@ you tested. Expect an initial response within a week.
 only to authenticate against Z-Library. Two things worth knowing:
 
 - **Credentials are passed to the Python bridge as a subprocess environment.**
-  They are never written to the RAG output bundle or the debug log.
+  Acquisition records contain edition metadata and request context, not account
+  credentials or session cookies.
 - **`LOG_LEVEL=debug` echoes search arguments to stderr**, and MCP clients
   capture stderr into their own logs. Do not enable it when your queries are
   sensitive, and scrub client logs before attaching them to a bug report. At the

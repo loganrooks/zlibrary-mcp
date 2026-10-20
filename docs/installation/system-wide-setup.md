@@ -1,19 +1,20 @@
 # System-Wide Installation Guide
 
-**Location**: `/home/rookslog/mcp-servers/zlibrary-mcp/`
-**Status**: ✅ Installed and ready for use
+Use one source checkout from multiple MCP client projects. The paths below are
+examples: replace `/home/rookslog` with your own absolute home path.
 
 ---
 
 ## This Installation
 
-This Z-Library MCP server is installed **system-wide** and can be used by any project on this computer.
+Configure each project to launch the same installed checkout. Each server process
+has its own session and row refs; sharing a checkout does not share those refs.
 
 **Location**: `/home/rookslog/mcp-servers/zlibrary-mcp/`
 
-**Credentials**: Configured in environment variables
-- `ZLIBRARY_EMAIL`: your@email.com
-- `ZLIBRARY_PASSWORD`: (set in environment)
+**Credentials**: Optional for startup and LibGen. Set `ZLIBRARY_EMAIL` and
+`ZLIBRARY_PASSWORD` for Z-Library operations, or `ANNAS_SECRET_KEY` for Anna's
+Archive downloads. Anna's search needs no key.
 
 ---
 
@@ -48,7 +49,7 @@ Create or edit `.mcp.json` in your project root:
 
 **Then**:
 1. Restart Claude Code in that project
-2. The 11 Z-Library tools will be available
+2. The five acquisition tools will be available
 3. Start using: search, download, and metadata retrieval.
 
 ---
@@ -89,8 +90,9 @@ Create or edit `.mcp.json` in your project root:
 cd ~/mcp-servers/zlibrary-mcp
 git pull origin master
 npm install  # If dependencies changed
+uv sync      # Keep the Python environment in sync too
 npm run build
-# All projects using this server now get the update!
+# Restart each MCP client so it launches the updated server.
 ```
 
 ### Checking Status
@@ -104,34 +106,24 @@ git status            # Check for local changes
 
 ### Viewing Logs
 
-```bash
-cd ~/mcp-servers/zlibrary-mcp
-tail -f logs/nodejs_debug.log  # Watch MCP server logs
-```
+Diagnostics go to stderr, which the MCP client normally captures. Inspect the
+client's server logs; there is no default `logs/nodejs_debug.log` file.
+Use `LOG_LEVEL=debug` only when needed, and scrub queries before sharing logs.
 
 ---
 
-## Available Tools (11 Total)
+## Available Tools (5 Total)
 
-When a project configures this server, it gets access to:
+| Tool | Purpose |
+|---|---|
+| `search` | Catalogue metadata search with an ordered `sources` list |
+| `get_book` | Inspect the current row's `ref` |
+| `download` | Acquire the selected original file to server disk |
+| `get_limits` | Local capabilities; `mode: "live"` for Z-Library account quota |
+| `get_history` | Z-Library account history |
 
-### Search (6 methods)
-1. `search_books` - Basic search with filters
-2. `full_text_search` - Search within content
-3. `search_by_term` - Conceptual navigation (60 terms/book)
-4. `search_by_author` - Advanced author search
-5. `search_advanced` - Fuzzy match detection
-6. `fetch_booklist` - Collection exploration (954 books)
-
-### Metadata (1 method)
-7. `get_book_metadata` - Extract 60 terms, 11 booklists, complete data
-
-### Download/Process (2 methods)
-8. `download_book_to_file` - Download PDF/EPUB
-
-### Utility (2 methods)
-10. `get_download_limits` - Check quota
-11. `get_download_history` - View downloads
+Use the current row's `ref` for `get_book` and `download`; raw book records and
+IDs are not download inputs. See [interface migration](../interface-migration.md).
 
 ---
 
@@ -210,7 +202,7 @@ Or simply don't create `.mcp.json` at all if no MCP servers needed.
 ```bash
 cd ~/mcp-servers/zlibrary-mcp
 git pull && npm run build
-# All projects get the update!
+# Restart each MCP client to use the updated build.
 ```
 
 ✅ **Consistent Behavior**
@@ -226,7 +218,7 @@ git pull && npm run build
 # Test the server works
 cd ~/mcp-servers/zlibrary-mcp
 node dist/index.js
-# Should see: "Z-Library MCP server (ESM/TS) is running via Stdio..."
+# Should see: "Book acquisition MCP server is running via Stdio."
 # Press Ctrl+C to stop
 
 # Test in a project
@@ -234,7 +226,7 @@ cd ~/projects/some-project
 # Create .mcp.json with config above
 # Restart Claude Code
 # Ask: "What zlibrary tools are available?"
-# Should see 11 tools ✅
+# Should see five tools ✅
 ```
 
 ---
@@ -258,13 +250,13 @@ lint tools. Text processing is removed in 2.0; see [migration](../text-processin
 ### Server not loading
 - Check .mcp.json syntax (valid JSON)
 - Restart Claude Code
-- Check logs in ~/mcp-servers/zlibrary-mcp/logs/
+- Check the MCP client's captured server stderr
 
 ---
 
 ## Summary
 
-**Installation Location**: `/home/rookslog/mcp-servers/zlibrary-mcp/` ✅
+**Example Installation Location**: `/home/rookslog/mcp-servers/zlibrary-mcp/`
 
 **How to Use**:
 - Projects that need Z-Library: Add to `.mcp.json` with absolute path
@@ -272,4 +264,4 @@ lint tools. Text processing is removed in 2.0; see [migration](../text-processin
 
 **Maintenance**: Update in one place, all projects benefit
 
-**Status**: Ready for use across all your projects! 🚀
+Restart each client after updating the shared checkout, then check its tool list.

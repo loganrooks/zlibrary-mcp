@@ -10,7 +10,7 @@ Anna's Archive. Book contents never enter the tool response; paths refer to the
 server's disk. See [VISION.md](VISION.md) for the commitments and non-goals.
 
 **2.0 is a breaking interface change.** Saved 1.x tool names are not aliases.
-See the complete [migration table](docs/interface-migration.md) and
+See the complete [migration table](https://github.com/rookslog/zlibrary-mcp/blob/master/docs/interface-migration.md) and
 [API reference](docs/api.md). The npm package, executable, repository and client
 configuration keys keep their existing names; `serverInfo.name` is `book-acquisition`.
 
@@ -137,8 +137,11 @@ target before verifying it. Canonical hashed intent is persisted before the alia
 intent and publication. Compatible complete canonical receipts, including their
 provenance, remain authoritative. A partial or missing file does not qualify for
 reuse. Different filenames/directories are different destinations. Pre-2.0 files
-have no receipts and may be fetched before post-transfer reuse. Different existing
-bytes and verified foreign identities are never silently overwritten.
+have no receipts. An occupied predicted destination without a matching receipt
+is refused before transfer (`output_refused`, `destination_occupied: true`), even
+if its bytes match. There is no zero-quota adoption path for old files; see
+[existing-download migration](https://github.com/rookslog/zlibrary-mcp/blob/master/docs/interface-migration.md#existing-140-downloads).
+Different existing bytes and verified foreign identities are never silently overwritten.
 
 The default directory is `ZLIBRARY_OUTPUT_ROOT`, otherwise `./downloads`.
 `output_dir` must resolve inside the root when configured (including symlinks).
@@ -164,7 +167,7 @@ this does not waive provider rate limits or enable automatic retry.
 
 ## Installation
 
-### Option B: From Source (for development)
+### From Source (for development)
 
 ```bash
 git clone https://github.com/rookslog/zlibrary-mcp.git

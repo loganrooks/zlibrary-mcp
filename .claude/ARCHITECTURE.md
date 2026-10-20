@@ -1,9 +1,7 @@
 # Architecture Overview
 
-<!-- Last Verified: 2026-07-24 -->
-
-**Last Updated**: 2026-07-24
-**Status**: v1.2.1 current (19 development phases complete through v1.2.1; v1.3.0 release imminent)
+**Status**: Acquisition-only 2.0 interface; text processing is parked.
+See [interface migration](../docs/interface-migration.md) for the breaking changes.
 
 ---
 
@@ -15,11 +13,12 @@
 +-----------------------------------------------------------+
 |                    MCP Client (Claude)                     |
 +-----------------------------+-----------------------------+
-                              | MCP Protocol (SDK 1.25+, stdio)
+                              | MCP Protocol (SDK 1.32.1, stdio)
 +-----------------------------v-----------------------------+
 |              MCP Server (Node.js/TypeScript)               |
-|  - 13 tools via McpServer server.tool() API (src/index.ts) |
-|  - Retry + circuit breaker around every bridge call        |
+|  - Five tools via lower-level SDK Server (src/index.ts)    |
+|  - Read retries + dependency breakers                     |
+|  - No automatic download retries                          |
 |    (src/lib/retry-manager.ts, src/lib/circuit-breaker.ts)  |
 |  - stderr-only logging (src/lib/logger.ts)                 |
 +-----------------------------+-----------------------------+
@@ -34,8 +33,8 @@
    EAPI JSON + httpx              HTML scrape / JSON (httpx)
 +--------------v--------------+ +------------v--------------+
 |  Z-Library EAPI Endpoints   | |  lib/sources/ adapters     |
-|  /eapi/user/login           | |  Anna's Archive (primary)  |
-|  /eapi/book/search          | |  LibGen (fallback)         |
+|  /eapi/user/login           | |  Anna's Archive adapter    |
+|  /eapi/book/search          | |  LibGen adapter            |
 |  /eapi/info/domains (hydra) | |  via SourceRouter          |
 +-----------------------------+ +---------------------------+
 ```
@@ -43,8 +42,8 @@
 ### Data Flow Patterns
 
 **Search**: Client -> MCP -> Python -> EAPI JSON endpoint -> normalized results
-**Multi-source search**: Client -> MCP -> Python -> `SourceRouter` -> Anna's Archive (primary) with LibGen fallback -> `UnifiedBookResult` list
-**Download**: Client -> MCP -> Python -> EAPIClient (URL resolution + file download) -> local file path
+**Ordered search**: Client -> MCP source order -> Python EAPI or explicit-source `SourceRouter` call -> compact rows and refs
+**Download**: Client ref -> MCP -> guarded acquisition receipt/lease check -> EAPI or source transfer when needed -> local file and record paths
 
 **Critical designs**:
 - stdout carries JSON-RPC and nothing else; all diagnostics go to stderr via `src/lib/logger.ts`, enforced by `__tests__/stdio-purity.test.js`
@@ -54,16 +53,20 @@
 
 ## Current Implementation Status
 
-### MCP Tools (12 total)
+### MCP Tools (5 total)
 
-- search_books, full_text_search, get_download_history, get_download_limits
-- get_recent_books, download_book_to_file
-- get_book_metadata, search_by_term, search_by_author, fetch_booklist
-- search_advanced, search_multi_source
+- `search`, `get_book`, `download`, `get_limits`, `get_history`
 
-Registered through the McpServer tool APIs (`tool()` and `registerTool()`) (McpServer API, MCP SDK 1.25+). The README tool
+The lower-level SDK `Server` dispatches `tools/list` and `tools/call` through
+`AcquisitionTools`. The local `registerTool()` helper selects tool definitions;
+it is not McpServer registration. The README tool
 table is CI-enforced against `src/index.ts` by `scripts/validate-readme-tools.sh` —
 if the sets diverge, the build fails.
+
+The old metadata/navigation names below are removed from the public surface;
+this retained 1.x list is not the current tool list:
+
+- get_book_metadata, search_by_term, search_by_author, fetch_booklist
 
 ### Multi-Source Layer (lib/sources/)
 
@@ -76,7 +79,9 @@ if the sets diverge, the build fails.
 | `libgen.py` | LibGen adapter (fallback source) |
 | `router.py` | `SourceRouter`: Anna's primary when key configured, LibGen fallback on error/quota exhaustion; source selection `auto`/`annas`/`libgen` |
 
-Exposed through the `search_multi_source` tool. Z-Library itself does **not** yet
+The public `search` tool walks explicit ordered sources; for LibGen/Anna's it
+calls the internal `search_multi_source` bridge with one source per attempt.
+Z-Library itself does **not** yet
 route through `SourceRouter` — promoting it to a `SourceAdapter` is planned work.
 
 ### Testing Posture
@@ -151,7 +156,7 @@ residual DOM-fragile surfaces in the codebase are `lib/sources/annas.py`.
 - UV (Python dependency management, `uv.lock`, project-local `.venv/`)
 
 **Key Dependencies**:
-- `@modelcontextprotocol/sdk` ^1.25 — MCP protocol (McpServer API)
+- `@modelcontextprotocol/sdk` — MCP protocol (locked to 1.32.1; SDK Server API)
 - `python-shell` — Node.js to Python bridge
 - `httpx` — EAPI and source-adapter HTTP client
 - `beautifulsoup4` — Anna's Archive HTML parsing
@@ -167,7 +172,7 @@ residual DOM-fragile surfaces in the codebase are `lib/sources/annas.py`.
 ```
 zlibrary-mcp/
 +-- src/                          # Node.js MCP server
-|   +-- index.ts                  # Entry point (13 tools via server.tool())
+|   +-- index.ts                  # Entry point (five tools via SDK Server)
 |   +-- lib/                      # Server utilities
 |       +-- zlibrary-api.ts       # Service layer (retry + circuit breaker)
 |       +-- python-bridge.ts      # PythonShell invocation
@@ -193,7 +198,7 @@ zlibrary-mcp/
 |
 +-- __tests__/                    # Jest (ESM) + integration; python/ for Pytest
 +-- scripts/                      # CI helpers (validate-readme-tools.sh, ...)
-+-- docs/adr/                     # ADR-001 through ADR-010
++-- docs/adr/                     # ADR-001 through ADR-012
 +-- docs/api.md                   # Tool-by-tool API reference (acquisition tools)
 +-- .claude/                      # Development guides
 ```
@@ -214,7 +219,7 @@ zlibrary-mcp/
 - Both monitored daily by the Upstream Contract Check workflow
 
 ### MCP Protocol
-- McpServer API with `server.tool()` registration, JSON-RPC 2.0, stdio transport
+- SDK Server with tools/list + tools/call handlers, JSON-RPC 2.0, stdio transport
 - stdout purity is a hard constraint (`__tests__/stdio-purity.test.js`)
 
 ---

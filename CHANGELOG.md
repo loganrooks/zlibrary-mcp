@@ -14,6 +14,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added ordered source routing, compact process-local refs, immutable replayable
   cursors, bounded paging and consistent closed error envelopes with quota-aware retry hints.
 - Added no-network local source limits; account history remains distinct from local files.
+- Added optional `BOOK_SOURCE_DEFAULT_ORDER` (a comma-separated, distinct source
+  order). Without it, `search` requires explicit `sources` and otherwise returns
+  `sources_required`; there is no implicit preferred source.
+- Added `ZLIBRARY_OUTPUT_ROOT` as an optional allowed output root and default
+  download directory. Without it, downloads default to `./downloads`.
 - Added intent/completion acquisition sidecars, SHA-256 re-hashing before reuse,
   cross-process destination locks and crash recovery before receipt finalization.
 - Retained the initial lease while leasing corrected-format canonical targets
@@ -31,12 +36,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Share the in-memory Z-Library session owner across reads and fresh acquisitions,
   requesting authentication only after held-lease receipt checks and durable intent.
   Receipt hits bypass credentials/cooldown/pending login; granted transfers never
-  replay after authentication rejection. Explicit per-call mode is unchanged.
+  replay after authentication rejection. `ZLIBRARY_SESSION_MODE` now defaults to
+  `memory`; 1.4.0 authenticated Z-Library per call. Set `per-call` to retain per-call
+  authentication instead of session reuse.
 - Downloads return `path`, `bytes`, flags and `record`; full book records and all
   processing arguments are no longer MCP inputs. Even a saved false processing
   flag is rejected by the new MCP surface; the internal legacy API is unchanged.
 - Source-neutral server identity and tool descriptions; package/executable/client
-  keys are unchanged. See [tool migration](docs/interface-migration.md) and ADR-012.
+  keys are unchanged. See [tool migration](https://github.com/rookslog/zlibrary-mcp/blob/master/docs/interface-migration.md) and ADR-012.
 
 ### Breaking: acquisition-only 2.0
 
@@ -94,14 +101,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   LibGen. `httpx.Timeout` bounds each phase separately and restarts its read
   deadline on every chunk, so a host trickling bytes never tripped it; a
   wall-clock deadline now covers the whole operation.
-- **LibGen search now walks all three mirrors** (`li → vg → la`), matching what
-  `download_book_to_file` already did.
+- **LibGen search now walks all three mirrors** (`li → vg → la`), matching the
+  download path. The old `download_book_to_file` MCP tool is replaced by `download`.
 - Timeout configuration: `BOOK_SOURCE_CONNECT_TIMEOUT`,
   `BOOK_SOURCE_READ_TIMEOUT`, `BOOK_SOURCE_TOTAL_TIMEOUT`,
   `BOOK_SOURCE_PREFLIGHT`, `BOOK_SOURCE_PREFLIGHT_TIMEOUT`,
   `PYTHON_BRIDGE_TIMEOUT`, `PYTHON_BRIDGE_LONG_TIMEOUT`,
-  `PYTHON_BRIDGE_KILL_GRACE`. A malformed value falls back to its default
-  rather than disabling the timeout. See
+  `PYTHON_BRIDGE_KILL_GRACE`. Use valid positive numeric values. The Node runner
+  falls back for invalid timer values, but the Python acquisition path does not
+  yet apply that same validation to `PYTHON_BRIDGE_LONG_TIMEOUT`. See
   [docs/RETRY_CONFIGURATION.md](docs/RETRY_CONFIGURATION.md) for how the Python
   and Node budgets compose.
 
@@ -110,8 +118,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The release audit distinguishes explicit patch milestones from minor slots, so an
   untagged `v1.4.1` is not treated as already shipped by `v1.4.0`. Exact patch milestones
   own matching tags; legacy minor-only records still work. The PR-age rule is unchanged.
-- **`search_multi_source` could hang forever, and leave the Python process
-  behind when it did.** Three defects compounded: the vendored
+- **The legacy multi-source search path could hang forever, and leave the Python
+  process behind when it did.** The old `search_multi_source` MCP tool is replaced
+  by `search` with an ordered `sources` array. Three defects compounded: the vendored
   `libgen_api_enhanced` calls `requests.get` with no `timeout=` (and catches a
   `Timeout` that therefore can never fire), the LibGen adapter ran that through
   `asyncio.to_thread` — whose worker threads are non-daemon and joined at
@@ -127,8 +136,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   request's abort signal down to the subprocess, so a client that gives up
   stops the Python process rather than leaving it to run out its budget with
   nobody waiting for the result.
-- **`get_download_limits` reported `"unknown"` instead of real numbers.** It
-  read `downloads_today_limit` / `downloads_today_left` from the EAPI profile;
+- **The account-limit bridge reported `"unknown"` instead of real numbers.**
+  The old `get_download_limits` MCP tool is replaced by `get_limits` with
+  `mode: "live"`. The bridge read `downloads_today_limit` / `downloads_today_left`
+  from the EAPI profile;
   the endpoint sends `downloads_limit` / `downloads_today`. The unit test
   passed throughout because its fixture had been written to match the code
   rather than the service. The response now also carries `downloads_today`.
@@ -154,26 +165,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   are moot rather than deferred.
 - Removed the vestigial `ts-jest` dev dependency, which was configured in
   `jest.config.js` but transformed nothing (#93).
-- Dependency bumps: `@modelcontextprotocol/sdk` 1.25.3 → 1.30.0, `opencv-python-headless`
-  4.13 → 5.0, `libgen-api-enhanced` 1.2.4 → 1.3, `cffi` 2.0.0 → 2.1.1, `yarl` 1.22.0 →
-  1.24.5, `pytest-benchmark` 5.1.0 → 5.2.3, plus dev-tooling and CI action updates.
+- Locked dependency updates include `@modelcontextprotocol/sdk` 1.25.3 → 1.32.1,
+  `libgen-api-enhanced` 1.2.4 → 1.3, `cffi` 2.0.0 → 2.1.1, `yarl` 1.22.0 →
+  1.25.1, `pytest-benchmark` 5.1.0 → 5.2.3, plus dev-tooling and CI action updates.
+  `opencv-python-headless` is removed with the processing dependency stack, not
+  upgraded as part of the acquisition install.
 - **An explicit `source` is no longer silently rerouted.** `source="annas"` that
   fails now raises with the provider and reason named, instead of returning
   LibGen's results. Fallback remains the behaviour of `source="auto"`, which is
   what asks for it. This extends the fix in #74 from the empty-result case to
   the network-failure case — silent rerouting is how a request tagged
   `source="annas"` came to hang inside LibGen's search.
-- An empty result from `search_multi_source` now means every provider answered
-  and none matched. Previously a network failure with fallback disabled also
+- An empty result from the legacy multi-source bridge means every provider
+  answered and none matched. Its old `search_multi_source` MCP tool is removed;
+  the replacement `search` reports `routing.attempts` and typed failures.
+  Previously a network failure with fallback disabled also
   returned an empty list, making an outage indistinguishable from no results.
   This holds for partial walks too: one provider answering empty while another
   is unreachable raises, rather than reporting "no matches" about a provider
   that was never successfully searched.
-- Client cancellations no longer count toward the Python bridge circuit
-  breaker. Five aborted searches would otherwise open the shared breaker and
-  fail every unrelated tool for `CIRCUIT_BREAKER_TIMEOUT` — turning a user's
-  own impatience into an outage. `CircuitBreaker` gained an `isFailure` option
-  for this.
+- Circuit-breaker counting is per dependency scope and transient-only, rather
+  than counting every error. `CIRCUIT_BREAKER_THRESHOLD` counts classified health
+  failures such as transport/timeouts, HTTP 408/429/5xx, integrity failures and
+  spawn resource pressure. Caller cancellations, authentication/configuration
+  errors and other non-transient failures do not count. A full bridge deadline
+  counts but does not automatically retry. See
+  [retry configuration](docs/RETRY_CONFIGURATION.md) for scope and classification.
 
 ## [1.4.0] - 2026-08-10
 

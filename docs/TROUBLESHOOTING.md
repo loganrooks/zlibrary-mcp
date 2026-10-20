@@ -25,12 +25,14 @@ The MCP client reports the server disconnected, or `node dist/index.js` exits at
    bash setup-uv.sh --no-dev   # creates .venv/ with the end-user core
    ```
 3. **Node version**: Node 22+ is required (see `engines` in `package.json` / `.nvmrc`).
-4. **Credentials**: `ZLIBRARY_EMAIL` / `ZLIBRARY_PASSWORD` must be set in the
-   environment or the client's `.mcp.json` `env` block.
+4. **Z-Library credentials**: missing `ZLIBRARY_EMAIL` / `ZLIBRARY_PASSWORD`
+   do not stop startup. The server warns on stderr and keeps LibGen available
+   without an account. Set both variables in the environment or the client's
+   `.mcp.json` `env` block only when using Z-Library operations.
 
 A healthy start prints (to **stderr**):
 ```
-Z-Library MCP server (ESM/TS) is running via Stdio...
+Book acquisition MCP server is running via Stdio.
 ```
 
 ---
@@ -215,9 +217,13 @@ file test_files/*.pdf             # should say "PDF document", not "ASCII text"
 
 ## Quick diagnostic commands
 
+Run from the repository or installed-package root after initializing `.venv/`.
+The import check uses that existing environment without synchronizing it and
+adds the bridge directory for its script-style imports.
+
 ```bash
 npm run validate                  # Python bridge files present?
-uv run python -c "import lib.python_bridge; print('bridge imports OK')"
+uv run --no-sync python -c "import sys; sys.path.insert(0, 'lib'); import python_bridge; print('bridge imports OK')"
 npm run doctor                    # live upstream contract check
 npm test                          # Jest (Node side, includes stdio purity)
 uv run pytest -m "not slow and not integration and not performance"  # fast Python suite

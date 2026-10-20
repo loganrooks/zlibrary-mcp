@@ -4,7 +4,7 @@ The 2.0 server exposes exactly five tools using SDK 1.32.1 and protocol
 2025-11-25. Every result is a JSON object in `structuredContent` and a text
 block containing the identical JSON. Every tool declares success and error
 output schemas. Arguments are strict: unknown or removed fields return a typed
-`invalid_argument` before provider contact. See [migration](interface-migration.md).
+`invalid_argument` before provider contact. See [migration](https://github.com/rookslog/zlibrary-mcp/blob/master/docs/interface-migration.md).
 
 ## search
 

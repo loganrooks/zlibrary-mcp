@@ -10,7 +10,8 @@ is in the Reference section.
 | Document | What it covers |
 |----------|----------------|
 | [api.md](api.md) | API reference for all MCP tools |
-| [adr/](adr/) | Architecture Decision Records (ADR-001 through ADR-010) |
+| [interface-migration.md](interface-migration.md) | 1.x to 2.0 tool names, arguments, results and existing-download migration |
+| [adr/](adr/) | Architecture Decision Records (ADR-001 through ADR-012) |
 | [TROUBLESHOOTING.md](TROUBLESHOOTING.md) | Setup and runtime troubleshooting |
 | [DEPLOYMENT.md](DEPLOYMENT.md) | Deployment paths and edge cases |
 | [RETRY_CONFIGURATION.md](RETRY_CONFIGURATION.md) | Retry and circuit-breaker configuration |

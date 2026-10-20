@@ -1838,7 +1838,7 @@ def _requires_eapi_client(function_name: str, args_dict: dict) -> bool:
     Z-Library branch, and logging in up front took LibGen — the
     credential-free fallback — down with every Z-Library auth outage (#129).
     """
-    if function_name in {"search_multi_source", "acquire_book"}:
+    if function_name in {"search_multi_source", "acquire_book", "inspect_file"}:
         return False
     if function_name == "download_book":
         source = str((args_dict.get("book_details") or {}).get("source") or "").lower()
@@ -2041,6 +2041,10 @@ async def main():
 
 async def _dispatch_bridge_function(function_name: str, args_dict: dict):
     """Dispatch one parsed bridge operation after lifecycle setup."""
+    if function_name == "inspect_file":
+        from lib.edition_check import inspect_file
+
+        return inspect_file(**args_dict)
     if function_name == "acquire_book":
         from lib.acquisition import acquire, AcquisitionError
 

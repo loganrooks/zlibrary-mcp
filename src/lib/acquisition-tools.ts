@@ -246,41 +246,60 @@ export class AcquisitionTools {
       if (name === 'search' || name === 'get_history') return await this.page(name, args, options);
       const selection = this.refs.get<Selection>(args.ref, 'r');
       if (name === 'get_book') return await this.details(args.ref, selection, options);
-      // Configuration is checked inside the bridge, after disk reuse, so a receipt remains useful offline.
-      try {
-        const result = DownloadReplySchema.parse(
-          await this.invoke(
-            'acquire_book',
-            {
-              book_details: selection.book,
-              output_dir: args.output_dir,
-              filename: args.filename,
-              request: nonempty({ ref: args.ref, query: selection.query }),
-            },
-            options,
-          ),
-        );
-        if (result.quota_estimate?.source === selection.source)
-          this.estimates.set(selection.source, { ...result.quota_estimate });
-        const estimate = this.estimates.get(selection.source);
-        if (estimate && !result.transfer_skipped && !result.quota_estimate) {
-          estimate.remaining = Math.max(0, estimate.remaining - 1);
-          estimate.basis = 'decremented';
-        }
-        return { ...result, ...(estimate ? { quota_estimate: { ...estimate } } : {}) };
-      } catch (e) {
-        const failure = classifyFailure(e, 'download', selection.source);
-        if (
-          failure.info.retry === 'may_spend_quota' ||
-          failure.code === 'internal' ||
-          failure.info.detail?.request_issued === true
-        )
-          this.estimates.delete(selection.source);
-        throw failure;
-      }
+      return await this.acquireRef(args.ref, args, options);
     } catch (error) {
       return errorEnvelope(error, name);
     }
+  }
+  /** Internal list-worker entry point; the public download schema is unchanged. */
+  async acquireRef(
+    ref: string,
+    opts: {
+      output_dir?: string;
+      filename?: string;
+      request?: { item_id?: string; why_chosen?: string };
+    } = {},
+    options: CallOptions = {},
+  ): Promise<any> {
+    if (options.signal?.aborted)
+      throw new ToolFailure('cancelled', 'Call cancelled before any request.', { retry: 'safe' });
+    const selection = this.refs.get<Selection>(ref, 'r');
+    // Configuration is checked inside the bridge, after disk reuse, so a receipt remains useful offline.
+    try {
+      const result = DownloadReplySchema.parse(
+        await this.invoke(
+          'acquire_book',
+          {
+            book_details: selection.book,
+            output_dir: opts.output_dir,
+            filename: opts.filename,
+            request: nonempty({ ref, query: selection.query, ...opts.request }),
+          },
+          options,
+        ),
+      );
+      if (result.quota_estimate?.source === selection.source)
+        this.estimates.set(selection.source, { ...result.quota_estimate });
+      const estimate = this.estimates.get(selection.source);
+      if (estimate && !result.transfer_skipped && !result.quota_estimate) {
+        estimate.remaining = Math.max(0, estimate.remaining - 1);
+        estimate.basis = 'decremented';
+      }
+      return { ...result, ...(estimate ? { quota_estimate: { ...estimate } } : {}) };
+    } catch (e) {
+      const failure = classifyFailure(e, 'download', selection.source);
+      if (
+        failure.info.retry === 'may_spend_quota' ||
+        failure.code === 'internal' ||
+        failure.info.detail?.request_issued === true
+      )
+        this.estimates.delete(selection.source);
+      throw failure;
+    }
+  }
+  /** Local inspection shares the bridge, cancellation and deadlines. */
+  async inspectFile(args: Record<string, any>, options: CallOptions = {}): Promise<any> {
+    return this.invoke('inspect_file', args, options);
   }
   private async limits(args: any, options: CallOptions) {
     const result: any = {

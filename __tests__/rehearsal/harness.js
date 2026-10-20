@@ -214,6 +214,7 @@ export class Rehearsal {
           CIRCUIT_BREAKER_TIMEOUT: '60000',
           PYTHON_BRIDGE_TIMEOUT: String(options.budgetMs ?? 15000),
           LOG_LEVEL: 'info',
+          ...(options.extras ? { ZLIBRARY_EXTRAS: options.extras } : {}),
         },
         stderr: 'pipe',
       });

@@ -12,6 +12,7 @@ import type { ToolName } from './lib/acquisition-tools.js';
 import { getSessionMode } from './lib/eapi-session.js';
 import { invokeAcquisitionBridge } from './lib/zlibrary-api.js';
 import { logger } from './lib/logger.js';
+import { ListRuns, LIST_TOOL, wantlistEnabled } from './wantlist/tool.js';
 
 const descriptions: Record<ToolName, string> = {
   search:
@@ -113,16 +114,22 @@ export const TOOL_DEFINITIONS: Tool[] = (Object.keys(INPUTS) as ToolName[]).map(
 class AcquisitionServer extends Server {
   private definitions: Tool[] = [];
   readonly tools = new AcquisitionTools(invokeAcquisitionBridge);
+  private lists = new ListRuns(this.tools);
   constructor() {
     super(
       { name: 'book-acquisition', version: getPackageVersion() },
       { capabilities: { tools: {} } },
     );
+    this.onclose = () => this.lists.stop();
     this.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: this.definitions }));
     this.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
-      const result = await this.tools.call(request.params.name, request.params.arguments ?? {}, {
-        signal: extra.signal,
-      });
+      const result =
+        request.params.name === 'acquire_list' &&
+        this.definitions.some((t) => t.name === 'acquire_list')
+          ? await this.lists.call(request.params.arguments ?? {})
+          : await this.tools.call(request.params.name, request.params.arguments ?? {}, {
+              signal: extra.signal,
+            });
       return {
         content: [{ type: 'text' as const, text: JSON.stringify(result) }],
         structuredContent: result,
@@ -130,8 +137,10 @@ class AcquisitionServer extends Server {
       };
     });
   }
-  registerTool(name: ToolName) {
-    this.definitions.push(TOOL_DEFINITIONS.find((t) => t.name === name)!);
+  registerTool(name: ToolName | 'acquire_list') {
+    this.definitions.push(
+      name === 'acquire_list' ? LIST_TOOL : TOOL_DEFINITIONS.find((t) => t.name === name)!,
+    );
   }
 }
 export function createServer(): AcquisitionServer {
@@ -142,6 +151,7 @@ export function createServer(): AcquisitionServer {
   server.registerTool('download');
   server.registerTool('get_limits');
   server.registerTool('get_history');
+  if (wantlistEnabled()) server.registerTool('acquire_list');
   return server;
 }
 function getPackageVersion(): string {

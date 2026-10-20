@@ -308,6 +308,46 @@ class TestLibgenAdapterDownload:
 
         assert result.url.startswith("https://libgen.vg/")
 
+    @pytest.mark.parametrize(
+        "body,content_type",
+        [
+            (b"<html>" + b"x" * 600 + b"</html>", "text/html"),
+            (b"x" * 100, "application/octet-stream"),
+        ],
+        ids=["html-over-512-bytes", "100-byte-non-pdf"],
+    )
+    @pytest.mark.asyncio
+    async def test_rejected_body_advances_to_next_mirror(
+        self, adapter, body, content_type
+    ):
+        """Removing either independent byte-admission guard must admit li wrongly."""
+        seen = []
+
+        def handler(request):
+            seen.append((request.url.host, request.url.path))
+            if request.url.path == "/ads.php":
+                return httpx.Response(200, text=ADS_PAGE_WITH_KEY)
+            if request.url.host == "libgen.li":
+                return httpx.Response(
+                    200, content=body, headers={"content-type": content_type}
+                )
+            return httpx.Response(
+                206,
+                content=PDF_BYTES,
+                headers={"content-type": "application/octet-stream"},
+            )
+
+        with self._patched_client(handler):
+            result = await adapter.get_download_url(MD5)
+
+        assert result.url == f"https://libgen.vg/get.php?md5={MD5}&key=TESTKEY123"
+        assert seen == [
+            ("libgen.li", "/ads.php"),
+            ("libgen.li", "/get.php"),
+            ("libgen.vg", "/ads.php"),
+            ("libgen.vg", "/get.php"),
+        ]
+
     @pytest.mark.asyncio
     async def test_range_ignoring_probe_stops_after_the_inspection_window(
         self, adapter

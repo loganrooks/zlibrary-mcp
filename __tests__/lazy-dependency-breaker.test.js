@@ -194,6 +194,7 @@ test('shared login denial retains its original context and each lazy waiter gets
   expect(failures[0].context).not.toBe(failures[1].context);
   expect(failures[0].context.details).not.toBe(failures[1].context.details);
   expect(failures.map((e) => e.context.details.request_issued)).toEqual([false, false]);
+  expect(failures.map((e) => typeof e.stack)).toEqual(['string', 'string']);
   expect(loginFailure.context).toEqual({ reason: 'timeout' });
   expect(runner.mock.calls.filter((call) => call[2].sessionInput?.action === 'login')).toHaveLength(
     1,

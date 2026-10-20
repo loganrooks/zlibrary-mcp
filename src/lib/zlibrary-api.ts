@@ -179,6 +179,9 @@ async function callPythonFunction(
                   : undefined,
               onSessionNeeded: lazy
                 ? (channel) => {
+                    // One admission and one health verdict per lazy acquisition. A
+                    // deadline spent before the grant aborts the owner work and is
+                    // not counted, as on the non-lazy shared-session path.
                     ownerWork = breaker.execute(() =>
                       eapiSessions.run(
                         identity,
@@ -336,10 +339,17 @@ async function callPythonFunction(
               if (err && typeof err === 'object') {
                 // Owner acquisition denials can be shared by concurrent waiters.
                 // Preserve the error's type/own properties without changing theirs.
+                const shared = err;
                 err = Object.create(
-                  Object.getPrototypeOf(err),
-                  Object.getOwnPropertyDescriptors(err),
+                  Object.getPrototypeOf(shared),
+                  Object.getOwnPropertyDescriptors(shared),
                 );
+                // V8's own `stack` accessor reads undefined on a copy; keep the value.
+                Object.defineProperty(err, 'stack', {
+                  value: shared.stack,
+                  writable: true,
+                  configurable: true,
+                });
                 err.context = {
                   ...err.context,
                   details: { ...err.context?.details, request_issued: !!activeTransport },

@@ -124,12 +124,74 @@ class TestConfigTimeouts:
     def test_impossibly_short_node_budget_is_rejected_before_the_bridge_starts(
         self, monkeypatch
     ):
-        """No positive walk can fit when Node leaves no overhead allowance."""
-        monkeypatch.setenv("PYTHON_BRIDGE_TIMEOUT", "30000")
+        """Even scaled overhead cannot fit inside a one-millisecond timer."""
+        monkeypatch.setenv("PYTHON_BRIDGE_TIMEOUT", "1")
         monkeypatch.setenv("BOOK_SOURCE_WALK_BUDGET", "1")
 
         with pytest.raises(ValueError, match="PYTHON_BRIDGE_TIMEOUT"):
             get_source_config()
+
+    def test_short_source_budget_admits_useful_work(self, monkeypatch):
+        """Catch a fixed 30s overhead rejecting healthy 15s source calls."""
+        from lib.sources.config import worst_case_search_seconds
+
+        monkeypatch.setenv("PYTHON_BRIDGE_TIMEOUT", "15000")
+        config = get_source_config()
+        assert config.walk_budget > 6.0  # aggregate preflight + useful search
+        assert worst_case_search_seconds(config) < 15.0
+
+    def test_download_walk_uses_long_owner_not_short_search(self, monkeypatch):
+        """Catch downloads being admitted against the unrelated search timer."""
+        from lib.sources.config import worst_case_download_seconds
+
+        monkeypatch.setenv("PYTHON_BRIDGE_TIMEOUT", "1")
+        monkeypatch.setenv("PYTHON_BRIDGE_LONG_TIMEOUT", "2400000")
+        monkeypatch.setenv("BOOK_SOURCE_WALK_BUDGET", "300")
+        config = get_source_config(for_download=True)
+        assert config.walk_budget == 300.0
+        assert worst_case_download_seconds(config) < 2400.0
+
+    def test_short_download_chain_fits_long_owner(self, monkeypatch):
+        """Catch an unclamped transfer chain outliving a short long timer."""
+        from lib.sources.config import worst_case_download_seconds
+
+        monkeypatch.setenv("PYTHON_BRIDGE_LONG_TIMEOUT", "15000")
+        config = get_source_config(for_download=True)
+        assert config.walk_budget > 6.0
+        assert config.download_timeout > 6.0
+        assert worst_case_download_seconds(config) < 15.0
+
+    @pytest.mark.asyncio
+    async def test_bridge_router_does_not_reuse_search_admission_for_download(
+        self, monkeypatch
+    ):
+        """Catch a cached ordinary router silently shrinking long downloads."""
+        from lib import python_bridge as bridge
+
+        monkeypatch.setenv("PYTHON_BRIDGE_TIMEOUT", "15000")
+        monkeypatch.setenv("PYTHON_BRIDGE_LONG_TIMEOUT", "2400000")
+        monkeypatch.setenv("BOOK_SOURCE_WALK_BUDGET", "300")
+        monkeypatch.setattr(bridge, "_source_router", None)
+        search = await bridge.get_source_router()
+        download = await bridge.get_source_router(for_download=True)
+        assert search.config.walk_budget < 15.0
+        assert download.config.walk_budget == 300.0
+        await download.close()
+
+    @pytest.mark.asyncio
+    async def test_short_walk_without_useful_time_is_provider_attributed(
+        self, monkeypatch
+    ):
+        """Catch tiny timers entering blocking library work or losing attribution."""
+        monkeypatch.setenv("PYTHON_BRIDGE_TIMEOUT", "1000")
+        adapter = LibgenAdapter(get_source_config())
+        with patch("lib.sources.libgen.LibgenSearch") as search:
+            with pytest.raises(AllSourcesFailedError) as excinfo:
+                await adapter.search("no useful time")
+            search.assert_not_called()
+        assert excinfo.value.failures[0].provider == "libgen"
+        assert excinfo.value.failures[0].reason == "walk_budget_exhausted"
+        assert "li" in excinfo.value.failures[0].detail
 
     @pytest.mark.parametrize(
         "raw",
@@ -829,20 +891,19 @@ class TestTheDocumentedTimeoutMarginIsEnforced:
         return int(match.group(1)) / 1000.0
 
     def test_the_download_allocation_fits_the_long_budget(self):
-        """Resolution + transfer + OCR + finalization, computed not asserted.
+        """Provider chain + overhead only; whole acquisition is tracked in #280.
 
-        This allocation lived only in a comment beside DEFAULT_DOWNLOAD_TIMEOUT,
-        which is exactly the shape of the sentence that made #152: correct when
-        written, never recomputed. The download walk shares the search walk's
-        budget, so raising `BOOK_SOURCE_WALK_BUDGET` has to fit BOTH ceilings.
+        Catch counting resolution twice or retaining removed processing phases.
+        The 1500s transfer-chain timeout already wraps candidate resolution.
         """
         from lib.sources.config import SourceConfig, worst_case_download_seconds
 
         worst = worst_case_download_seconds(SourceConfig())
-
-        assert worst <= self._node_long_timeout_seconds(), (
-            f"an acquisition can take {worst}s against a "
-            f"{self._node_long_timeout_seconds()}s long-bridge budget"
+        assert worst == 1530.0
+        assert worst < self._node_long_timeout_seconds(), (
+            f"a provider download chain allocates {worst}s against a "
+            f"{self._node_long_timeout_seconds()}s long-bridge budget; "
+            "this does not bound lease wait or acquisition finalization (#280)"
         )
 
 

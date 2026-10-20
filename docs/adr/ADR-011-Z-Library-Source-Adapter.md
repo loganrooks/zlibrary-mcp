@@ -390,6 +390,16 @@ sum constant by removing `la` from the walk — including from the *download*
 walk, where the budget is generous and byte-driven `li → vg → la` failover is a
 stated repo contract. That trade was rejected.
 
+**2.0 scope correction (PR153 port, 2026-10-20):** the composition below
+records the earlier internal `auto` walk, not the public 2.0 `sources` loop.
+Public search invokes each source in a separate bridge child. The current
+guards allocate provider search/download chains only, not whole tools or
+acquisitions; download resolution is already inside the transfer-chain timeout,
+and OCR is removed. Whole-acquisition composition is deferred to
+[#280](https://github.com/rookslog/zlibrary-mcp/issues/280). See
+[the current budgets and short-timer policy](../RETRY_CONFIGURATION.md#multi-source-timeout-configuration)
+for the owning ordinary/long timers and strict margins.
+
 What shipped instead is `WalkDeadline`: `SourceRouter` creates one per search or
 download, every provider and every mirror draws its per-attempt budget from what
 that deadline has left, and a mirror it never reaches is reported as

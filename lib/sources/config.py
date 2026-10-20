@@ -43,34 +43,29 @@ DEFAULT_CONNECT_TIMEOUT = 10.0
 DEFAULT_READ_TIMEOUT = 30.0
 DEFAULT_TOTAL_TIMEOUT = 45.0
 # A source URL can legitimately serve a multi-hundred-megabyte book. Keep its
-# full-transfer wall clock finite but separate from the per-attempt search and
-# URL-resolution budget. The 40-minute Node budget splits into DEFAULT_WALK_
-# BUDGET for resolution, this for transfer, OCR_ALLOWANCE and
-# FINALIZE_ALLOWANCE; `worst_case_download_seconds()` adds them up and a test
-# compares the total to PYTHON_BRIDGE_LONG_TIMEOUT.
+# provider-chain wall clock finite but separate from the per-attempt search
+# budget. `_fetch_from_source` wraps resolution AND transfer in this timeout;
+# resolution is not another sequential allocation. This does not bound lease
+# wait or acquisition finalization (whole-acquisition deadline: #280).
 DEFAULT_DOWNLOAD_TIMEOUT = 1500.0
 DEFAULT_PREFLIGHT_TIMEOUT = 5.0
 
 # The ceiling on a whole search or download-resolution walk, however many
-# providers and mirrors it spans. ONE number covers both, and 165s is what both
-# Node budgets already allow it:
-#
-#   search   PYTHON_BRIDGE_TIMEOUT      240s = 165 + 75s of bridge overhead
-#   download PYTHON_BRIDGE_LONG_TIMEOUT 2400s = 165 resolution + 1500 transfer
-#                                              + 600 OCR + 135 finalization
-#
-# Both sums are asserted by tests that read the TypeScript constants, so this
-# cannot drift out of step with either. It is also, deliberately, the same
+# providers and mirrors it spans. By default search allocates 165s + 30s
+# overhead under its 240s owner; download resolution runs INSIDE the 1500s
+# provider-chain timeout under its 2400s owner. Neither is a whole-acquisition
+# bound (#280). Tests compare these scopes to live TypeScript constants.
+# This is also, deliberately, the same
 # clock the capped three-mirror walk used to cost — the change is that the cap
 # is gone, so a mirror that fails its preflight in 5s now leaves room for the
 # fourth instead of consuming one of only three slots.
 DEFAULT_WALK_BUDGET = 165.0
 
-# What the bridge costs outside the walk: spawning python, importing the source
-# package, and serializing results back over stdout. Generous on purpose — the
-# margin absorbs a slow cold start, it is not a number to tune.
+# Allowance around the provider walk, not a measured cold-start guarantee.
+# Reserve at most 1/8 of the owning timer so healthy short calls still work.
 WALK_OVERHEAD_ALLOWANCE = 30.0
 DEFAULT_NODE_BRIDGE_TIMEOUT_SECONDS = 240.0
+DEFAULT_NODE_LONG_TIMEOUT_SECONDS = 2400.0
 MAX_NODE_TIMER_DELAY_MS = 2_147_483_647
 WALK_BUDGET_SAFETY_MARGIN = 0.001
 _ECMASCRIPT_TRIM_CHARS = (
@@ -78,12 +73,6 @@ _ECMASCRIPT_TRIM_CHARS = (
     "\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f"
     "\u205f\u3000\ufeff"
 )
-
-# The rest of the long (download) budget, named so the sum can be computed
-# instead of asserted in prose: OCR is bounded by rag_processing, and
-# finalization covers hashing, staging-to-final rename and envelope writing.
-OCR_ALLOWANCE = 600.0
-FINALIZE_ALLOWANCE = 135.0
 
 # Hosts operated by the Anna's Archive project, per the mirror list the live
 # site itself advertises (verified 2026-07-24: .gl/.pk/.gd serve real search
@@ -166,8 +155,8 @@ class SourceConfig:
         preflight_enabled: Probe host reachability before the real request
         preflight_timeout: Seconds allowed for each probe phase
         walk_budget: Seconds allowed for a WHOLE walk, across every
-            provider and mirror it touches. The only budget the Node side
-            has to be kept in step with.
+            provider and mirror it touches, not a whole acquisition (#280).
+        bridge_overhead: Allowance around this provider walk, scaled to its owner
     """
 
     annas_secret_key: str = ""
@@ -183,6 +172,7 @@ class SourceConfig:
     preflight_enabled: bool = True
     preflight_timeout: float = DEFAULT_PREFLIGHT_TIMEOUT
     walk_budget: float = DEFAULT_WALK_BUDGET
+    bridge_overhead: float = WALK_OVERHEAD_ALLOWANCE
 
     @property
     def has_annas_key(self) -> bool:
@@ -191,7 +181,7 @@ class SourceConfig:
 
 
 def worst_case_search_seconds(config: "SourceConfig") -> float:
-    """Worst-case wall clock the Node side must allow for one bridge call.
+    """Provider search walk plus overhead allocation, not a whole MCP tool.
 
     Now a sum of exactly two terms, neither of which depends on how many
     mirrors or providers exist: the walk's own ceiling, and what the bridge
@@ -205,23 +195,17 @@ def worst_case_search_seconds(config: "SourceConfig") -> float:
     raising `BOOK_SOURCE_WALK_BUDGET` past what the Node side allows fails the
     build instead of producing a killed subprocess in production.
     """
-    return config.walk_budget + WALK_OVERHEAD_ALLOWANCE
+    return config.walk_budget + config.bridge_overhead
 
 
 def worst_case_download_seconds(config: "SourceConfig") -> float:
-    """Worst-case wall clock for one acquisition, against the LONG budget.
+    """Provider download chain plus overhead, NOT a whole acquisition (#280).
 
-    The same discipline as `worst_case_search_seconds`, for the other Node
-    timeout. The allocation used to live only in a comment beside
-    `DEFAULT_DOWNLOAD_TIMEOUT`, which is how #152 happened to the search side:
-    a correct sentence nobody recomputed.
+    Candidate resolution already runs inside download_timeout, so adding its
+    walk again would double-count. Lease wait and finalization are excluded;
+    this guard says nothing about their composition with the provider chain.
     """
-    return (
-        config.walk_budget
-        + config.download_timeout
-        + OCR_ALLOWANCE
-        + FINALIZE_ALLOWANCE
-    )
+    return config.download_timeout + config.bridge_overhead
 
 
 def _positive_float(name: str, default: float) -> float:
@@ -241,47 +225,57 @@ def _positive_float(name: str, default: float) -> float:
     return value if math.isfinite(value) and value > 0 else default
 
 
+def get_preflight_timeout() -> float:
+    """Read the resolver/probe budget without admitting a source walk.
+
+    EAPI authentication and receipt-only acquisition also install the bounded
+    resolver. They do not own a source walk or use its ordinary bridge budget.
+    """
+    return _positive_float("BOOK_SOURCE_PREFLIGHT_TIMEOUT", DEFAULT_PREFLIGHT_TIMEOUT)
+
+
 def _ecmascript_trim(value: str) -> str:
     """Match JavaScript String.prototype.trim for environment values."""
     return value.strip(_ECMASCRIPT_TRIM_CHARS)
 
 
-def _node_bridge_timeout_seconds() -> float:
+def _node_bridge_timeout_seconds(*, for_download: bool = False) -> float:
     """Match Node's positive-integer bridge-timeout environment parsing."""
-    raw = _ecmascript_trim(os.environ.get("PYTHON_BRIDGE_TIMEOUT", ""))
+    name = "PYTHON_BRIDGE_LONG_TIMEOUT" if for_download else "PYTHON_BRIDGE_TIMEOUT"
+    default = (
+        DEFAULT_NODE_LONG_TIMEOUT_SECONDS
+        if for_download
+        else DEFAULT_NODE_BRIDGE_TIMEOUT_SECONDS
+    )
+    raw = _ecmascript_trim(os.environ.get(name, ""))
     if not raw or not raw.isascii() or not raw.isdecimal():
-        return DEFAULT_NODE_BRIDGE_TIMEOUT_SECONDS
+        return default
     try:
         value = int(raw)
     except ValueError:
-        return DEFAULT_NODE_BRIDGE_TIMEOUT_SECONDS
+        return default
     if value <= 0 or value > MAX_NODE_TIMER_DELAY_MS:
-        return DEFAULT_NODE_BRIDGE_TIMEOUT_SECONDS
+        return default
     return value / 1000.0
 
 
-def _walk_budget() -> float:
-    """Read a walk budget that the owning Node bridge can actually allow."""
-    requested = _positive_float("BOOK_SOURCE_WALK_BUDGET", DEFAULT_WALK_BUDGET)
-    available = (
-        _node_bridge_timeout_seconds()
-        - WALK_OVERHEAD_ALLOWANCE
-        - WALK_BUDGET_SAFETY_MARGIN
-    )
-    if available <= 0:
-        raise ValueError(
-            "PYTHON_BRIDGE_TIMEOUT leaves no time for a source walk after "
-            "the bridge overhead allowance"
-        )
-    return min(requested, available)
-
-
-def get_source_config() -> SourceConfig:
+def get_source_config(*, for_download: bool = False) -> SourceConfig:
     """Load configuration from environment variables.
 
     Returns a fresh SourceConfig each call (not cached) to support
-    environment variable changes during testing.
+    environment variable changes during testing. Downloads use the long
+    owner; short timers scale overhead rather than rejecting all source work.
+    Adapters refuse uninformative remaining slices with provider attribution.
     """
+    owner = _node_bridge_timeout_seconds(for_download=for_download)
+    overhead = min(WALK_OVERHEAD_ALLOWANCE, owner / 8.0)
+    available = owner - overhead - WALK_BUDGET_SAFETY_MARGIN
+    if available <= 0:
+        name = "PYTHON_BRIDGE_LONG_TIMEOUT" if for_download else "PYTHON_BRIDGE_TIMEOUT"
+        raise ValueError(f"{name} leaves no time for a source walk after overhead")
+    download_timeout = _positive_float(
+        "BOOK_SOURCE_DOWNLOAD_TIMEOUT", DEFAULT_DOWNLOAD_TIMEOUT
+    )
     return SourceConfig(
         annas_secret_key=os.environ.get("ANNAS_SECRET_KEY", ""),
         annas_base_url=os.environ.get("ANNAS_BASE_URL", DEFAULT_ANNAS_BASE_URL),
@@ -299,13 +293,15 @@ def get_source_config() -> SourceConfig:
         total_timeout=_positive_float(
             "BOOK_SOURCE_TOTAL_TIMEOUT", DEFAULT_TOTAL_TIMEOUT
         ),
-        download_timeout=_positive_float(
-            "BOOK_SOURCE_DOWNLOAD_TIMEOUT", DEFAULT_DOWNLOAD_TIMEOUT
+        download_timeout=(
+            min(download_timeout, available) if for_download else download_timeout
         ),
         preflight_enabled=os.environ.get("BOOK_SOURCE_PREFLIGHT", "true").lower()
         == "true",
-        preflight_timeout=_positive_float(
-            "BOOK_SOURCE_PREFLIGHT_TIMEOUT", DEFAULT_PREFLIGHT_TIMEOUT
+        preflight_timeout=get_preflight_timeout(),
+        walk_budget=min(
+            _positive_float("BOOK_SOURCE_WALK_BUDGET", DEFAULT_WALK_BUDGET),
+            available,
         ),
-        walk_budget=_walk_budget(),
+        bridge_overhead=overhead,
     )

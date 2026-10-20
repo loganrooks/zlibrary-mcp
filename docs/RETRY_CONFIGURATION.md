@@ -92,18 +92,39 @@ never reaches is reported with reason `walk_budget_exhausted`, naming the
 mirrors skipped — deliberately distinct from a timeout, which is a verdict
 about a host. This one is fixed by raising `BOOK_SOURCE_WALK_BUDGET`.
 
-**Do not verify the composition by reading.** `lib/sources/config.py` provides
-`worst_case_search_seconds()` and `worst_case_download_seconds()`, and
-`__tests__/python/test_multi_source_timeouts.py` compares both against the Node
-budgets parsed out of `src/lib/python-runner.ts`. Raising the walk budget past
-what either allows fails the suite instead of producing an unexplained timeout.
+**Scope: provider walks, not whole tools or acquisitions.**
+`worst_case_search_seconds()` allocates one provider search walk plus bridge
+overhead; `worst_case_download_seconds()` allocates one provider download chain
+plus overhead. Tests compare these allocations strictly below the owning Node
+budgets parsed from `src/lib/python-runner.ts`. Raising a default Python budget
+past its owner fails the guard; environment overrides are clamped at admission.
 
-Source-file transfer has a separate 1,500-second default because a valid large
-book can exceed the per-attempt resolution budget. The 2,400-second long bridge
-default composes the walk budget (`165s`), transfer (`1,500s`), the OCR
-subprocess default (`600s`), and finalization headroom (`135s`). Both bridge
-budgets are satisfied by the same walk budget, so raising it has to fit under
-both — which is what `worst_case_download_seconds()` checks.
+Source configuration uses `PYTHON_BRIDGE_TIMEOUT` for searches and
+`PYTHON_BRIDGE_LONG_TIMEOUT` for downloads. Overhead is
+`min(30s, owning timer / 8)`; the walk is clamped below the remainder by 1 ms.
+A 15s source call therefore has 1.875s overhead and at most 13.124s of walk,
+not a fixed 30s admission charge. Adapters refuse a slice too short for useful
+work with `walk_budget_exhausted` and provider/mirror attribution. A timer
+with no positive remainder after overhead and the 1ms margin is a configuration
+error before provider contact. Overhead is an allocation, not a measured
+cold-start guarantee. Arbitrary per-call runner timeout overrides are outside
+this environment-based admission contract.
+
+The 2.0 public `search` tries each requested source in its own bridge child:
+LibGen and Anna's use explicit-source `search_multi_source`; Z-Library uses
+separate EAPI calls. An L/A child defaults to a 165s walk + 30s overhead,
+leaving 45s under its 240s owner. The public tool does not combine those
+children into one Python `auto` walk or claim a whole-tool 240s deadline.
+
+The provider download chain has a separate 1500s default because a large book
+can exceed a per-attempt search budget. This timeout wraps resolution **and**
+transfer; do not add the 165s resolution walk again. With 30s overhead its
+allocation is 1530s, leaving 870s under the default 2400s long owner. Download
+configuration also clamps the chain timeout to that owner's remainder.
+This is **not** a whole-acquisition bound: destination lease waiting,
+receipt verification and finalization are excluded. A shared deadline across
+those phases is tracked separately in [#280](https://github.com/rookslog/zlibrary-mcp/issues/280).
+Text processing does not ship in 2.0; there is no OCR allocation here.
 
 LibGen download resolution inspects at most the first 2 KiB of a candidate
 response. Some CDNs ignore `Range` and answer `200`; the probe streams and closes

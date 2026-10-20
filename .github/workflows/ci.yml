@@ -186,6 +186,21 @@ jobs:
           .venv/bin/python -c "import importlib.util, pathlib, sys, zlibrary; root = pathlib.Path.cwd().resolve(); assert importlib.util.find_spec('pytest') is None; assert root in pathlib.Path(zlibrary.__file__).resolve().parents; sys.path.insert(0, 'lib'); import python_bridge" \
             && echo "OK: packed core setup excludes dev tools and bridge imports resolve"
 
+  packed-install:
+    name: Packed install (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          lfs: false
+      - uses: ./.github/actions/setup
+      - run: node scripts/check-packed-artifact.mjs --offline-providers
+
   docs-check:
     runs-on: ubuntu-latest
     steps:

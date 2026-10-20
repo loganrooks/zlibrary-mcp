@@ -20,7 +20,7 @@ const listeners = new Map(
   ['exit', 'SIGINT', 'SIGTERM'].map((n) => [n, new Set(process.rawListeners(n))]),
 );
 beforeEach(async () => {
-  temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'i251-'));
+  temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'i251-12345678-1234-4234-8234-123456789abc-'));
   modeFile = path.join(temporary, 'mode');
   callsFile = path.join(temporary, 'calls');
   fs.writeFileSync(modeFile, 'success');
@@ -262,9 +262,12 @@ test('one owner refresh keeps correlation and reports its actual refresh count',
   });
   const calls = fs.readFileSync(callsFile, 'utf8').trim().split('\n');
   expect(calls.filter((x) => x === '/eapi/user/login')).toHaveLength(2);
-  const ids = captured
-    .join('')
-    .match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g);
+  // A checkout frame can contain a UUID unrelated to the correlation field.
+  captured.push('at /tmp/checkout-12345678-1234-4234-8234-123456789abc/dist/index.js:1:1');
+  const ids = [
+    ...captured.join('').matchAll(/\\?"request_id\\?"\s*:\s*\\?"([0-9a-f-]{36})\\?"/g),
+  ].map((match) => match[1]);
+  expect(ids.length).toBeGreaterThan(0);
   expect(new Set(ids)).toEqual(new Set([result.error.detail.diagnostics.request_id]));
 });
 
@@ -446,6 +449,9 @@ test('warm memory session preserves explicit pre-issuance budget refusal', async
       })
       .catch((error) => error);
     expect(JSON.parse(failure.context.stderr).details.request_issued).toBe(false);
+    expect(envelope(failure, 'download', 'zlibrary').error.detail).not.toHaveProperty(
+      'diagnostics',
+    );
     expect(failure.context.details).toMatchObject({
       reason: 'walk_budget_exhausted',
       request_issued: false,
@@ -540,6 +546,7 @@ test.each([
     expect(failure.context.path).toBeUndefined();
     expect(JSON.stringify(failure)).not.toContain('spawnargs');
     expect(fs.existsSync(callsFile)).toBe(false);
+    expect(result.error.detail).not.toHaveProperty('diagnostics');
   },
 );
 
@@ -588,3 +595,26 @@ test.each(transportCases)(
     expect(after.filter((route) => route === '/eapi/user/login')).toHaveLength(1);
   },
 );
+
+// Real Python validation occurs before the offline provider transport is reached.
+test('pre-dispatch argument ValueError retains invalid_argument without provider contact', async () => {
+  const failure = await api.searchBooks({ query: 'offline', count: 0 }).catch((error) => error);
+  expect(envelope(failure, 'search', 'zlibrary').error.code).toBe('invalid_argument');
+  expect(fs.existsSync(callsFile)).toBe(false);
+});
+
+test('pre-dispatch local argument refusal has no EAPI request diagnostic', async () => {
+  const failure = await api.searchBooks({ query: 'offline', count: 0 }).catch((error) => error);
+  expect(failure).toBeInstanceOf(Error);
+  expect(envelope(failure, 'search', 'zlibrary').error.detail).not.toHaveProperty('diagnostics');
+  expect(fs.existsSync(callsFile)).toBe(false);
+});
+
+test('missing credentials are a local refusal with no provider diagnostic', async () => {
+  delete process.env.ZLIBRARY_EMAIL;
+  delete process.env.ZLIBRARY_PASSWORD;
+  const failure = await api.searchBooks({ query: 'offline' }).catch((error) => error);
+  expect(failure).toBeInstanceOf(Error);
+  expect(envelope(failure, 'search', 'zlibrary').error.detail).not.toHaveProperty('diagnostics');
+  expect(fs.existsSync(callsFile)).toBe(false);
+});

@@ -230,3 +230,82 @@ async def test_local_budget_after_eapi_setup_keeps_its_original_verdict(
     assert data["details"]["reason"] == "walk_budget_exhausted"
     assert data["details"]["request_issued"] is issued
     assert "diagnostics" not in data
+
+
+@pytest.mark.parametrize("name", ["zlibrary.sources", "zlibrary.sources.future"])
+def test_child_logger_payloads_are_filtered_at_stderr_and_file_handlers(name):
+    import io
+    from lib.auth_diagnostics import DiagnosticLogFilter
+
+    child = logging.getLogger(name)
+    streams = [io.StringIO(), io.StringIO()]
+    handlers = [logging.StreamHandler(stream) for stream in streams]
+    root = logging.getLogger()
+    originals = list(root.handlers)
+    try:
+        root.handlers = handlers
+        python_bridge._configure_debug_logging()
+        child.error("i286-provider-secret", exc_info=True, stack_info=True)
+        assert all(
+            "i286-provider-secret" not in stream.getvalue() for stream in streams
+        )
+        diagnostics = {
+            "failure_kind": "transport",
+            "attempt": 1,
+            "refresh_count": 0,
+            "request_id": "00000000-0000-4000-8000-000000000001",
+        }
+        child.warning("i286-provider-secret", extra={"auth_diagnostics": diagnostics})
+        for stream in streams:
+            assert json.loads(stream.getvalue().strip()) == diagnostics
+            assert "Traceback" not in stream.getvalue()
+        logging.getLogger("unrelated").warning("ordinary unrelated message")
+        assert all(
+            "ordinary unrelated message" in stream.getvalue() for stream in streams
+        )
+        assert any(
+            isinstance(f, DiagnosticLogFilter) for f in python_bridge.logger.filters
+        )
+    finally:
+        root.handlers = originals
+        for handler in handlers:
+            handler.close()
+
+
+@pytest.mark.parametrize(
+    "reason",
+    [
+        "invalid_argument",
+        "output_refused",
+        "configuration_error",
+        "breaker_open",
+        "walk_budget_exhausted",
+    ],
+)
+async def test_local_refusal_after_setup_does_not_imply_a_provider_request(
+    reason, monkeypatch, capsys
+):
+    from lib.acquisition import AcquisitionError
+
+    async def initialize():
+        pass
+
+    async def dispatch(*args):
+        raise AcquisitionError(reason, "local refusal", issued=False)
+
+    monkeypatch.setattr(python_bridge, "_eapi_client", None)
+    monkeypatch.setattr(python_bridge, "_session_input", None)
+    monkeypatch.setattr(python_bridge, "initialize_eapi_client", initialize)
+    monkeypatch.setattr(python_bridge, "_dispatch_bridge_function", dispatch)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["python_bridge.py", "download_book", '{"book_details":{"id":"17"}}'],
+    )
+    with pytest.raises(SystemExit) as stopped:
+        await python_bridge.main()
+    assert stopped.value.code == 1
+    data = json.loads(capsys.readouterr().err.strip().splitlines()[-1])
+    assert data["details"]["reason"] == reason
+    assert data["details"]["request_issued"] is False
+    assert "diagnostics" not in data

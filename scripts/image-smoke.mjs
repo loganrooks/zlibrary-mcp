@@ -12,6 +12,7 @@ import { randomUUID } from 'node:crypto';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { waitForFakeReady } from '../__tests__/rehearsal/fake-startup.js';
+import { assertToolSchemas, resetEgressCanary } from './image-smoke-checks.mjs';
 
 const run = promisify(execFile);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -28,6 +29,7 @@ async function main(image) {
     'Usage: node scripts/image-smoke.mjs <local-image>',
   );
   const expectedVersion = JSON.parse(await readFile(path.join(root, 'package.json'))).version;
+  const expectedSchemas = JSON.parse(await readFile(path.join(rehearsal, 'tools-schemas.json')));
   const temporary = await realpath(await mkdtemp(path.join(tmpdir(), 'zlib-image-smoke-')));
   const name = `zlib-image-smoke-${randomUUID()}`;
   const serverName = `${name}-mcp`;
@@ -70,7 +72,11 @@ async function main(image) {
       ],
       { timeout: 10000 },
     );
-    const mounts = [...mount(rehearsal, '/smoke/rehearsal'), ...mount(tls, '/smoke/tls')];
+    const mounts = [
+      ...mount(rehearsal, '/smoke/rehearsal'),
+      ...mount(tls, '/smoke/tls'),
+      ...mount(path.join(root, '__tests__/image-smoke'), '/smoke/controls'),
+    ];
     // The fake's namespace has loopback only. The MCP container joins exactly
     // that namespace; neither has a route to a host/real provider or DNS server.
     fake = spawn(
@@ -160,6 +166,11 @@ async function main(image) {
     };
     // connect performs initialize and notifications/initialized through the SDK.
     await client.connect(transport, { timeout: 20000 });
+    // docker exec inherits the running MCP container's user, working directory
+    // and environment, including PYTHONPATH and the exact image interpreter.
+    // A kernel denial does not pass: require the fence exception AND trap file.
+    await docker(['exec', serverName, python, '/smoke/controls/egress-canary.py']);
+    await resetEgressCanary(path.join(state, 'egress-trap.txt'));
     assert.equal(
       client.getServerVersion()?.version,
       expectedVersion,
@@ -171,6 +182,7 @@ async function main(image) {
       ['download', 'get_book', 'get_history', 'get_limits', 'search'],
       'exactly five public tools',
     );
+    assertToolSchemas(tools, expectedSchemas);
     const reply = await client.callTool(
       {
         name: 'search',

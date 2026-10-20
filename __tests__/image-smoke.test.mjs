@@ -13,6 +13,8 @@ for (const [image, expected] of [
   ['healthy', null],
   ['wrong-version', /package version/],
   ['wrong-tools', /five public tools/],
+  ['wrong-schema', /public tool schemas/],
+  ['missing-canary', /canary must record exactly one blocked attempt/],
   ['wrong-envelope', /search rows/],
   ['no-contact', /fake provider search/],
   ['egress', /egress attempt/],

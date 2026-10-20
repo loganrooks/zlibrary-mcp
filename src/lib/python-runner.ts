@@ -576,13 +576,18 @@ export function runPythonBridge(
         ? {
             // Windows child stdin must support IOCP, including Python3.10.
             stdio: ['overlapped', 'pipe', 'pipe', 'pipe', 'pipe'],
-            env: {
-              ...options.env,
-              ZLIBRARY_EAPI_CHANNEL: 'lazy-v2',
-              ZLIBRARY_EAPI_HANDOFF_TIMEOUT_MS: String(timeoutMs),
-            },
           }
         : {}),
+      env: {
+        ...(options.env ?? process.env),
+        PYTHON_BRIDGE_CALL_TIMEOUT_MS: String(timeoutMs),
+        ...(lazy
+          ? {
+              ZLIBRARY_EAPI_CHANNEL: 'lazy-v2',
+              ZLIBRARY_EAPI_HANDOFF_TIMEOUT_MS: String(timeoutMs),
+            }
+          : {}),
+      },
       // On POSIX this creates a new session/process group whose id is the
       // Python pid. OCR and other grandchildren inherit it, making the whole
       // bridge-owned tree addressable without walking /proc.

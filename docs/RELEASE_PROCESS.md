@@ -123,26 +123,52 @@ Every rule above is one of those failures, inverted.
 3. Bump `version` in `package.json`.
 4. `npm run audit:release` — it must exit 0.
 5. Commit, merge to `master`, then tag `vX.Y.Z` and push the tag.
-6. `publish.yml` then publishes to npm (OIDC trusted publishing), pushes the GHCR image,
+6. `publish.yml` then pushes and checks the GHCR image, publishes to npm (OIDC trusted publishing),
    **and creates the GitHub Release** from the CHANGELOG section.
 7. Close the milestone. Close the map issue with its outcome recorded in the body.
 
 ### Publish ordering
 
-On a `v*` tag, `validate-release-notes` must succeed before `publish-npm`
-runs setup, build, and the existing Jest and pytest suites. npm publication
-follows those tests in the same job. `publish-docker` then requires successful
-`publish-npm` completion as well as validated notes, so GHCR publication waits
-for both tests and npm publication. A failed or skipped test gate blocks both
-publishers (#211).
+On a `v*` tag, `validate-release-notes` must succeed before `prepare-release`
+runs setup, build, the existing Jest and pytest suites, and a single npm pack.
+`publish-packages` requires that job and validated notes. It builds the image
+from the same tarball that npm will publish, loads it with its BuildKit
+provenance in Docker's containerd image store, checks its index digest, and runs
+the offline image smoke. Only then does it push and verify the exact tested
+image in GHCR, followed by npm publication as the last step (#291). Both CI and
+publishing pin Docker Engine **29.9.1** via `setup-docker-action`. A failed or
+skipped test gate or a failed image smoke blocks both publishers (#211).
 
-`github-release` still depends on validated notes and successful npm publication;
-it can run alongside Docker and does not wait for a GHCR push.
+A GHCR push or verification failure leaves npm unpublished; some GHCR tags may
+already exist. Re-run failed jobs to repeat the smoke, re-push the tested digest
+(idempotent for the same digest), and finish npm. An npm failure leaves the
+verified image in GHCR and no GitHub Release. On a re-run,
+`scripts/publish-npm-idempotent.mjs` hashes the exact tarball and queries
+`npm view zlibrary-mcp@$V dist.integrity`: identical SHA-512 integrity skips npm
+publication; an absent version (explicit E404) permits publishing with provenance.
+Different or missing integrity on an existing version, lookup/auth/network errors,
+and malformed responses stop the job rather than republishing unknown bytes.
+Re-running failed jobs reuses `prepare-release`'s tarball artifact; if it has
+expired, recover those exact bytes before attempting recovery. Re-running all
+jobs may repack different bytes and correctly fail the integrity comparison.
+There is no cross-registry transaction.
+
+`github-release` depends on validated notes and successful `publish-packages`
+completion, so the GitHub Release now waits for **both** GHCR and npm, including
+an identical-byte npm skip. Tags, npm channel and `--latest` behavior are unchanged.
 `__tests__/publish-workflow.test.js` parses the workflow and checks its dependency
 graph in the normal Jest CI suite, including failed, skipped, cancelled, and
-missing test-gate outcomes and the original Docker-bypass mutation. These are
-offline configuration checks, not an execution of GitHub's scheduler or a real
-registry publish; those remain untested until the release.
+missing test-gate outcomes and the original Docker-bypass mutation. It also pins
+build → identity → smoke → GHCR → npm ordering, failure propagation, explicit
+provenance and the shared context helper.
+
+On every PR, CI's `docker` job uses the same pinned engine, containerd store,
+load-plus-provenance build and identity check, retains the offline smoke, then
+runs `push-tested-image.mjs` against a disposable `registry:2` service. That
+rehearses the real `.Manifest` and `.Provenance` inspection shapes without a
+release tag or a public publication. Offline configuration tests and npm/Docker
+doubles cover controls; they do not execute GitHub's scheduler or attest that a
+hosted rehearsal or public registry publication succeeded.
 
 ## Opening the next release
 

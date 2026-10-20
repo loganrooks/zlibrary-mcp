@@ -568,3 +568,21 @@ async def test_short_password_cannot_rewrite_diagnostic_schema(
     output = capsys.readouterr()
     result = json.loads(json.loads(output.out)["content"][0]["text"])
     assert result["login_failed"]["status_code"] == 401
+
+
+@pytest.mark.parametrize("status", [404, 503])
+async def test_operation_http_status_crosses_error_boundary_without_message_guessing(
+    service, monkeypatch, capsys, status
+):
+    await seed(service, monkeypatch)
+    service["operation"] = httpx.Response(status, text="fixture upstream response")
+    monkeypatch.setattr(
+        sys, "argv", ["python_bridge.py", "search", '{"query":"offline"}']
+    )
+    with pytest.raises(SystemExit) as stopped:
+        await python_bridge.main()
+    assert stopped.value.code == 1
+    envelope = json.loads(capsys.readouterr().err.strip().splitlines()[-1])
+    assert envelope["type"] == "HTTPStatusError"
+    assert envelope["status_code"] == status
+    assert "details" not in envelope  # EAPI has not done the multi-source walk.

@@ -12,17 +12,10 @@ const LONG_RUNNING_FUNCTIONS = new Set(['download_book', 'process_document']);
 export interface BridgeErrorEnvelope {
   error: string;
   type?: string;
+  status_code?: number;
   details?: any;
 }
 
-const UNREACHABLE_REASONS = new Set([
-  'dns_failure',
-  'dns_timeout',
-  'connect_timeout',
-  'connect_refused',
-  'connect_error',
-  'tls_error',
-]);
 const PERMANENT_CALLER_REASONS = new Set(['configuration_error', 'quota_exhausted']);
 
 function everyFailureHasReason(details: any, predicate: (reason: unknown) => boolean): boolean {
@@ -44,8 +37,7 @@ export function isPermanentBridgeDetail(details: any): boolean {
 }
 
 export function isBridgeDetailRetryable(details: any): boolean {
-  if (isPermanentBridgeDetail(details)) return false;
-  return !everyFailureHasReason(details, (reason) => UNREACHABLE_REASONS.has(String(reason)));
+  return details === undefined;
 }
 
 /** Extract the final JSON provider-error envelope from mixed stderr logs. */
@@ -87,8 +79,8 @@ export async function callPythonFunction(
   if (!existsSync(scriptPath)) {
     throw new Error(
       `Python bridge script not found at: ${scriptPath}\n` +
-      `This usually indicates a build or installation issue.\n` +
-      `Expected location: <project_root>/lib/python_bridge.py`
+        `This usually indicates a build or installation issue.\n` +
+        `Expected location: <project_root>/lib/python_bridge.py`,
     );
   }
 
@@ -123,6 +115,7 @@ export async function callPythonFunction(
             args,
             details: envelope.details,
             pythonErrorType: envelope.type,
+            httpStatus: envelope.status_code,
             stderr: error.stderr,
             originalError: error,
           },

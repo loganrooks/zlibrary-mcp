@@ -111,8 +111,24 @@ The circuit breaker protects against cascading failures:
 
 1. **CLOSED** (normal): All operations pass through
 2. **OPEN** (failing): After threshold failures, circuit opens and rejects all operations
-3. **HALF_OPEN** (testing): After timeout, allows work to test if the service recovered
-4. **Back to CLOSED**: If test succeeds, circuit closes and normal operation resumes
+3. **HALF_OPEN** (testing): After timeout, admits exactly one probe. Other callers
+   are refused with the ordinary `breaker_open` error while the probe holds the
+   circuit. A memory-mode Z-Library download settles its probe as a success at the
+   session grant, when the owner hands its transfer a valid session; the transfer
+   then counts like any CLOSED call. A probe whose call has the long download budget holds the circuit
+   for at most `PYTHON_BRIDGE_TIMEOUT`; after that further callers are admitted,
+   and the probe still delivers its own verdict. Calls with the ordinary budget
+   hold the circuit until their verdict.
+4. **Probe verdict**: success closes the circuit; a counted failure re-opens it for
+   a fresh timeout; a probe that says nothing about health (cancelled, a
+   non-transient error, a verified receipt) leaves it OPEN with the timeout spent,
+   so the next caller probes.
+
+A verified receipt hit never changes breaker state on any download path. When the
+breaker refuses a LibGen, Anna's Archive or per-call Z-Library download, a
+receipt-only bridge child still serves an intact receipt; anything else returns the
+`breaker_open` refusal without an intent or provider contact. Concurrent memory-mode
+Z-Library downloads sharing one failed owner login count that failure once.
 
 ## Error Classification
 

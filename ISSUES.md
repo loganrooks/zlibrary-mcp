@@ -284,8 +284,11 @@ is unchanged; live provider behavior remains unchecked by these offline tests.
 **Severity**: Medium (architectural)
 **Impact**: `lib/sources/` has a working `SourceAdapter` interface, unified result
 model, and quota-aware `SourceRouter` — but Z-Library does not implement it, going
-through `python_bridge.py` directly. Of 13 tools, 12 are Z-Library-only and one
-reaches the router. A new source therefore cannot inherit metadata enrichment,
+through `python_bridge.py` directly. The five public tools are `search`,
+`get_book`, `download`, `get_limits` and `get_history`. Search/download dispatch
+Z-Library through the bridge and LibGen/Anna's through the router; account history
+is Z-Library-only. The following 1.x impact description is historical, not a
+current public-tool promise: a new source cannot inherit metadata enrichment,
 booklists or term search, and Z-Library remains a single point of
 failure.
 **Direction**: Wrap the EAPI client in `SourceAdapter`, register it in the router,

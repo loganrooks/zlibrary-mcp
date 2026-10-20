@@ -2,7 +2,7 @@
 > without automatic retries. Disk receipts are checked before authentication;
 > retry hints are `safe`, `may_spend_quota`, or `no`. Cancellation does not renew
 > intent. The retry settings below still apply to read operations and internal
-> legacy façades. See [API errors](api.md#errors) and [migration](interface-migration.md).
+> legacy façades. See [API errors](api.md#errors) and [migration](https://github.com/rookslog/zlibrary-mcp/blob/master/docs/interface-migration.md).
 
 # Retry Logic and Circuit Breaker Configuration
 
@@ -49,13 +49,14 @@ the outer Node budget must remain larger than the worst-case inner provider walk
 | `BOOK_SOURCE_PREFLIGHT` | `true` | Probe DNS and TCP before a provider request |
 | `BOOK_SOURCE_PREFLIGHT_TIMEOUT` | `5` | Budget per DNS or TCP probe phase, in seconds |
 | `PYTHON_BRIDGE_TIMEOUT` | `240000` | Ordinary Python bridge wall-clock budget, in milliseconds |
-| `PYTHON_BRIDGE_LONG_TIMEOUT` | `2400000` | Download and document-processing bridge budget, in milliseconds |
+| `PYTHON_BRIDGE_LONG_TIMEOUT` | `2400000` | Acquisition bridge budget, in milliseconds |
 | `PYTHON_BRIDGE_KILL_GRACE` | `3000` | Grace between process-tree termination and forced kill, in milliseconds |
 
-Malformed, non-positive, non-finite, and oversized values fall back to their
-defaults rather than disabling or accidentally shortening a deadline. Node timers
-accept at most `2,147,483,647` milliseconds; that exact value is valid, while any
-larger bridge timeout or kill-grace setting uses its documented default.
+The Node runner falls back to defaults for malformed, non-positive, non-finite,
+and oversized timer values. Node timers accept at most `2,147,483,647`
+milliseconds; that exact value is valid. The Python acquisition path parses
+`PYTHON_BRIDGE_LONG_TIMEOUT` the same way, with the same trimming and the same
+fallback, so a malformed value never refuses downloads.
 
 Preflight is skipped when `HTTP_PROXY` or `HTTPS_PROXY` covers the target, with
 `NO_PROXY` honored. A direct DNS/TCP socket cannot represent a proxied request;
@@ -127,6 +128,15 @@ This is **not** a whole-acquisition bound: destination lease waiting,
 receipt verification and finalization are excluded. A shared deadline across
 those phases is tracked separately in [#280](https://github.com/rookslog/zlibrary-mcp/issues/280).
 Text processing does not ship in 2.0; there is no OCR allocation here.
+
+Source downloads have a separate 1,500-second default because a valid large
+book can exceed the 45-second search and URL-resolution budget. The 2,400-second
+long bridge default provides headroom over the source candidate-walk budget for
+receipt checks, authentication and publication/finalization. The 1,500-second
+source download budget covers resolution and full-transfer attempts together.
+If provider budgets are overridden, keep
+`PYTHON_BRIDGE_LONG_TIMEOUT` larger than the inner download budget after
+converting milliseconds to seconds, with headroom for the surrounding work.
 
 LibGen download resolution inspects at most the first 2 KiB of a candidate
 response. Some CDNs ignore `Range` and answer `200`; the probe streams and closes
@@ -208,8 +218,13 @@ Under the [ratified #192 rule](https://github.com/rookslog/zlibrary-mcp/issues/1
 read-timeout, integrity, and mixed permanent/transient details. Python owns its
 provider walk. Transient aggregate leaves still count as dependency-health evidence.
 
-Breakers are independent: EAPI, Library Genesis/Anna/auto (one Python-owned source
-walk), and local work. Only positively classified transient health failures count:
+Breakers are independent, one per provider: EAPI, Library Genesis, and Anna's Archive
+([ADR-011](adr/ADR-011-Z-Library-Source-Adapter.md)). Each 2.0 search or download
+bridge call names one source, so an Anna's outage never refuses LibGen, nor the
+reverse; an ordered `["annas","libgen"]` search still reaches LibGen while Anna's is
+open. A bridge-level `auto` walk, which no 2.0 tool sends, covers both providers in
+one Python call and so keeps a fourth breaker of its own. Only positively classified
+transient health failures count:
 transport/timeouts, HTTP 408/429/5xx, integrity failures, and spawn resource pressure.
 HTTP source details need a numeric status or the adapter's exact `HTTP NNN` token;
 unknown statuses/reasons, TLS/config/auth/caller/parse errors, missing interpreter,
@@ -222,7 +237,7 @@ outside both Node retry multiplication and circuit-breaker accounting.
 
 ### Composed Node waiting budgets (defaults)
 
-Let B be 240 s for ordinary work, 2,400 s for download/processing. In default
+Let B be 240 s for ordinary work, 2,400 s for acquisition. In default
 memory-session mode, EAPI has at most B for acquisition plus B for the operation
 (including validation, retries and one auth refresh): 480 s ordinary / 4,800 s long.
 Other calls (also EAPI in `per-call` mode) allow at most `4B + 7 s` across four

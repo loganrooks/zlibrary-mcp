@@ -218,9 +218,13 @@ jobs:
           node-version: '22'
       # Legacy 1.4.0's processing stack needs its own supported interpreter lane.
       # The separate packed-install job still exercises the runner's default.
+      # The upgrade script installs into temporary prefixes, so the runner uv
+      # cache stays empty; on a new uv.lock key setup-uv would fail its post-job
+      # save on the missing path.
       - uses: astral-sh/setup-uv@v7
         with:
           python-version: '3.13'
+          enable-cache: false
       - run: npm ci
       - run: npm run build
       - run: node scripts/check-install-upgrades.mjs --matrix all --offline-providers

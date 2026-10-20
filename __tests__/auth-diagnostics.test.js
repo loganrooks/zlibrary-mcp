@@ -39,7 +39,10 @@ socket.getaddrinfo=forbidden
 import httpx
 import ssl
 from zlibrary import eapi
-async def resolve(): return 'fake.example.test'
+async def resolve():
+    with open(${JSON.stringify(modeFile)}) as f: mode=f.read()
+    if mode=='discovery-transport': raise httpx.ConnectTimeout(${JSON.stringify(poison)})
+    return 'fake.example.test'
 eapi.resolve_eapi_domain=resolve
 async def get_client(self):
     if self._client is None or self._client.is_closed:
@@ -74,6 +77,8 @@ def handle(request):
         return httpx.Response(400,json={'error':${JSON.stringify(poison)}})
     if mode=='success': return httpx.Response(200,json={'success':1,'books':[],'user':{'id':'17'}})
     if mode=='transport': raise httpx.ReadTimeout(${JSON.stringify(poison)},request=request)
+    if mode=='read-error': raise httpx.ReadError(${JSON.stringify(poison)},request=request)
+    if mode=='write-error': raise httpx.WriteError(${JSON.stringify(poison)},request=request)
     if mode=='malformed': return httpx.Response(200,text=${JSON.stringify(poison)})
     if mode=='wall': return httpx.Response(403,text='diamwall '+${JSON.stringify(poison)})
     if mode=='oversized': return httpx.Response(500,text=(${JSON.stringify(poison)}+'\\n')*10000)
@@ -350,4 +355,110 @@ test('lazy transfer logs and tool error agree after a pre-grant owner refresh', 
     http_status: 400,
     refresh_count: 1,
   });
+});
+
+// Per-call acquisition authenticates only inside the real transfer callback.
+// A rejected login has not assigned either Python session/client global yet.
+test.each([
+  ['login-auth', 'auth_rejected', 'auth_failed'],
+  ['login-tls', 'transport', 'provider_unreachable'],
+  ['discovery-transport', 'transport', 'provider_unreachable'],
+])('per-call acquisition retains an early %s diagnosis', async (mode, kind, code) => {
+  fs.writeFileSync(modeFile, mode);
+  const failure = await api
+    .invokeAcquisitionBridge('acquire_book', {
+      book_details: {
+        source: 'zlibrary',
+        id: '17',
+        book_hash: 'hash',
+        title: 'offline',
+        extension: 'epub',
+      },
+      output_dir: temporary,
+      filename: 'offline.epub',
+    })
+    .catch((e) => e);
+  const result = envelope(failure, 'download', 'zlibrary');
+  expect(result.error.code).toBe(code);
+  expect(result.error.detail.diagnostics.failure_kind).toBe(kind);
+  for (const sentinel of sentinels)
+    expect(
+      captured.join('') + JSON.stringify(result) + JSON.stringify(logs.mock.calls),
+    ).not.toContain(sentinel);
+  const calls = fs.existsSync(callsFile)
+    ? fs.readFileSync(callsFile, 'utf8').trim().split('\n')
+    : [];
+  expect(calls).toEqual(mode === 'discovery-transport' ? [] : ['/eapi/user/login']);
+});
+
+test.each([
+  ['read-error', 'ReadError'],
+  ['write-error', 'WriteError'],
+])(
+  '%s survives both bridge projections without Node replay and counts on the breaker',
+  async (mode, type) => {
+    process.env.RETRY_MAX_RETRIES = '3';
+    process.env.CIRCUIT_BREAKER_THRESHOLD = '2';
+    process.env.RETRY_INITIAL_DELAY = '1';
+    fs.writeFileSync(modeFile, mode);
+    const { isRetryableError, isTransientDependencyError } =
+      await import('../lib/retry-manager.js');
+    for (let verdict = 1; verdict <= 2; verdict++) {
+      const failure = await api.searchBooks({ query: 'offline' }).catch((e) => e);
+      expect(failure.context.pythonErrorType).toBe(type);
+      expect(failure.context.diagnostics).toMatchObject({ failure_kind: 'transport', attempt: 1 });
+      expect(failure.context.details).toEqual({});
+      expect(isRetryableError(failure)).toBe(false);
+      // Breaker health alone strips empty/issuance-only details for typed evidence.
+      expect(isTransientDependencyError({ context: { pythonErrorType: type } })).toBe(true);
+      const issued = fs.readFileSync(callsFile, 'utf8').trim().split('\n');
+      expect(issued.filter((route) => route === '/eapi/book/search')).toHaveLength(verdict);
+    }
+    const calls = fs.readFileSync(callsFile, 'utf8').trim().split('\n');
+    expect(calls.filter((route) => route === '/eapi/book/search')).toHaveLength(2);
+    fs.writeFileSync(modeFile, 'success');
+    await expect(api.searchBooks({ query: 'breaker-is-open' })).rejects.toMatchObject({
+      code: 'CIRCUIT_BREAKER_OPEN',
+    });
+    expect(fs.readFileSync(callsFile, 'utf8').trim().split('\n')).toEqual(calls);
+  },
+);
+
+// Bare Python envelopes remain Python-owned even when a typed outage counts
+// for dependency health. Losing active issuance metadata must never permit replay.
+test('active transport bare ReadError keeps issuance, does not replay, and counts on the breaker', async () => {
+  process.env.ZLIBRARY_SESSION_MODE = 'memory';
+  process.env.RETRY_MAX_RETRIES = '3';
+  process.env.RETRY_INITIAL_DELAY = '1';
+  await api.searchBooks({ query: 'warm-session' });
+  fs.writeFileSync(modeFile, 'read-error');
+  const routes = () => fs.readFileSync(callsFile, 'utf8').trim().split('\n');
+  let previous = routes();
+  const invoke = () =>
+    api
+      .downloadBookToFile({
+        bookDetails: { id: '17', book_hash: 'hash', title: 'offline' },
+      })
+      .catch((error) => error);
+  const { isRetryableError } = await import('../lib/retry-manager.js');
+  for (let verdict = 1; verdict <= 2; verdict++) {
+    const failure = await invoke();
+    const current = routes();
+    expect(current.length - previous.length).toBe(1);
+    expect(failure.context.pythonErrorType).toBe('ReadError');
+    expect(JSON.parse(failure.context.stderr).details).toBeUndefined();
+    expect(failure.context.details).toEqual({ request_issued: true });
+    expect(isRetryableError(failure)).toBe(false);
+    expect(envelope(failure, 'download', 'zlibrary').error.detail).toMatchObject({
+      request_issued: true,
+      diagnostics: { failure_kind: 'transport', attempt: 1 },
+    });
+    previous = current;
+  }
+  // Two independent logical failures (not retries) open the threshold-two breaker.
+  await expect(api.searchBooks({ query: 'breaker-is-open' })).rejects.toMatchObject({
+    code: 'CIRCUIT_BREAKER_OPEN',
+  });
+  expect(routes()).toEqual(previous);
+  expect(previous.filter((route) => route === '/eapi/user/login')).toHaveLength(1);
 });

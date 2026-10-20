@@ -137,7 +137,7 @@ def decode_eapi_json(resp: httpx.Response, domain: str) -> dict:
         error.status_code = resp.status_code
         raise error
     resp.raise_for_status()
-    error = NonJSONResponseError("Expected an EAPI JSON response")
+    error = NonJSONResponseError("Expected EAPI JSON, got a non-JSON response")
     error.status_code = resp.status_code
     raise error
 

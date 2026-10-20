@@ -52,23 +52,25 @@ export function authDiagnosticsFor(
   return readAuthDiagnostics({
     failure_kind:
       prior?.failure_kind ??
-      (context.reason === 'auth_rejected' || type === 'EAPIAuthenticationError'
-        ? 'auth_rejected'
-        : type === 'DiamWallError'
-          ? 'wall'
-          : [
-                'ReadTimeout',
-                'WriteTimeout',
-                'ConnectTimeout',
-                'ConnectError',
-                'PoolTimeout',
-                'RemoteProtocolError',
-              ].includes(type) ||
-              ['NETWORK_ERROR', 'TIMEOUT', 'ECONNRESET', 'ECONNREFUSED', 'ETIMEDOUT'].includes(
-                error?.code,
-              )
-            ? 'transport'
-            : 'ambiguous_status'),
+      (context.reason === 'aborted'
+        ? 'ambiguous_status'
+        : context.reason === 'auth_rejected' || type === 'EAPIAuthenticationError'
+          ? 'auth_rejected'
+          : type === 'DiamWallError'
+            ? 'wall'
+            : [
+                  'ReadTimeout',
+                  'WriteTimeout',
+                  'ConnectTimeout',
+                  'ConnectError',
+                  'PoolTimeout',
+                  'RemoteProtocolError',
+                ].includes(type) ||
+                ['NETWORK_ERROR', 'TIMEOUT', 'ECONNRESET', 'ECONNREFUSED', 'ETIMEDOUT'].includes(
+                  error?.code,
+                )
+              ? 'transport'
+              : 'ambiguous_status'),
     ...(prior?.http_status !== undefined
       ? { http_status: prior.http_status }
       : Number.isInteger(status) && status >= 100 && status <= 599
@@ -121,6 +123,11 @@ export function safeEapiFailureEnvelope(value: any): Record<string, any> | undef
     'ConnectError',
     'PoolTimeout',
     'RemoteProtocolError',
+    'TimeoutException',
+    'ReadError',
+    'WriteError',
+    'ConnectionError',
+    'TimeoutError',
     'RuntimeError',
     'ValueError',
     'TypeError',
@@ -154,6 +161,9 @@ export function safeEapiFailureEnvelope(value: any): Record<string, any> | undef
       'connect_timeout',
       'configuration_error',
       'output_refused',
+      'invalid_argument',
+      'breaker_open',
+      'integrity_mismatch',
       'internal',
       'timeout',
       'aborted',

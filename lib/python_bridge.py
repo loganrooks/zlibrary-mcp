@@ -1939,7 +1939,12 @@ async def main():
             error_info["details"].setdefault("operation", operation)
         error_info = _safe_diagnostic(error_info)
         diagnostics = None
-        if needs_eapi or _session_input is not None or _eapi_client is not None:
+        if (
+            needs_eapi
+            or _session_input is not None
+            or _eapi_client is not None
+            or getattr(e, "_eapi_initialization_failure", False) is True
+        ):
             diagnostics = failure_diagnostics(
                 e,
                 refreshed=bool(
@@ -1967,6 +1972,9 @@ async def main():
                             "connect_timeout",
                             "configuration_error",
                             "output_refused",
+                            "invalid_argument",
+                            "breaker_open",
+                            "integrity_mismatch",
                             "internal",
                         )
                     )
@@ -2046,7 +2054,13 @@ async def _dispatch_bridge_function(function_name: str, args_dict: dict):
                         "configuration_error",
                         "Configure ZLIBRARY_EMAIL and ZLIBRARY_PASSWORD",
                     )
-                await initialize_eapi_client()
+                try:
+                    await initialize_eapi_client()
+                except Exception as error:
+                    # Deferred per-call login/discovery can fail before either
+                    # global exists. Mark the failure, not local receipt refusals.
+                    error._eapi_initialization_failure = True
+                    raise
             elif source in {"annas", "annas_archive"} and not os.environ.get(
                 "ANNAS_SECRET_KEY"
             ):

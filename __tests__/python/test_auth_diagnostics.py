@@ -114,3 +114,87 @@ async def test_health_failure_and_metadata_logging_do_not_bypass_projection(
     result = await python_bridge.eapi_health_check()
     assert "i251" not in json.dumps(result) + caplog.text
     assert result["diagnostics"]["failure_kind"] == "transport"
+
+
+@pytest.mark.parametrize("kind", ["auth_rejected", "transport"])
+async def test_per_call_acquisition_failure_before_client_assignment(
+    kind, tmp_path, monkeypatch, capsys
+):
+    from zlibrary.eapi import EAPIAuthenticationError
+
+    failure = (
+        EAPIAuthenticationError("i251-provider-prose", status_code=401)
+        if kind == "auth_rejected"
+        else httpx.ConnectTimeout("i251-provider-prose")
+    )
+
+    async def login(*args):
+        raise failure
+
+    monkeypatch.setenv("ZLIBRARY_EMAIL", "i251@example.test")
+    monkeypatch.setenv("ZLIBRARY_PASSWORD", "i251-password")
+    monkeypatch.setattr(python_bridge, "_lazy_session", False)
+    monkeypatch.setattr(python_bridge, "_eapi_client", None)
+    monkeypatch.setattr(python_bridge, "_session_input", None)
+    monkeypatch.setattr(python_bridge, "_login_eapi_client", login)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "python_bridge.py",
+            "acquire_book",
+            json.dumps(
+                {
+                    "book_details": {
+                        "source": "zlibrary",
+                        "id": "17",
+                        "book_hash": "hash",
+                        "title": "offline",
+                        "extension": "epub",
+                    },
+                    "output_dir": str(tmp_path),
+                }
+            ),
+        ],
+    )
+    with pytest.raises(SystemExit) as stopped:
+        await python_bridge.main()
+    assert stopped.value.code == 1
+    streams = capsys.readouterr()
+    data = json.loads(streams.err.strip().splitlines()[-1])
+    assert "i251-provider-prose" not in streams.err + streams.out
+    assert data["diagnostics"]["failure_kind"] == kind
+    assert python_bridge._eapi_client is None
+    assert python_bridge._session_input is None
+
+
+async def test_local_acquisition_refusal_does_not_gain_eapi_diagnostics(
+    tmp_path, monkeypatch, capsys
+):
+    async def forbidden():
+        pytest.fail("local admission must not initialize EAPI")
+
+    monkeypatch.setattr(python_bridge, "_eapi_client", None)
+    monkeypatch.setattr(python_bridge, "_session_input", None)
+    monkeypatch.setattr(python_bridge, "initialize_eapi_client", forbidden)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "python_bridge.py",
+            "acquire_book",
+            json.dumps(
+                {
+                    "book_details": {"source": "zlibrary"},
+                    "output_dir": str(tmp_path),
+                    "filename": "../escape.epub",
+                }
+            ),
+        ],
+    )
+    with pytest.raises(SystemExit) as stopped:
+        await python_bridge.main()
+    assert stopped.value.code == 1
+    data = json.loads(capsys.readouterr().err.strip().splitlines()[-1])
+    assert data["details"]["reason"] == "invalid_argument"
+    assert "diagnostics" not in data

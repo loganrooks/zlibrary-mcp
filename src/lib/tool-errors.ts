@@ -120,9 +120,11 @@ export function classifyFailure(error: any, operation: string, source?: string):
     'tls_error',
     'read_timeout',
     'search_timeout',
+    'walk_budget_exhausted',
     'integrity_mismatch',
     'http_error',
     'protocol_error',
+    'partial_transfer',
     'not_found',
   ];
   let reason = allowedReasons.includes(candidate) ? candidate : 'unknown';
@@ -170,10 +172,15 @@ export function classifyFailure(error: any, operation: string, source?: string):
             ? 'protocol_error'
             : 'http_error';
   const before = detail.request_issued === false;
+  const issuedBudget =
+    operation === 'download' &&
+    reason === 'walk_budget_exhausted' &&
+    detail.request_issued === true;
   let code: ErrorCode = 'internal';
   if (reason === 'aborted') code = 'cancelled';
   else if (reason === 'auth_backoff') code = 'breaker_open';
   else if (reason === 'not_found') code = 'not_found';
+  else if (issuedBudget) code = 'outcome_unknown';
   else if (reason === 'timeout' || error?.code === 'BRIDGE_TIMEOUT')
     code = operation === 'download' ? 'outcome_unknown' : 'provider_timeout';
   else if (operation === 'download' && error?.code === 'BRIDGE_KILLED') code = 'outcome_unknown';
@@ -197,9 +204,10 @@ export function classifyFailure(error: any, operation: string, source?: string):
     ].includes(reason)
   )
     code = 'provider_unreachable';
-  else if (['read_timeout', 'search_timeout'].includes(reason)) code = 'provider_timeout';
+  else if (['read_timeout', 'search_timeout', 'walk_budget_exhausted'].includes(reason))
+    code = 'provider_timeout';
   else if (reason === 'integrity_mismatch') code = 'integrity_mismatch';
-  else if (['http_error', 'protocol_error'].includes(reason)) code = 'provider_error';
+  else if (['http_error', 'protocol_error', 'partial_transfer'].includes(reason)) code = 'provider_error';
   else if (error?.code === 'CIRCUIT_BREAKER_OPEN') code = 'breaker_open';
   else if (['ValueError', 'TypeError'].includes(context.pythonErrorType)) code = 'invalid_argument';
   else if (detail.failures?.length) {
@@ -221,19 +229,21 @@ export function classifyFailure(error: any, operation: string, source?: string):
       })),
     });
   }
-  const retry: Retry = [
-    'provider_unreachable',
-    'provider_timeout',
-    'provider_error',
-    'integrity_mismatch',
-    'breaker_open',
-    'cancelled',
-    'outcome_unknown',
-  ].includes(code)
-    ? operation === 'download' && !before && source !== 'libgen'
-      ? 'may_spend_quota'
-      : 'safe'
-    : 'no';
+  const retry: Retry = issuedBudget
+    ? 'no'
+    : [
+          'provider_unreachable',
+          'provider_timeout',
+          'provider_error',
+          'integrity_mismatch',
+          'breaker_open',
+          'cancelled',
+          'outcome_unknown',
+        ].includes(code)
+      ? operation === 'download' && !before && source !== 'libgen'
+        ? 'may_spend_quota'
+        : 'safe'
+      : 'no';
   const occupied = code === 'output_refused' && detail.destination_occupied === true;
   return new ToolFailure(
     code,
@@ -243,6 +253,12 @@ export function classifyFailure(error: any, operation: string, source?: string):
     {
       source,
       retry,
+      ...(issuedBudget
+        ? {
+            recovery:
+              'The transfer may have completed. Check the destination and acquisition receipt before deciding whether to retry.',
+          }
+        : {}),
       ...(occupied
         ? {
             recovery:

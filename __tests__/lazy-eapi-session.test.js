@@ -12,6 +12,8 @@ import fs from 'node:fs/promises';
 import nativeFs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { spawn } from 'node:child_process';
+import { once } from 'node:events';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { EapiSessionOwner, authRejected } from '../dist/lib/eapi-session.js';
@@ -133,6 +135,62 @@ describe('SDK lazy acquisition with real bridge and query-sensitive loopback fak
       { book_details: book(id), output_dir: process.env.ZLIBRARY_OUTPUT_ROOT, filename },
       { timeoutMs: 15000, ...options },
     );
+  test('warm available session is not issuance when acquisition spends its deadline on a lease', async () => {
+    const api = await import('../dist/lib/zlibrary-api.js');
+    await api.searchBooks({ query: 'Seneca Letters' });
+    const before = await h.stats();
+    expect(before.logins).toBe(1);
+    const target = path.join(process.env.ZLIBRARY_OUTPUT_ROOT, 'held.epub');
+    const holder = spawn(
+      path.resolve('.venv/bin/python'),
+      [
+        '-c',
+        [
+          'import sys',
+          'from pathlib import Path',
+          'from lib.acquisition import DestinationLease',
+          'with DestinationLease(Path(sys.argv[1]), 0):',
+          ' print("held", flush=True)',
+          ' sys.stdin.read()',
+        ].join('\n'),
+        target,
+      ],
+      { stdio: ['pipe', 'pipe', 'pipe'] },
+    );
+    const closed = once(holder, 'close');
+    try {
+      const [ready] = await once(holder.stdout, 'data', { signal: AbortSignal.timeout(5000) });
+      expect(ready.toString().trim()).toBe('held');
+      const failure = await acquire(api, 202, 'held.epub', { timeoutMs: 4000 }).catch(
+        (error) => error,
+      );
+      expect(failure.context.pythonErrorType).toBe('AcquisitionError');
+      expect(failure.context.details).toMatchObject({
+        reason: 'walk_budget_exhausted',
+        request_issued: false,
+      });
+      const { errorEnvelope } = await import('../dist/lib/tool-errors.js');
+      expect(errorEnvelope(failure, 'download', 'zlibrary').error).toMatchObject({
+        code: 'provider_timeout',
+        retry: 'safe',
+        detail: { request_issued: false },
+      });
+      const after = await h.stats();
+      expect(after.calls).toEqual(before.calls);
+      expect(after.logins).toBe(before.logins);
+      expect(after.quotaSpent).toBe(before.quotaSpent);
+      await expect(fs.stat(target)).rejects.toMatchObject({ code: 'ENOENT' });
+    } finally {
+      holder.stdin.end();
+      await closed;
+    }
+    // Refusal neither invalidated the unused warm session nor poisoned its breaker.
+    await api.searchBooks({ query: 'Seneca Letters' });
+    expect((await h.stats()).logins).toBe(1);
+    await expect(fs.stat(path.join(home, 'egress-trap.txt'))).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+  });
   test('cold distinct acquisitions and SDK search singleflight one login; same destination follower skips', async () => {
     const api = await import('../dist/lib/zlibrary-api.js');
     await h.mode({ mode: 'slow', reset: true, remaining: 8 });
@@ -252,14 +310,14 @@ describe('native protocol real Node/Python pipes', () => {
   const pythonPath =
     process.env.LAZY_PROTOCOL_PYTHON ||
     path.resolve(process.platform === 'win32' ? '.venv/Scripts/python.exe' : '.venv/bin/python');
-  const options = (mode) => ({
+  const options = (mode, startupDelayMs = 0) => ({
     pythonPath,
     scriptPath: path.resolve('__tests__/fixtures'),
-    args: [mode, directory],
+    args: [mode, directory, String(startupDelayMs)],
     env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' },
   });
-  const run = (mode, extra = {}) =>
-    runner.runPythonBridge('lazy-session-worker.py', options(mode), {
+  const run = (mode, { startupDelayMs = 0, ...extra } = {}) =>
+    runner.runPythonBridge('lazy-session-worker.py', options(mode, startupDelayMs), {
       timeoutMs: 4000,
       onSessionNeeded: (c) => c.grant(input),
       ...extra,
@@ -550,12 +608,42 @@ describe('native protocol real Node/Python pipes', () => {
     if (process.platform !== 'win32') expect(await waitFile('control-cleaned')).toBe('yes');
   });
   test('unanswered demand expires and reaps without transfer', async () => {
+    let demands = 0;
     await expect(
-      run('operation', { timeoutMs: 350, onSessionNeeded: () => {} }),
+      // The child waits 30s; the 10s owner leaves ample Python startup margin.
+      run('unanswered-reply', {
+        startupDelayMs: 750,
+        timeoutMs: 10000,
+        onSessionNeeded: () => {
+          demands++;
+        },
+      }),
     ).rejects.toMatchObject({ context: { reason: 'timeout' } });
+    expect(demands).toBe(1);
     await expect(fs.stat(path.join(directory, 'transfers'))).rejects.toMatchObject({
       code: 'ENOENT',
     });
+    await run('operation');
+  });
+  test('short acquisition refuses before demanding a session or issuing transfer', async () => {
+    let demands = 0;
+    await expect(
+      // A fixture reserve leaves <1s for useful work, independently of startup.
+      run('refuse-admission', {
+        startupDelayMs: 750,
+        timeoutMs: 10000,
+        onSessionNeeded: () => {
+          demands++;
+        },
+      }),
+    ).rejects.toThrow('process exited with code 1');
+    expect(JSON.parse(await fs.readFile(path.join(directory, 'refusal.json'), 'utf8'))).toEqual({
+      reason: 'walk_budget_exhausted',
+      request_issued: false,
+    });
+    expect(demands).toBe(0);
+    for (const marker of ['admitted', 'transfers'])
+      await expect(fs.stat(path.join(directory, marker))).rejects.toMatchObject({ code: 'ENOENT' });
     await run('operation');
   });
   test.each(['fragmented', 'empty', 'duplicate', 'oversize', 'denied', 'partial', 'timeout'])(

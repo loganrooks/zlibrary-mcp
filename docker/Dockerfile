@@ -6,8 +6,12 @@
 #
 # Based on PR #9 by @zaggash with fixes applied
 
-# --- Stage 1: Build ---
-FROM node:22-alpine AS builder
+# Default keeps source builds/Compose working. Release CI selects packed and
+# supplies only release.tgz plus the matching checkout's package-lock.json.
+ARG BUILD_INPUT=source
+
+# --- Stage 1: Shared dependency tooling ---
+FROM node:22-alpine AS tooling
 
 # UV configuration for portable Python installation
 # Keep Python on 3.14 until compiled dependencies ship 3.15 wheels (#230).
@@ -25,6 +29,8 @@ RUN apk add --no-cache curl && \
     curl -LsSf https://astral.sh/uv/install.sh | sh && \
     mv /root/.local/bin/uv /usr/local/bin/
 
+FROM tooling AS source
+
 # Copy dependency files first (better layer caching)
 COPY pyproject.toml uv.lock ./
 COPY package.json package-lock.json ./
@@ -41,6 +47,16 @@ RUN uv sync --frozen --no-dev
 
 # Install Node dependencies and build TypeScript
 RUN npm ci && npm run build
+
+# No source compilation here: exercise exactly the dist/lib bytes in the npm
+# release tarball, with locked production dependencies and no lifecycle hooks.
+FROM tooling AS packed
+COPY release.tgz package-lock.json ./
+RUN tar -xzf release.tgz --strip-components=1 && rm release.tgz && \
+    npm ci --omit=dev --ignore-scripts && \
+    uv sync --frozen --no-dev
+
+FROM ${BUILD_INPUT} AS builder
 
 # --- Stage 2: Runtime ---
 FROM ghcr.io/supercorp-ai/supergateway:3.4.3 AS runtime

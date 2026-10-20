@@ -112,6 +112,7 @@ export function isTransientDependencyError(error: any): boolean {
       'read_timeout',
       'search_timeout',
       'integrity_mismatch',
+      'partial_transfer',
     ].includes(detail.reason);
   };
   if (error.context?.details !== undefined) return transientDetail(error.context.details);

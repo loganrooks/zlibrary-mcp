@@ -5,6 +5,7 @@ import json
 import hashlib
 import re
 import tempfile
+from contextlib import suppress
 
 # Read the private pipe before importing code that could spawn grandchildren.
 os.environ.pop("ZLIBRARY_EAPI_SESSION", None)  # Retired env carrier is never trusted.
@@ -925,8 +926,9 @@ async def get_download_limits():
     `downloads_today` above the cap.
 
     Returns:
-        dict with daily_limit, daily_remaining (both int, or "unknown" if the
-        response shape changes again), plus downloads_today and is_premium.
+        dict with daily_limit (reported value, or "unknown" when absent),
+        daily_remaining (int only when cap and spend are non-negative,
+        non-bool ints; otherwise "unknown"), plus downloads_today and is_premium.
     """
     eapi = await get_eapi_client()
     profile = await eapi.get_profile()
@@ -936,10 +938,8 @@ async def get_download_limits():
     used = user.get("downloads_today")
 
     remaining = "unknown"
-    if isinstance(limit, int) and isinstance(used, int):
+    if type(limit) is int and type(used) is int and limit >= 0 and used >= 0:
         remaining = max(0, limit - used)
-    elif isinstance(limit, int):
-        remaining = limit
 
     if limit is None:
         logger.warning(
@@ -1067,17 +1067,25 @@ def _md5_digest():
 
 
 def _publish_no_replace(source: Path, destination: Path) -> None:
-    """Atomically publish one owned file without replacing an existing path."""
+    """Link and consume an owned file without replacement, including private staging."""
     os.link(source, destination)
     source.unlink()
 
 
-def _file_md5(path: Path) -> str:
-    """Digest a published artifact for catalog-identity comparison."""
+def _file_md5(path: Path, *, check_deadline: bool = False) -> str:
+    """Digest an artifact, optionally bounding a pre-commit reuse comparison."""
+    if check_deadline:
+        from lib.acquisition import _check_deadline
+
+        _check_deadline("reuse comparison")
     digest = _md5_digest()
     with open(path, "rb") as handle:
         for chunk in iter(lambda: handle.read(65536), b""):
+            if check_deadline:
+                _check_deadline("reuse comparison")
             digest.update(chunk)
+    if check_deadline:
+        _check_deadline("reuse comparison")
     return digest.hexdigest()
 
 
@@ -1086,8 +1094,10 @@ def _artifacts_match(source: Path, destination: Path, expected_md5: str) -> bool
     if source.stat().st_size != destination.stat().st_size:
         return False
     if expected_md5:
-        return _file_md5(destination) == expected_md5
-    return _file_md5(source) == _file_md5(destination)
+        return _file_md5(destination, check_deadline=True) == expected_md5
+    return _file_md5(source, check_deadline=True) == _file_md5(
+        destination, check_deadline=True
+    )
 
 
 def _publish_or_reuse(source: Path, destination: Path, expected_md5: str = "") -> bool:
@@ -1096,18 +1106,26 @@ def _publish_or_reuse(source: Path, destination: Path, expected_md5: str = "") -
     Acquisition is idempotent: re-downloading the same result into the same
     directory resolves to the same deterministic name, and finding our own
     prior artifact there is success, not a collision. A destination that does
-    not match is still never replaced. The staged file is consumed on every
-    path so no orphan temp survives the call.
+    not match is still never replaced. Stage cleanup is attempted on every
+    path; cleanup after a successful final link is best effort so a cleanup
+    failure cannot replace a committed success.
     """
+    from lib.acquisition import _check_deadline, _mark_published
+
     if source.resolve() == destination.resolve():
         return False
+    _check_deadline("publication")
     try:
-        _publish_no_replace(source, destination)
+        os.link(source, destination)
+        _mark_published()
+        with suppress(OSError):  # The final link, not cleanup, is the commit.
+            source.unlink()
         return False
     except FileExistsError:
         pass
     try:
         if _artifacts_match(source, destination, expected_md5):
+            _mark_published()
             return True
         raise FileExistsError(
             f"Refusing to replace {destination}: the existing file differs from the "
@@ -1125,6 +1143,7 @@ async def _download_url_to_file(
     *,
     enforce_timeout: bool = True,
     host_observer=None,
+    progress_observer=None,
     config: Optional[SourceConfig] = None,
 ) -> str:
     """Stream a resolved source URL to disk and return the raw path.
@@ -1173,83 +1192,254 @@ async def _download_url_to_file(
     # from one object and move the file with another (Codex on #146).
     config = config or get_source_config()
 
+    written = 0
+    bytes_received = 0
+    resumes_tried = 0
+    body_complete = False
+
+    def progress_detail(detail: str) -> str:
+        if bytes_received:
+            return (
+                f"partial transfer: bytes_received={bytes_received} "
+                f"resumes_tried={resumes_tried}; {detail}"
+            )
+        return detail
+
+    def observe_progress() -> None:
+        if progress_observer is not None:
+            progress_observer(bytes_received, resumes_tried, body_complete)
+
     async def stream_to_disk() -> tuple[int, str]:
-        nonlocal active_host
+        nonlocal active_host, written, bytes_received, resumes_tried, body_complete
         try:
-            # The admitted UA is load-bearing: libgen's hosts serve an HTML
-            # stub to blocklisted tool UAs including python-httpx's default
-            # (#124), which the HTML guard below then misreads as an expired
-            # key — the adapter verifies the URL with the right UA and the
-            # transfer dies here with the wrong one.
-            #
-            # Resolved from `config`, not the module constant: an operator who
-            # sets LIBGEN_USER_AGENT because the default went onto the
-            # blocklist would otherwise have search and key resolution honour
-            # the override while this transfer — the one request that moves the
-            # file — kept sending the blocked default (Codex on #146).
+            # Keep the admitted source-specific UA and one client throughout
+            # recovery. The caller owns the single deadline around this loop.
             async with httpx.AsyncClient(
                 timeout=build_timeout(config),
                 follow_redirects=True,
                 headers={"User-Agent": user_agent},
             ) as client:
-                async with client.stream("GET", url) as response:
-                    response_url = getattr(response, "url", None)
-                    if response_url is not None:
-                        active_host = (
-                            urlsplit(str(response_url)).hostname or active_host
-                        ).lower()
-                    if host_observer is not None:
-                        host_observer(active_host)
-                    response.raise_for_status()
-
-                    content_type = response.headers.get("content-type", "")
-                    if "text/html" in content_type:
-                        raise ProviderResponseError(
-                            provider,
-                            active_host,
-                            f"HTML response for {md5}; download key may have expired",
-                            reason="protocol_error",
-                        )
-
-                    written = 0
-                    digest = _md5_digest()
-                    signature = bytearray()
-                    with open(attempt_path, "wb") as handle:
-                        async for chunk in response.aiter_bytes(65536):
-                            handle.write(chunk)
-                            digest.update(chunk)
-                            if len(signature) < 4096:
-                                signature.extend(chunk[: 4096 - len(signature)])
-                            written += len(chunk)
-                    if _looks_like_html(bytes(signature)):
-                        raise ProviderResponseError(
-                            provider,
-                            active_host,
-                            f"HTML body for {md5}; download key may have expired",
-                            reason="protocol_error",
-                        )
-                    actual_md5 = digest.hexdigest()
-                    if actual_md5 != expected_md5:
-                        raise ProviderResponseError(
-                            provider,
-                            active_host,
-                            f"expected={expected_md5} actual={actual_md5}",
-                            reason="integrity_mismatch",
-                        )
-
-                    extension, extension_evidence = _response_extension(
-                        response.headers, str(response_url or url), bytes(signature)
+                while True:
+                    offset = written
+                    request_options = (
+                        {"headers": {"Range": f"bytes={offset}-"}} if offset else {}
                     )
-                    completed_path = attempt_path.with_suffix(
-                        f".{extension}" if extension else ""
+                    try:
+                        async with client.stream(
+                            "GET", url, **request_options
+                        ) as response:
+                            response_url = getattr(response, "url", None)
+                            if response_url is not None:
+                                active_host = (
+                                    urlsplit(str(response_url)).hostname or active_host
+                                ).lower()
+                            if host_observer is not None:
+                                host_observer(active_host)
+                            status = getattr(response, "status_code", 200)
+                            if offset and status == 416:
+                                match = re.fullmatch(
+                                    r"bytes \*/(\d+)",
+                                    response.headers.get("content-range", ""),
+                                )
+                                if match is not None and int(match[1]) == offset:
+                                    body_complete = True
+                                    observe_progress()
+                                    # A final-frame reset can leave a complete
+                                    # stage. Check it within the same deadline
+                                    # before discarding or publishing anything.
+                                    digest = _md5_digest()
+                                    with open(attempt_path, "rb") as handle:
+                                        while chunk := handle.read(65536):
+                                            digest.update(chunk)
+                                            await asyncio.sleep(0)
+                                    if digest.hexdigest() == expected_md5:
+                                        # Close the response, then use the normal
+                                        # validation and no-replace commit below.
+                                        break
+                                # Otherwise the next admitted request starts
+                                # this URL at zero, within the remaining budget.
+                                attempt_path.write_bytes(b"")
+                                written = 0
+                                body_complete = False
+                                if resumes_tried < config.download_resume_attempts:
+                                    resumes_tried += 1
+                                    observe_progress()
+                                    await asyncio.sleep(0)
+                                    continue
+                            response.raise_for_status()
+                            content_type = response.headers.get("content-type", "")
+                            if "text/html" in content_type:
+                                raise ProviderResponseError(
+                                    provider,
+                                    active_host,
+                                    f"HTML response for {md5}; download key may have expired",
+                                    reason="protocol_error",
+                                )
+
+                            expected_length = None
+                            expected_total = None
+                            if status == 206:
+                                match = re.fullmatch(
+                                    r"bytes (\d+)-(\d+)/(\d+|\*)",
+                                    response.headers.get("content-range", ""),
+                                )
+                                if (
+                                    not offset
+                                    or match is None
+                                    or int(match[1]) != offset
+                                    or int(match[2]) < offset
+                                    or (
+                                        match[3] != "*"
+                                        and int(match[3]) <= int(match[2])
+                                    )
+                                    or "content-encoding" in response.headers
+                                ):
+                                    raise ProviderResponseError(
+                                        provider,
+                                        active_host,
+                                        "refused append: invalid Content-Range or Content-Encoding",
+                                        reason="protocol_error",
+                                    )
+                                expected_length = int(match[2]) - offset + 1
+                                if match[3] != "*":
+                                    expected_total = int(match[3])
+                            elif status == 200:
+                                # A server ignoring Range sent a full file.
+                                # Truncation occurs before its first body byte.
+                                written = 0
+                            else:
+                                raise ProviderResponseError(
+                                    provider,
+                                    active_host,
+                                    f"unexpected transfer status {status}",
+                                    reason="protocol_error",
+                                )
+
+                            encoded = "content-encoding" in response.headers
+                            length = response.headers.get("content-length", "")
+                            if not encoded and length.isdecimal():
+                                declared_length = int(length)
+                                if (
+                                    expected_length is not None
+                                    and declared_length != expected_length
+                                ):
+                                    raise ProviderResponseError(
+                                        provider,
+                                        active_host,
+                                        "Content-Length disagrees with Content-Range",
+                                        reason="protocol_error",
+                                    )
+                                expected_length = declared_length
+                            received = 0
+                            try:
+                                with open(
+                                    attempt_path, "ab" if written else "wb"
+                                ) as handle:
+                                    async for chunk in response.aiter_bytes(65536):
+                                        handle.write(chunk)
+                                        written += len(chunk)
+                                        received += len(chunk)
+                                        bytes_received += len(chunk)
+                                        observe_progress()
+                                if (
+                                    expected_length is not None
+                                    and received < expected_length
+                                ):
+                                    raise httpx.RemoteProtocolError(
+                                        f"body ended after {received} of {expected_length} bytes"
+                                    )
+                                if (
+                                    expected_length is not None
+                                    and received > expected_length
+                                ):
+                                    raise ProviderResponseError(
+                                        provider,
+                                        active_host,
+                                        "body exceeded declared range/length",
+                                        reason="protocol_error",
+                                    )
+                            except (
+                                httpx.ReadError,
+                                httpx.ReadTimeout,
+                                httpx.RemoteProtocolError,
+                                httpx.DecodingError,
+                            ):
+                                if encoded:
+                                    # aiter_bytes decoded the representation;
+                                    # those offsets cannot address encoded bytes.
+                                    written = 0
+                                    attempt_path.write_bytes(b"")
+                                raise
+
+                        # A valid 206 may cover only part of the remainder.
+                        # Close it before requesting the next staged offset;
+                        # the normal recovery gate charges each extra request.
+                        if status == 206 and expected_total is None:
+                            raise httpx.RemoteProtocolError(
+                                f"range ended at {written} with unknown total"
+                            )
+                        if expected_total is not None and written < expected_total:
+                            raise httpx.RemoteProtocolError(
+                                f"range ended at {written} of {expected_total} bytes"
+                            )
+                        body_complete = True
+                        observe_progress()
+                    except (
+                        httpx.ReadError,
+                        httpx.ReadTimeout,
+                        httpx.RemoteProtocolError,
+                        httpx.DecodingError,
+                    ) as exc:
+                        if (
+                            not bytes_received
+                            and not isinstance(exc, httpx.DecodingError)
+                        ) or resumes_tried >= config.download_resume_attempts:
+                            raise
+                        resumes_tried += 1
+                        observe_progress()
+                        # This cancellation point uses the caller's existing
+                        # timer; there is no new budget per retry or mirror.
+                        await asyncio.sleep(0)
+                        continue
+                    break
+
+                # Re-read the whole owned file, including the prefix.
+                # Yield between blocks so the same timer can cancel
+                # validation as well as the response stream.
+                digest = _md5_digest()
+                signature = bytearray()
+                with open(attempt_path, "rb") as handle:
+                    while chunk := handle.read(65536):
+                        digest.update(chunk)
+                        if len(signature) < 4096:
+                            signature.extend(chunk[: 4096 - len(signature)])
+                        await asyncio.sleep(0)
+                if _looks_like_html(bytes(signature)):
+                    raise ProviderResponseError(
+                        provider,
+                        active_host,
+                        f"HTML body for {md5}; download key may have expired",
+                        reason="protocol_error",
                     )
-                    _publish_no_replace(attempt_path, completed_path)
-                    return written, _DownloadedPath(
-                        str(completed_path), extension_evidence
+                actual_md5 = digest.hexdigest()
+                if actual_md5 != expected_md5:
+                    raise ProviderResponseError(
+                        provider,
+                        active_host,
+                        f"expected={expected_md5} actual={actual_md5}",
+                        reason="integrity_mismatch",
                     )
+                extension, extension_evidence = _response_extension(
+                    response.headers,
+                    str(response_url or url),
+                    bytes(signature),
+                )
+                completed_path = attempt_path.with_suffix(
+                    f".{extension}" if extension else ""
+                )
+                _publish_no_replace(attempt_path, completed_path)
+                return written, _DownloadedPath(str(completed_path), extension_evidence)
         except BaseException:
-            # Cancellation and every classified failure must leave no partial
-            # artifact for a later retry to mistake for a completed download.
             attempt_path.unlink(missing_ok=True)
             raise
 
@@ -1266,15 +1456,31 @@ async def _download_url_to_file(
             written, completed_path = await stream_to_disk()
     except SourceError as exc:
         if isinstance(exc, ProviderTimeoutError) and exc.reason == "search_timeout":
-            raise ProviderTimeoutError(
+            partial = bytes_received and not body_complete
+            error_type = ProviderResponseError if partial else ProviderTimeoutError
+            raise error_type(
                 provider,
                 active_host,
-                exc.detail,
-                reason="read_timeout",
+                progress_detail(exc.detail) if partial else exc.detail,
+                reason="partial_transfer" if partial else "read_timeout",
+            ) from exc
+        if bytes_received:
+            raise type(exc)(
+                exc.provider, exc.host, progress_detail(exc.detail), reason=exc.reason
             ) from exc
         raise
     except httpx.HTTPError as exc:
         reason, detail = classify_httpx_error(exc)
+        if bytes_received and isinstance(
+            exc,
+            (
+                httpx.ReadError,
+                httpx.ReadTimeout,
+                httpx.RemoteProtocolError,
+                httpx.DecodingError,
+            ),
+        ):
+            reason = "partial_transfer"
         try:
             request = exc.request
         except RuntimeError:
@@ -1301,7 +1507,12 @@ async def _download_url_to_file(
             if reason == "read_timeout"
             else ProviderResponseError
         )
-        raise error_type(provider, failure_host, detail, reason=reason) from exc
+        raise error_type(
+            provider,
+            failure_host,
+            detail if reason == "http_error" else progress_detail(detail),
+            reason=reason,
+        ) from exc
 
     if written == 0:
         Path(completed_path).unlink(missing_ok=True)
@@ -1334,6 +1545,11 @@ async def _fetch_from_source(book_details: dict, output_dir: str) -> str:
     active_host = ""
     failures = []
     seen_failure_ids = set()
+    transfer_progress = (0, 0, False)
+
+    def observe_progress(received: int, resumes: int, complete: bool) -> None:
+        nonlocal transfer_progress
+        transfer_progress = (received, resumes, complete)
 
     def record(failure):
         identity = id(failure)
@@ -1342,7 +1558,7 @@ async def _fetch_from_source(book_details: dict, output_dir: str) -> str:
             failures.append(failure)
 
     async def acquire() -> str:
-        nonlocal active_host
+        nonlocal active_host, transfer_progress
 
         candidate_stream = router.iter_download_candidates(md5, source=selection)
         try:
@@ -1358,6 +1574,7 @@ async def _fetch_from_source(book_details: dict, output_dir: str) -> str:
                     observed_at = (
                         datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
                     )
+                    transfer_progress = (0, 0, False)
                     downloaded = await _download_url_to_file(
                         result.url,
                         output_dir,
@@ -1365,6 +1582,7 @@ async def _fetch_from_source(book_details: dict, output_dir: str) -> str:
                         str(provider),
                         enforce_timeout=False,
                         host_observer=lambda host: _set_active_host(host),
+                        progress_observer=observe_progress,
                         config=config,
                     )
                     if not isinstance(downloaded, _DownloadedPath):
@@ -1389,9 +1607,11 @@ async def _fetch_from_source(book_details: dict, output_dir: str) -> str:
                         }
                     return downloaded
                 except AllSourcesFailedError as exc:
+                    transfer_progress = (0, 0, False)
                     for failure in exc.failures:
                         record(failure)
                 except SourceError as exc:
+                    transfer_progress = (0, 0, False)
                     record(exc)
         except AllSourcesFailedError as exc:
             for failure in exc.failures:
@@ -1419,8 +1639,20 @@ async def _fetch_from_source(book_details: dict, output_dir: str) -> str:
         )
     except ProviderTimeoutError as exc:
         if exc.reason == "search_timeout":
-            terminal_timeout = ProviderTimeoutError(
-                selection, active_host or exc.host, exc.detail, reason="read_timeout"
+            received, resumes, complete = transfer_progress
+            partial = received and not complete
+            detail = exc.detail
+            if partial:
+                detail = (
+                    f"partial transfer: bytes_received={received} "
+                    f"resumes_tried={resumes}; {detail}"
+                )
+            error_type = ProviderResponseError if partial else ProviderTimeoutError
+            terminal_timeout = error_type(
+                selection,
+                active_host or exc.host,
+                detail,
+                reason="partial_transfer" if partial else "read_timeout",
             )
             if failures:
                 record(terminal_timeout)
@@ -1608,9 +1840,11 @@ async def download_book(
                 and str(owned_stage) != final_file_path_str
                 and owned_stage.name.startswith(".source-")
             ):
-                owned_stage.unlink(missing_ok=True)
+                with suppress(OSError):
+                    owned_stage.unlink(missing_ok=True)
         if eapi_staging is not None:
-            eapi_staging.cleanup()
+            with suppress(OSError):
+                eapi_staging.cleanup()
 
 
 async def get_book_metadata_complete(book_id: str, book_hash: str = None) -> dict:
@@ -1939,7 +2173,11 @@ async def main():
             error_info["details"].setdefault("operation", operation)
         error_info = _safe_diagnostic(error_info)
         diagnostics = None
-        if (
+        if not (
+            function_name == "acquire_book"
+            and isinstance(e, AcquisitionError)
+            and e.reason == "walk_budget_exhausted"
+        ) and (
             needs_eapi
             or _session_input is not None
             or _eapi_client is not None
@@ -1969,6 +2207,8 @@ async def main():
                             "outcome_unknown",
                             "http_error",
                             "read_timeout",
+                            "partial_transfer",
+                            "walk_budget_exhausted",
                             "connect_timeout",
                             "configuration_error",
                             "output_refused",

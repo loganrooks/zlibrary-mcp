@@ -208,7 +208,7 @@ async function callPythonFunction(
   const boundProbe = (admission: Admission) => {
     if (budget > ORDINARY_BRIDGE_TIMEOUT_MS) admission.holdFor(ORDINARY_BRIDGE_TIMEOUT_MS);
   };
-  const invoke = (transport?: SessionInput, signal = callOptions.signal) =>
+  const invokeWithRetry = (transport?: SessionInput, signal = callOptions.signal) =>
     withRetry(
       async (attempt) => {
         const execute = async () => {
@@ -568,7 +568,12 @@ async function callPythonFunction(
                     details: {
                       ...err.context?.details,
                       ...bridgeError.details,
-                      ...(activeTransport ? { request_issued: true } : {}),
+                      // Lazy transport is assigned only at this call's handoff;
+                      // that grant wins a child false, mere availability does not.
+                      ...(activeTransport &&
+                      (lazy || typeof bridgeError.details?.request_issued !== 'boolean')
+                        ? { request_issued: true }
+                        : {}),
                     },
                     pythonErrorType: bridgeError.type,
                     httpStatus: bridgeError.status_code,
@@ -603,15 +608,7 @@ async function callPythonFunction(
             }
           }
         };
-        // A lazy child may only read a local receipt. Admit/account once at
-        // its session request above, including all owner control children.
-        // A receipt-only child never contacts a provider (#267).
-        return lazyAcquisition || receiptOnly || transport?.authRetry
-          ? execute()
-          : breaker.execute((admission) => {
-              boundProbe(admission);
-              return execute();
-            });
+        return execute();
       },
       {
         signal,
@@ -625,6 +622,17 @@ async function callPythonFunction(
         shouldRetry: isRetryableError,
       },
     );
+  const invoke = (transport?: SessionInput, signal = callOptions.signal) => {
+    // Account the logical call's final verdict, after its retry budget. A lazy
+    // child is admitted once at its session request above, including owner
+    // control children; receipt-only and intentional auth retries stay outside.
+    return lazyAcquisition || receiptOnly || transport?.authRetry
+      ? invokeWithRetry(transport, signal)
+      : breaker.execute((admission) => {
+          boundProbe(admission);
+          return invokeWithRetry(transport, signal);
+        });
+  };
   if (reuse)
     return finishCall(
       eapiSessions.run(

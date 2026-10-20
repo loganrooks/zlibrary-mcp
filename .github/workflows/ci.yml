@@ -218,9 +218,13 @@ jobs:
           node-version: '22'
       # Legacy 1.4.0's processing stack needs its own supported interpreter lane.
       # The separate packed-install job still exercises the runner's default.
+      # The upgrade script installs into temporary prefixes, so the runner uv
+      # cache stays empty; on a new uv.lock key setup-uv would fail its post-job
+      # save on the missing path.
       - uses: astral-sh/setup-uv@v7
         with:
           python-version: '3.13'
+          enable-cache: false
       - run: npm ci
       - run: npm run build
       - run: node scripts/check-install-upgrades.mjs --matrix all --offline-providers
@@ -241,8 +245,8 @@ jobs:
       - uses: ./.github/actions/setup
       - name: MCP initialize handshake
         env:
-          ZLIBRARY_EMAIL: "ci@test.com"
-          ZLIBRARY_PASSWORD: "ci-test-password"
+          ZLIBRARY_EMAIL: 'ci@test.com'
+          ZLIBRARY_PASSWORD: 'ci-test-password'
         shell: bash
         run: |
           INIT_REQUEST='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"ci-smoke-test","version":"0.0.0"}}}'
@@ -263,13 +267,62 @@ jobs:
     # Exercise the published image on PRs so Python/wheel drift is caught (#230).
     if: github.event_name == 'push' || github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      registry:
+        image: registry:2
+        ports:
+          - 5000:5000
     steps:
       - uses: actions/checkout@v7
+        with:
+          lfs: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: astral-sh/setup-uv@v7
+        with:
+          python-version: '3.13'
+      - run: npm ci
+      - run: uv sync --frozen --no-dev
+      - run: npm run build
+      - name: Check smoke runner and failure controls without Docker
+        run: node --test __tests__/image-smoke.test.mjs __tests__/image-smoke-contract.test.mjs
+      - name: Prepare release-tarball build context
+        shell: bash
+        run: |
+          bash scripts/prepare-image-context.sh "$RUNNER_TEMP/image-context"
+      - uses: docker/setup-docker-action@v5
+        with:
+          version: v29.9.1
+          daemon-config: |
+            {"features":{"containerd-snapshotter":true}}
       - uses: docker/setup-buildx-action@v4
-      - name: Build Docker image
-        run: docker build -t zlibrary-mcp:ci -f docker/Dockerfile .
-      - name: Verify image contents
-        run: docker run --rm --entrypoint sh zlibrary-mcp:ci -c "test -f /app/dist/index.js && node -e 'console.log(\"OK\")'"
+      - name: Build and load the attested image from the release tarball
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: ${{ runner.temp }}/image-context
+          file: docker/Dockerfile
+          build-args: BUILD_INPUT=packed
+          load: true
+          push: false
+          provenance: mode=min
+          tags: |
+            zlibrary-mcp:ci
+            localhost:5000/zlibrary-mcp:ci
+      - name: Bind the loaded attested index to the build digest
+        env:
+          TESTED_DIGEST: ${{ steps.build.outputs.digest }}
+        run: node scripts/image-identity.mjs zlibrary-mcp:ci "$TESTED_DIGEST"
+      - name: Offline SDK-to-container-Python journey
+        run: node scripts/image-smoke.mjs zlibrary-mcp:ci
+
+      - name: Rehearse tested-image push and registry digest/provenance checks
+        env:
+          IMAGE_TAGS: localhost:5000/zlibrary-mcp:ci
+          TESTED_DIGEST: ${{ steps.build.outputs.digest }}
+        run: node scripts/push-tested-image.mjs zlibrary-mcp:ci "$TESTED_DIGEST"
 
   acquisition-windows:
     name: Offline acquisition leases (Windows)

@@ -10,6 +10,7 @@ Environment variables:
     BOOK_SOURCE_READ_TIMEOUT: Response-read budget, seconds (default: 30)
     BOOK_SOURCE_TOTAL_TIMEOUT: Per-provider wall-clock budget, seconds (default: 45)
     BOOK_SOURCE_DOWNLOAD_TIMEOUT: Full source-file transfer budget, seconds (default: 1500)
+    BOOK_SOURCE_DOWNLOAD_RESUME_ATTEMPTS: Extra same-call transfer attempts (default: 2, max: 10)
     BOOK_SOURCE_PREFLIGHT: Probe host reachability before searching (default: true)
     BOOK_SOURCE_PREFLIGHT_TIMEOUT: Budget per probe phase, seconds (default: 5)
 """
@@ -45,16 +46,18 @@ DEFAULT_TOTAL_TIMEOUT = 45.0
 # A source URL can legitimately serve a multi-hundred-megabyte book. Keep its
 # provider-chain wall clock finite but separate from the per-attempt search
 # budget. `_fetch_from_source` wraps resolution AND transfer in this timeout;
-# resolution is not another sequential allocation. This does not bound lease
-# wait or acquisition finalization (whole-acquisition deadline: #280).
+# resolution is not another sequential allocation. Acquisition adds an outer
+# WalkDeadline across lease wait and this chain, reserving finalization time.
+# Once publication commits, receipts finish under the Node hard stop (#280).
 DEFAULT_DOWNLOAD_TIMEOUT = 1500.0
 DEFAULT_PREFLIGHT_TIMEOUT = 5.0
 
 # The ceiling on a whole search or download-resolution walk, however many
 # providers and mirrors it spans. By default search allocates 165s + 30s
 # overhead under its 240s owner; download resolution runs INSIDE the 1500s
-# provider-chain timeout under its 2400s owner. Neither is a whole-acquisition
-# bound (#280). Tests compare these scopes to live TypeScript constants.
+# provider-chain timeout under its 2400s owner. The acquisition clock, not this
+# inner walk, governs admission until commit; Node bounds committed finalization.
+# Tests compare the owner defaults to live TypeScript constants.
 # This is also, deliberately, the same
 # clock the capped three-mirror walk used to cost — the change is that the cap
 # is gone, so a mirror that fails its preflight in 5s now leaves room for the
@@ -152,6 +155,7 @@ class SourceConfig:
         read_timeout: Seconds allowed to read a response
         total_timeout: Seconds allowed for a whole provider operation
         download_timeout: Seconds allowed for a complete source-file transfer
+        download_resume_attempts: Extra same-call transfer attempts after partial progress
         preflight_enabled: Probe host reachability before the real request
         preflight_timeout: Seconds allowed for each probe phase
         walk_budget: Seconds allowed for a WHOLE walk, across every
@@ -173,6 +177,7 @@ class SourceConfig:
     preflight_timeout: float = DEFAULT_PREFLIGHT_TIMEOUT
     walk_budget: float = DEFAULT_WALK_BUDGET
     bridge_overhead: float = WALK_OVERHEAD_ALLOWANCE
+    download_resume_attempts: int = 2
 
     @property
     def has_annas_key(self) -> bool:
@@ -203,7 +208,7 @@ def worst_case_download_seconds(config: "SourceConfig") -> float:
 
     Candidate resolution already runs inside download_timeout, so adding its
     walk again would double-count. Lease wait and finalization are excluded;
-    this guard says nothing about their composition with the provider chain.
+    acquisition.acquire composes those phases under its shared outer clock.
     """
     return config.download_timeout + config.bridge_overhead
 
@@ -223,6 +228,15 @@ def _positive_float(name: str, default: float) -> float:
     except ValueError:
         return default
     return value if math.isfinite(value) and value > 0 else default
+
+
+def _resume_attempts() -> int:
+    """Zero disables recovery; invalid budgets default to two, capped at ten."""
+    try:
+        value = int(os.environ.get("BOOK_SOURCE_DOWNLOAD_RESUME_ATTEMPTS", "2"))
+    except ValueError:
+        return 2
+    return min(value, 10) if value >= 0 else 2
 
 
 def get_preflight_timeout() -> float:
@@ -296,6 +310,7 @@ def get_source_config(*, for_download: bool = False) -> SourceConfig:
         download_timeout=(
             min(download_timeout, available) if for_download else download_timeout
         ),
+        download_resume_attempts=_resume_attempts(),
         preflight_enabled=os.environ.get("BOOK_SOURCE_PREFLIGHT", "true").lower()
         == "true",
         preflight_timeout=get_preflight_timeout(),

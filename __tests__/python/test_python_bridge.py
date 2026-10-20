@@ -385,6 +385,26 @@ class TestProfileEndpoints:
         assert result["daily_remaining"] == 0
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize("spend", [None, "unknown", "3", False, -1])
+    async def test_get_download_limits_never_invents_remaining_from_unknown_spend(
+        self, patch_eapi_client, spend
+    ):
+        patch_eapi_client.get_profile = AsyncMock(
+            return_value={"user": {"downloads_limit": 10, "downloads_today": spend}}
+        )
+        result = await get_download_limits()
+        assert result["daily_limit"] == 10
+        assert result["daily_remaining"] == "unknown"
+
+    @pytest.mark.asyncio
+    async def test_get_download_limits_cap_only_is_not_remaining(self, patch_eapi_client):
+        patch_eapi_client.get_profile = AsyncMock(
+            return_value={"user": {"downloads_limit": 10}}
+        )
+        result = await get_download_limits()
+        assert result["daily_remaining"] == "unknown"
+
+    @pytest.mark.asyncio
     async def test_get_download_limits_reports_unknown_if_the_shape_changes(
         self, patch_eapi_client
     ):
@@ -1046,7 +1066,7 @@ class TestDownloadBook:
         )
         mocker.patch("httpx.AsyncClient", Client)
 
-        with pytest.raises(ProviderTimeoutError):
+        with pytest.raises(ProviderResponseError):
             await python_bridge._fetch_from_source(
                 {"md5": "0" * 32, "source": "libgen"}, str(tmp_path)
             )
@@ -1128,7 +1148,7 @@ class TestDownloadBook:
 
         assert [failure.reason for failure in excinfo.value.failures] == [
             "connect_error",
-            "read_timeout",
+            "partial_transfer",
         ]
         assert [failure.host for failure in excinfo.value.failures] == [
             "first-cdn.example",
@@ -1725,7 +1745,7 @@ asyncio.run(python_bridge.main())
         mocker.patch("python_bridge.get_source_config", return_value=config)
         mocker.patch("httpx.AsyncClient", OverBudgetClient)
 
-        with pytest.raises(ProviderTimeoutError) as excinfo:
+        with pytest.raises(ProviderResponseError) as excinfo:
             await python_bridge._download_url_to_file(
                 "https://mirror.example/get",
                 str(tmp_path),
@@ -1733,7 +1753,7 @@ asyncio.run(python_bridge.main())
                 "libgen",
             )
 
-        assert excinfo.value.reason == "read_timeout"
+        assert excinfo.value.reason == "partial_transfer"
         assert excinfo.value.host == "cdn.example"
         assert not [path for path in tmp_path.iterdir() if path.suffix == ".part"]
 
@@ -2034,7 +2054,9 @@ asyncio.run(python_bridge.main())
         envelope = json.loads(capsys.readouterr().err.strip().splitlines()[-1])
         failure_envelope = envelope["details"]["failures"][0]
         assert failure_envelope["host"] == "cdn.example"
-        assert failure_envelope["reason"] == "read_timeout"
+        assert failure_envelope["reason"] == "partial_transfer"
+        assert "bytes_received=21" in failure_envelope["detail"]
+        assert "resumes_tried=2" in failure_envelope["detail"]
         assert envelope["details"]["operation"] == "download"
         assert not (tmp_path / "0123456789abcdef0123456789abcdef.download").exists()
 
@@ -2468,3 +2490,1102 @@ class TestDownloadHonoursTheLibgenUserAgentOverride:
             "a LibGen-scoped override reaching Anna's is both a behaviour "
             "change on an unrelated transfer and an identifier leak"
         )
+
+
+RESUME_BODY = b"%PDF-1.7 test book " * 1000
+RESUME_DIGEST = hashlib.md5(RESUME_BODY).hexdigest()
+RESUME_CUT = 8000
+
+
+class ScriptedResponse:
+    """One scripted HTTP response, doubling as its own stream context.
+
+    `fail_after` reproduces the observed failure: N bytes arrive and the
+    connection then dies. No live request is made anywhere in these tests.
+    """
+
+    def __init__(
+        self,
+        *,
+        body=b"",
+        status_code=200,
+        headers=None,
+        url="https://cdn3.booksdl.test/file",
+        fail_after=None,
+        error=None,
+    ):
+        self.body = body
+        self.status_code = status_code
+        self.headers = headers or {}
+        self.url = httpx.URL(url)
+        self.fail_after = fail_after
+        self.error = error or httpx.RemoteProtocolError(
+            "peer closed connection without sending complete message body"
+        )
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_args):
+        return False
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise httpx.HTTPStatusError(
+                f"HTTP {self.status_code}",
+                request=httpx.Request("GET", self.url),
+                response=httpx.Response(self.status_code),
+            )
+
+    async def aiter_bytes(self, _chunk_size=65536):
+        if self.fail_after is None:
+            yield self.body
+            return
+        yield self.body[: self.fail_after]
+        raise self.error
+
+
+class ScriptedTransport:
+    """httpx.AsyncClient stand-in that records what each request asked for."""
+
+    def __init__(self, responses):
+        self.responses = list(responses)
+        self.requests = []
+
+    @property
+    def ranges(self):
+        return [headers.get("Range") for _url, headers in self.requests]
+
+    def install(self, mocker):
+        transport = self
+
+        class Client:
+            def __init__(self, **_kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_args):
+                return False
+
+            def stream(self, _method, url, **kwargs):
+                transport.requests.append((url, dict(kwargs.get("headers") or {})))
+                assert transport.responses, "the transfer made an unscripted request"
+                return transport.responses.pop(0)
+
+        mocker.patch("httpx.AsyncClient", Client)
+        return self
+
+
+def content_range(start, total):
+    return f"bytes {start}-{total - 1}/{total}"
+
+
+class TestPartialTransferRecovery:
+    """A transfer that dies mid-body resumes instead of restarting (#135)."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("terminal", ["416", "206", "200", "budget"])
+    async def test_wildcard_range_requires_server_completion(
+        self, terminal, tmp_path, mocker
+    ):
+        """A wildcard slice cannot be hashed/published as a complete file."""
+        body = RESUME_BODY * 10
+        # Even a digest-matching stage needs an explicit completion signal.
+        expected = body[:66536] if terminal == "budget" else body
+        requests = []
+
+        class DroppedBody(httpx.AsyncByteStream):
+            async def __aiter__(self):
+                yield body[:65536]
+                raise httpx.RemoteProtocolError("offline dropped body")
+
+        def handler(request):
+            requested_range = request.headers.get("Range")
+            requests.append(requested_range)
+            if requested_range is None:
+                return httpx.Response(200, stream=DroppedBody())
+            if requested_range == "bytes=65536-":
+                return httpx.Response(
+                    206,
+                    headers={"Content-Range": "bytes 65536-66535/*"},
+                    content=body[65536:66536],
+                )
+            assert terminal != "budget", "recovery exceeded its request budget"
+            assert requested_range == "bytes=66536-"
+            if terminal == "200":
+                return httpx.Response(200, content=body)
+            if terminal == "206":
+                return httpx.Response(
+                    206,
+                    headers={
+                        "Content-Range": f"bytes 66536-{len(body) - 1}/{len(body)}"
+                    },
+                    content=body[66536:],
+                )
+            return httpx.Response(416, headers={"Content-Range": "bytes */66536"})
+
+        if terminal == "416":
+            expected = body[:66536]
+        client_type = httpx.AsyncClient
+        mocker.patch(
+            "httpx.AsyncClient",
+            side_effect=lambda **kwargs: client_type(
+                **kwargs, transport=httpx.MockTransport(handler), trust_env=False
+            ),
+        )
+        config = python_bridge.get_source_config()
+        config.download_resume_attempts = 1 if terminal == "budget" else 2
+        operation = python_bridge._download_url_to_file(
+            "https://mirror.example/book",
+            str(tmp_path),
+            hashlib.md5(expected).hexdigest(),
+            "libgen",
+            config=config,
+        )
+        if terminal == "budget":
+            with pytest.raises(ProviderResponseError) as caught:
+                await operation
+            assert caught.value.reason == "partial_transfer"
+            assert not list(tmp_path.iterdir())
+        else:
+            result = await operation
+            assert Path(result).read_bytes() == expected
+            assert list(tmp_path.iterdir()) == [Path(result)]
+        assert requests == [None, "bytes=65536-"] + (
+            [] if terminal == "budget" else ["bytes=66536-"]
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("outer", [False, True], ids=["direct", "provider-chain"])
+    @pytest.mark.parametrize("terminal", ["200", "206", "416"])
+    async def test_completed_body_validation_deadline_stays_timeout(
+        self, terminal, outer, tmp_path, mocker
+    ):
+        """Timing out during local hashing is not a partial network transfer."""
+        responses = [ScriptedResponse(body=RESUME_BODY)]
+        if terminal != "200":
+            responses = [
+                ScriptedResponse(body=RESUME_BODY, fail_after=RESUME_CUT),
+                ScriptedResponse(
+                    body=RESUME_BODY[RESUME_CUT:],
+                    status_code=206,
+                    headers={
+                        "content-range": content_range(RESUME_CUT, len(RESUME_BODY))
+                    },
+                    fail_after=len(RESUME_BODY) - RESUME_CUT
+                    if terminal == "416"
+                    else None,
+                ),
+            ]
+            if terminal == "416":
+                responses.append(
+                    ScriptedResponse(
+                        status_code=416,
+                        headers={"content-range": f"bytes */{len(RESUME_BODY)}"},
+                    )
+                )
+        transport = ScriptedTransport(responses).install(mocker)
+        config = python_bridge.get_source_config()
+        config.download_timeout = 0.03
+        hashing = False
+        original_digest = python_bridge._md5_digest
+        original_sleep = asyncio.sleep
+
+        def start_hashing():
+            nonlocal hashing
+            hashing = True
+            return original_digest()
+
+        async def pause_validation(delay):
+            await original_sleep(30 if hashing else delay)
+
+        mocker.patch("python_bridge._md5_digest", side_effect=start_hashing)
+        mocker.patch("python_bridge.asyncio.sleep", side_effect=pause_validation)
+
+        async def candidates(_md5, source):
+            yield DownloadResult(
+                url="https://mirror.example/book", source=SourceType.LIBGEN
+            )
+            pytest.fail("the shared deadline must not admit another mirror")
+
+        mocker.patch(
+            "python_bridge.get_source_router",
+            new=AsyncMock(
+                return_value=SimpleNamespace(
+                    iter_download_candidates=candidates, config=config
+                )
+            ),
+        )
+        with pytest.raises(ProviderTimeoutError) as caught:
+            if outer:
+                await python_bridge._fetch_from_source(
+                    {"md5": RESUME_DIGEST, "source": "libgen"}, str(tmp_path)
+                )
+            else:
+                await python_bridge._download_url_to_file(
+                    "https://mirror.example/book",
+                    str(tmp_path),
+                    RESUME_DIGEST,
+                    "libgen",
+                    config=config,
+                )
+        assert caught.value.reason == "read_timeout"
+        assert hashing
+        assert len(transport.requests) == {"200": 1, "206": 2, "416": 3}[terminal]
+        assert not list(tmp_path.iterdir())
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("decoded_bytes", [False, True], ids=["empty", "partial"])
+    @pytest.mark.parametrize("recover", [False, True], ids=["exhausted", "recovered"])
+    async def test_encoded_decoding_error_restarts_without_decoded_offsets(
+        self, decoded_bytes, recover, tmp_path, mocker
+    ):
+        """Corrupt gzip bodies restart at zero within the same attempt budget."""
+        import gzip
+
+        body = RESUME_BODY * 10
+        compressed = gzip.compress(body)
+        requests = []
+
+        class CorruptGzip(httpx.AsyncByteStream):
+            async def __aiter__(self):
+                if decoded_bytes:
+                    yield compressed[:-8]
+                    yield b"\x00" * 8  # Invalid CRC after decoded bytes arrived.
+                else:
+                    yield b"this is not a gzip header"
+
+        def handler(request):
+            requests.append(request.headers.get("Range"))
+            if recover and len(requests) == 2:
+                return httpx.Response(200, content=body)
+            return httpx.Response(
+                200, headers={"Content-Encoding": "gzip"}, stream=CorruptGzip()
+            )
+
+        client_type = httpx.AsyncClient
+        mocker.patch(
+            "httpx.AsyncClient",
+            side_effect=lambda **kwargs: client_type(
+                **kwargs, transport=httpx.MockTransport(handler), trust_env=False
+            ),
+        )
+        config = python_bridge.get_source_config()
+        config.download_resume_attempts = 1
+        operation = python_bridge._download_url_to_file(
+            "https://mirror.example/book",
+            str(tmp_path),
+            hashlib.md5(body).hexdigest(),
+            "libgen",
+            config=config,
+        )
+        if recover:
+            result = await operation
+            assert Path(result).read_bytes() == body
+            assert list(tmp_path.iterdir()) == [Path(result)]
+        else:
+            with pytest.raises(ProviderResponseError) as caught:
+                await operation
+            assert caught.value.reason == (
+                "partial_transfer" if decoded_bytes else "protocol_error"
+            )
+            assert not list(tmp_path.iterdir())
+        assert requests == [None, None]
+
+    @pytest.mark.asyncio
+    async def test_resume_http_error_keeps_exact_status_detail(self, tmp_path, mocker):
+        transport = ScriptedTransport(
+            [
+                ScriptedResponse(body=RESUME_BODY, fail_after=5000),
+                ScriptedResponse(status_code=503),
+            ]
+        ).install(mocker)
+        with pytest.raises(ProviderResponseError) as caught:
+            await python_bridge._download_url_to_file(
+                "https://mirror.example/get", str(tmp_path), RESUME_DIGEST, "libgen"
+            )
+        assert caught.value.reason == "http_error"
+        assert caught.value.detail == "HTTP 503"
+        assert transport.ranges == [None, "bytes=5000-"]
+        assert not list(tmp_path.iterdir())
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("attempts", [1, 2])
+    async def test_short_206_continues_until_complete_or_budget_ends(
+        self, attempts, tmp_path, mocker
+    ):
+        """A valid 5000-5999/20000 slice is incomplete, not corrupt."""
+        body = b"%PDF-1.7\n" + b"x" * 19991
+        digest = hashlib.md5(body).hexdigest()
+        responses = [
+            ScriptedResponse(body=body, fail_after=5000),
+            ScriptedResponse(
+                body=body[5000:6000],
+                status_code=206,
+                headers={"content-range": "bytes 5000-5999/20000"},
+            ),
+        ]
+        if attempts == 2:
+            responses.append(
+                ScriptedResponse(
+                    body=body[6000:],
+                    status_code=206,
+                    headers={"content-range": "bytes 6000-19999/20000"},
+                )
+            )
+        transport = ScriptedTransport(responses).install(mocker)
+        config = python_bridge.get_source_config()
+        config.download_resume_attempts = attempts
+        operation = python_bridge._download_url_to_file(
+            "https://mirror.example/get", str(tmp_path), digest, "libgen", config=config
+        )
+        if attempts == 2:
+            result = await operation
+            assert Path(result).read_bytes() == body
+            assert transport.ranges == [None, "bytes=5000-", "bytes=6000-"]
+        else:
+            with pytest.raises(ProviderResponseError) as caught:
+                await operation
+            assert caught.value.reason == "partial_transfer"
+            assert "bytes_received=6000 resumes_tried=1" in caught.value.detail
+            assert transport.ranges == [None, "bytes=5000-"]
+            assert not list(tmp_path.iterdir())
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("outer", [False, True], ids=["direct", "provider-chain"])
+    async def test_short_206_deadline_reports_partial_transfer(
+        self, outer, tmp_path, mocker
+    ):
+        class PausedResponse(ScriptedResponse):
+            async def __aenter__(self):
+                await asyncio.sleep(30)
+
+        transport = ScriptedTransport(
+            [
+                ScriptedResponse(body=RESUME_BODY, fail_after=5000),
+                ScriptedResponse(
+                    body=RESUME_BODY[5000:6000],
+                    status_code=206,
+                    headers={"content-range": f"bytes 5000-5999/{len(RESUME_BODY)}"},
+                ),
+                PausedResponse(),
+            ]
+        ).install(mocker)
+        config = python_bridge.get_source_config()
+        config.download_timeout = 0.03
+
+        async def candidates(_md5, source):
+            yield DownloadResult(
+                url="https://mirror.example/get", source=SourceType.LIBGEN
+            )
+            pytest.fail("deadline exhaustion must not start another mirror")
+
+        mocker.patch(
+            "python_bridge.get_source_router",
+            new=AsyncMock(
+                return_value=SimpleNamespace(
+                    iter_download_candidates=candidates,
+                    config=config,
+                )
+            ),
+        )
+        with pytest.raises(ProviderResponseError) as caught:
+            if outer:
+                await python_bridge._fetch_from_source(
+                    {"md5": RESUME_DIGEST, "source": "libgen"}, str(tmp_path)
+                )
+            else:
+                await python_bridge._download_url_to_file(
+                    "https://mirror.example/get",
+                    str(tmp_path),
+                    RESUME_DIGEST,
+                    "libgen",
+                    config=config,
+                )
+        assert caught.value.reason == "partial_transfer"
+        assert "bytes_received=6000 resumes_tried=2" in caught.value.detail
+        assert transport.ranges == [None, "bytes=5000-", "bytes=6000-"]
+        assert not list(tmp_path.iterdir())
+
+    @pytest.mark.asyncio
+    async def test_stream_close_failure_never_leaves_a_published_file(
+        self, tmp_path, mocker
+    ):
+        class CloseFailure(ScriptedResponse):
+            async def __aexit__(self, *_args):
+                raise httpx.ReadError("offline stream close failure")
+
+        ScriptedTransport([CloseFailure(body=RESUME_BODY)]).install(mocker)
+        config = python_bridge.get_source_config()
+        config.download_resume_attempts = 0
+        with pytest.raises(ProviderResponseError) as caught:
+            await python_bridge._download_url_to_file(
+                "https://mirror.example/get",
+                str(tmp_path),
+                RESUME_DIGEST,
+                "libgen",
+                config=config,
+            )
+        assert caught.value.reason == "partial_transfer"
+        assert not list(tmp_path.iterdir())
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("resume_status", [503, 206])
+    async def test_real_httpx_redirected_resume_keeps_status_and_declared_length(
+        self, resume_status, tmp_path, mocker
+    ):
+        """Real httpx follows each redirect and sends Range to the CDN."""
+        body = RESUME_BODY * 10
+        digest = hashlib.md5(body).hexdigest()
+        requests = []
+
+        class DroppedBody(httpx.AsyncByteStream):
+            async def __aiter__(self):
+                yield body[:65536]
+                raise httpx.RemoteProtocolError("offline dropped body")
+
+        def handler(request):
+            requests.append((request.url.host, request.headers.get("Range")))
+            if request.url.host == "mirror.example":
+                return httpx.Response(
+                    302, headers={"Location": "https://cdn.example/book"}
+                )
+            if request.headers.get("Range") is None:
+                return httpx.Response(
+                    200,
+                    headers={
+                        "Content-Type": "application/pdf",
+                        "Content-Length": str(len(body)),
+                    },
+                    stream=DroppedBody(),
+                )
+            if resume_status == 503:
+                return httpx.Response(503, headers={"Content-Length": "0"})
+            start = 65536 if request.headers["Range"] == "bytes=65536-" else 66536
+            end = 66536 if start == 65536 else len(body)
+            return httpx.Response(
+                206,
+                headers={
+                    "Content-Type": "application/pdf",
+                    "Content-Length": str(end - start),
+                    "Content-Range": f"bytes {start}-{end - 1}/{len(body)}",
+                },
+                content=body[start:end],
+            )
+
+        client_type = httpx.AsyncClient
+        mocker.patch(
+            "httpx.AsyncClient",
+            side_effect=lambda **kwargs: client_type(
+                **kwargs, transport=httpx.MockTransport(handler), trust_env=False
+            ),
+        )
+        operation = python_bridge._download_url_to_file(
+            "https://mirror.example/get", str(tmp_path), digest, "libgen"
+        )
+        expected_requests = [
+            ("mirror.example", None),
+            ("cdn.example", None),
+            ("mirror.example", "bytes=65536-"),
+            ("cdn.example", "bytes=65536-"),
+        ]
+        if resume_status == 503:
+            with pytest.raises(ProviderResponseError) as caught:
+                await operation
+            assert caught.value.detail == "HTTP 503"
+            assert caught.value.host == "cdn.example"
+            assert not list(tmp_path.iterdir())
+        else:
+            result = await operation
+            assert Path(result).read_bytes() == body
+            expected_requests.extend(
+                [
+                    ("mirror.example", "bytes=66536-"),
+                    ("cdn.example", "bytes=66536-"),
+                ]
+            )
+        assert requests == expected_requests
+
+    @pytest.mark.asyncio
+    async def test_dropped_transfer_resumes_from_the_staged_offset(
+        self, tmp_path, mocker
+    ):
+        """The retry asks for the remainder and the file is assembled whole."""
+        transport = ScriptedTransport(
+            [
+                ScriptedResponse(
+                    body=RESUME_BODY,
+                    headers={"content-type": "application/pdf"},
+                    fail_after=RESUME_CUT,
+                ),
+                ScriptedResponse(
+                    body=RESUME_BODY[RESUME_CUT:],
+                    status_code=206,
+                    headers={
+                        "content-type": "application/pdf",
+                        "content-range": content_range(RESUME_CUT, len(RESUME_BODY)),
+                    },
+                ),
+            ]
+        ).install(mocker)
+
+        result = await python_bridge._download_url_to_file(
+            "https://mirror.example/get", str(tmp_path), RESUME_DIGEST, "libgen"
+        )
+
+        assert transport.ranges == [None, f"bytes={RESUME_CUT}-"]
+        assert Path(result).read_bytes() == RESUME_BODY
+        assert Path(result).stat().st_size == len(RESUME_BODY)
+        assert not list(tmp_path.glob(".source-*.part"))
+
+    @pytest.mark.asyncio
+    async def test_truncated_body_against_declared_length_resumes(
+        self, tmp_path, mocker
+    ):
+        """A body that ends early WITHOUT erroring is still a partial transfer."""
+        transport = ScriptedTransport(
+            [
+                ScriptedResponse(
+                    body=RESUME_BODY[:RESUME_CUT],
+                    headers={
+                        "content-type": "application/pdf",
+                        "content-length": str(len(RESUME_BODY)),
+                    },
+                ),
+                ScriptedResponse(
+                    body=RESUME_BODY[RESUME_CUT:],
+                    status_code=206,
+                    headers={
+                        "content-type": "application/pdf",
+                        "content-range": content_range(RESUME_CUT, len(RESUME_BODY)),
+                    },
+                ),
+            ]
+        ).install(mocker)
+
+        result = await python_bridge._download_url_to_file(
+            "https://mirror.example/get", str(tmp_path), RESUME_DIGEST, "libgen"
+        )
+
+        assert transport.ranges == [None, f"bytes={RESUME_CUT}-"]
+        assert Path(result).read_bytes() == RESUME_BODY
+
+    @pytest.mark.asyncio
+    async def test_server_that_ignores_range_restarts_rather_than_appends(
+        self, tmp_path, mocker
+    ):
+        """A 200 answer to a Range request is the whole file, not a remainder."""
+        transport = ScriptedTransport(
+            [
+                ScriptedResponse(
+                    body=RESUME_BODY,
+                    headers={"content-type": "application/pdf"},
+                    fail_after=RESUME_CUT,
+                ),
+                ScriptedResponse(
+                    body=RESUME_BODY,
+                    status_code=200,
+                    headers={"content-type": "application/pdf"},
+                ),
+            ]
+        ).install(mocker)
+
+        result = await python_bridge._download_url_to_file(
+            "https://mirror.example/get", str(tmp_path), RESUME_DIGEST, "libgen"
+        )
+
+        assert transport.ranges == [None, f"bytes={RESUME_CUT}-"]
+        assert Path(result).read_bytes() == RESUME_BODY
+        assert Path(result).stat().st_size == len(RESUME_BODY)
+
+    @pytest.mark.asyncio
+    async def test_resume_that_returns_a_different_file_is_rejected(
+        self, tmp_path, mocker
+    ):
+        """Concatenating someone else's bytes must fail, never report success."""
+        other = b"%PDF-1.7 an entirely different book" * 400
+        transport = ScriptedTransport(
+            [
+                ScriptedResponse(
+                    body=RESUME_BODY,
+                    headers={"content-type": "application/pdf"},
+                    fail_after=RESUME_CUT,
+                ),
+                ScriptedResponse(
+                    body=other[RESUME_CUT:],
+                    status_code=206,
+                    headers={
+                        "content-type": "application/pdf",
+                        "content-range": content_range(RESUME_CUT, len(other)),
+                    },
+                ),
+            ]
+        ).install(mocker)
+
+        with pytest.raises(ProviderResponseError) as excinfo:
+            await python_bridge._download_url_to_file(
+                "https://mirror.example/get", str(tmp_path), RESUME_DIGEST, "libgen"
+            )
+
+        assert transport.ranges == [None, f"bytes={RESUME_CUT}-"]
+        assert excinfo.value.reason == "integrity_mismatch"
+        # The spliced file is destroyed rather than parked: a later attempt
+        # resuming from it would inherit the corruption.
+        assert not list(tmp_path.glob(".source-*"))
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("headers", "why"),
+        [
+            ({}, "no Content-Range at all"),
+            ({"content-range": "bytes 0-99/100"}, "a range starting somewhere else"),
+            (
+                {
+                    "content-range": content_range(RESUME_CUT, len(RESUME_BODY)),
+                    "content-encoding": "gzip",
+                },
+                "an encoded body whose offsets are not the staged ones",
+            ),
+        ],
+    )
+    async def test_resume_rejects_a_206_that_does_not_continue_the_partial(
+        self, headers, why, tmp_path, mocker
+    ):
+        """A 206 the staged bytes cannot be appended to is a failure, not a guess."""
+        transport = ScriptedTransport(
+            [
+                ScriptedResponse(
+                    body=RESUME_BODY,
+                    headers={"content-type": "application/pdf"},
+                    fail_after=RESUME_CUT,
+                ),
+                ScriptedResponse(
+                    body=RESUME_BODY[RESUME_CUT:],
+                    status_code=206,
+                    headers={"content-type": "application/pdf", **headers},
+                ),
+            ]
+        ).install(mocker)
+
+        with pytest.raises(ProviderResponseError) as excinfo:
+            await python_bridge._download_url_to_file(
+                "https://mirror.example/get", str(tmp_path), RESUME_DIGEST, "libgen"
+            )
+
+        assert transport.ranges == [None, f"bytes={RESUME_CUT}-"], why
+        assert excinfo.value.reason == "protocol_error", why
+        assert not list(tmp_path.glob(".source-*")), why
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("interruption", ["reset", "wrong-length"])
+    async def test_unsatisfiable_range_at_true_eof_publishes_complete_stage(
+        self, interruption, tmp_path, mocker
+    ):
+        """A final-frame reset must not discard a digest-matching complete file."""
+        headers = {"content-type": "application/pdf"}
+        if interruption == "wrong-length":
+            headers["content-length"] = str(len(RESUME_BODY) + 1)
+        transport = ScriptedTransport(
+            [
+                ScriptedResponse(
+                    body=RESUME_BODY,
+                    headers=headers,
+                    fail_after=len(RESUME_BODY) if interruption == "reset" else None,
+                ),
+                ScriptedResponse(
+                    status_code=416,
+                    headers={"content-range": f"bytes */{len(RESUME_BODY)}"},
+                ),
+            ]
+        ).install(mocker)
+        config = python_bridge.get_source_config()
+        config.download_resume_attempts = 1  # No spare request after the 416.
+
+        result = await python_bridge._download_url_to_file(
+            "https://mirror.example/get",
+            str(tmp_path),
+            RESUME_DIGEST,
+            "libgen",
+            config=config,
+        )
+
+        assert transport.ranges == [None, f"bytes={len(RESUME_BODY)}-"]
+        assert Path(result).read_bytes() == RESUME_BODY
+        assert Path(result).suffix == ".pdf"
+        assert list(tmp_path.iterdir()) == [Path(result)]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "content_range_header",
+        [None, f"bytes */{len(RESUME_BODY) + 1}", "bytes */bogus", "bytes */*"],
+        ids=["missing", "different-total", "malformed", "unknown-total"],
+    )
+    async def test_unsatisfiable_range_without_matching_total_restarts_complete_stage(
+        self, content_range_header, tmp_path, mocker
+    ):
+        """Even a valid digest cannot rescue a missing or nonmatching EOF total."""
+        transport = ScriptedTransport(
+            [
+                ScriptedResponse(body=RESUME_BODY, fail_after=len(RESUME_BODY)),
+                ScriptedResponse(
+                    status_code=416,
+                    headers={"content-range": content_range_header}
+                    if content_range_header is not None
+                    else {},
+                ),
+                ScriptedResponse(body=RESUME_BODY),
+            ]
+        ).install(mocker)
+
+        result = await python_bridge._download_url_to_file(
+            "https://mirror.example/get", str(tmp_path), RESUME_DIGEST, "libgen"
+        )
+
+        assert transport.ranges == [None, f"bytes={len(RESUME_BODY)}-", None]
+        assert Path(result).read_bytes() == RESUME_BODY
+        assert list(tmp_path.iterdir()) == [Path(result)]
+
+    @pytest.mark.asyncio
+    async def test_unsatisfiable_range_at_true_eof_with_wrong_digest_restarts(
+        self, tmp_path, mocker
+    ):
+        """An equal byte count must not publish corrupt staged content."""
+        corrupt = RESUME_BODY[:-1] + bytes([RESUME_BODY[-1] ^ 1])
+        transport = ScriptedTransport(
+            [
+                ScriptedResponse(body=corrupt, fail_after=len(corrupt)),
+                ScriptedResponse(
+                    status_code=416,
+                    headers={"content-range": f"bytes */{len(corrupt)}"},
+                ),
+                ScriptedResponse(body=RESUME_BODY),
+            ]
+        ).install(mocker)
+
+        result = await python_bridge._download_url_to_file(
+            "https://mirror.example/get", str(tmp_path), RESUME_DIGEST, "libgen"
+        )
+
+        assert transport.ranges == [None, f"bytes={len(corrupt)}-", None]
+        assert Path(result).read_bytes() == RESUME_BODY
+        assert list(tmp_path.iterdir()) == [Path(result)]
+
+    @pytest.mark.asyncio
+    async def test_unsatisfiable_range_discards_the_partial_and_starts_over(
+        self, tmp_path, mocker
+    ):
+        """A partial the server will not resume must not become a permanent trap."""
+        transport = ScriptedTransport(
+            [
+                ScriptedResponse(
+                    body=RESUME_BODY,
+                    headers={"content-type": "application/pdf"},
+                    fail_after=RESUME_CUT,
+                ),
+                ScriptedResponse(status_code=416, headers={}),
+                ScriptedResponse(
+                    body=RESUME_BODY,
+                    headers={"content-type": "application/pdf"},
+                ),
+            ]
+        ).install(mocker)
+
+        result = await python_bridge._download_url_to_file(
+            "https://mirror.example/get", str(tmp_path), RESUME_DIGEST, "libgen"
+        )
+
+        assert transport.ranges == [None, f"bytes={RESUME_CUT}-", None]
+        assert Path(result).read_bytes() == RESUME_BODY
+
+    @pytest.mark.asyncio
+    async def test_large_transfer_resumes_over_one_mib(self, tmp_path, mocker):
+        """Recover a multi-block transfer under the shipped retry budget."""
+        body = b"%PDF-1.7 " + bytes(range(256)) * (3 << 12)
+        digest = hashlib.md5(body).hexdigest()
+        cut = 3 << 19  # 1.5 MiB prefix of a >3 MiB file
+
+        transport = ScriptedTransport(
+            [
+                ScriptedResponse(
+                    body=body,
+                    headers={"content-type": "application/pdf"},
+                    fail_after=cut,
+                ),
+                ScriptedResponse(
+                    body=body[cut:],
+                    status_code=206,
+                    headers={
+                        "content-type": "application/pdf",
+                        "content-range": content_range(cut, len(body)),
+                    },
+                ),
+            ]
+        ).install(mocker)
+
+        result = await python_bridge._download_url_to_file(
+            "https://mirror.example/get", str(tmp_path), digest, "libgen"
+        )
+
+        assert transport.ranges == [None, f"bytes={cut}-"]
+        assert Path(result).stat().st_size == len(body)
+        assert hashlib.md5(Path(result).read_bytes()).hexdigest() == digest
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("outer", [False, True], ids=["direct", "provider-chain"])
+    async def test_deadline_expires_inside_resume_without_another_mirror(
+        self, outer, tmp_path, mocker
+    ):
+        """A fresh timer per resume would let this stream outlive the call."""
+
+        class SlowSuffix(ScriptedResponse):
+            async def aiter_bytes(self, _chunk_size=65536):
+                await asyncio.sleep(0.015)
+                yield b"suffix"
+                await asyncio.sleep(1)
+
+        first = ScriptedResponse(body=RESUME_BODY, fail_after=RESUME_CUT)
+        transport = ScriptedTransport(
+            [
+                first,
+                SlowSuffix(
+                    status_code=206,
+                    headers={
+                        "content-range": content_range(RESUME_CUT, len(RESUME_BODY))
+                    },
+                ),
+            ]
+        ).install(mocker)
+        config = python_bridge.get_source_config()
+        config.download_timeout = 0.05
+        mocker.patch("python_bridge.get_source_config", return_value=config)
+        started = []
+
+        async def candidates(_md5, source):
+            for host in ("first.example", "second.example"):
+                started.append(host)
+                yield DownloadResult(
+                    url=f"https://{host}/book", source=SourceType.LIBGEN
+                )
+
+        mocker.patch(
+            "python_bridge.get_source_router",
+            new=AsyncMock(
+                return_value=SimpleNamespace(
+                    iter_download_candidates=candidates, config=config
+                )
+            ),
+        )
+        with pytest.raises(ProviderResponseError) as caught:
+            if outer:
+                await python_bridge._fetch_from_source(
+                    {"md5": RESUME_DIGEST, "source": "libgen"}, str(tmp_path)
+                )
+            else:
+                await python_bridge._download_url_to_file(
+                    "https://first.example/book", str(tmp_path), RESUME_DIGEST, "libgen"
+                )
+        assert transport.ranges == [None, f"bytes={RESUME_CUT}-"]
+        assert caught.value.reason == "partial_transfer"
+        assert "partial transfer" in caught.value.detail
+        assert f"bytes_received={RESUME_CUT + 6}" in caught.value.detail
+        assert "resumes_tried=1" in caught.value.detail
+        assert not list(tmp_path.iterdir())
+        if outer:
+            assert started == ["first.example"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "configured, retries",
+        [
+            (None, 2),
+            ("0", 0),
+            ("1", 1),
+            ("bad", 2),
+            ("-1", 2),
+            ("", 2),
+            (" 3 ", 3),
+            ("1000000", 10),
+        ],
+    )
+    async def test_retry_budget_and_partial_diagnosis_reach_mirror_detail(
+        self, configured, retries, tmp_path, mocker, monkeypatch
+    ):
+        """Removing the config bound would issue unscripted requests indefinitely."""
+        if configured is None:
+            monkeypatch.delenv("BOOK_SOURCE_DOWNLOAD_RESUME_ATTEMPTS", raising=False)
+        else:
+            monkeypatch.setenv("BOOK_SOURCE_DOWNLOAD_RESUME_ATTEMPTS", configured)
+        responses = [ScriptedResponse(body=RESUME_BODY, fail_after=RESUME_CUT)]
+        offset = RESUME_CUT
+        for _ in range(retries):
+            responses.append(
+                ScriptedResponse(
+                    body=RESUME_BODY[offset:],
+                    fail_after=10,
+                    status_code=206,
+                    headers={"content-range": content_range(offset, len(RESUME_BODY))},
+                )
+            )
+            offset += 10
+        transport = ScriptedTransport(responses).install(mocker)
+
+        async def candidates(_md5, source):
+            yield DownloadResult(
+                url="https://mirror.example/book", source=SourceType.LIBGEN
+            )
+
+        mocker.patch(
+            "python_bridge.get_source_router",
+            new=AsyncMock(
+                return_value=SimpleNamespace(iter_download_candidates=candidates)
+            ),
+        )
+        with pytest.raises(AllSourcesFailedError) as caught:
+            await python_bridge._fetch_from_source(
+                {"md5": RESUME_DIGEST, "source": "libgen"}, str(tmp_path)
+            )
+        failure = caught.value.to_dict()["failures"][0]
+        assert len(transport.requests) == retries + 1
+        assert failure["reason"] == "partial_transfer"
+        assert "partial transfer" in failure["detail"]
+        assert f"bytes_received={offset}" in failure["detail"]
+        assert f"resumes_tried={retries}" in failure["detail"]
+        assert not list(tmp_path.iterdir())
+
+    @pytest.mark.asyncio
+    async def test_prefix_is_deleted_before_next_mirror_and_next_call(
+        self, tmp_path, mocker
+    ):
+        """Same-call recovery must not leave a resumable prefix for another owner."""
+        transport = ScriptedTransport(
+            [
+                ScriptedResponse(body=RESUME_BODY, fail_after=RESUME_CUT),
+                ScriptedResponse(
+                    status_code=206,
+                    headers={
+                        "content-range": content_range(RESUME_CUT, len(RESUME_BODY))
+                    },
+                    body=RESUME_BODY[RESUME_CUT:],
+                    fail_after=10,
+                ),
+                ScriptedResponse(body=RESUME_BODY),
+                ScriptedResponse(body=RESUME_BODY),
+            ]
+        ).install(mocker)
+        config = python_bridge.get_source_config()
+        config.download_resume_attempts = 1
+
+        async def candidates(_md5, source):
+            yield DownloadResult(
+                url="https://first.example/book", source=SourceType.LIBGEN
+            )
+            assert not list(tmp_path.glob(".source-*"))
+            yield DownloadResult(
+                url="https://second.example/book", source=SourceType.LIBGEN
+            )
+
+        mocker.patch(
+            "python_bridge.get_source_router",
+            new=AsyncMock(
+                return_value=SimpleNamespace(
+                    iter_download_candidates=candidates, config=config
+                )
+            ),
+        )
+        first = await python_bridge._fetch_from_source(
+            {"md5": RESUME_DIGEST, "source": "libgen"}, str(tmp_path)
+        )
+        second = await python_bridge._download_url_to_file(
+            "https://first.example/book",
+            str(tmp_path),
+            RESUME_DIGEST,
+            "libgen",
+            config=config,
+        )
+        assert transport.ranges == [None, f"bytes={RESUME_CUT}-", None, None]
+        assert transport.requests[0][0] == transport.requests[1][0]
+        assert Path(first).read_bytes() == Path(second).read_bytes() == RESUME_BODY
+        assert not list(tmp_path.glob("*.part"))
+
+    @pytest.mark.asyncio
+    async def test_cancellation_mid_resume_deletes_only_owned_stage(
+        self, tmp_path, mocker
+    ):
+        """Swallowing cancellation in the retry loop would fetch another suffix."""
+        suffix_started = asyncio.Event()
+
+        class PausedSuffix(ScriptedResponse):
+            async def aiter_bytes(self, _chunk_size=65536):
+                yield b"suffix"
+                suffix_started.set()
+                await asyncio.sleep(30)
+
+        transport = ScriptedTransport(
+            [
+                ScriptedResponse(body=RESUME_BODY, fail_after=RESUME_CUT),
+                PausedSuffix(
+                    status_code=206,
+                    headers={
+                        "content-range": content_range(RESUME_CUT, len(RESUME_BODY))
+                    },
+                ),
+            ]
+        ).install(mocker)
+        unrelated = tmp_path / "unrelated.part"
+        unrelated.write_bytes(b"keep")
+        task = asyncio.create_task(
+            python_bridge._download_url_to_file(
+                "https://mirror.example/book", str(tmp_path), RESUME_DIGEST, "libgen"
+            )
+        )
+        try:
+            await asyncio.wait_for(suffix_started.wait(), 0.2)
+        finally:
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+        assert transport.ranges == [None, f"bytes={RESUME_CUT}-"]
+        assert list(tmp_path.iterdir()) == [unrelated]
+        assert unrelated.read_bytes() == b"keep"
+
+    @pytest.mark.asyncio
+    async def test_next_resolution_timeout_does_not_inherit_previous_progress(
+        self, tmp_path, mocker
+    ):
+        """The terminal resolution failure must not claim bytes from another attempt."""
+        transport = ScriptedTransport(
+            [
+                ScriptedResponse(body=RESUME_BODY, fail_after=RESUME_CUT),
+                ScriptedResponse(
+                    status_code=206
+                ),  # invalid continuation; rejects before append
+            ]
+        ).install(mocker)
+        config = python_bridge.get_source_config()
+        config.download_timeout = 0.04
+
+        async def candidates(_md5, source):
+            yield DownloadResult(
+                url="https://first.example/book", source=SourceType.LIBGEN
+            )
+            await asyncio.sleep(1)
+
+        mocker.patch(
+            "python_bridge.get_source_router",
+            new=AsyncMock(
+                return_value=SimpleNamespace(
+                    iter_download_candidates=candidates, config=config
+                )
+            ),
+        )
+        with pytest.raises(AllSourcesFailedError) as caught:
+            await python_bridge._fetch_from_source(
+                {"md5": RESUME_DIGEST, "source": "libgen"}, str(tmp_path)
+            )
+        assert transport.ranges == [None, f"bytes={RESUME_CUT}-"]
+        assert "partial transfer" in caught.value.failures[0].detail
+        assert "partial transfer" not in caught.value.failures[-1].detail
+        assert caught.value.failures[-1].reason == "read_timeout"
+        assert not list(tmp_path.iterdir())

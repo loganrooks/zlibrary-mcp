@@ -198,3 +198,64 @@ async def test_local_acquisition_refusal_does_not_gain_eapi_diagnostics(
     data = json.loads(capsys.readouterr().err.strip().splitlines()[-1])
     assert data["details"]["reason"] == "invalid_argument"
     assert "diagnostics" not in data
+
+
+async def test_eapi_sanitizer_retains_partial_transfer_reason(monkeypatch, capsys):
+    from lib.sources.errors import ProviderResponseError
+
+    async def dispatch(*args):
+        raise ProviderResponseError(
+            "libgen",
+            "cdn.example",
+            "bytes_received=5000 SECRET",
+            reason="partial_transfer",
+        )
+
+    async def initialize():
+        pass
+
+    monkeypatch.setattr(python_bridge, "_eapi_client", None)
+    monkeypatch.setattr(python_bridge, "_session_input", None)
+    monkeypatch.setattr(python_bridge, "initialize_eapi_client", initialize)
+    monkeypatch.setattr(python_bridge, "_dispatch_bridge_function", dispatch)
+    monkeypatch.setattr(
+        sys, "argv", ["python_bridge.py", "search", '{"query":"offline"}']
+    )
+    with pytest.raises(SystemExit) as stopped:
+        await python_bridge.main()
+    assert stopped.value.code == 1
+    data = json.loads(capsys.readouterr().err.strip().splitlines()[-1])
+    assert data["details"] == {"reason": "partial_transfer"}
+    assert "SECRET" not in json.dumps(data)
+
+
+@pytest.mark.parametrize("issued", [False, True])
+async def test_local_budget_after_eapi_setup_keeps_its_original_verdict(
+    issued, monkeypatch, capsys
+):
+    from lib.acquisition import AcquisitionError
+
+    class Client:
+        needs_profile_validation = False
+        remix_userkey = "fixture-secret"
+
+        async def close(self):
+            pass
+
+    async def dispatch(*args):
+        raise AcquisitionError(
+            "walk_budget_exhausted", "Acquisition deadline exhausted", issued=issued
+        )
+
+    monkeypatch.setattr(python_bridge, "_eapi_client", Client())
+    monkeypatch.setattr(python_bridge, "_session_input", None)
+    monkeypatch.setattr(python_bridge, "_dispatch_bridge_function", dispatch)
+    monkeypatch.setattr(sys, "argv", ["python_bridge.py", "acquire_book", "{}"])
+    with pytest.raises(SystemExit) as stopped:
+        await python_bridge.main()
+    assert stopped.value.code == 1
+    data = json.loads(capsys.readouterr().err.strip().splitlines()[-1])
+    assert data["type"] == "AcquisitionError"
+    assert data["details"]["reason"] == "walk_budget_exhausted"
+    assert data["details"]["request_issued"] is issued
+    assert "diagnostics" not in data

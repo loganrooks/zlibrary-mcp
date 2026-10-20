@@ -39,6 +39,7 @@ from .net import (
 # CRITICAL: Import is libgen_api_enhanced, NOT libgen_api
 from libgen_api_enhanced import LibgenSearch
 from libgen_api_enhanced import search_request as _lge_search_request
+from libgen_api_enhanced.book import Book as _LgeBook
 
 logger = logging.getLogger("zlibrary.sources")
 
@@ -174,6 +175,14 @@ class _RequestsWithUA:
         self._state.last_response = response
 
     @property
+    def missing_edition_rows(self) -> int:
+        return getattr(self._state, "missing_edition_rows", 0)
+
+    @missing_edition_rows.setter
+    def missing_edition_rows(self, count: int) -> None:
+        self._state.missing_edition_rows = count
+
+    @property
     def user_agent(self) -> Optional[str]:
         return getattr(self._state, "user_agent", None)
 
@@ -195,6 +204,118 @@ class _RequestsWithUA:
 
 _search_requests = _RequestsWithUA()
 _lge_search_request.requests = _search_requests
+
+
+_OBJECT_TYPE_BY_BADGE = {
+    "book": "book",
+    "fiction book": "book",
+    "journal article": "article",
+    "magazine": "magazine",
+    "comics": "comics",
+    "standart": "standard",
+}
+
+
+def _row_object_type(title_cell) -> str:
+    """Read the row badge as internal evidence; leave unlabelled rows unknown."""
+    for anchor in title_cell.select("span.badge a[title]"):
+        label = (anchor.get("title") or "").strip().lower()
+        if label:
+            return _OBJECT_TYPE_BY_BADGE.get(label, label.replace(" ", "_"))
+    return ""
+
+
+def _has_cover_cell(tds) -> bool:
+    """A cover cell contains an image and no text, regardless of its src."""
+    first = tds[0]
+    return first.find("img") is not None and not first.get_text(strip=True)
+
+
+def _get_books(self, table):
+    """Parse LibGen book and article rows without shifting their columns (#132).
+
+    libgen-api-enhanced 1.3 detects a cover column by "covers" in img.src.
+    Article rows in the retained mixed fixture have an empty src, so upstream
+    shifts their citation into author, size into extension and loses the md5.
+    Detect that column structurally before creating the third-party Book.
+
+    Only a direct, nonblank edition link supplies the title and ID. Nested
+    journal/issue links and trailing DOI/ISBN metadata are not row identities.
+    Retain upstream title normalization and mirror/cover handling. Install via
+    the same local compatibility mechanism as the UA shim; remove when upstream
+    supports this layout and object-type evidence itself.
+    """
+    for row in table.find_all("tr"):
+        tds = row.find_all("td")
+        if len(tds) < 9:
+            continue
+        offset = 1 if _has_cover_cell(tds) else 0
+        if len(tds) < offset + 9:
+            continue
+
+        cover_url = None
+        if offset:
+            cover_img = tds[0].find("img", src=True)
+            src = cover_img["src"] if cover_img else ""
+            if "covers" in src:
+                cover_url = urljoin(self.mirror, src).replace("_small", "")
+
+        title_cell = tds[offset]
+        edition_links = [
+            link
+            for link in title_cell.find_all("a", href=True, recursive=False)
+            if urlparse(link["href"]).path.rsplit("/", maxsplit=1)[-1] == "edition.php"
+            and parse_qs(urlparse(link["href"]).query).get("id", [""])[0].isdigit()
+            and link.get_text(" ", strip=True)
+        ]
+        if not edition_links:
+            _search_requests.missing_edition_rows += 1
+            continue
+        edition_link = edition_links[0]
+        raw_title = edition_link.get_text(" ", strip=True)
+        title = re.sub(r"\s+", " ", raw_title.strip())
+        title = re.sub(r"[^A-Za-z0-9 ]+", "", title.strip())
+        id_param = parse_qs(urlparse(edition_link["href"]).query)["id"][0]
+
+        author = tds[offset + 1].get_text(strip=True)
+        publisher = tds[offset + 2].get_text(strip=True)
+        year = tds[offset + 3].get_text(strip=True)
+        language = tds[offset + 4].get_text(strip=True)
+        pages = tds[offset + 5].get_text(strip=True)
+        size_link = tds[offset + 6].find("a")
+        size = (
+            size_link.get_text(strip=True)
+            if size_link
+            else tds[offset + 6].get_text(strip=True)
+        )
+        extension = tds[offset + 7].get_text(strip=True)
+        mirror_links = tds[offset + 8].find_all("a", href=True)
+        mirrors = self.get_mirrors(mirror_links[:4])
+        md5 = ""
+        if mirrors[0]:
+            md5 = parse_qs(urlparse(mirrors[0]).query).get("md5", [""])[0]
+
+        book = _LgeBook(
+            id_param,
+            title,
+            author,
+            publisher,
+            year,
+            language,
+            pages,
+            size,
+            extension,
+            md5,
+            mirrors[:4],
+            cover_url,
+            "",
+            "",
+        )
+        book.content_type = _row_object_type(title_cell)
+        yield book
+
+
+_lge_search_request.SearchRequest.get_books = _get_books
 
 # Mirrors tried in order when resolving a download. Different mirrors hand off
 # to different CDN nodes (cdn3/cdn4/... .booksdl.lc) and those nodes fail
@@ -445,6 +566,7 @@ class LibgenAdapter(SourceAdapter):
                 # thread-local precisely so an abandoned earlier attempt
                 # cannot supply it.
                 _search_requests.last_response = None
+                _search_requests.missing_edition_rows = 0
                 # Set on the same thread that is about to issue the request,
                 # so this adapter's configured UA reaches the search path
                 # rather than the shim re-reading the environment.
@@ -453,10 +575,14 @@ class LibgenAdapter(SourceAdapter):
                 # search_title made author-bearing queries return nothing
                 # and got swamped on generic titles (#134).
                 results = LibgenSearch(mirror=mirror).search_default(query)
-                return results, _search_requests.last_response
+                return (
+                    results,
+                    _search_requests.last_response,
+                    _search_requests.missing_edition_rows,
+                )
 
             try:
-                results, page = await run_bounded(
+                results, page, missing_edition_rows = await run_bounded(
                     _search_sync,
                     budget,
                     provider=PROVIDER,
@@ -483,30 +609,33 @@ class LibgenAdapter(SourceAdapter):
                     failures.append(failure)
                     continue
 
-            return self._to_unified(results or [])
+            return self._to_unified(
+                results or [], missing_edition_rows=missing_edition_rows
+            )
 
         raise AllSourcesFailedError(f"LibGen search for {query!r}", failures)
 
-    def _to_unified(self, results) -> List[UnifiedBookResult]:
+    def _to_unified(
+        self, results, *, missing_edition_rows: int = 0
+    ) -> List[UnifiedBookResult]:
         """Convert libgen-api-enhanced books into UnifiedBookResult.
 
-        Rows whose md5 is not a full 32-hex digest are dropped:
-        journal-article rows come back column-shifted from the parser
-        (empty md5, or another column's value — an ISBN, a citation — in
-        the md5 field, #132), and anything short of a real md5 cannot be
-        resolved by ads.php. Same rule as the production canary's
-        usable-row check. The full per-object-type parse is #132's job;
-        this filter is the minimal slice that keeps #134's wider search
-        results usable.
+        Rows whose md5 is not a full 32-hex digest are still dropped: they
+        cannot be resolved by ads.php. Article rows now arrive aligned from
+        `_get_books` and survive this backstop; retain it for malformed or
+        unanticipated row shapes, matching the canary's usable-row rule.
         """
         dropped = sum(
             1
             for book in results
             if not _MD5_HEX_RE.fullmatch(getattr(book, "md5", "") or "")
         )
-        if dropped:
+        if dropped or missing_edition_rows:
             logger.debug(
-                "LibGen search: dropped %d row(s) without a valid 32-hex md5",
+                "LibGen search: dropped %d row(s) "
+                "(%d without a direct edition link; %d without a valid 32-hex md5)",
+                dropped + missing_edition_rows,
+                missing_edition_rows,
                 dropped,
             )
         return [
@@ -528,6 +657,8 @@ class LibgenAdapter(SourceAdapter):
                     "id": getattr(book, "id", ""),
                     "language": getattr(book, "language", ""),
                     "pages": getattr(book, "pages", ""),
+                    # Source evidence only; no new public schema/type field.
+                    "content_type": getattr(book, "content_type", "") or "",
                 },
             )
             for book in results

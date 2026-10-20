@@ -2587,12 +2587,11 @@ class TestPartialTransferRecovery:
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("terminal", ["416", "206", "200", "budget"])
-    async def test_wildcard_range_requires_server_completion(
+    async def test_wildcard_range_uses_digest_or_continues(
         self, terminal, tmp_path, mocker
     ):
-        """A wildcard slice cannot be hashed/published as a complete file."""
+        """A matching stage completes; a shorter stage still needs recovery."""
         body = RESUME_BODY * 10
-        # Even a digest-matching stage needs an explicit completion signal.
         expected = body[:66536] if terminal == "budget" else body
         requests = []
 
@@ -2644,18 +2643,94 @@ class TestPartialTransferRecovery:
             "libgen",
             config=config,
         )
-        if terminal == "budget":
-            with pytest.raises(ProviderResponseError) as caught:
-                await operation
-            assert caught.value.reason == "partial_transfer"
-            assert not list(tmp_path.iterdir())
-        else:
-            result = await operation
-            assert Path(result).read_bytes() == expected
-            assert list(tmp_path.iterdir()) == [Path(result)]
+        result = await operation
+        assert Path(result).read_bytes() == expected
+        assert list(tmp_path.iterdir()) == [Path(result)]
         assert requests == [None, "bytes=65536-"] + (
-            [] if terminal == "budget" else ["bytes=66536-"]
+            [] if terminal in {"budget", "416"} else ["bytes=66536-"]
         )
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("next_headers", [{"content-range": "bytes */*"}, {}])
+    async def test_wildcard_completion_needs_no_unspecified_416(
+        self, next_headers, tmp_path, mocker
+    ):
+        """A complete wildcard slice publishes without asking the server again."""
+        transport = ScriptedTransport(
+            [
+                ScriptedResponse(body=RESUME_BODY, fail_after=RESUME_CUT),
+                ScriptedResponse(
+                    body=RESUME_BODY[RESUME_CUT:],
+                    status_code=206,
+                    headers={
+                        "content-range": f"bytes {RESUME_CUT}-{len(RESUME_BODY) - 1}/*"
+                    },
+                ),
+                ScriptedResponse(status_code=416, headers=next_headers),
+            ]
+        ).install(mocker)
+
+        result = await python_bridge._download_url_to_file(
+            "https://mirror.example/get", str(tmp_path), RESUME_DIGEST, "libgen"
+        )
+
+        assert Path(result).read_bytes() == RESUME_BODY
+        assert list(tmp_path.iterdir()) == [Path(result)]
+        assert transport.ranges == [None, f"bytes={RESUME_CUT}-"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("resume_attempts", [1, 2])
+    async def test_wildcard_digest_mismatch_never_publishes(
+        self, resume_attempts, tmp_path, mocker
+    ):
+        """A wrong stage keeps recovering, even if it has the full byte count."""
+        corrupt = RESUME_BODY[:-1] + b"!"
+        transport = ScriptedTransport(
+            [
+                ScriptedResponse(body=corrupt, fail_after=RESUME_CUT),
+                ScriptedResponse(
+                    body=corrupt[RESUME_CUT:],
+                    status_code=206,
+                    headers={
+                        "content-range": f"bytes {RESUME_CUT}-{len(corrupt) - 1}/*"
+                    },
+                ),
+                ScriptedResponse(body=corrupt),
+            ]
+        ).install(mocker)
+        config = python_bridge.get_source_config()
+        config.download_resume_attempts = resume_attempts
+
+        with pytest.raises(ProviderResponseError) as caught:
+            await python_bridge._download_url_to_file(
+                "https://mirror.example/get",
+                str(tmp_path),
+                RESUME_DIGEST,
+                "libgen",
+                config=config,
+            )
+
+        assert caught.value.reason == (
+            "partial_transfer" if resume_attempts == 1 else "integrity_mismatch"
+        )
+        assert transport.ranges == [None, f"bytes={RESUME_CUT}-"] + (
+            [] if resume_attempts == 1 else [f"bytes={len(corrupt)}-"]
+        )
+        assert not list(tmp_path.iterdir())
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("digest", ["", "not-an-md5"])
+    async def test_download_without_expected_digest_fails_before_transfer(
+        self, digest, tmp_path, mocker
+    ):
+        """Missing digest authority cannot create a stage or contact a provider."""
+        ScriptedTransport([]).install(mocker)
+        output = tmp_path / "download"
+        with pytest.raises(ValueError, match="normalized 32-hex MD5"):
+            await python_bridge._download_url_to_file(
+                "https://mirror.example/get", str(output), digest, "libgen"
+            )
+        assert not output.exists()
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("outer", [False, True], ids=["direct", "provider-chain"])

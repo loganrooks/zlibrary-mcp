@@ -23,7 +23,6 @@ const requiredPythonFiles = [
   { path: 'lib/python_bridge.py', critical: true, description: 'Main Python bridge script' },
   { path: 'lib/enhanced_metadata.py', critical: true, description: 'Enhanced metadata extraction' },
   { path: 'lib/author_tools.py', critical: false, description: 'Author-specific search tools' },
-  { path: 'lib/booklist_tools.py', critical: false, description: 'Booklist management' },
   { path: 'lib/term_tools.py', critical: false, description: 'Term-based search tools' },
   { path: 'lib/__init__.py', critical: false, description: 'Python package initialization' },
 ];

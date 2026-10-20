@@ -1,4 +1,4 @@
-> Historical deployment checklist: processing checks below apply only to the preserved 1.4.x tree. Current deployment uses `bash setup-uv.sh --deploy` (acquisition only); see [migration](../text-processing-migration.md).
+> Historical deployment checklist: processing checks below apply only to the preserved 1.4.x tree. Current deployment uses `bash setup-uv.sh --deploy` (acquisition only); see [migration](../text-processing-migration.md). Its terms, booklist and IPFS checks are also 1.x only: Z-Library's API exposes none of them (#256).
 
 # Z-Library MCP Server - Deployment Checklist
 

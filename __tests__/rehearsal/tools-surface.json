@@ -1,110 +1,46 @@
 [
   {
-    "name": "download_book_to_file",
+    "name": "download",
     "arguments": [
-      "bookDetails",
-      "outputDir"
+      "filename",
+      "output_dir",
+      "ref"
     ]
   },
   {
-    "name": "fetch_booklist",
+    "name": "get_book",
     "arguments": [
-      "booklistHash",
-      "booklistId",
-      "page",
-      "topic"
+      "ref"
     ]
   },
   {
-    "name": "full_text_search",
+    "name": "get_history",
     "arguments": [
-      "content_types",
-      "count",
-      "exact",
-      "extensions",
-      "languages",
-      "phrase",
-      "query",
-      "words"
+      "cursor",
+      "limit",
+      "source"
     ]
   },
   {
-    "name": "get_book_metadata",
+    "name": "get_limits",
     "arguments": [
-      "bookHash",
-      "bookId",
-      "include"
+      "mode",
+      "sources"
     ]
   },
   {
-    "name": "get_download_history",
-    "arguments": [
-      "count"
-    ]
-  },
-  {
-    "name": "get_download_limits",
-    "arguments": []
-  },
-  {
-    "name": "get_recent_books",
-    "arguments": [
-      "count",
-      "format"
-    ]
-  },
-  {
-    "name": "search_advanced",
-    "arguments": [
-      "count",
-      "exact",
-      "query",
-      "yearFrom",
-      "yearTo"
-    ]
-  },
-  {
-    "name": "search_books",
-    "arguments": [
-      "content_types",
-      "count",
-      "exact",
-      "extensions",
-      "fromYear",
-      "languages",
-      "query",
-      "toYear"
-    ]
-  },
-  {
-    "name": "search_by_author",
+    "name": "search",
     "arguments": [
       "author",
-      "count",
+      "cursor",
       "exact",
-      "extensions",
+      "formats",
       "languages",
-      "yearFrom",
-      "yearTo"
-    ]
-  },
-  {
-    "name": "search_by_term",
-    "arguments": [
-      "count",
-      "extensions",
-      "languages",
-      "term",
-      "yearFrom",
-      "yearTo"
-    ]
-  },
-  {
-    "name": "search_multi_source",
-    "arguments": [
-      "count",
+      "limit",
       "query",
-      "source"
+      "sources",
+      "year_from",
+      "year_to"
     ]
   }
 ]

@@ -2,7 +2,7 @@
   "content": [
     {
       "type": "text",
-      "text": "{\"title\": \"Test Book\", \"author\": \"Test Author\", \"year\": \"2020\", \"publisher\": \"Test Publisher\", \"language\": \"English\", \"pages\": 300}"
+      "text": "{\"description\": \"A test book description.\", \"series\": \"Test Series\", \"categories\": [{\"name\": \"Testing\"}], \"rating\": {\"value\": 4.5, \"count\": 100}, \"isbn_13\": \"978-0-123-45678-9\", \"id\": \"1\", \"book_hash\": \"abc\"}"
     }
   ]
 }

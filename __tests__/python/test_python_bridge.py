@@ -44,7 +44,6 @@ from python_bridge import (
     get_book_metadata_complete,
     search_by_term_bridge,
     search_by_author_bridge,
-    fetch_booklist_bridge,
 )
 
 pytestmark = pytest.mark.unit
@@ -420,7 +419,7 @@ class TestGetBookMetadataComplete:
             await get_book_metadata_complete(book_id="12345")
 
 
-# --- Tests for Bridge Functions (term, author, booklist) ---
+# --- Tests for Bridge Functions (term, author) ---
 
 
 class TestBridgeFunctions:
@@ -447,28 +446,6 @@ class TestBridgeFunctions:
         result = await search_by_author_bridge(author="Hegel")
         assert result["author"] == "Hegel"
         call_kwargs = mock_author_search.call_args[1]
-        assert call_kwargs["eapi_client"] is patch_eapi_client
-
-    @pytest.mark.asyncio
-    async def test_fetch_booklist_bridge(self, patch_eapi_client, mocker):
-        """Should pass eapi_client to booklist_tools."""
-        mock_booklist = AsyncMock(
-            return_value={
-                "booklist_id": "123",
-                "books": [],
-                "degraded": True,
-                "topic": "test",
-                "metadata": {},
-                "page": 1,
-                "booklist_hash": "abc",
-            }
-        )
-        mocker.patch("lib.booklist_tools.fetch_booklist", mock_booklist)
-        result = await fetch_booklist_bridge(
-            booklist_id="123", booklist_hash="abc", topic="test"
-        )
-        assert result["degraded"] is True
-        call_kwargs = mock_booklist.call_args[1]
         assert call_kwargs["eapi_client"] is patch_eapi_client
 
 

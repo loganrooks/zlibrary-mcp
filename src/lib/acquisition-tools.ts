@@ -396,7 +396,9 @@ export class AcquisitionTools {
       url: merged.url ?? merged.href ?? merged.book_url,
       evidence: {
         detail: Object.keys(nonempty(detail)).filter((k) => !['id', 'book_hash'].includes(k)),
-        search: Object.keys(nonempty(b)).filter((k) => detail[k] == null || detail[k] === ''),
+        search: Object.keys(nonempty(b)).filter(
+          (k) => k !== 'content_type' && (detail[k] == null || detail[k] === ''),
+        ),
       },
     });
   }

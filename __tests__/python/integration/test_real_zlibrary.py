@@ -62,6 +62,29 @@ pytestmark = [
 ]
 
 
+def _assert_catalog_rows(result):
+    """Positive canaries need usable rows, not a vacuously valid empty page."""
+    assert isinstance(result, dict), "Search must return an object"
+    books = result.get("books")
+    assert isinstance(books, list), "Search must return a books list"
+    assert books, "Expected results for this common catalog query"
+    for book in books:
+        assert isinstance(book, dict), "Each book must be an object"
+        book_id = book.get("id")
+        assert isinstance(book_id, str) and book_id.strip() not in {
+            "",
+            "0",
+            "None",
+            "N/A",
+        }, "Each book must have a usable id"
+        title = book.get("title")
+        assert isinstance(title, str) and title.strip() not in {
+            "",
+            "N/A",
+        }, "Each book must have a nonempty title"
+    return books
+
+
 @pytest.fixture(scope="module")
 def credentials():
     """Provide Z-Library credentials from environment."""
@@ -174,16 +197,11 @@ class TestRealBasicSearch:
             client=zlib_client,
         )
 
-        # Should return results
-        assert len(result["books"]) >= 0
-
-        # If we got results, verify years are in range
-        for book in result["books"]:
+        for book in _assert_catalog_rows(result):
             # EAPI returns year as int; older HTML scraping returned str.
             year = str(book.get("year") or "")
-            if year.isdigit():
-                year_int = int(year)
-                assert 2020 <= year_int <= 2023
+            assert year.isdecimal(), "Year-filtered results must have a year"
+            assert 2020 <= int(year) <= 2023
 
     async def test_search_with_language_filter(self, zlib_client):
         """Should respect language filters."""
@@ -191,8 +209,9 @@ class TestRealBasicSearch:
             query="philosophy", languages=["English"], count=5, client=zlib_client
         )
 
-        # Should return results
-        assert len(result["books"]) >= 0
+        for book in _assert_catalog_rows(result):
+            language = book.get("language")
+            assert isinstance(language, str) and language.casefold() == "english"
 
     async def test_recent_books_contract(self, zlib_client):
         """Check the distinct recent endpoint using the already-authenticated fixture.
@@ -259,9 +278,16 @@ class TestRealTermSearch:
             eapi_client=zlib_client,
         )
 
-        # Should not error
-        assert "books" in result
-        assert result["total_results"] >= 0
+        books = _assert_catalog_rows(result)
+        assert result["term"] == "philosophy"
+        # These tools report the returned page length, not the catalog total.
+        assert type(result["total_results"]) is int
+        assert result["total_results"] == len(books)
+        for book in books:
+            year = str(book.get("year") or "")
+            assert year.isdecimal() and int(year) >= 2000
+            language = book.get("language")
+            assert isinstance(language, str) and language.casefold() == "english"
 
 
 @pytest.mark.integration
@@ -306,9 +332,10 @@ class TestRealAuthorSearch:
             eapi_client=zlib_client,
         )
 
-        # Should find results
-        assert result["total_results"] >= 0
-        assert isinstance(result["books"], list)
+        books = _assert_catalog_rows(result)
+        assert result["author"] == "Hegel, Georg"
+        assert type(result["total_results"]) is int
+        assert result["total_results"] == len(books)
 
     async def test_author_search_with_year_filter(self, credentials, zlib_client):
         """Should support year filtering in author search."""
@@ -324,8 +351,13 @@ class TestRealAuthorSearch:
             eapi_client=zlib_client,
         )
 
-        # Should return filtered results
-        assert result["total_results"] >= 0
+        books = _assert_catalog_rows(result)
+        assert result["author"] == "Hegel"
+        assert type(result["total_results"]) is int
+        assert result["total_results"] == len(books)
+        for book in books:
+            year = str(book.get("year") or "")
+            assert year.isdecimal() and 1800 <= int(year) <= 1850
 
 
 @pytest.mark.integration
@@ -493,11 +525,11 @@ class TestRealWorldEdgeCases:
             query="xyzabc123nonexistent987", count=5, client=zlib_client
         )
 
-        # Should return empty results, not error
+        # This deliberately nonexistent query is the empty-result control.
+        assert isinstance(result, dict)
         assert "books" in result
         assert isinstance(result["books"], list)
-        # May be empty
-        assert len(result["books"]) >= 0
+        assert result["books"] == [], "Nonexistent query unexpectedly returned books"
 
 
 @pytest.mark.integration

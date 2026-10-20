@@ -638,6 +638,7 @@ async def search(
     _validate_page(count, page)
     if author:
         from lib.author_tools import format_author_query
+
         author_query = format_author_query(author, exact=exact and not query)
         query = " ".join(part for part in [query, author_query] if part)
     eapi = await get_eapi_client()
@@ -885,7 +886,10 @@ async def get_download_history(count=10, page=1):
     response = await eapi.get_downloaded(limit=count, page=page)
     books = response.get("books", [])
     return [
-        {**normalize_eapi_book(b), **({"downloaded_at": b["downloaded_at"]} if b.get("downloaded_at") else {})}
+        {
+            **normalize_eapi_book(b),
+            **({"downloaded_at": b["downloaded_at"]} if b.get("downloaded_at") else {}),
+        }
         for b in books
     ]
 
@@ -1334,7 +1338,10 @@ async def _fetch_from_source(book_details: dict, output_dir: str) -> str:
                 try:
                     quota = getattr(result, "quota_info", None)
                     from datetime import datetime, timezone
-                    observed_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+                    observed_at = (
+                        datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+                    )
                     downloaded = await _download_url_to_file(
                         result.url,
                         output_dir,
@@ -1346,9 +1353,24 @@ async def _fetch_from_source(book_details: dict, output_dir: str) -> str:
                     )
                     if not isinstance(downloaded, _DownloadedPath):
                         downloaded = _DownloadedPath(str(downloaded))
-                    downloaded.provenance = {"route": "fast_download" if provider == "annas" else "mirror_download", "host": active_host or None, "mirror": None}
-                    if quota is not None and type(quota.downloads_left) is int and quota.downloads_left >= 0:
-                        downloaded.quota_estimate = {"source": str(provider), "remaining": quota.downloads_left, "as_of": observed_at, "basis": "observed"}
+                    downloaded.provenance = {
+                        "route": "fast_download"
+                        if provider == "annas"
+                        else "mirror_download",
+                        "host": active_host or None,
+                        "mirror": None,
+                    }
+                    if (
+                        quota is not None
+                        and type(quota.downloads_left) is int
+                        and quota.downloads_left >= 0
+                    ):
+                        downloaded.quota_estimate = {
+                            "source": str(provider),
+                            "remaining": quota.downloads_left,
+                            "as_of": observed_at,
+                            "basis": "observed",
+                        }
                     return downloaded
                 except AllSourcesFailedError as exc:
                     for failure in exc.failures:
@@ -1397,7 +1419,8 @@ _RETIRED_PROCESS_FLAG = "process_for_" + "r" + "ag"
 def _admit_download_args(arguments: dict) -> None:
     """Reject removed options before authentication, quota use or transfer."""
     if (
-        _RETIRED_PROCESS_FLAG in arguments and arguments[_RETIRED_PROCESS_FLAG] is not False
+        _RETIRED_PROCESS_FLAG in arguments
+        and arguments[_RETIRED_PROCESS_FLAG] is not False
     ) or "processed_output_format" in arguments:
         raise ValueError(
             "Text processing was removed in 2.0. Use a separate 1.4.x installation for text processing."
@@ -1407,7 +1430,14 @@ def _admit_download_args(arguments: dict) -> None:
         raise ValueError(f"Unknown download argument(s): {', '.join(sorted(unknown))}")
 
 
-async def download_book(book_details: dict, output_dir: str, *, filename=None, publication_hook=None, **legacy_arguments):
+async def download_book(
+    book_details: dict,
+    output_dir: str,
+    *,
+    filename=None,
+    publication_hook=None,
+    **legacy_arguments,
+):
     """Download the original book and return its local file_path."""
     _admit_download_args(legacy_arguments)
 
@@ -1509,6 +1539,7 @@ async def download_book(book_details: dict, output_dir: str, *, filename=None, p
                     final_filename = stem + ending
         if filename is not None:
             from lib.acquisition import destination_name
+
             final_filename = destination_name(book_details, filename)
         final_file_path = Path(output_dir) / final_filename
         final_file_path_str = str(final_file_path)
@@ -1539,7 +1570,11 @@ async def download_book(book_details: dict, output_dir: str, *, filename=None, p
         result = {"file_path": downloaded_file_path_str}
         if publication_hook is not None:
             result["publication_reused"] = reused
-            result["provenance"] = getattr(original_download_path_str, "provenance", {"route": "eapi", "host": None, "mirror": None})
+            result["provenance"] = getattr(
+                original_download_path_str,
+                "provenance",
+                {"route": "eapi", "host": None, "mirror": None},
+            )
             quota_estimate = getattr(original_download_path_str, "quota_estimate", None)
             if quota_estimate is not None:
                 result["quota_estimate"] = quota_estimate
@@ -1552,9 +1587,11 @@ async def download_book(book_details: dict, output_dir: str, *, filename=None, p
     finally:
         if original_download_path_str:
             owned_stage = Path(original_download_path_str)
-            if (owned_stage.parent.resolve() == Path(output_dir).resolve()
-                    and str(owned_stage) != final_file_path_str
-                    and owned_stage.name.startswith(".source-")):
+            if (
+                owned_stage.parent.resolve() == Path(output_dir).resolve()
+                and str(owned_stage) != final_file_path_str
+                and owned_stage.name.startswith(".source-")
+            ):
                 owned_stage.unlink(missing_ok=True)
         if eapi_staging is not None:
             eapi_staging.cleanup()
@@ -1608,7 +1645,7 @@ async def get_book_metadata_complete(book_id: str, book_hash: str = None) -> dic
 # --- Main Execution Block ---
 import argparse  # Moved import here
 
-# ===== PHASE 3: TERM, AUTHOR, AND BOOKLIST TOOLS =====
+# ===== PHASE 3: TERM AND AUTHOR TOOLS =====
 
 
 async def search_by_term_bridge(
@@ -1680,33 +1717,6 @@ async def search_by_author_bridge(
         languages=langs_str,
         extensions=exts_str,
         limit=limit,
-        eapi_client=eapi,
-    )
-
-    return result
-
-
-async def fetch_booklist_bridge(
-    booklist_id: str, booklist_hash: str, topic: str, page: int = 1
-) -> dict:
-    """
-    Fetch a Z-Library booklist via EAPI (degraded: topic search fallback).
-    """
-    from lib import booklist_tools
-
-    eapi = await get_eapi_client()
-
-    logger.info(
-        f"python_bridge.fetch_booklist: id={booklist_id}, hash={booklist_hash}, topic='{topic}'"
-    )
-
-    result = await booklist_tools.fetch_booklist(
-        booklist_id=booklist_id,
-        booklist_hash=booklist_hash,
-        topic=topic,
-        email="",
-        password="",
-        page=page,
         eapi_client=eapi,
     )
 
@@ -1938,6 +1948,7 @@ async def main():
         # timeout vs HTTP error). Pass that through as structured data so the
         # MCP caller can act on it instead of pattern-matching prose.
         from lib.acquisition import AcquisitionError
+
         if isinstance(e, (SourceError, AllSourcesFailedError, AcquisitionError)):
             error_info["details"] = e.to_dict()
             operation = (
@@ -2003,11 +2014,20 @@ async def _dispatch_bridge_function(function_name: str, args_dict: dict):
         async def authenticated_transfer(book, directory, **kwargs):
             source = str(book.get("source") or "zlibrary").lower()
             if source not in SOURCE_ALIASES:
-                if not os.environ.get("ZLIBRARY_EMAIL") or not os.environ.get("ZLIBRARY_PASSWORD"):
-                    raise AcquisitionError("configuration_error", "Configure ZLIBRARY_EMAIL and ZLIBRARY_PASSWORD")
+                if not os.environ.get("ZLIBRARY_EMAIL") or not os.environ.get(
+                    "ZLIBRARY_PASSWORD"
+                ):
+                    raise AcquisitionError(
+                        "configuration_error",
+                        "Configure ZLIBRARY_EMAIL and ZLIBRARY_PASSWORD",
+                    )
                 await initialize_eapi_client()
-            elif source in {"annas", "annas_archive"} and not os.environ.get("ANNAS_SECRET_KEY"):
-                raise AcquisitionError("configuration_error", "Configure ANNAS_SECRET_KEY")
+            elif source in {"annas", "annas_archive"} and not os.environ.get(
+                "ANNAS_SECRET_KEY"
+            ):
+                raise AcquisitionError(
+                    "configuration_error", "Configure ANNAS_SECRET_KEY"
+                )
             return await download_book(book, directory, **kwargs)
 
         return await acquire(**args_dict, transfer=authenticated_transfer)
@@ -2035,8 +2055,6 @@ async def _dispatch_bridge_function(function_name: str, args_dict: dict):
         return await search_by_author_bridge(**args_dict)
     elif function_name == "search_advanced":
         return await search_advanced(**args_dict)
-    elif function_name == "fetch_booklist_bridge":
-        return await fetch_booklist_bridge(**args_dict)
     elif function_name == "get_recent_books":
         return await get_recent_books(**args_dict)
     elif function_name == "eapi_health_check":

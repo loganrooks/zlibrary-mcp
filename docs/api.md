@@ -41,6 +41,9 @@ known `isbn`, `series`, `edition`, `translator`, `categories`, `rating`,
 `description`, `identifiers`, `url`, and `evidence`. Description is capped at
 1,000 characters and marked `description_truncated` when cut.
 `evidence.detail` and `evidence.search` name the origin of metadata fields.
+A field upstream leaves empty is omitted, never returned empty. `categories` is a
+list of `{name}`, and `rating` is `{value}` plus `count` when upstream sends one.
+Z-Library's API exposes no terms, booklists or IPFS ids, so `get_book` has none.
 Z-Library uses one detail request. Other sources expose their held row without
 promising additional detail-page metadata. No direct ID input is accepted.
 

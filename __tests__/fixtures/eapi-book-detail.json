@@ -1,0 +1,44 @@
+{
+  "_comment": "Offline GET /eapi/book/{id}/{hash} replies for get_book (#256). Field names follow zlibrary/src/zlibrary/eapi.py::normalize_eapi_book and the existing EAPI mocks; this is not a recorded live response. EAPI exposes no terms, booklists or IPFS ids, so none appear here.",
+  "complete": {
+    "success": 1,
+    "book": {
+      "id": 25601,
+      "hash": "hash25601",
+      "title": "The Encyclopaedia Logic",
+      "author": "G. W. F. Hegel",
+      "year": "1991",
+      "publisher": "Hackett",
+      "language": "english",
+      "pages": "381",
+      "extension": "pdf",
+      "filesize": 2097152,
+      "href": "/book/25601/hash25601/the-encyclopaedia-logic.html",
+      "description": "Part one of the Encyclopaedia of the Philosophical Sciences.",
+      "isbn": "978-0-87220-070-5",
+      "series": "Hackett Classics",
+      "edition": "Revised",
+      "translator": "T. F. Geraets",
+      "categories": ["Philosophy", "Logic"],
+      "rating": "4.6",
+      "ratingCount": 52,
+      "qualityScore": "4.0"
+    }
+  },
+  "sparse": {
+    "success": 1,
+    "book": {
+      "id": 25602,
+      "hash": "hash25602",
+      "title": "An Uncatalogued Pamphlet",
+      "author": "Anonymous",
+      "extension": "epub",
+      "description": "",
+      "isbn": "",
+      "series": "",
+      "categories": [],
+      "rating": null,
+      "qualityScore": null
+    }
+  }
+}

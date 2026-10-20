@@ -33,9 +33,9 @@ Implement an `EAPIClient` class in the vendored zlibrary fork (`zlibrary/eapi.py
 - **Health monitoring**: Can detect Cloudflare challenges via response fingerprinting
 
 ### Negative
-- **Booklists gracefully degrade**: EAPI has no booklist endpoint; tools return empty/search fallback
+- ~~**Booklists gracefully degrade**: EAPI has no booklist endpoint; tools return empty/search fallback~~ — the booklist tool and its search fallback were retired in 2.0; see #256.
 - **Full-text search limited**: No dedicated full-text search mode in EAPI; routes through regular search
-- **Terms/IPFS CIDs unavailable**: EAPI does not expose these fields; return empty defaults
+- **Terms/IPFS CIDs unavailable**: EAPI does not expose these fields. ~~return empty defaults~~ — since #256 they are omitted, not returned empty.
 - ~~**Downloads still use legacy client**: EAPI returns URL but file download needs AsyncZlib with session cookies~~ — no longer holds; see ADR-011.
 
 ### Neutral

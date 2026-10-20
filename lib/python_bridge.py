@@ -936,10 +936,8 @@ async def get_download_limits():
     used = user.get("downloads_today")
 
     remaining = "unknown"
-    if isinstance(limit, int) and isinstance(used, int):
+    if type(limit) is int and type(used) is int and limit >= 0 and used >= 0:
         remaining = max(0, limit - used)
-    elif isinstance(limit, int):
-        remaining = limit
 
     if limit is None:
         logger.warning(

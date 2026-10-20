@@ -31,7 +31,9 @@ search row fields; `get_book` exposes identifiers when needed.
 Outcomes are `rows`, `empty`, `skipped`, `failed`; failures preserve typed codes
 and sub-reasons. Routing stops at the first source with rows. A continuation
 uses only that source: it never restarts fallback. All-empty is a successful
-empty page. Empty plus failure is `partial_failure`; all attempted sources
+empty page: `served_by` is omitted and `fell_back` is false, including an
+exhausted continuation. `requested` and `attempts` still describe the walk.
+Empty plus failure is `partial_failure`; all attempted sources
 failing is `all_sources_failed`. An explicit unconfigured source fails locally.
 
 ## get_book
@@ -122,8 +124,20 @@ optional `default_order` and a `sources` object. Each source has `configured`,
 `search_available`, `download_available`, `operations`, and `limit.kind`:
 `daily`, `none`, `unknown`, or `unparsed`.
 
+`operations` lists what the source supports, independent of configuration:
+`search`, `details`, `download` for all three sources, plus `history` for
+Z-Library. An unconfigured Anna's source still lists `download`; use
+`search_available` and `download_available` to decide which calls are available.
+Anna's availability requires a usable HTTP(S) base URL on a trusted host
+(`annas-archive.gl`, `.pk`, or `.gd`; default `https://annas-archive.gl`).
+Malformed or untrusted bases make both availability fields false. A trusted
+base permits search without a key; download additionally requires
+`ANNAS_SECRET_KEY`. This local report makes no provider request.
+
 Live Z-Library mode adds `per_day`, `used_today`, `remaining`, `premium`, `as_of`
-when available. A failed lookup stays in that source's `error` entry while other
+when available. `remaining` is computed only from a known cap and known spend;
+a cap-only profile omits `remaining` and reports `limit.kind: "unparsed"`.
+A failed lookup stays in that source's `error` entry while other
 sources' reports remain usable. LibGen and Anna's local capability reports cost
 no account calls even in live mode. Availability is not a reachability check.
 

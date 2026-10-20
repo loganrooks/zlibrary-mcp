@@ -88,6 +88,31 @@ interface Attempt {
   reason?: string;
 }
 const allSources: Source[] = ['libgen', 'zlibrary', 'annas'];
+// Match lib/sources/config.py. The cross-language reporting test guards drift.
+const annasTrustedHosts = new Set(['annas-archive.gl', 'annas-archive.pk', 'annas-archive.gd']);
+function usableAnnasBase(raw = 'https://annas-archive.gl'): boolean {
+  // Reject raw characters that URL() would silently normalize or reinterpret.
+  if (
+    !/^https?:\/\//i.test(raw) ||
+    /[\s\\?#]/u.test(raw) ||
+    [...raw].some((char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127)
+  )
+    return false;
+  try {
+    const url = new URL(raw);
+    // Python's urlsplit checks the literal host, not URL()'s percent-decoded host.
+    const rawHost = raw.split('/')[2]?.split(':')[0]?.toLowerCase();
+    return (
+      rawHost === url.hostname &&
+      annasTrustedHosts.has(rawHost) &&
+      !url.username &&
+      !url.password &&
+      url.port !== '0'
+    );
+  } catch {
+    return false;
+  }
+}
 const sourceName = (value: any): Source =>
   value === 'annas_archive' ? 'annas' : (value ?? 'zlibrary');
 const nonempty = (o: Record<string, any>) =>
@@ -151,19 +176,21 @@ export class AcquisitionTools {
     }
   }
   private capabilities(source: Source) {
+    const annasBaseAvailable = usableAnnasBase(this.env.ANNAS_BASE_URL);
     const configured =
       source === 'libgen' ||
       (source === 'zlibrary'
         ? Boolean(this.env.ZLIBRARY_EMAIL && this.env.ZLIBRARY_PASSWORD)
-        : Boolean(this.env.ANNAS_SECRET_KEY));
+        : Boolean(this.env.ANNAS_SECRET_KEY) && annasBaseAvailable);
     return {
       configured,
-      search_available: source !== 'zlibrary' || configured,
+      search_available:
+        source === 'annas' ? annasBaseAvailable : source !== 'zlibrary' || configured,
       download_available: configured,
       operations: [
         'search',
         'details',
-        ...(source !== 'annas' || configured ? ['download'] : []),
+        'download',
         ...(source === 'zlibrary' ? ['history'] : []),
       ],
       limit: {
@@ -173,7 +200,9 @@ export class AcquisitionTools {
         ? {
             note:
               source === 'annas'
-                ? 'Set ANNAS_SECRET_KEY for download; search needs no key.'
+                ? annasBaseAvailable
+                  ? 'Set ANNAS_SECRET_KEY for download; search needs no key.'
+                  : 'Set ANNAS_BASE_URL to a usable trusted Anna’s Archive URL.'
                 : 'Set ZLIBRARY_EMAIL and ZLIBRARY_PASSWORD.',
           }
         : {}),
@@ -187,7 +216,11 @@ export class AcquisitionTools {
         detail: {
           reason: 'configuration_error',
           variables:
-            source === 'zlibrary' ? ['ZLIBRARY_EMAIL', 'ZLIBRARY_PASSWORD'] : ['ANNAS_SECRET_KEY'],
+            source === 'zlibrary'
+              ? ['ZLIBRARY_EMAIL', 'ZLIBRARY_PASSWORD']
+              : !usableAnnasBase(this.env.ANNAS_BASE_URL)
+                ? ['ANNAS_BASE_URL']
+                : ['ANNAS_SECRET_KEY'],
         },
       });
   }
@@ -532,8 +565,8 @@ export class AcquisitionTools {
         ? {
             routing: nonempty({
               requested,
-              served_by: selected,
-              fell_back: selected !== requested[0],
+              served_by: rows.length ? selected : undefined,
+              fell_back: rows.length > 0 && selected !== requested[0],
               attempts,
             }),
           }

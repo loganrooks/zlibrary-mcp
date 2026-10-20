@@ -1538,6 +1538,20 @@ async def _download_url_to_file(
     return completed_path
 
 
+def _provenance_hostname(value) -> Optional[str]:
+    """Keep mirror provenance to a hostname, even for URL-shaped configuration."""
+    if not isinstance(value, str) or not value.strip():
+        return None
+    value = value.strip()
+    try:
+        host = urlsplit(
+            value if "://" in value or value.startswith("//") else f"//{value}"
+        ).hostname
+    except ValueError:
+        return None
+    return host.lower() if host else None
+
+
 async def _fetch_from_source(book_details: dict, output_dir: str) -> str:
     """Resolve and fetch a non-Z-Library book. Returns the raw file path."""
     md5 = (book_details.get("md5") or "").strip().lower()
@@ -1606,7 +1620,7 @@ async def _fetch_from_source(book_details: dict, output_dir: str) -> str:
                         if provider == "annas"
                         else "mirror_download",
                         "host": active_host or None,
-                        "mirror": None,
+                        "mirror": _provenance_hostname(getattr(result, "mirror", "")),
                     }
                     if (
                         quota is not None
@@ -1735,6 +1749,10 @@ async def download_book(
     final_file_path_str = None  # Path with enhanced filename
     eapi_staging = None
     original_download_path_str = None
+    eapi_provenance = {"route": "eapi", "host": None, "mirror": None}
+
+    def observe_eapi_host(host: str) -> None:
+        eapi_provenance["host"] = host or None
 
     try:
         # Step 1: Fetch the file. Z-Library goes through the EAPI client;
@@ -1749,11 +1767,20 @@ async def download_book(
             # the final no-replace publication checks have run.
             Path(output_dir).mkdir(parents=True, exist_ok=True)
             eapi_staging = tempfile.TemporaryDirectory(prefix=".eapi-", dir=output_dir)
+            receipt_options = {}
+            if publication_hook is not None:
+                receipt_options["host_observer"] = observe_eapi_host
             original_download_path_str = await eapi.download_file(
                 book_id=int(book_id),
                 book_hash=book_hash,
                 output_dir=eapi_staging.name,
+                **receipt_options,
             )
+            if publication_hook is not None:
+                # Link resolution can recover onto a different EAPI domain.
+                eapi_provenance["mirror"] = _provenance_hostname(
+                    getattr(eapi, "domain", None)
+                )
 
         if (
             not original_download_path_str
@@ -1837,7 +1864,7 @@ async def download_book(
             result["provenance"] = getattr(
                 original_download_path_str,
                 "provenance",
-                {"route": "eapi", "host": None, "mirror": None},
+                eapi_provenance,
             )
             quota_estimate = getattr(original_download_path_str, "quota_estimate", None)
             if quota_estimate is not None:

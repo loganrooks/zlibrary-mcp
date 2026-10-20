@@ -550,12 +550,35 @@ describe('native protocol real Node/Python pipes', () => {
     if (process.platform !== 'win32') expect(await waitFile('control-cleaned')).toBe('yes');
   });
   test('unanswered demand expires and reaps without transfer', async () => {
+    let demands = 0;
     await expect(
-      run('operation', { timeoutMs: 350, onSessionNeeded: () => {} }),
+      // Exercise the protocol timer directly, not acquisition's useful-work admission.
+      run('probe-reply', {
+        timeoutMs: 350,
+        onSessionNeeded: () => {
+          demands++;
+        },
+      }),
     ).rejects.toMatchObject({ context: { reason: 'timeout' } });
+    expect(demands).toBe(1);
     await expect(fs.stat(path.join(directory, 'transfers'))).rejects.toMatchObject({
       code: 'ENOENT',
     });
+    await run('operation');
+  });
+  test('short acquisition refuses before demanding a session or issuing transfer', async () => {
+    let demands = 0;
+    await expect(
+      run('operation', {
+        timeoutMs: 350,
+        onSessionNeeded: () => {
+          demands++;
+        },
+      }),
+    ).rejects.toThrow('process exited with code 1');
+    expect(demands).toBe(0);
+    for (const marker of ['admitted', 'transfers'])
+      await expect(fs.stat(path.join(directory, marker))).rejects.toMatchObject({ code: 'ENOENT' });
     await run('operation');
   });
   test.each(['fragmented', 'empty', 'duplicate', 'oversize', 'denied', 'partial', 'timeout'])(

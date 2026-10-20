@@ -5,6 +5,7 @@ import json
 import hashlib
 import re
 import tempfile
+from contextlib import suppress
 
 # Read the private pipe before importing code that could spawn grandchildren.
 os.environ.pop("ZLIBRARY_EAPI_SESSION", None)  # Retired env carrier is never trusted.
@@ -1106,8 +1107,9 @@ def _publish_or_reuse(source: Path, destination: Path, expected_md5: str = "") -
     Acquisition is idempotent: re-downloading the same result into the same
     directory resolves to the same deterministic name, and finding our own
     prior artifact there is success, not a collision. A destination that does
-    not match is still never replaced. The staged file is consumed on every
-    path so no orphan temp survives the call.
+    not match is still never replaced. Stage cleanup is attempted on every
+    path; cleanup after a successful final link is best effort so a cleanup
+    failure cannot replace a committed success.
     """
     from lib.acquisition import _check_deadline, _mark_published
 
@@ -1115,8 +1117,10 @@ def _publish_or_reuse(source: Path, destination: Path, expected_md5: str = "") -
         return False
     _check_deadline("publication")
     try:
-        _publish_no_replace(source, destination)
+        os.link(source, destination)
         _mark_published()
+        with suppress(OSError):  # The final link, not cleanup, is the commit.
+            source.unlink()
         return False
     except FileExistsError:
         pass
@@ -1623,9 +1627,11 @@ async def download_book(
                 and str(owned_stage) != final_file_path_str
                 and owned_stage.name.startswith(".source-")
             ):
-                owned_stage.unlink(missing_ok=True)
+                with suppress(OSError):
+                    owned_stage.unlink(missing_ok=True)
         if eapi_staging is not None:
-            eapi_staging.cleanup()
+            with suppress(OSError):
+                eapi_staging.cleanup()
 
 
 async def get_book_metadata_complete(book_id: str, book_hash: str = None) -> dict:

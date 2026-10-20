@@ -488,13 +488,16 @@ _JS_TRIM = "\t\n\v\f\r                  　﻿"
 
 
 def _long_bridge_budget():
-    """PYTHON_BRIDGE_LONG_TIMEOUT in seconds, parsed as Node's ``positiveIntEnv``.
+    """Effective spawn owner (or long env timer), parsed as Node's positiveIntEnv.
 
     Anything but a plain positive integer of at most 2**31 - 1 ms falls back to
     the default, as the bridge deadline does, instead of refusing every download.
     """
     default = 2400000
-    raw = os.environ.get("PYTHON_BRIDGE_LONG_TIMEOUT", "2400000").strip(_JS_TRIM)
+    raw = os.environ.get(
+        "PYTHON_BRIDGE_CALL_TIMEOUT_MS",
+        os.environ.get("PYTHON_BRIDGE_LONG_TIMEOUT", "2400000"),
+    ).strip(_JS_TRIM)
     digits = raw.lstrip("0") if re.fullmatch(r"[0-9]+", raw) else ""
     # Past 10 digits the value is out of range anyway; checking the length first
     # also keeps int() under Python's digit-count limit.

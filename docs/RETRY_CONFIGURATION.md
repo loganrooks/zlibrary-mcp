@@ -110,8 +110,9 @@ not a fixed 30s admission charge. Adapters refuse a slice too short for useful
 work with `walk_budget_exhausted` and provider/mirror attribution. A timer
 with no positive remainder after overhead and the 1ms margin is a configuration
 error before provider contact. Overhead is an allocation, not a measured
-cold-start guarantee. Arbitrary per-call runner timeout overrides are outside
-this environment-based admission contract.
+cold-start guarantee. Per-call runner timeout overrides are outside this
+environment-based provider-walk admission contract; acquisition's outer deadline
+below uses the effective call owner instead.
 
 The 2.0 public `search` tries each requested source in its own bridge child:
 LibGen and Anna's use explicit-source `search_multi_source`; Z-Library uses
@@ -126,9 +127,13 @@ allocation is 1530s, leaving 870s under the default 2400s long owner. Download
 configuration also clamps the chain timeout to that owner's remainder.
 Text processing does not ship in 2.0; there is no OCR allocation here.
 
-Acquisition has a separate **outer deadline** derived from the Node long bridge
-timer: `PYTHON_BRIDGE_LONG_TIMEOUT` minus `min(30s, owning timer / 8)` and a 1ms
-margin. One clock spans destination lease waiting, receipt verification,
+Acquisition has a separate **outer deadline** derived from the effective Node
+call timer, normally `PYTHON_BRIDGE_LONG_TIMEOUT`. The runner passes its validated
+per-spawn timeout through the internal `PYTHON_BRIDGE_CALL_TIMEOUT_MS` environment
+value, overriding any inherited value; direct Python calls fall back to
+`PYTHON_BRIDGE_LONG_TIMEOUT` when it is absent. The acquisition budget subtracts
+`min(30s, owning timer / 8)` and a 1ms margin from that owner, including when
+`CallOptions.timeoutMs` shortens it. One clock spans lease waiting, receipt verification,
 transfer and finalization; the provider chain remains an inner bound. Transfer
 may spend only the remaining time minus a reserved finalization slice of
 `min(135s, initial acquisition budget / 8)`.

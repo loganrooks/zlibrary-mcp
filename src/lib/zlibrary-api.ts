@@ -568,7 +568,10 @@ async function callPythonFunction(
                     details: {
                       ...err.context?.details,
                       ...bridgeError.details,
-                      ...(activeTransport ? { request_issued: true } : {}),
+                      ...(activeTransport &&
+                      typeof bridgeError.details?.request_issued !== 'boolean'
+                        ? { request_issued: true }
+                        : {}),
                     },
                     pythonErrorType: bridgeError.type,
                     httpStatus: bridgeError.status_code,

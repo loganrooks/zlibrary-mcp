@@ -310,14 +310,14 @@ describe('native protocol real Node/Python pipes', () => {
   const pythonPath =
     process.env.LAZY_PROTOCOL_PYTHON ||
     path.resolve(process.platform === 'win32' ? '.venv/Scripts/python.exe' : '.venv/bin/python');
-  const options = (mode) => ({
+  const options = (mode, startupDelayMs = 0) => ({
     pythonPath,
     scriptPath: path.resolve('__tests__/fixtures'),
-    args: [mode, directory],
+    args: [mode, directory, String(startupDelayMs)],
     env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' },
   });
-  const run = (mode, extra = {}) =>
-    runner.runPythonBridge('lazy-session-worker.py', options(mode), {
+  const run = (mode, { startupDelayMs = 0, ...extra } = {}) =>
+    runner.runPythonBridge('lazy-session-worker.py', options(mode, startupDelayMs), {
       timeoutMs: 4000,
       onSessionNeeded: (c) => c.grant(input),
       ...extra,
@@ -610,9 +610,10 @@ describe('native protocol real Node/Python pipes', () => {
   test('unanswered demand expires and reaps without transfer', async () => {
     let demands = 0;
     await expect(
-      // Exercise the protocol timer directly, not acquisition's useful-work admission.
-      run('probe-reply', {
-        timeoutMs: 350,
+      // The child waits 30s; the 10s owner leaves ample Python startup margin.
+      run('unanswered-reply', {
+        startupDelayMs: 750,
+        timeoutMs: 10000,
         onSessionNeeded: () => {
           demands++;
         },
@@ -627,13 +628,19 @@ describe('native protocol real Node/Python pipes', () => {
   test('short acquisition refuses before demanding a session or issuing transfer', async () => {
     let demands = 0;
     await expect(
-      run('operation', {
-        timeoutMs: 350,
+      // A fixture reserve leaves <1s for useful work, independently of startup.
+      run('refuse-admission', {
+        startupDelayMs: 750,
+        timeoutMs: 10000,
         onSessionNeeded: () => {
           demands++;
         },
       }),
     ).rejects.toThrow('process exited with code 1');
+    expect(JSON.parse(await fs.readFile(path.join(directory, 'refusal.json'), 'utf8'))).toEqual({
+      reason: 'walk_budget_exhausted',
+      request_issued: false,
+    });
     expect(demands).toBe(0);
     for (const marker of ['admitted', 'transfers'])
       await expect(fs.stat(path.join(directory, marker))).rejects.toMatchObject({ code: 'ENOENT' });

@@ -62,27 +62,53 @@ async def test_early_lease_transfer_gets_remainder_not_fresh_budget(
     tmp_path, monkeypatch
 ):
     """Catch transfer surviving its remaining slice and reaching Node's kill timer."""
-    monkeypatch.setenv("PYTHON_BRIDGE_LONG_TIMEOUT", "2000")
+    from lib.sources.net import WalkDeadline
+
+    now = [0.0]
+    monkeypatch.setenv("PYTHON_BRIDGE_LONG_TIMEOUT", "40000")
+    monkeypatch.setattr(
+        acq, "WalkDeadline", lambda budget: WalkDeadline(budget, clock=lambda: now[0])
+    )
     target = tmp_path / "chosen.pdf"
     lease = acq.DestinationLease(target, 2).__enter__()
-    release = asyncio.create_task(release_after(lease, 0.3))
+    sleep = acq.asyncio.sleep
+
+    async def release_on_wait(delay):
+        now[0] = 20.0  # deterministic lease spend; >1s remains for admission
+        lease.close()
+        await sleep(0)
+
+    monkeypatch.setattr(acq.asyncio, "sleep", release_on_wait)
     cancelled = []
+    wait_for = acq.asyncio.wait_for
+    allocations = []
+
+    async def spend_allocation(task, timeout):
+        allocations.append(timeout)
+        # The allocation is observed at the real cancellation boundary. Drive
+        # expiry without waiting for wall time or altering its assertion.
+        return await wait_for(task, 0)
+
+    monkeypatch.setattr(acq.asyncio, "wait_for", spend_allocation)
 
     async def transfer(*args, **kwargs):
         try:
-            await asyncio.sleep(1.8)  # fits a fresh 2s, not the post-lease remainder
+            await asyncio.Event().wait()
             return await publish(*args, **kwargs)
         finally:
             cancelled.append(True)
 
     try:
         with pytest.raises(acq.AcquisitionError) as error:
-            await asyncio.wait_for(
+            # Use the captured real timer: the production wait_for is patched.
+            # A missing production deadline must fail instead of waiting forever.
+            await wait_for(
                 acq.acquire(
                     BOOK, str(tmp_path), filename="chosen.pdf", transfer=transfer
                 ),
-                2.0,
+                5.0,
             )
+        assert allocations == [pytest.approx(10.624125)]
         assert error.value.reason == "walk_budget_exhausted"
         assert error.value.issued is True
         assert cancelled == [True]
@@ -90,7 +116,6 @@ async def test_early_lease_transfer_gets_remainder_not_fresh_budget(
         async with acq.destination_lock(target, 0):
             pass
     finally:
-        await release
         lease.close()
 
 

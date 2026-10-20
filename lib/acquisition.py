@@ -18,7 +18,12 @@ import stat
 import tempfile
 
 from lib.filename_utils import create_unified_filename, normalize_document_extension
-from lib.sources.config import WALK_OVERHEAD_ALLOWANCE, WALK_BUDGET_SAFETY_MARGIN
+from lib.sources.config import (
+    DEFAULT_NODE_LONG_TIMEOUT_SECONDS,
+    WALK_OVERHEAD_ALLOWANCE,
+    WALK_BUDGET_SAFETY_MARGIN,
+    _node_timeout_seconds,
+)
 from lib.sources.net import WalkDeadline
 
 # Scope, not another timer: every helper consults this same WalkDeadline.
@@ -482,27 +487,43 @@ def _refuse_occupied(target, *, issued=False):
         )
 
 
-# The characters JavaScript's String.prototype.trim() removes (WhiteSpace and
-# LineTerminator); str.strip() differs, e.g. it keeps U+FEFF and drops U+0085.
-_JS_TRIM = "\t\n\v\f\r                  　﻿"
-
-
 def _long_bridge_budget():
     """Effective spawn owner (or long env timer), parsed as Node's positiveIntEnv.
 
     Anything but a plain positive integer of at most 2**31 - 1 ms falls back to
     the default, as the bridge deadline does, instead of refusing every download.
     """
-    default = 2400000
-    raw = os.environ.get(
-        "PYTHON_BRIDGE_CALL_TIMEOUT_MS",
-        os.environ.get("PYTHON_BRIDGE_LONG_TIMEOUT", "2400000"),
-    ).strip(_JS_TRIM)
-    digits = raw.lstrip("0") if re.fullmatch(r"[0-9]+", raw) else ""
-    # Past 10 digits the value is out of range anyway; checking the length first
-    # also keeps int() under Python's digit-count limit.
-    value = int(digits) if 0 < len(digits) <= 10 else 0
-    return (value if 0 < value <= 2_147_483_647 else default) / 1000
+    name = (
+        "PYTHON_BRIDGE_CALL_TIMEOUT_MS"
+        if "PYTHON_BRIDGE_CALL_TIMEOUT_MS" in os.environ
+        else "PYTHON_BRIDGE_LONG_TIMEOUT"
+    )
+    return _node_timeout_seconds(name, DEFAULT_NODE_LONG_TIMEOUT_SECONDS)
+
+
+def _finalization_reserve(scope):
+    return min(135.0, scope["deadline"].budget / 8)
+
+
+def _remaining_transfer_budget(configured):
+    """Clamp inner work to the current acquisition, retaining its reply reserve.
+
+    No scope means a direct Python source call retains its configured ceiling.
+    Re-read on mirror admission too: suspending resolution for a transfer must
+    never refund time to the outer whole-download clock.
+    """
+    scope = _acquisition_scope.get()
+    if scope is None:
+        return configured
+    return min(
+        configured,
+        max(
+            0.0,
+            scope["deadline"].remaining()
+            - _finalization_reserve(scope)
+            - WALK_BUDGET_SAFETY_MARGIN,
+        ),
+    )
 
 
 async def acquire(
@@ -698,7 +719,7 @@ async def _acquire(
             # Keep a bounded finalization slice inside the same clock, not a
             # fresh allowance after transfer. A sub-second transfer is not a
             # useful attempt (the provider walks make the same distinction).
-            finalize_reserve = min(135.0, scope["deadline"].budget / 8)
+            finalize_reserve = _finalization_reserve(scope)
             left = _check_deadline(
                 "resolution and transfer", minimum=1.0 + finalize_reserve
             )

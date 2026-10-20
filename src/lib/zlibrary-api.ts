@@ -49,6 +49,7 @@ const dependencyBreakers = Object.fromEntries(
   ['eapi', 'libgen', 'annas', 'auto'].map((scope) => [
     scope,
     new CircuitBreaker({
+      dependency: scope === 'eapi' ? 'eapi' : 'source_walk',
       threshold: parseInt(process.env.CIRCUIT_BREAKER_THRESHOLD || '5'),
       timeout: parseInt(process.env.CIRCUIT_BREAKER_TIMEOUT || '60000'),
       onStateChange: (oldState, newState) =>
@@ -164,6 +165,16 @@ async function callPythonFunction(
   const lazyAcquisition = memory && acquisitionUsesEapi;
   const diagnosticEapi = needsEapi(functionName, args) || acquisitionUsesEapi;
   const requestId = randomUUID();
+  let bridgeAttempted = false;
+  // A diagnostic describes a request attempt, not merely an EAPI-capable tool.
+  // Explicit child evidence wins; local refusals never invent attempt 1.
+  const hasRequestEvidence = (error: any) =>
+    !!readAuthDiagnostics(error?.context?.diagnostics) ||
+    (bridgeAttempted &&
+      error?.code !== 'CIRCUIT_BREAKER_OPEN' &&
+      error?.code !== 'BRIDGE_SPAWN' &&
+      error?.context?.details?.request_issued !== false &&
+      !['ValueError', 'TypeError', 'AcquisitionError'].includes(error?.context?.pythonErrorType));
   const finishCall = (work: Promise<any>) =>
     work.catch((error: any) => {
       if (controlFailures.has(error)) {
@@ -179,10 +190,7 @@ async function callPythonFunction(
         });
         error.context = { ...shared.context };
       }
-      if (
-        diagnosticEapi &&
-        !(error?.context?.pythonErrorType === 'AcquisitionError' && !error.context.diagnostics)
-      ) {
+      if (diagnosticEapi && hasRequestEvidence(error)) {
         const prior = readAuthDiagnostics(error?.context?.diagnostics);
         const diagnostics = authDiagnosticsFor(
           error,
@@ -269,6 +277,7 @@ async function callPythonFunction(
             // promise with no deadline and no handle on the child, so a hung
             // call can only be abandoned — which leaves the Python process
             // running forever (see src/lib/python-runner.ts).
+            bridgeAttempted = true;
             const results = await runPythonBridge(BRIDGE_SCRIPT_NAME, options, {
               timeoutMs: callOptions.timeoutMs ?? defaultTimeoutFor(functionName),
               signal: lazy ? lazySignal : signal,
@@ -529,13 +538,7 @@ async function callPythonFunction(
               eapiSessions.get(identity)?.remix_userkey || '',
             ]);
             const annotated = (failure: any) => {
-              if (
-                diagnosticEapi &&
-                !(
-                  failure.context?.pythonErrorType === 'AcquisitionError' &&
-                  !failure.context?.diagnostics
-                )
-              )
+              if (diagnosticEapi && hasRequestEvidence(failure))
                 (failure.context ??= {}).diagnostics = authDiagnosticsFor(
                   failure,
                   requestId,

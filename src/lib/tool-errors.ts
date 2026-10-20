@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { CircuitBreakerOpenError } from './circuit-breaker.js';
 import { readAuthDiagnostics } from './auth-diagnostics.js';
 
 export const ERROR_CODES = [
@@ -273,6 +274,7 @@ export function classifyFailure(error: any, operation: string, source?: string):
         : {}),
       detail: {
         reason,
+        ...(error instanceof CircuitBreakerOpenError ? { dependency: error.dependency } : {}),
         ...(diagnostics ? { diagnostics } : {}),
         ...(typeof detail.request_issued === 'boolean'
           ? { request_issued: detail.request_issued }

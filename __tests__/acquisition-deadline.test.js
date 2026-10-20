@@ -29,8 +29,8 @@ describe('local acquisition budget attribution', () => {
   );
 });
 
-// These cases use the production Node kill timer, real Python process and OS lease.
-// Only the provider is synthetic; no remote endpoints or accounts are touched.
+// Real Node kill timer, Python process and OS lease, with a logical Python clock
+// for contention/expiry. A larger owner leaves startup headroom on loaded hosts.
 const { runPythonBridge } = await import('../dist/lib/python-runner.js');
 test.each([
   ['late', false, 0],
@@ -44,9 +44,9 @@ test.each([
         pythonPath: `${process.cwd()}/.venv/bin/python`,
         scriptPath: `${process.cwd()}/__tests__/python`,
         args: [scenario],
-        env: { ...process.env, PYTHON_BRIDGE_LONG_TIMEOUT: '4000' },
+        env: { ...process.env, PYTHON_BRIDGE_LONG_TIMEOUT: '40000' },
       },
-      { timeoutMs: 4000, label: 'i280 synthetic contention' },
+      { timeoutMs: 40000, label: 'i280 synthetic contention' },
     );
     expect(JSON.parse(lines.at(-1))).toEqual({
       reason: 'walk_budget_exhausted',
@@ -54,7 +54,7 @@ test.each([
       transfers,
     });
   },
-  10000,
+  45000,
 );
 
 test('EAPI projection preserves a local budget refusal without inventing auth diagnostics', async () => {

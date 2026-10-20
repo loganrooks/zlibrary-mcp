@@ -147,7 +147,12 @@ DEBUG_MODE = os.environ.get("ZLIBRARY_DEBUG", os.environ.get("DEBUG", "")).lower
 
 def _configure_debug_logging():
     """Configure logging based on debug mode setting."""
-    for target in (logger, logging.getLogger("lib.enhanced_metadata")):
+    targets = (
+        logger,
+        logging.getLogger("zlibrary.sources"),
+        logging.getLogger("lib.enhanced_metadata"),
+    )
+    for target in targets:
         if not any(isinstance(f, DiagnosticLogFilter) for f in target.filters):
             target.addFilter(DiagnosticLogFilter())
     # Wire-level response headers may contain bearer cookies even in debug mode.
@@ -171,6 +176,13 @@ def _configure_debug_logging():
                 datefmt="%Y-%m-%d %H:%M:%S",
             )
         logger.setLevel(logging.INFO)
+
+    # Logger filters are not inherited by descendants. Filter every installed
+    # bridge/root handler so future child loggers cannot bypass projection.
+    for target in (*targets, logging.getLogger()):
+        for handler in target.handlers:
+            if not any(isinstance(f, DiagnosticLogFilter) for f in handler.filters):
+                handler.addFilter(DiagnosticLogFilter())
 
 
 # Configure logging on module load
@@ -339,9 +351,11 @@ async def initialize_eapi_client() -> EAPIClient:
     email = os.environ.get("ZLIBRARY_EMAIL")
     password = os.environ.get("ZLIBRARY_PASSWORD")
     if not email or not password:
-        raise ValueError(
+        error = ValueError(
             "ZLIBRARY_EMAIL and ZLIBRARY_PASSWORD environment variables required"
         )
+        error._eapi_local_refusal = True
+        raise error
     if _lazy_session and _session_input is None:
         from lib.eapi_session_protocol import request_session, SessionProtocolError
 
@@ -1630,9 +1644,11 @@ async def _fetch_from_source(book_details: dict, output_dir: str) -> str:
         active_host = host
 
     try:
+        from lib.acquisition import _remaining_transfer_budget
+
         return await bounded_await(
             acquire(),
-            config.download_timeout,
+            _remaining_transfer_budget(config.download_timeout),
             provider=selection,
             host=active_host,
             operation="download",
@@ -2174,9 +2190,24 @@ async def main():
         error_info = _safe_diagnostic(error_info)
         diagnostics = None
         if not (
-            function_name == "acquire_book"
-            and isinstance(e, AcquisitionError)
-            and e.reason == "walk_budget_exhausted"
+            getattr(e, "_eapi_local_refusal", False) is True
+            or (
+                isinstance(e, AcquisitionError)
+                and e.issued is False
+                and e.reason
+                in (
+                    "invalid_argument",
+                    "output_refused",
+                    "configuration_error",
+                    "breaker_open",
+                    "walk_budget_exhausted",
+                )
+            )
+            or (
+                function_name == "acquire_book"
+                and isinstance(e, AcquisitionError)
+                and e.reason == "walk_budget_exhausted"
+            )
         ) and (
             needs_eapi
             or _session_input is not None
@@ -2220,7 +2251,11 @@ async def main():
                     )
                 }
             logger.warning("", extra={"auth_diagnostics": diagnostics})
-        if _session_input is not None and _session_input["action"] == "login":
+        if (
+            diagnostics is not None
+            and _session_input is not None
+            and _session_input["action"] == "login"
+        ):
             failure = {"status_code": diagnostics.get("http_status")}
             status = failure["status_code"]
             cause = (

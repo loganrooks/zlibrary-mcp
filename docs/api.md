@@ -196,8 +196,10 @@ record shared with diagnostic logs:
 A generic HTTP 400 and malformed non-HTTP responses are not authentication
 rejections. A 400 does not invalidate a warm session or trigger login/download
 replay. Local acquisition refusals before EAPI contact keep their existing
-error details without EAPI diagnostics. A cooldown refusal can carry the prior
-failed invocation's counts with a new caller correlation id.
+error details without EAPI diagnostics. Authentication cooldown refusals can
+carry the prior failed invocation's diagnostic with a new caller correlation id. A circuit-breaker
+OPEN refusal carries its dependency (`eapi`, `source_walk`, or `local`) in
+`error.detail.dependency` and has no request diagnostic.
 
 Diagnostics contain no account identifiers, credentials, cookies, tokens,
 response bodies, book details, or URLs. Malformed diagnostic records are
@@ -205,8 +207,13 @@ discarded whole. The limits are 512 UTF-8 bytes and one line per diagnostic
 record, 2048 UTF-8 bytes and one line per EAPI bridge failure envelope, and
 8192 UTF-8 bytes / 32 lines of retained subprocess stderr. Oversized stderr
 records are discarded, not truncated into apparently valid records. Legacy
-unstructured bridge debug logs and search-argument file logging are suppressed;
-the bridge file/stderr handlers and Node logger use allowlisted diagnostics.
+unstructured logs from `zlibrary` (including all descendant loggers,
+notably `zlibrary.sources`) and `lib.enhanced_metadata` (including descendants)
+are suppressed by the bridge's logger and installed file/stderr/root handler
+filters. Those namespaces emit only valid allowlisted diagnostics; unrelated
+logger namespaces are not filtered. Search-argument file logging is suppressed,
+and the Node logger uses allowlisted EAPI diagnostics. Direct Python library
+consumers do not install the bridge's filters.
 
 | Code | Meaning |
 |---|---|

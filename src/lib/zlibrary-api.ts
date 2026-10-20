@@ -49,9 +49,11 @@ function markControl<T>(work: Promise<T>): Promise<T> {
   });
 }
 
-// Python owns alternative-source failover, so LibGen/Anna/auto share one scope.
+// One scope per provider (ADR-011): a 2.0 bridge call names one source, so an
+// Anna's outage must not refuse LibGen. `auto` is one Python-owned walk over
+// both and keeps its own verdict; no 2.0 tool sends it.
 const dependencyBreakers = Object.fromEntries(
-  ['eapi', 'libgen'].map((scope) => [
+  ['eapi', 'libgen', 'annas', 'auto'].map((scope) => [
     scope,
     new CircuitBreaker({
       threshold: parseInt(process.env.CIRCUIT_BREAKER_THRESHOLD || '5'),
@@ -78,6 +80,21 @@ const dependencyBreakers = Object.fromEntries(
     }),
   ]),
 );
+
+/**
+ * Breaker scope for a call that does not use EAPI: the source it selects.
+ *
+ * @param functionName - Bridge function being called
+ * @param args - Its arguments
+ * @returns `libgen`, `annas`, or `auto` for a search with no named source
+ */
+function sourceScope(functionName: string, args: Record<string, any>): string {
+  const source = String(
+    (functionName === 'search_multi_source' ? args.source : args.book_details?.source) || '',
+  ).toLowerCase();
+  if (source === 'libgen') return 'libgen';
+  return source === 'annas' || source === 'annas_archive' ? 'annas' : 'auto';
+}
 
 /**
  * Bridge functions whose work is bounded by file size, not by a single
@@ -150,7 +167,11 @@ async function callPythonFunction(
   const lazyAcquisition = memory && acquisitionUsesEapi;
   const receiptOnly = functionName === 'acquire_book' && args.receipt_only === true;
   const breaker =
-    dependencyBreakers[needsEapi(functionName, args) || acquisitionUsesEapi ? 'eapi' : 'libgen']!;
+    dependencyBreakers[
+      needsEapi(functionName, args) || acquisitionUsesEapi
+        ? 'eapi'
+        : sourceScope(functionName, args)
+    ]!;
   const budget =
     callOptions.timeoutMs ?? defaultTimeoutFor(functionName) ?? ORDINARY_BRIDGE_TIMEOUT_MS;
   // Short calls keep the one-probe rule until their verdict.

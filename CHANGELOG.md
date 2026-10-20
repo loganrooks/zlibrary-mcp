@@ -143,6 +143,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Each provider has its own circuit breaker: Z-Library, LibGen and Anna's Archive
+  (ADR-011). An outage at one no longer refuses the others, and an ordered
+  `["annas","libgen"]` search reaches LibGen while Anna's is down. 1.4.0 ran one
+  breaker for every bridge call.
 - `CONTEXT.md` added as the terminology glossary, splitting the overloaded term
   "keyless" into *keyed fast_download*, *operator-cookie slow_download*, and
   *machine-solved challenge*. The ambiguity had caused approved work to be recorded as

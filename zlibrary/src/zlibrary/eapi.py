@@ -13,8 +13,8 @@ import aiofiles
 import os
 import tempfile
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Union
-from urllib.parse import unquote
+from typing import Any, Callable, Dict, List, Optional, Sequence, Union
+from urllib.parse import unquote, urlsplit
 
 from .logger import logger
 
@@ -482,6 +482,7 @@ class EAPIClient:
         book_hash: str,
         output_dir: str,
         filename: Optional[str] = None,
+        host_observer: Optional[Callable[[str], None]] = None,
     ) -> str:
         """Download a book file using EAPI download link.
 
@@ -490,6 +491,7 @@ class EAPIClient:
             book_hash: Book hash for URL construction
             output_dir: Directory to save the file
             filename: Optional filename; derived from response headers or URL if omitted
+            host_observer: Receives the final response hostname after redirects
 
         Returns:
             Absolute path to the downloaded file
@@ -530,6 +532,14 @@ class EAPIClient:
             ) as dl_client:
                 async with dl_client.stream("GET", download_url) as response:
                     response.raise_for_status()
+                    if host_observer is not None:
+                        response_url = getattr(response, "url", None)
+                        host = (
+                            urlsplit(str(response_url)).hostname
+                            if response_url is not None
+                            else None
+                        ) or (urlsplit(download_url).hostname or "")
+                        host_observer(host.lower())
 
                     # Determine filename
                     if not filename:

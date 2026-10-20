@@ -2969,6 +2969,100 @@ class TestPartialTransferRecovery:
         assert not list(tmp_path.glob(".source-*")), why
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize("interruption", ["reset", "wrong-length"])
+    async def test_unsatisfiable_range_at_true_eof_publishes_complete_stage(
+        self, interruption, tmp_path, mocker
+    ):
+        """A final-frame reset must not discard a digest-matching complete file."""
+        headers = {"content-type": "application/pdf"}
+        if interruption == "wrong-length":
+            headers["content-length"] = str(len(RESUME_BODY) + 1)
+        transport = ScriptedTransport(
+            [
+                ScriptedResponse(
+                    body=RESUME_BODY,
+                    headers=headers,
+                    fail_after=len(RESUME_BODY) if interruption == "reset" else None,
+                ),
+                ScriptedResponse(
+                    status_code=416,
+                    headers={"content-range": f"bytes */{len(RESUME_BODY)}"},
+                ),
+            ]
+        ).install(mocker)
+        config = python_bridge.get_source_config()
+        config.download_resume_attempts = 1  # No spare request after the 416.
+
+        result = await python_bridge._download_url_to_file(
+            "https://mirror.example/get",
+            str(tmp_path),
+            RESUME_DIGEST,
+            "libgen",
+            config=config,
+        )
+
+        assert transport.ranges == [None, f"bytes={len(RESUME_BODY)}-"]
+        assert Path(result).read_bytes() == RESUME_BODY
+        assert Path(result).suffix == ".pdf"
+        assert list(tmp_path.iterdir()) == [Path(result)]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "content_range_header",
+        [None, f"bytes */{len(RESUME_BODY) + 1}", "bytes */bogus", "bytes */*"],
+        ids=["missing", "different-total", "malformed", "unknown-total"],
+    )
+    async def test_unsatisfiable_range_without_matching_total_restarts_complete_stage(
+        self, content_range_header, tmp_path, mocker
+    ):
+        """Even a valid digest cannot rescue a missing or nonmatching EOF total."""
+        transport = ScriptedTransport(
+            [
+                ScriptedResponse(body=RESUME_BODY, fail_after=len(RESUME_BODY)),
+                ScriptedResponse(
+                    status_code=416,
+                    headers={"content-range": content_range_header}
+                    if content_range_header is not None
+                    else {},
+                ),
+                ScriptedResponse(body=RESUME_BODY),
+            ]
+        ).install(mocker)
+
+        result = await python_bridge._download_url_to_file(
+            "https://mirror.example/get", str(tmp_path), RESUME_DIGEST, "libgen"
+        )
+
+        assert transport.ranges == [None, f"bytes={len(RESUME_BODY)}-", None]
+        assert Path(result).read_bytes() == RESUME_BODY
+        assert list(tmp_path.iterdir()) == [Path(result)]
+
+    @pytest.mark.asyncio
+    async def test_unsatisfiable_range_at_true_eof_with_wrong_digest_restarts(
+        self, tmp_path, mocker
+    ):
+        """An equal byte count must not publish corrupt staged content."""
+        corrupt = RESUME_BODY[:-1] + bytes([RESUME_BODY[-1] ^ 1])
+        transport = ScriptedTransport(
+            [
+                ScriptedResponse(body=corrupt, fail_after=len(corrupt)),
+                ScriptedResponse(
+                    status_code=416,
+                    headers={"content-range": f"bytes */{len(corrupt)}"},
+                ),
+                ScriptedResponse(body=RESUME_BODY),
+            ]
+        ).install(mocker)
+
+        result = await python_bridge._download_url_to_file(
+            "https://mirror.example/get", str(tmp_path), RESUME_DIGEST, "libgen"
+        )
+
+        assert transport.ranges == [None, f"bytes={len(corrupt)}-", None]
+        assert Path(result).read_bytes() == RESUME_BODY
+        assert list(tmp_path.iterdir()) == [Path(result)]
+
+    @pytest.mark.asyncio
     async def test_unsatisfiable_range_discards_the_partial_and_starts_over(
         self, tmp_path, mocker
     ):

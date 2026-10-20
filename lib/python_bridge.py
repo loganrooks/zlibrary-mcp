@@ -1236,8 +1236,25 @@ async def _download_url_to_file(
                                 host_observer(active_host)
                             status = getattr(response, "status_code", 200)
                             if offset and status == 416:
-                                # No prefix survives a refused range. The next
-                                # request, if admitted, starts this URL at zero.
+                                match = re.fullmatch(
+                                    r"bytes \*/(\d+)",
+                                    response.headers.get("content-range", ""),
+                                )
+                                if match is not None and int(match[1]) == offset:
+                                    # A final-frame reset can leave a complete
+                                    # stage. Check it within the same deadline
+                                    # before discarding or publishing anything.
+                                    digest = _md5_digest()
+                                    with open(attempt_path, "rb") as handle:
+                                        while chunk := handle.read(65536):
+                                            digest.update(chunk)
+                                            await asyncio.sleep(0)
+                                    if digest.hexdigest() == expected_md5:
+                                        # Close the response, then use the normal
+                                        # validation and no-replace commit below.
+                                        break
+                                # Otherwise the next admitted request starts
+                                # this URL at zero, within the remaining budget.
                                 attempt_path.write_bytes(b"")
                                 written = 0
                                 if resumes_tried < config.download_resume_attempts:

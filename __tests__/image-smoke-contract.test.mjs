@@ -2,13 +2,118 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdtemp, readFile, writeFile, readdir, rm, chmod, open } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { mkdir, mkdtemp, readFile, writeFile, readdir, rm, chmod, open } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const run = promisify(execFile);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+
+for (const scenario of [
+  'absent',
+  'identical',
+  'mismatch',
+  'missing-integrity',
+  'network',
+  'auth',
+  'invalid',
+  'publish-error',
+]) {
+  test(`npm publication recovery: ${scenario}`, async () => {
+    const state = await mkdtemp(path.join(tmpdir(), 'npm-publication-'));
+    try {
+      await mkdir(path.join(state, 'package'));
+      await writeFile(
+        path.join(state, 'package/package.json'),
+        JSON.stringify({ name: 'zlibrary-mcp', version: '1.4.0' }),
+      );
+      const tarball = path.join(state, 'release with spaces.tgz');
+      await run('tar', ['-czf', tarball, '-C', state, 'package']);
+      const integrity = `sha512-${createHash('sha512')
+        .update(await readFile(tarball))
+        .digest('base64')}`;
+      const log = path.join(state, 'npm.log');
+      const npm = path.join(state, 'npm');
+      await writeFile(
+        npm,
+        `#!/usr/bin/env node
+const fs = require('node:fs');
+const args = process.argv.slice(2);
+fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify(args) + '\\n');
+const scenario = ${JSON.stringify(scenario)};
+if (args[0] === 'view') {
+  if (scenario === 'identical') fs.writeSync(1, JSON.stringify(${JSON.stringify(integrity)}));
+  else if (scenario === 'missing-integrity') fs.writeSync(1, 'null');
+  else if (scenario === 'mismatch') fs.writeSync(1, JSON.stringify('sha512-other'));
+  else if (scenario === 'invalid') fs.writeSync(1, 'not JSON');
+  else {
+    const code = scenario === 'network' ? 'ENETUNREACH' : scenario === 'auth' ? 'E401' : 'E404';
+    fs.writeSync(1, JSON.stringify({error:{code}}));
+    process.exitCode = 1;
+  }
+} else if (args[0] === 'publish') {
+  if (scenario === 'publish-error') process.exitCode = 1;
+} else throw new Error('Unexpected npm command');
+`,
+      );
+      await chmod(npm, 0o755);
+      // Like the Docker publication controls below, use files to avoid this
+      // sandbox's blocked Node pipe initialization in the child process.
+      const output = await open(path.join(state, 'output'), 'w+');
+      const errors = await open(path.join(state, 'errors'), 'w+');
+      let result;
+      try {
+        const child = spawn(process.execPath, ['scripts/publish-npm-idempotent.mjs', tarball], {
+          cwd: root,
+          stdio: ['ignore', output.fd, errors.fd],
+          env: { PATH: state + path.delimiter + process.env.PATH },
+        });
+        const code = await new Promise((resolve, reject) => {
+          child.once('error', reject);
+          child.once('exit', resolve);
+        });
+        result = {
+          code,
+          stdout: await readFile(path.join(state, 'output'), 'utf8'),
+          stderr: await readFile(path.join(state, 'errors'), 'utf8'),
+        };
+      } finally {
+        await output.close();
+        await errors.close();
+      }
+      assert.equal(
+        result.code ?? 0,
+        ['absent', 'identical'].includes(scenario) ? 0 : 1,
+        result.stderr,
+      );
+      const calls = (await readFile(log, 'utf8'))
+        .trim()
+        .split('\n')
+        .map((s) => JSON.parse(s));
+      assert.deepEqual(calls[0], ['view', 'zlibrary-mcp@1.4.0', 'dist.integrity', '--json']);
+      assert.deepEqual(
+        calls.slice(1),
+        ['absent', 'publish-error'].includes(scenario)
+          ? [['publish', tarball, '--provenance']]
+          : [],
+      );
+      if (scenario === 'identical') assert.match(result.stdout, /skipping npm publish/);
+      const failure = {
+        mismatch: /already exists with different or missing integrity/,
+        'missing-integrity': /already exists with different or missing integrity/,
+        network: /ENETUNREACH/,
+        auth: /E401/,
+        invalid: /JSON/,
+        'publish-error': /Command failed: npm publish/,
+      }[scenario];
+      if (failure) assert.match(result.stderr, failure);
+    } finally {
+      await rm(state, { recursive: true, force: true });
+    }
+  });
+}
 
 test('container canary records exactly one blocked attempt before reset', async () => {
   const state = await mkdtemp(path.join(tmpdir(), 'image-canary-'));

@@ -42,9 +42,11 @@ describe('publish workflow test gate (#211)', () => {
   test('both existing suites run before npm publication without tolerating failure', () => {
     expect(testStep).toBeGreaterThanOrEqual(0);
     const publishSteps = jobs['publish-packages'].steps;
-    const publishStep = publishSteps.find((step) => /^npm publish\s/.test(step.run ?? ''));
+    const publishStep = publishSteps.find((step) =>
+      step.run?.startsWith('node scripts/publish-npm-idempotent.mjs '),
+    );
     expect(ancestors(jobs, 'publish-packages').has(gate)).toBe(true);
-    expect(publishStep.run).toMatch(/\s--provenance(?:\s|$)/);
+    expect(publishStep.run).toContain('release-package/*.tgz');
     expect(publishStep.if).toBeUndefined();
     expect(steps[testStep].if).toBeUndefined();
     expect(steps[testStep]['continue-on-error'] ?? false).toBe(false);
@@ -108,13 +110,14 @@ function assertImageGate(jobs) {
   const build = steps.findIndex((s) => s.uses?.startsWith('docker/build-push-action@'));
   const identity = steps.findIndex((s) => s.id === 'image-identity');
   const smoke = steps.findIndex((s) => s.run?.startsWith('node scripts/image-smoke.mjs '));
-  const npm = steps.findIndex((s) => s.run?.startsWith('npm publish '));
+  const npm = steps.findIndex((s) => s.run?.startsWith('node scripts/publish-npm-idempotent.mjs '));
   const push = steps.findIndex((s) => s.run?.startsWith('node scripts/push-tested-image.mjs '));
   expect(build).toBeGreaterThanOrEqual(0);
   expect(identity).toBeGreaterThan(build);
   expect(smoke).toBeGreaterThan(identity);
-  expect(npm).toBeGreaterThan(smoke);
-  expect(push).toBeGreaterThan(npm);
+  expect(push).toBeGreaterThan(smoke);
+  expect(npm).toBeGreaterThan(push);
+  expect(npm).toBe(steps.length - 1);
   for (const i of [build, identity, smoke, npm, push]) {
     expect(steps[i].if).toBeUndefined();
     expect(steps[i]['continue-on-error'] ?? false).toBe(false);
@@ -134,34 +137,51 @@ function assertImageGate(jobs) {
   expect(steps[build].with.context).toBe('${{ runner.temp }}/image-context');
   expect(steps[build].with['build-args']).toBe('BUILD_INPUT=packed');
   const docker = steps.find((s) => s.uses?.startsWith('docker/setup-docker-action@'));
+  expect(docker.with.version).toBe('v29.9.1');
   expect(JSON.parse(docker.with['daemon-config']).features['containerd-snapshotter']).toBe(true);
 }
 
 describe('release image gate (#291 F1/F2/F5/F6)', () => {
-  test('build, identity, smoke, npm publication and attested image push are ordered', () => {
+  test('build, identity, smoke, attested image push and npm publication are ordered', () => {
     assertImageGate(workflow.jobs);
   });
 
   test.each([
     'early-push',
     'tolerated-smoke',
+    'tolerated-push',
+    'conditional-push',
     'conditional-smoke',
     'npm-before-smoke',
     'push-before-smoke',
     'no-provenance',
+    'npm-before-push',
   ])('%s is rejected', (mutation) => {
     const jobs = structuredClone(workflow.jobs);
     const steps = jobs['publish-packages'].steps;
     const build = steps.find((s) => s.uses?.startsWith('docker/build-push-action@'));
     const smoke = steps.find((s) => s.run?.startsWith('node scripts/image-smoke.mjs '));
     if (mutation === 'early-push') build.with.push = true;
+    const push = steps.find((s) => s.run?.startsWith('node scripts/push-tested-image.mjs '));
+    if (mutation === 'tolerated-push') push['continue-on-error'] = true;
+    if (mutation === 'conditional-push') push.if = 'false';
     if (mutation === 'tolerated-smoke') smoke['continue-on-error'] = true;
     if (mutation === 'conditional-smoke') smoke.if = 'false';
     if (mutation === 'no-provenance') build.with.provenance = false;
+    if (mutation === 'npm-before-push') {
+      const i = steps.findIndex((s) =>
+        s.run?.startsWith('node scripts/publish-npm-idempotent.mjs '),
+      );
+      const [publisher] = steps.splice(i, 1);
+      const push = steps.findIndex((s) => s.run?.startsWith('node scripts/push-tested-image.mjs '));
+      steps.splice(push, 0, publisher);
+    }
     if (mutation.endsWith('before-smoke')) {
       const i = steps.findIndex((s) =>
         s.run?.startsWith(
-          mutation.startsWith('npm') ? 'npm publish ' : 'node scripts/push-tested-image.mjs ',
+          mutation.startsWith('npm')
+            ? 'node scripts/publish-npm-idempotent.mjs '
+            : 'node scripts/push-tested-image.mjs ',
         ),
       );
       const [publisher] = steps.splice(i, 1);
@@ -197,4 +217,50 @@ describe('release image gate (#291 F1/F2/F5/F6)', () => {
       false,
     );
   });
+});
+
+test('PR Docker CI rehearses the pinned attested build and local-registry publication', () => {
+  const ci = parse(readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8'));
+  expect(ci.on.pull_request.branches).toContain('master');
+  const job = ci.jobs.docker;
+  expect(job.if).toContain("github.event_name == 'pull_request'");
+  expect(job.services.registry).toEqual({ image: 'registry:2', ports: ['5000:5000'] });
+  const steps = job.steps;
+  const setup = steps.findIndex((s) => s.uses?.startsWith('docker/setup-docker-action@'));
+  const build = steps.findIndex((s) => s.id === 'build');
+  const identity = steps.findIndex((s) => s.run?.startsWith('node scripts/image-identity.mjs '));
+  const smoke = steps.findIndex((s) => s.run?.startsWith('node scripts/image-smoke.mjs '));
+  const push = steps.findIndex((s) => s.run?.startsWith('node scripts/push-tested-image.mjs '));
+  expect(setup).toBeGreaterThanOrEqual(0);
+  expect(build).toBeGreaterThan(setup);
+  expect(identity).toBeGreaterThan(build);
+  expect(smoke).toBeGreaterThan(identity);
+  expect(push).toBeGreaterThan(smoke);
+  const releaseSetup = workflow.jobs['publish-packages'].steps.find((s) =>
+    s.uses?.startsWith('docker/setup-docker-action@'),
+  );
+  expect(steps[setup].with).toEqual(releaseSetup.with);
+  expect(steps[build].uses).toBe('docker/build-push-action@v7');
+  expect(steps[build].with).toMatchObject({
+    context: '${{ runner.temp }}/image-context',
+    file: 'docker/Dockerfile',
+    'build-args': 'BUILD_INPUT=packed',
+    load: true,
+    push: false,
+    provenance: 'mode=min',
+  });
+  expect(steps[build].with.tags.trim().split('\n')).toEqual([
+    'zlibrary-mcp:ci',
+    'localhost:5000/zlibrary-mcp:ci',
+  ]);
+  for (const i of [setup, build, identity, smoke, push]) {
+    expect(steps[i].if).toBeUndefined();
+    expect(steps[i]['continue-on-error'] ?? false).toBe(false);
+  }
+  for (const i of [identity, push]) {
+    expect(steps[i].env.TESTED_DIGEST).toBe('${{ steps.build.outputs.digest }}');
+    expect(steps[i].run).toContain('zlibrary-mcp:ci "$TESTED_DIGEST"');
+  }
+  expect(steps[smoke].run).toBe('node scripts/image-smoke.mjs zlibrary-mcp:ci');
+  expect(steps[push].env.IMAGE_TAGS).toBe('localhost:5000/zlibrary-mcp:ci');
 });

@@ -132,6 +132,7 @@ jobs:
       # The classic image store drops BuildKit attestation manifests on load.
       - uses: docker/setup-docker-action@v5
         with:
+          version: v29.9.1
           daemon-config: |
             {"features":{"containerd-snapshotter":true}}
       - uses: docker/setup-buildx-action@v4
@@ -171,15 +172,16 @@ jobs:
         run: node scripts/image-identity.mjs zlibrary-mcp:smoke "$TESTED_DIGEST"
       - name: Gate both publications on the offline SDK-to-Python journey
         run: node scripts/image-smoke.mjs zlibrary-mcp:smoke
-      # Auth comes from this workflow's OIDC trusted publisher; no token.
-      - name: Publish with provenance
-        run: npm publish "$RUNNER_TEMP"/release-package/*.tgz --provenance
       # Push the already-tested local image, never rebuild after the smoke.
       - name: Push the tested image
         env:
           IMAGE_TAGS: ${{ steps.meta.outputs.tags }}
           TESTED_DIGEST: ${{ steps.build.outputs.digest }}
         run: node scripts/push-tested-image.mjs zlibrary-mcp:smoke "$TESTED_DIGEST"
+      # npm is last: a failed GHCR push/verification cannot publish npm.
+      # Auth comes from this workflow's OIDC trusted publisher; no token.
+      - name: Publish npm with provenance unless identical bytes already exist
+        run: node scripts/publish-npm-idempotent.mjs "$RUNNER_TEMP"/release-package/*.tgz
 
   # A tag that publishes to npm and GHCR but leaves no GitHub Release makes the
   # Releases page disagree with what is actually shipped. That happened to

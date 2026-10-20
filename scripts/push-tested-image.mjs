@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Publication only: run after image-identity, image-smoke and npm publication.
+// Publication only: run after image-identity and image-smoke, before npm publication.
 // Never rebuild or pass --platform (which would drop the attestation index).
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';

@@ -78,9 +78,12 @@ SuperGateway wraps the stdio-based MCP server to provide HTTP transport, enablin
 
 Release CI packs once and uses that same tarball for npm publication and the
 Docker build. Both npm and GHCR wait for the image smoke: prepare/test/pack,
-build/load, bind the image digest, smoke, npm publish, then GHCR push. A failed
-smoke leaves both registries untouched. GHCR still waits for npm publication.
-PR CI runs the same packed-image journey. Source builds above remain supported.
+build/load, bind the image digest, smoke, GHCR push and verification, then npm
+publish last. A failed smoke leaves both registries untouched. A GHCR failure
+leaves npm unpublished. PR CI runs the same attested journey and rehearses
+`push-tested-image.mjs` against a disposable `registry:2` service at
+`localhost:5000`, including digest and provenance checks. Source builds above
+remain supported.
 
 To reproduce from a checkout with dependencies already available (Node 22+,
 Docker and `openssl` required):
@@ -99,7 +102,8 @@ an empty destination and creates only `release.tgz` and `package-lock.json`.
 Supply an existing tarball as a second argument to reuse it without packing:
 `bash scripts/prepare-image-context.sh "$IMAGE_CONTEXT" /path/to/candidate.tgz`.
 
-Publication enables Docker's containerd image store before the BuildKit build
+CI and publication pin Docker Engine **29.9.1** with `setup-docker-action` and
+enable Docker's containerd image store before the BuildKit build
 and explicitly requests `provenance: mode=min`. The classic image store cannot
 retain an attestation index. `image-identity.mjs` requires the loaded index digest
 to equal BuildKit's output before the smoke; `push-tested-image.mjs` checks every
@@ -107,9 +111,18 @@ metadata tag against that digest before pushing the same local image without
 rebuilding or selecting a platform. It then checks each registry digest and the
 retained attestation manifest. See [Docker's image-store requirements for
 attestations](https://docs.docker.com/build/metadata/attestations/#driver-and-image-store-support).
-The tag patterns, npm channel and `latest` behavior are unchanged. A registry
-error can still leave a partial release after the smoke passes; there is no
-transaction across npm and GHCR.
+The tag patterns, npm channel and `latest` behavior are unchanged. The GitHub
+Release now waits for both registry publications. There is no transaction across
+npm and GHCR: a GHCR failure can leave some image tags, but no npm publication;
+an npm failure leaves the verified image available in GHCR. Re-run failed jobs
+to repeat the smoke and push/verification (re-pushing the same digest is
+idempotent), then finish npm. The npm helper compares the tarball's SHA-512
+integrity with `npm view zlibrary-mcp@$V dist.integrity` and skips an identical
+published version. Only an explicit E404 allows a new npm publication; mismatched
+or missing integrity, authentication/network failures and malformed lookup
+responses fail closed. Recovery must reuse the original release tarball artifact;
+repacking may change bytes and will be rejected if npm already has other bytes.
+See [release recovery](../docs/RELEASE_PROCESS.md#publish-ordering).
 
 For an existing locally built candidate image, run only
 `node scripts/image-smoke.mjs <image>`. Its version must match this checkout's

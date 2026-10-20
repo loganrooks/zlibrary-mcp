@@ -288,6 +288,13 @@ def test_destination_lease_default_matches_long_bridge_timeout():
         ("1e6", 2400.0),
         ("2147483648", 2400.0),
         ("١٢٣", 2400.0),
+        # Breaker gate A: JavaScript trim() strips BOM but not NEL or FS, and
+        # digit strings past Python's int() limit must still fall back.
+        pytest.param("﻿2700000", 2700.0, id="bom"),
+        pytest.param("\u00852700000", 2400.0, id="nel"),
+        pytest.param("\u001c2700000", 2400.0, id="fs"),
+        pytest.param("9" * 5000, 2400.0, id="5000-nines"),
+        pytest.param("0" * 5000 + "2700000", 2700.0, id="5000-zeros"),
     ],
 )
 async def test_long_bridge_timeout_is_parsed_as_node_parses_it(

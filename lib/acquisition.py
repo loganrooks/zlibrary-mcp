@@ -440,6 +440,11 @@ def _refuse_occupied(target, *, issued=False):
         )
 
 
+# The characters JavaScript's String.prototype.trim() removes (WhiteSpace and
+# LineTerminator); str.strip() differs, e.g. it keeps U+FEFF and drops U+0085.
+_JS_TRIM = "\t\n\v\f\r                  　﻿"
+
+
 def _long_bridge_budget():
     """PYTHON_BRIDGE_LONG_TIMEOUT in seconds, parsed as Node's ``positiveIntEnv``.
 
@@ -447,8 +452,11 @@ def _long_bridge_budget():
     the default, as the bridge deadline does, instead of refusing every download.
     """
     default = 2400000
-    raw = os.environ.get("PYTHON_BRIDGE_LONG_TIMEOUT", "2400000").strip()
-    value = int(raw) if re.fullmatch(r"[0-9]+", raw) else 0
+    raw = os.environ.get("PYTHON_BRIDGE_LONG_TIMEOUT", "2400000").strip(_JS_TRIM)
+    digits = raw.lstrip("0") if re.fullmatch(r"[0-9]+", raw) else ""
+    # Past 10 digits the value is out of range anyway; checking the length first
+    # also keeps int() under Python's digit-count limit.
+    value = int(digits) if 0 < len(digits) <= 10 else 0
     return max(1.0, (value if 0 < value <= 2_147_483_647 else default) / 1000)
 
 

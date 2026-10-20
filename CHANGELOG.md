@@ -79,10 +79,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   DNS plus TCP preflight share one aggregate `BOOK_SOURCE_PREFLIGHT_TIMEOUT`
   budget (default 5 seconds), rather than a fresh timeout for every address.
   See the README environment table, `.env.example` and retry configuration.
-- **Release-prep placeholder — #251 / PR #285:** typed, bounded authentication
-  diagnostics are not in this pinned tree. Replace this line with the landed
-  behavior and code references only after PR #285 merges; do not advertise it
-  as shipped before then.
+- Typed, bounded diagnostics for Z-Library (EAPI) and sign-in failures (#251,
+  PR #285). A failed call's error may carry `error.detail.diagnostics` with exactly
+  `failure_kind` (`auth_rejected`, `transport`, `wall`, `ambiguous_status`),
+  `http_status` when known, `attempt`, `refresh_count` and an internal
+  `request_id`. The record is at most 512 bytes and is rejected whole when
+  malformed. Logs and tool errors no longer carry call arguments, exception text,
+  tracebacks, response bodies or sign-in prose. A generic HTTP 400 no longer
+  invalidates a session or starts a sign-in or download replay. See
+  [docs/api.md](docs/api.md).
 
 - `npm run audit:release` ([scripts/release-audit.mjs](scripts/release-audit.mjs)) and a
   weekly `Release Record Audit` workflow, checking that the project's record of itself is

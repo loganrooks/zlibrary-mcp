@@ -1,5 +1,7 @@
 """Receipt-only acquisition (#267): serve a verified receipt, never write intent or transfer."""
 
+import hashlib
+import json
 from pathlib import Path
 from unittest.mock import AsyncMock
 
@@ -105,4 +107,45 @@ async def test_receipt_only_foreign_destination_refuses_before_intent(tmp_path):
     assert error.value.reason == "output_refused"
     assert error.value.issued is False
     assert provider.await_count == 1
+    assert snapshot(tmp_path) == before
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("case", ["hashed-intent", "missing-canonical", "stale-alias"])
+async def test_receipt_only_serves_recovery_states_without_writing(tmp_path, case):
+    # Breaker gate round 1: these recovery states used to repair receipts in place.
+    target = tmp_path / ("selected.pdf" if case == "hashed-intent" else "actual.epub")
+    target.write_bytes(PAYLOAD)
+    record = {
+        "record_version": 1,
+        "state": "complete",
+        "path": str(target),
+        "sha256": hashlib.sha256(PAYLOAD).hexdigest(),
+        "bytes": len(PAYLOAD),
+        "source": "zlibrary",
+        "identifiers": {"id": "42", "hash": "abc"},
+        "reused": False,
+        "transfer_skipped": False,
+    }
+    alias = tmp_path / "selected.pdf.acq.json"
+    if case == "hashed-intent":
+        alias.write_text(json.dumps({**record, "state": "intent"}))
+    elif case == "missing-canonical":
+        alias.write_text(json.dumps(record))
+    else:
+        Path(str(target) + ".acq.json").write_text(json.dumps(record))
+        alias.write_text(json.dumps({**record, "downloaded_at": "old-alias"}))
+    before = snapshot(tmp_path)
+    provider = AsyncMock(side_effect=AssertionError("receipt-only must not transfer"))
+    hit = await acquire(
+        {**BOOK, "source": "zlibrary"},
+        str(tmp_path),
+        filename="selected.pdf",
+        receipt_only=True,
+        transfer=provider,
+    )
+    provider.assert_not_awaited()
+    assert hit["transfer_skipped"] is True
+    assert hit["path"] == str(target)
+    assert Path(hit["record"]).exists()
     assert snapshot(tmp_path) == before

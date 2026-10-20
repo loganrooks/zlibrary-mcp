@@ -451,7 +451,7 @@ async def acquire(
 ):
     """Lease initial and canonical destinations through publication and every receipt write.
 
-    With ``receipt_only`` a verified receipt is served exactly as usual; otherwise
+    With ``receipt_only`` a verified receipt is served without writing any file; otherwise
     the usual pre-intent refusal is raised or ``{"receipt_hit": False}`` returned,
     before an intent is written or ``transfer`` is called. The parent uses it when
     its breaker refuses provider work.
@@ -493,15 +493,19 @@ async def acquire(
                 candidate = canonical if canonical else previous
                 path = _verified_artifact(candidate, directory)
                 if path == target and _same_identity(candidate, source, identifiers):
-                    if candidate["state"] == "intent":
+                    promoted = candidate["state"] == "intent"
+                    if promoted:
                         candidate = {
                             **candidate,
                             "state": "complete",
                             "transfer_skipped": True,
                             "reused": False,
                         }
-                        _atomic_json(canonical_path, candidate)
-                    elif not canonical:
+                    if receipt_only:
+                        # Read-only: the next ordinary call repairs these receipts.
+                        held_at = canonical_path if canonical else receipt_path
+                        return _reply(candidate, held_at, True)
+                    if promoted or not canonical:
                         _atomic_json(canonical_path, candidate)
                     if receipt_path != canonical_path and previous != candidate:
                         _atomic_json(receipt_path, candidate)

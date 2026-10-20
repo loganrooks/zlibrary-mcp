@@ -55,6 +55,9 @@ jobs:
     # burning login attempts (~10/hour/IP) against a wall.
     needs: reachability
     if: github.event_name == 'schedule' || inputs.run_live_tests
+    outputs:
+      status: ${{ steps.live.outputs.status }}
+      blocked: ${{ steps.live.outputs.blocked }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -75,6 +78,7 @@ jobs:
           if [ "$ZLIB_BLOCKED" = "true" ]; then
             echo "::warning::Z-Library refuses this network's IP (anti-bot/datacenter block) — live suite skipped. This is not upstream drift; run npm run doctor from a residential network to discriminate."
             echo "status=blocked" >> "$GITHUB_OUTPUT"
+            echo "blocked=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           if [ -z "$ZLIBRARY_EMAIL" ] || [ -z "$ZLIBRARY_PASSWORD" ]; then
@@ -83,19 +87,18 @@ jobs:
             exit 0
           fi
           set +e
-          uv run pytest -m integration --no-cov --benchmark-disable --no-header -q 2>&1 | tee live.log
+          uv run pytest -m integration --no-cov --benchmark-disable --no-header --junitxml=live.xml -q 2>&1 | tee live.log
           code=${PIPESTATUS[0]}
           set -e
-          if [ "$code" -eq 0 ]; then
-            echo "status=passed" >> "$GITHUB_OUTPUT"
-          else
-            echo "status=failed" >> "$GITHUB_OUTPUT"
-          fi
+          uv run python scripts/classify_live_tests.py --exit-code "$code" --junitxml live.xml
       - uses: actions/upload-artifact@v7
-        if: always() && (steps.live.outputs.status == 'passed' || steps.live.outputs.status == 'failed')
+        if: always()
         with:
           name: live-integration-log
-          path: live.log
+          path: |
+            live.log
+            live.xml
+          if-no-files-found: ignore
           retention-days: 30
       - name: Fail the job when live tests regressed
         if: steps.live.outputs.status == 'failed'
@@ -117,6 +120,9 @@ jobs:
           PROBE_REPORT: ${{ needs.reachability.outputs.report }}
           REACHABILITY_RESULT: ${{ needs.reachability.result }}
           LIVE_RESULT: ${{ needs.live_tests.result }}
+          LIVE_STATUS: ${{ needs.live_tests.outputs.status }}
+          LIVE_BLOCKED: ${{ needs.live_tests.outputs.blocked }}
+          ZLIB_BLOCKED: ${{ needs.reachability.outputs.zlib_blocked }}
         with:
           script: |
             const title = 'Upstream contract check failing';
@@ -127,7 +133,10 @@ jobs:
               'surfaces this server depends on has changed, moved, or gone down.',
               '',
               `- reachability job: **${process.env.REACHABILITY_RESULT}**`,
-              `- live integration job: **${process.env.LIVE_RESULT}**`,
+              `- live integration job: **${process.env.LIVE_STATUS || process.env.LIVE_RESULT}**`,
+              ...(process.env.LIVE_BLOCKED === 'true' || process.env.ZLIB_BLOCKED === 'true'
+                ? ["- Z-Library: blocked by the anti-bot wall on this runner's IP, not upstream drift. Other failures below remain actionable."]
+                : []),
               `- run: ${runUrl}`,
               '',
               '<details><summary>Reachability report</summary>',

@@ -1195,6 +1195,7 @@ async def _download_url_to_file(
     written = 0
     bytes_received = 0
     resumes_tried = 0
+    body_complete = False
 
     def progress_detail(detail: str) -> str:
         if bytes_received:
@@ -1206,10 +1207,10 @@ async def _download_url_to_file(
 
     def observe_progress() -> None:
         if progress_observer is not None:
-            progress_observer(bytes_received, resumes_tried)
+            progress_observer(bytes_received, resumes_tried, body_complete)
 
     async def stream_to_disk() -> tuple[int, str]:
-        nonlocal active_host, written, bytes_received, resumes_tried
+        nonlocal active_host, written, bytes_received, resumes_tried, body_complete
         try:
             # Keep the admitted source-specific UA and one client throughout
             # recovery. The caller owns the single deadline around this loop.
@@ -1241,6 +1242,8 @@ async def _download_url_to_file(
                                     response.headers.get("content-range", ""),
                                 )
                                 if match is not None and int(match[1]) == offset:
+                                    body_complete = True
+                                    observe_progress()
                                     # A final-frame reset can leave a complete
                                     # stage. Check it within the same deadline
                                     # before discarding or publishing anything.
@@ -1257,6 +1260,7 @@ async def _download_url_to_file(
                                 # this URL at zero, within the remaining budget.
                                 attempt_path.write_bytes(b"")
                                 written = 0
+                                body_complete = False
                                 if resumes_tried < config.download_resume_attempts:
                                     resumes_tried += 1
                                     observe_progress()
@@ -1358,6 +1362,7 @@ async def _download_url_to_file(
                                 httpx.ReadError,
                                 httpx.ReadTimeout,
                                 httpx.RemoteProtocolError,
+                                httpx.DecodingError,
                             ):
                                 if encoded:
                                     # aiter_bytes decoded the representation;
@@ -1369,19 +1374,26 @@ async def _download_url_to_file(
                         # A valid 206 may cover only part of the remainder.
                         # Close it before requesting the next staged offset;
                         # the normal recovery gate charges each extra request.
+                        if status == 206 and expected_total is None:
+                            raise httpx.RemoteProtocolError(
+                                f"range ended at {written} with unknown total"
+                            )
                         if expected_total is not None and written < expected_total:
                             raise httpx.RemoteProtocolError(
                                 f"range ended at {written} of {expected_total} bytes"
                             )
+                        body_complete = True
+                        observe_progress()
                     except (
                         httpx.ReadError,
                         httpx.ReadTimeout,
                         httpx.RemoteProtocolError,
-                    ):
+                        httpx.DecodingError,
+                    ) as exc:
                         if (
                             not bytes_received
-                            or resumes_tried >= config.download_resume_attempts
-                        ):
+                            and not isinstance(exc, httpx.DecodingError)
+                        ) or resumes_tried >= config.download_resume_attempts:
                             raise
                         resumes_tried += 1
                         observe_progress()
@@ -1444,14 +1456,13 @@ async def _download_url_to_file(
             written, completed_path = await stream_to_disk()
     except SourceError as exc:
         if isinstance(exc, ProviderTimeoutError) and exc.reason == "search_timeout":
-            error_type = (
-                ProviderResponseError if bytes_received else ProviderTimeoutError
-            )
+            partial = bytes_received and not body_complete
+            error_type = ProviderResponseError if partial else ProviderTimeoutError
             raise error_type(
                 provider,
                 active_host,
-                progress_detail(exc.detail),
-                reason="partial_transfer" if bytes_received else "read_timeout",
+                progress_detail(exc.detail) if partial else exc.detail,
+                reason="partial_transfer" if partial else "read_timeout",
             ) from exc
         if bytes_received:
             raise type(exc)(
@@ -1461,7 +1472,13 @@ async def _download_url_to_file(
     except httpx.HTTPError as exc:
         reason, detail = classify_httpx_error(exc)
         if bytes_received and isinstance(
-            exc, (httpx.ReadError, httpx.ReadTimeout, httpx.RemoteProtocolError)
+            exc,
+            (
+                httpx.ReadError,
+                httpx.ReadTimeout,
+                httpx.RemoteProtocolError,
+                httpx.DecodingError,
+            ),
         ):
             reason = "partial_transfer"
         try:
@@ -1528,11 +1545,11 @@ async def _fetch_from_source(book_details: dict, output_dir: str) -> str:
     active_host = ""
     failures = []
     seen_failure_ids = set()
-    transfer_progress = (0, 0)
+    transfer_progress = (0, 0, False)
 
-    def observe_progress(received: int, resumes: int) -> None:
+    def observe_progress(received: int, resumes: int, complete: bool) -> None:
         nonlocal transfer_progress
-        transfer_progress = (received, resumes)
+        transfer_progress = (received, resumes, complete)
 
     def record(failure):
         identity = id(failure)
@@ -1557,7 +1574,7 @@ async def _fetch_from_source(book_details: dict, output_dir: str) -> str:
                     observed_at = (
                         datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
                     )
-                    transfer_progress = (0, 0)
+                    transfer_progress = (0, 0, False)
                     downloaded = await _download_url_to_file(
                         result.url,
                         output_dir,
@@ -1590,11 +1607,11 @@ async def _fetch_from_source(book_details: dict, output_dir: str) -> str:
                         }
                     return downloaded
                 except AllSourcesFailedError as exc:
-                    transfer_progress = (0, 0)
+                    transfer_progress = (0, 0, False)
                     for failure in exc.failures:
                         record(failure)
                 except SourceError as exc:
-                    transfer_progress = (0, 0)
+                    transfer_progress = (0, 0, False)
                     record(exc)
         except AllSourcesFailedError as exc:
             for failure in exc.failures:
@@ -1622,19 +1639,20 @@ async def _fetch_from_source(book_details: dict, output_dir: str) -> str:
         )
     except ProviderTimeoutError as exc:
         if exc.reason == "search_timeout":
-            received, resumes = transfer_progress
+            received, resumes, complete = transfer_progress
+            partial = received and not complete
             detail = exc.detail
-            if received:
+            if partial:
                 detail = (
                     f"partial transfer: bytes_received={received} "
                     f"resumes_tried={resumes}; {detail}"
                 )
-            error_type = ProviderResponseError if received else ProviderTimeoutError
+            error_type = ProviderResponseError if partial else ProviderTimeoutError
             terminal_timeout = error_type(
                 selection,
                 active_host or exc.host,
                 detail,
-                reason="partial_transfer" if received else "read_timeout",
+                reason="partial_transfer" if partial else "read_timeout",
             )
             if failures:
                 record(terminal_timeout)

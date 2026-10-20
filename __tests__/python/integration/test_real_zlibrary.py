@@ -358,6 +358,11 @@ class TestRealMetadataExtraction:
         assert set(metadata) <= DETAIL_FIELDS, (
             f"Unexpected detail fields: {sorted(set(metadata) - DETAIL_FIELDS)}"
         )
+        # The bridge always echoes id and book_hash; a reply with nothing else
+        # means EAPI dropped or renamed every detail field.
+        assert set(metadata) - {"id", "book_hash"}, (
+            "Live detail reply carried no get_book field besides the identifiers"
+        )
         for key in ("description", "series", "edition", "translator"):
             if key in metadata:
                 assert isinstance(metadata[key], str) and metadata[key]

@@ -84,6 +84,14 @@ replaying one repeats the same position, including after a lost reply. Z-Library
 pages are re-queried, not frozen: upstream changes can duplicate or omit rows.
 Other sources expose one upstream page, sliced locally, with a stated row cap.
 
+### Extras
+
+Opt-in [want lists](docs/wantlist.md): `zlibrary-wantlist run <list>`; set `ZLIBRARY_EXTRAS=wantlist` for `acquire_list`. The default server retains its five tools.
+
+| Tool | Purpose |
+|---|---|
+| `acquire_list` | Only with `ZLIBRARY_EXTRAS=wantlist`: fetch or queue a list, read progress and answer choices |
+
 ## Sources
 
 | Source | Configuration | Search | Download | Limit |

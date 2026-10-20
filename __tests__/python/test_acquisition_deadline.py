@@ -100,8 +100,13 @@ async def test_early_lease_transfer_gets_remainder_not_fresh_budget(
 
     try:
         with pytest.raises(acq.AcquisitionError) as error:
-            await acq.acquire(
-                BOOK, str(tmp_path), filename="chosen.pdf", transfer=transfer
+            # Use the captured real timer: the production wait_for is patched.
+            # A missing production deadline must fail instead of waiting forever.
+            await wait_for(
+                acq.acquire(
+                    BOOK, str(tmp_path), filename="chosen.pdf", transfer=transfer
+                ),
+                5.0,
             )
         assert allocations == [pytest.approx(10.624125)]
         assert error.value.reason == "walk_budget_exhausted"

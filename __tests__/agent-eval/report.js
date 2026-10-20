@@ -1,4 +1,4 @@
-import { tasks } from './tasks.js';
+import { tasks, arms } from './tasks.js';
 import { admitReceipt, cellIdentity, comparisonSettings } from './admission.js';
 const common = (row) => !['T5', 'T6', 'T10'].includes(row.task ?? row.id);
 export function distribution(values) {
@@ -13,10 +13,11 @@ export function distribution(values) {
       }
     : null;
 }
+const inability = (row) => row.task === 'T7' && row.inability === true;
 const successes = (rows) => ({
-  successes: rows.filter((x) => x.success === true).length,
+  successes: rows.filter((x) => x.success === true && !inability(x)).length,
   total: rows.length,
-  fraction: rows.filter((x) => x.success === true).length / rows.length,
+  fraction: rows.filter((x) => x.success === true && !inability(x)).length / rows.length,
 });
 const atLeast = (b, a) => b.successes * a.total >= a.successes * b.total;
 export function summarize(receipts) {
@@ -94,7 +95,8 @@ export function summarize(receipts) {
           g.absoluteViolations.push('T5: B-only negative guard failed');
       }
       const phase = (g.phases[x.phase] ??= { runs: {}, perTask: {}, rows: [] });
-      phase.rows.push(x);
+      const scored = { ...x, inability: r.arm.history === false && x.task === 'T7' };
+      phase.rows.push(scored);
       const run = (phase.runs[x.run] ??= {
         wrongDecisions: 0,
         inputTotal: 0,
@@ -104,12 +106,12 @@ export function summarize(receipts) {
         tasks: 0,
         quotaSpent: 0,
       });
-      (phase.perTask[x.task] ??= []).push(x);
+      (phase.perTask[x.task] ??= []).push(scored);
       if (common(x)) {
         for (const k of ['wrongDecisions', 'calls']) run[k] += x[k];
         run.inputTotal += x.usage.inputTotal;
         run.output += x.usage.output;
-        run.successes += Number(x.success);
+        run.successes += Number(x.success && !inability(scored));
         run.tasks++;
       }
       run.quotaSpent += x.quotaSpent;
@@ -130,12 +132,22 @@ export function summarize(receipts) {
           success: successes(rows),
           wrongDecisions: distribution(rows.map((x) => x.wrongDecisions)),
           allWrongZero: rows.every((x) => x.wrongDecisions === 0),
+          quotaSpent: distribution(rows.map((x) => x.quotaSpent)),
+          ...(rows.some(inability)
+            ? {
+                outcome: 'inability',
+                inability: {
+                  correct: rows.filter((x) => x.success === true).length,
+                  total: rows.length,
+                },
+              }
+            : {}),
         };
       delete phase.rows;
     }
   }
   const comparisons = [];
-  for (const [key, b] of Object.entries(groups).filter(([, g]) => g.arm?.build === 'B')) {
+  for (const [key, b] of Object.entries(groups).filter(([, g]) => g.arm?.id === 'B')) {
     const a = groups[`${b.driver}/${b.toolSearch ? 'search-on' : 'search-off'}/A`];
     if (!a) {
       comparisons.push({ key, status: 'inconclusive: missing matching A' });
@@ -207,17 +219,72 @@ export function summarize(receipts) {
       absoluteViolations: b.absoluteViolations,
     });
   }
+  const variantComparisons = [];
+  for (const [key, b] of Object.entries(groups).filter(([, g]) => g.arm?.id === 'B')) {
+    for (const variant of arms.filter((a) => a.build === 'B' && a.id !== 'B')) {
+      const v = groups[`${b.driver}/${b.toolSearch ? 'search-on' : 'search-off'}/${variant.id}`];
+      const entry = { key, variant: variant.id };
+      if (!v) entry.status = 'inconclusive: missing matching variant';
+      else if (!b.eligible || !v.eligible) entry.status = 'ineligible: invalid evidence';
+      else if (b.compatibility !== v.compatibility)
+        entry.status = 'ineligible: incompatible model/CLI/settings/baseline';
+      else {
+        entry.status = 'descriptive comparison; not an A-bar verdict';
+        entry.phases = Object.fromEntries(
+          ['cold', 'warm'].map((p) => [
+            p,
+            {
+              totals: { B: b.phases[p].totals, variant: v.phases[p].totals },
+              success: { B: b.phases[p].allTaskSuccess, variant: v.phases[p].allTaskSuccess },
+              perTask: Object.fromEntries(
+                tasks.map((t) => [
+                  t.id,
+                  {
+                    B: b.phases[p].perTask[t.id],
+                    variant: v.phases[p].perTask[t.id],
+                    quotaSpent: {
+                      B: b.phases[p].perTask[t.id].quotaSpent,
+                      variant: v.phases[p].perTask[t.id].quotaSpent,
+                    },
+                  },
+                ]),
+              ),
+            },
+          ]),
+        );
+      }
+      variantComparisons.push(entry);
+    }
+  }
+  // Removal requires the complete specified driver/search matrix, not merely
+  // the absence of calls in whichever subset happened to be supplied.
+  const enabled = arms.filter((a) => a.build === 'B' && a.history);
+  const completeEnabled = [
+    ['codex', false],
+    ['claude', false],
+    ['claude', true],
+  ].every(([driver, search]) => {
+    const cohort = enabled.map(
+      (a) => groups[`${driver}/${search ? 'search-on' : 'search-off'}/${a.id}`],
+    );
+    return (
+      cohort.every((g) => g?.eligible) && new Set(cohort.map((g) => g.compatibility)).size === 1
+    );
+  });
   return {
     groups,
     diagnostics,
     comparisons,
+    variantComparisons,
     historyDecision: Object.values(groups).some(
       (g) => g.eligible && g.arm.build === 'B' && g.arm.history && g.historyCalls > 0,
     )
       ? 'retain: get_history used in history-enabled arm'
-      : 'not established: incomplete/invalid enabled evidence cannot remove history',
+      : completeEnabled
+        ? 'remove: no driver used get_history in any task/run of the complete history-enabled matrix'
+        : 'not established: incomplete/invalid enabled evidence cannot remove history',
     exclusions: ['T5', 'T6', 'T10'],
     bOnlyGuards: ['T5'],
-    note: 'Only admitted exact cells are aggregated. Empirical success counts/fractions gate overall and per task; median/min/max for calls/tokens/wrong decisions. Every B observation must be zero where A median wrong=0. Strict Codex first-request cache remains unknown.',
+    note: 'Only admitted exact cells are aggregated. Empirical success counts/fractions gate overall and per task; median/min/max for calls/tokens/wrong decisions. Only B receives an A-bar verdict; variants are descriptive, and disabled T7 correct inability is not task completion. Every B observation must be zero where A median wrong=0. Strict Codex first-request cache remains unknown.',
   };
 }

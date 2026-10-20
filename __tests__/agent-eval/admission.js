@@ -1,3 +1,4 @@
+import { driverEnvironmentErrors } from './driver-environment.js';
 import { tasks, arms } from './tasks.js';
 import { createUsageTracker } from './drivers.js';
 import { artifactProofErrors } from './build-proof.js';
@@ -20,6 +21,7 @@ export function comparisonSettings(r) {
   return stable({
     driver: r.driver,
     driverVersion: r.driverVersion,
+    driverEnvironment: r.driverEnvironment?.sha256,
     settings: r.settings,
     baselinePin: r.baselinePin,
     evaluator: r.evaluator?.sha256,
@@ -91,6 +93,7 @@ function checkReceipt(r) {
     r.driverError
   )
     fail('receipt carries a failure');
+  for (const reason of driverEnvironmentErrors(r.driverEnvironment, r.driver)) fail(reason);
   const s = r.settings ?? {},
     arm = arms.find((a) => a.id === r.arm?.id);
   if (!arm || stable(arm) !== stable(r.arm)) fail('unknown/inconsistent interface arm');
@@ -141,6 +144,11 @@ function checkReceipt(r) {
     if (sessions.has(x.run) && sessions.get(x.run) !== x.session)
       fail('unexpected session change ' + key);
     sessions.set(x.run, x.session);
+    if (
+      driverEnvironmentErrors(x.driverEnvironment, r.driver).length ||
+      x.driverEnvironment?.sha256 !== r.driverEnvironment?.sha256
+    )
+      fail('task driver environment missing/changed ' + key);
     if (x.driverVersion !== r.driverVersion) fail('task CLI mismatch ' + key);
     if (x.requestedModel !== s.model) fail('task requested model mismatch ' + key);
     if (x.driverError || x.nonEvaluationToolFailure || x.fenceError)
@@ -156,6 +164,12 @@ function checkReceipt(r) {
       x.capture?.cleanup?.scope !== 'owned-posix-process-group' ||
       x.capture?.cleanup?.success !== true ||
       x.capture?.cleanup?.state !== 'gone' ||
+      x.capture?.cleanup?.termSent !== false ||
+      x.capture?.cleanup?.killSent !== false ||
+      x.capture?.cleanup?.reason !== 'closed' ||
+      !Array.isArray(x.capture?.cleanup?.observations) ||
+      x.capture.cleanup.observations.at(-1) !== 'gone' ||
+      x.capture.cleanup.observations.some((state) => !['alive', 'gone'].includes(state)) ||
       !Number.isSafeInteger(x.capture?.cleanup?.pgid) ||
       x.capture.cleanup.pgid < 1 ||
       x.capture?.residualGroup !== false

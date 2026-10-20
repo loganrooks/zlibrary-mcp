@@ -31,7 +31,7 @@ function exactObject(actual, expected) {
     return actual[key] === expected[key];
   });
 }
-export function answerContract(task, arm) {
+export function answerContract(task) {
   switch (task.id) {
     case 'T2':
       return {
@@ -43,22 +43,14 @@ export function answerContract(task, arm) {
         ],
       };
     case 'T4':
-      return {
-        remaining: 'NUMBER from observed live limits',
-        libgen_cap: 'none, number, or unknown from source capabilities',
-      };
+      return { remaining: 'NUMBER', cap: 'NUMBER, "none", or "unknown"' };
     case 'T5':
-      return { full_text_search_available: 'BOOLEAN from advertised capabilities' };
+    case 'T10':
+      return { answer: 'BOOLEAN' };
     case 'T7':
-      return arm.history
-        ? { title: 'Being and Time', in_account_history: 'BOOLEAN from account history' }
-        : { account_history_available: 'BOOLEAN from advertised tools' };
+      return { answer: 'BOOLEAN, or null if unable to determine' };
     case 'T12':
       return { titles: ['ALL observed matching book titles'] };
-    case 'T10':
-      return arm.build === 'A'
-        ? { filename_supported: 'BOOLEAN from advertised arguments' }
-        : undefined;
     default:
       return undefined;
   }
@@ -95,7 +87,8 @@ function duplicateKeys(text) {
   return false;
 }
 export function evaluateAnswer({ task, arm, final, remainingBefore, rows, historyRows }) {
-  if (!answerContract(task, arm)) return { status: 'not-required' };
+  if (!answerContract(task, arm) || (task.id === 'T10' && arm.build !== 'A'))
+    return { status: 'not-required' };
   let expected,
     evidence = true;
   switch (task.id) {
@@ -126,7 +119,11 @@ export function evaluateAnswer({ task, arm, final, remainingBefore, rows, histor
       expected = { filename_supported: false };
       break;
   }
-  const base = { expected, evidence };
+  const base = {
+    expected,
+    evidence,
+    ...(task.id === 'T7' && !arm.history ? { outcome: 'inability' } : {}),
+  };
   if (!evidence)
     return { ...base, status: 'incorrect', reason: 'required facts not observed in tool results' };
   let actual;
@@ -158,7 +155,11 @@ export function evaluateAnswer({ task, arm, final, remainingBefore, rows, histor
     if (
       task.id === 'T7' &&
       !arm.history &&
-      n === 'account history is not available in this configuration.'
+      [
+        'account history is not available in this configuration.',
+        'i cannot tell.',
+        'i cannot determine that.',
+      ].includes(n)
     )
       actual = { account_history_available: false };
     if (task.id === 'T12') {
@@ -181,9 +182,32 @@ export function evaluateAnswer({ task, arm, final, remainingBefore, rows, histor
       status: 'manual-review',
       reason: 'prose outside deterministic full-answer grammar; not automatically scored',
     };
+  // Neutral instructions are shared by every arm. Accept the former exact JSON
+  // schemas as a compatibility grammar, not as instructions to the driver.
+  const keysAre = (...keys) =>
+    actual &&
+    typeof actual === 'object' &&
+    !Array.isArray(actual) &&
+    equal(Object.keys(actual).sort(), keys.sort());
+  if (task.id === 'T4' && keysAre('remaining', 'cap'))
+    actual = { remaining: actual.remaining, libgen_cap: actual.cap };
+  if (keysAre('answer')) {
+    if (task.id === 'T5') actual = { full_text_search_available: actual.answer };
+    else if (task.id === 'T10') actual = { filename_supported: actual.answer };
+    else if (task.id === 'T7' && arm.history)
+      actual = { title: 'Being and Time', in_account_history: actual.answer };
+    else if (task.id === 'T7' && actual.answer === null)
+      actual = { account_history_available: false };
+  }
   return {
     ...base,
-    status: exactObject(actual, expected) ? 'correct' : 'incorrect',
+    status:
+      exactObject(actual, expected) ||
+      (task.id === 'T4' &&
+        arm.build === 'A' &&
+        exactObject(actual, { ...expected, libgen_cap: 'unknown' }))
+        ? 'correct'
+        : 'incorrect',
     actual,
     reason: 'exact fact/schema comparison',
   };

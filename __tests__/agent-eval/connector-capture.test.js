@@ -100,26 +100,164 @@ async function reapResidualGroup(
     { pgid, lastError, observations },
   );
 }
-afterEach(async () => {
-  const captures = await Promise.all(
-    (await readdir(directory))
-      .filter((n) => n.endsWith('.capture.json'))
-      .map(async (n) => JSON.parse(await readFile(path.join(directory, n), 'utf8'))),
-  );
-  for (const child of spawned.splice(0)) {
-    if (
-      captures.some(
-        (c) => c.cleanup?.pgid === child.pid && c.cleanup.success && c.cleanup.state === 'gone',
+// Test-only orchestration seam: the reaper still owns exactly spawned child PGIDs.
+async function teardownAttempt({ children, readCaptures, reap, copyEvidence, removeOriginal }) {
+  const errors = [];
+  let captures = [];
+  try {
+    try {
+      captures = await readCaptures();
+    } catch (error) {
+      errors.push(error);
+    }
+    for (const child of children) {
+      if (
+        captures.some(
+          (c) => c.cleanup?.pgid === child.pid && c.cleanup.success && c.cleanup.state === 'gone',
+        )
       )
-    )
-      continue;
-    if (!child.pid) continue;
-    await reapResidualGroup(child.pid);
+        continue;
+      if (!child.pid) continue;
+      try {
+        await reap(child.pid);
+      } catch (error) {
+        errors.push(error);
+      }
+    }
+  } finally {
+    // Never discard the only copy if retention itself fails.
+    try {
+      await copyEvidence();
+      await removeOriginal();
+    } catch (error) {
+      errors.push(error);
+    }
   }
-  await cp(directory, path.join(retained, path.basename(directory)), { recursive: true });
-  await rm(directory, { recursive: true, force: true });
+  if (errors.length)
+    throw new AggregateError(
+      errors,
+      'capture teardown failures: ' + errors.map((e) => e.message).join('; '),
+    );
+}
+afterEach(async () => {
+  await teardownAttempt({
+    children: spawned.splice(0),
+    readCaptures: async () =>
+      Promise.all(
+        (await readdir(directory))
+          .filter((n) => n.endsWith('.capture.json'))
+          .map(async (n) => JSON.parse(await readFile(path.join(directory, n), 'utf8'))),
+      ),
+    reap: reapResidualGroup,
+    copyEvidence: () =>
+      cp(directory, path.join(retained, path.basename(directory)), { recursive: true }),
+    removeOriginal: () => rm(directory, { recursive: true, force: true }),
+  });
+});
+test('T1 teardown continues every owned group and retains evidence after a reaper failure', async () => {
+  const first = new Error('synthetic first reaper failure'),
+    calls = [];
+  const copyEvidence = jest.fn(async () => {
+    calls.push('copy');
+  });
+  const removeOriginal = jest.fn(async () => {
+    calls.push('remove');
+  });
+  let error;
+  try {
+    await teardownAttempt({
+      children: [{ pid: 41 }, { pid: 42 }],
+      readCaptures: async () => [],
+      reap: async (pid) => {
+        calls.push(pid);
+        if (pid === 41) throw first;
+      },
+      copyEvidence,
+      removeOriginal,
+    });
+  } catch (e) {
+    error = e;
+  }
+  expect(calls).toEqual([41, 42, 'copy', 'remove']);
+  expect(error).toBeInstanceOf(AggregateError);
+  expect(error.errors).toContain(first);
+});
+test('T1 teardown capture-read failure still reaps and copies; copy failure preserves original and both errors', async () => {
+  const read = new Error('synthetic metadata failure'),
+    copy = new Error('synthetic copy failure');
+  const reap = jest.fn(async () => {}),
+    removeOriginal = jest.fn();
+  let error;
+  try {
+    await teardownAttempt({
+      children: [{ pid: 43 }],
+      readCaptures: async () => {
+        throw read;
+      },
+      reap,
+      copyEvidence: async () => {
+        throw copy;
+      },
+      removeOriginal,
+    });
+  } catch (e) {
+    error = e;
+  }
+  expect(reap).toHaveBeenCalledWith(43);
+  expect(removeOriginal).not.toHaveBeenCalled();
+  expect(error).toBeInstanceOf(AggregateError);
+  expect(error.errors).toEqual([read, copy]);
+});
+test('T1 teardown aggregates every reaper failure and only skips proven-gone or pidless owned children', async () => {
+  const errors = [new Error('synthetic 44 failure'), new Error('synthetic 45 failure')];
+  const reap = jest.fn(async (pid) => {
+    throw errors[pid - 44];
+  });
+  const copyEvidence = jest.fn(async () => {}),
+    removeOriginal = jest.fn(async () => {});
+  let error;
+  try {
+    await teardownAttempt({
+      children: [{ pid: 44 }, { pid: 45 }, { pid: 46 }, {}],
+      readCaptures: async () => [{ cleanup: { pgid: 46, state: 'gone', success: true } }],
+      reap,
+      copyEvidence,
+      removeOriginal,
+    });
+  } catch (e) {
+    error = e;
+  }
+  expect(reap.mock.calls).toEqual([[44], [45]]);
+  expect(copyEvidence).toHaveBeenCalledTimes(1);
+  expect(removeOriginal).toHaveBeenCalledTimes(1);
+  expect(error.errors).toEqual(errors);
 });
 const teardownError = (code) => Object.assign(new Error('synthetic ' + code), { code });
+test('S1 records the effective merged/unset environment through the synthetic driver boundary', async () => {
+  // The child is ordinary Node, not a model CLI. It emits only fixed JSONL.
+  fixture = `process.stdout.write(${JSON.stringify(head + tail)})`;
+  const result = await runDriver(
+    {
+      ...command,
+      env: {
+        OPENAI_BASE_URL: 'https://synthetic.example.invalid',
+        CODEX_HOME: directory,
+        CODEX_OSS_PORT: '1111',
+        CODEX_API_KEY: 'synthetic-secret-never-record',
+      },
+      unsetEnv: ['CODEX_OSS_PORT'],
+    },
+    'synthetic prompt',
+    directory,
+  );
+  expect(result.driverEnvironment.values).toMatchObject({
+    OPENAI_BASE_URL: 'https://synthetic.example.invalid',
+    CODEX_HOME: directory,
+    CODEX_OSS_PORT: null,
+  });
+  expect(result.driverEnvironment.presence.CODEX_API_KEY).toBe(true);
+  expect(JSON.stringify(result)).not.toContain('synthetic-secret-never-record');
+});
 function teardownClock() {
   let elapsed = 0;
   return {

@@ -2,6 +2,7 @@ import { test, expect } from '@jest/globals';
 import { execFileSync } from 'node:child_process';
 import { root } from './server.js';
 import path from 'node:path';
+import { readFileSync } from 'node:fs';
 // Real selection logic, synthetic data; no bridge mocks and no outbound calls.
 test('fixed catalogue distinguishes queries, modes, translators, history, filters and pages', () => {
   const result = execFileSync(
@@ -37,4 +38,32 @@ print('catalogue contract pass')
     { encoding: 'utf8', env: { PATH: process.env.PATH, PYTHONDONTWRITEBYTECODE: '1' } },
   );
   expect(result.trim()).toBe('catalogue contract pass');
+});
+test('N5 inventory data and payload hashes exactly match the authoritative Python catalogue', () => {
+  const actual = JSON.parse(
+    execFileSync(
+      path.join(root, '.venv/bin/python'),
+      [
+        '-B',
+        '-c',
+        `
+import sys,json,hashlib
+sys.path.insert(0, ${JSON.stringify(path.join(root, '__tests__/rehearsal'))})
+from fake_catalogue import CATALOGUE,LIBGEN,REHEARSAL,PAGING,HISTORY,payload
+print(json.dumps(dict(search=dict(zlibrary=CATALOGUE,libgen=LIBGEN,annas=[]),rehearsal=REHEARSAL,paging=PAGING,history=HISTORY,historyOnlyIds=[r['id'] for r in HISTORY if r not in REHEARSAL],downloadMd5={str(r['id']):hashlib.md5(payload(r)).hexdigest() for r in CATALOGUE+LIBGEN+HISTORY})))
+`,
+      ],
+      { encoding: 'utf8', env: { PATH: process.env.PATH, PYTHONDONTWRITEBYTECODE: '1' } },
+    ),
+  );
+  const inventory = JSON.parse(
+    readFileSync(path.join(root, '__tests__/agent-eval/inventory.json'), 'utf8'),
+  );
+  for (const [key, value] of Object.entries(actual)) expect(inventory[key]).toEqual(value);
+  expect(inventory.initialDiskFiles).toEqual([]);
+  expect(inventory.evalLimits).toEqual({ dailyLimit: 10, remaining: 2 });
+  // A value-level sentinel proves the comparison isn't merely checking counts.
+  const changed = structuredClone(actual);
+  changed.search.zlibrary[0].title = 'synthetic drift';
+  expect(inventory.search).not.toEqual(changed.search);
 });

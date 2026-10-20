@@ -12,6 +12,8 @@ import fs from 'node:fs/promises';
 import nativeFs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { spawn } from 'node:child_process';
+import { once } from 'node:events';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { EapiSessionOwner, authRejected } from '../dist/lib/eapi-session.js';
@@ -133,6 +135,62 @@ describe('SDK lazy acquisition with real bridge and query-sensitive loopback fak
       { book_details: book(id), output_dir: process.env.ZLIBRARY_OUTPUT_ROOT, filename },
       { timeoutMs: 15000, ...options },
     );
+  test('warm available session is not issuance when acquisition spends its deadline on a lease', async () => {
+    const api = await import('../dist/lib/zlibrary-api.js');
+    await api.searchBooks({ query: 'Seneca Letters' });
+    const before = await h.stats();
+    expect(before.logins).toBe(1);
+    const target = path.join(process.env.ZLIBRARY_OUTPUT_ROOT, 'held.epub');
+    const holder = spawn(
+      path.resolve('.venv/bin/python'),
+      [
+        '-c',
+        [
+          'import sys',
+          'from pathlib import Path',
+          'from lib.acquisition import DestinationLease',
+          'with DestinationLease(Path(sys.argv[1]), 0):',
+          ' print("held", flush=True)',
+          ' sys.stdin.read()',
+        ].join('\n'),
+        target,
+      ],
+      { stdio: ['pipe', 'pipe', 'pipe'] },
+    );
+    const closed = once(holder, 'close');
+    try {
+      const [ready] = await once(holder.stdout, 'data', { signal: AbortSignal.timeout(5000) });
+      expect(ready.toString().trim()).toBe('held');
+      const failure = await acquire(api, 202, 'held.epub', { timeoutMs: 4000 }).catch(
+        (error) => error,
+      );
+      expect(failure.context.pythonErrorType).toBe('AcquisitionError');
+      expect(failure.context.details).toMatchObject({
+        reason: 'walk_budget_exhausted',
+        request_issued: false,
+      });
+      const { errorEnvelope } = await import('../dist/lib/tool-errors.js');
+      expect(errorEnvelope(failure, 'download', 'zlibrary').error).toMatchObject({
+        code: 'provider_timeout',
+        retry: 'safe',
+        detail: { request_issued: false },
+      });
+      const after = await h.stats();
+      expect(after.calls).toEqual(before.calls);
+      expect(after.logins).toBe(before.logins);
+      expect(after.quotaSpent).toBe(before.quotaSpent);
+      await expect(fs.stat(target)).rejects.toMatchObject({ code: 'ENOENT' });
+    } finally {
+      holder.stdin.end();
+      await closed;
+    }
+    // Refusal neither invalidated the unused warm session nor poisoned its breaker.
+    await api.searchBooks({ query: 'Seneca Letters' });
+    expect((await h.stats()).logins).toBe(1);
+    await expect(fs.stat(path.join(home, 'egress-trap.txt'))).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+  });
   test('cold distinct acquisitions and SDK search singleflight one login; same destination follower skips', async () => {
     const api = await import('../dist/lib/zlibrary-api.js');
     await h.mode({ mode: 'slow', reset: true, remaining: 8 });

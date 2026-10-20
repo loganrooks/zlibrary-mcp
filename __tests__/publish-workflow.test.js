@@ -41,8 +41,9 @@ describe('publish workflow test gate (#211)', () => {
 
   test('both existing suites run before npm publication without tolerating failure', () => {
     expect(testStep).toBeGreaterThanOrEqual(0);
-    const publishStep = steps.findIndex((step) => step.run === 'npm publish --provenance');
+    const publishStep = steps.findIndex((step) => /^npm publish\s/.test(step.run ?? ''));
     expect(publishStep).toBeGreaterThan(testStep);
+    expect(steps[publishStep].run).toMatch(/\s--provenance(?:\s|$)/);
     expect(steps[publishStep].if).toBeUndefined();
     expect(steps[testStep].if).toBeUndefined();
     expect(steps[testStep]['continue-on-error'] ?? false).toBe(false);

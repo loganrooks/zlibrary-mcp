@@ -4,6 +4,22 @@ import { ErrorEnvelopeSchema } from '../dist/lib/tool-errors.js';
 
 const env = { ZLIBRARY_EMAIL: 'offline@example.invalid', ZLIBRARY_PASSWORD: 'offline' };
 
+test.each(['search', 'get_history'])(
+  '%s: mixed limit and legacy count errors keep both repair hints in order',
+  async (operation) => {
+    const invoke = jest.fn();
+    const result = await new AcquisitionTools(invoke, env).call(operation, { limit: 0, count: 10 });
+    expect(invoke).not.toHaveBeenCalled();
+    expect(ErrorEnvelopeSchema.safeParse(result).success).toBe(true);
+    expect(result.error.code).toBe('invalid_argument');
+    expect(result.error.detail).toEqual({ reason: 'schema', fields: ['limit', ''] });
+    expect(result.error.recovery).toBe(
+      'Set limit to an integer from 1 to 50 (default 10); use paging with next_cursor passed as cursor for more. ' +
+        'Use snake_case arguments; count becomes limit and source order is sources.',
+    );
+  },
+);
+
 for (const operation of ['search', 'get_history']) {
   test.each([0, -1, 1.5, 51])(
     `${operation}: invalid limit %s explains how to repair it without a provider call`,
@@ -24,6 +40,9 @@ for (const operation of ['search', 'get_history']) {
       expect(result.error.recovery).toMatch(/limit.*integer from 1 to 50/i);
       expect(result.error.recovery).toMatch(/default 10/i);
       expect(result.error.recovery).toMatch(/pag(?:e|ing).*cursor/i);
+      expect(result.error.recovery).toBe(
+        'Set limit to an integer from 1 to 50 (default 10); use paging with next_cursor passed as cursor for more.',
+      );
     },
   );
 }

@@ -152,6 +152,35 @@ def test_cli_emits_status_block_flag_and_summary(tmp_path):
     assert "Live suite: failed; 1 failure(s); pytest exit 1." in summary.read_text()
 
 
+@pytest.mark.parametrize("skipped", [True, False])
+def test_cli_warns_only_for_skipped_authenticated_coverage(tmp_path, skipped):
+    report = write_report(tmp_path, skipped=skipped)
+    output = tmp_path / "github-output"
+    summary = tmp_path / "summary"
+    run = subprocess.run(
+        [sys.executable, str(SCRIPT), "--exit-code", "0", "--junitxml", str(report)],
+        env={
+            **os.environ,
+            "GITHUB_OUTPUT": str(output),
+            "GITHUB_STEP_SUMMARY": str(summary),
+        },
+        capture_output=True,
+        text=True,
+    )
+    assert run.returncode == 0, run.stderr
+    status = "skipped" if skipped else "passed"
+    assert output.read_text() == f"status={status}\nblocked=false\n"
+    assert f"Live suite: {status};" in summary.read_text()
+    warnings = [
+        line for line in run.stdout.splitlines() if line.startswith("::warning::")
+    ]
+    if skipped:
+        assert len(warnings) == 1
+        assert "live suite produced no authenticated coverage" in warnings[0].lower()
+    else:
+        assert warnings == []
+
+
 def test_actual_pytest_reports_are_classified_offline(classifier, tmp_path):
     """Exercise pytest's real setup/call messages, not only hand-written XML."""
     source = tmp_path / "test_synthetic.py"

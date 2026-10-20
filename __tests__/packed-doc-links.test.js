@@ -54,8 +54,8 @@ test('published Markdown links resolve within the shipped package, including the
   });
   let shipped;
   if (pack.error && ['EPERM', 'EACCES', 'EROFS'].includes(pack.error.code)) {
-    console.info(
-      `npm pack unavailable (${pack.error.code}); checking package.json files allowlist`,
+    console.warn(
+      `npm pack unavailable (${pack.error.code}); using package.json files allowlist fallback`,
     );
     shipped = manifestFiles(JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8')));
   } else {
@@ -74,7 +74,7 @@ test('published Markdown links resolve within the shipped package, including the
   if (!shipped.has('docs/interface-migration.md'))
     missing.push('docs/interface-migration.md is not shipped');
   for (const file of shipped) {
-    if (file === 'README.md' || (file.startsWith('docs/') && /\.md$/i.test(file))) {
+    if (/\.md$/i.test(file)) {
       missing.push(...missingLinks(file, readFileSync(path.join(root, file), 'utf8'), shipped));
     }
   }

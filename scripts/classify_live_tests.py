@@ -54,6 +54,10 @@ def main() -> int:
     args = parser.parse_args()
     result = classify(args.exit_code, args.junitxml)
     print(result["detail"])
+    if result["status"] == "skipped":
+        print(
+            "::warning::Live suite produced no authenticated coverage: all testcases skipped."
+        )
     if output := os.environ.get("GITHUB_OUTPUT"):
         with open(output, "a", encoding="utf-8") as handle:
             handle.write(f"status={result['status']}\n")

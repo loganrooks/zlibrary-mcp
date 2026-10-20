@@ -270,15 +270,22 @@ export class AcquisitionTools {
             'Use search, get_book, download, get_limits or get_history.',
         });
       const parsed = INPUTS[name as ToolName].safeParse(raw);
-      if (!parsed.success)
+      if (!parsed.success) {
+        const operationRecovery =
+          name === 'download'
+            ? 'Pass ref, optional output_dir and filename only; text processing was removed in 2.0.'
+            : 'Use snake_case arguments; count becomes limit and source order is sources.';
+        const limitRecovery =
+          'Set limit to an integer from 1 to 50 (default 10); use paging with next_cursor passed as cursor for more.';
+        const hasLimitIssue = parsed.error.issues.some((i) => i.path[0] === 'limit');
+        const hasOtherIssue = parsed.error.issues.some((i) => i.path[0] !== 'limit');
         throw new ToolFailure('invalid_argument', 'Arguments do not match the tool schema.', {
           detail: { reason: 'schema', fields: parsed.error.issues.map((i) => i.path.join('.')) },
-          recovery: parsed.error.issues.some((i) => i.path[0] === 'limit')
-            ? 'Set limit to an integer from 1 to 50 (default 10); use paging with next_cursor passed as cursor for more.'
-            : name === 'download'
-              ? 'Pass ref, optional output_dir and filename only; text processing was removed in 2.0.'
-              : 'Use snake_case arguments; count becomes limit and source order is sources.',
+          recovery: hasLimitIssue
+            ? limitRecovery + (hasOtherIssue ? ` ${operationRecovery}` : '')
+            : operationRecovery,
         });
+      }
       const args = parsed.data as Record<string, any>;
       if ('cursor' in args && Object.keys(args).length !== 1)
         throw new ToolFailure('invalid_argument', 'A cursor must be passed by itself.', {

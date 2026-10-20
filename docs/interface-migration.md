@@ -48,6 +48,23 @@ choose the edition, then use its current ref. Refs do not survive process
 restart. Durable library integration reads `.acq.json` records, not refs or
 account history. Existing files are not deleted or converted automatically.
 
+## Existing 1.4.0 downloads
+
+Keep the books already in `./downloads`; upgrading does not delete or convert
+those files. They have no acquisition receipts. If an old file occupies the
+predicted 2.0 destination, `download` returns `output_refused` with
+`destination_occupied: true` before authentication or transfer, even when the
+bytes are identical. A file found only at a format-corrected destination can
+instead be refused after a transfer. Neither case adopts the old file.
+
+To keep using an old book without spending quota, use that file directly outside
+the MCP tool. If you want a 2.0 acquisition record, first move or rename the old
+file out of the destination, or choose a separate `output_dir`. Then search again,
+select the edition's current `ref`, and call `download`. This is a fresh transfer;
+a Z-Library download may count against the account quota. Moving the old file or
+choosing another directory does not make the transfer quota-free. There is no
+zero-quota way to adopt an old file into the receipt system.
+
 ## Receipt implementation choices
 
 Full 64-bit nonce strength and monotonic non-reuse take precedence over the

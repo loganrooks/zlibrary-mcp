@@ -6,7 +6,9 @@ Quick reference for adding Z-Library MCP server to your projects.
 
 ## For This Computer (System-Wide Installation)
 
-**Installation Location**: `/home/rookslog/mcp-servers/zlibrary-mcp/`
+**Example Installation Location**: `/home/rookslog/mcp-servers/zlibrary-mcp/`.
+Replace it with your checkout's absolute path. The account variables shown below
+are needed only for Z-Library operations; omit the `env` block for LibGen-only use.
 
 ### Copy-Paste Configuration
 
@@ -27,7 +29,7 @@ Quick reference for adding Z-Library MCP server to your projects.
 }
 ```
 
-**That's it!** Restart Claude Code and you'll have all 11 Z-Library tools.
+**That's it!** Restart Claude Code and you'll have all five acquisition tools.
 
 ---
 
@@ -77,12 +79,12 @@ After adding config and restarting Claude Code:
 ```
 Ask Claude: "What zlibrary tools are available?"
 
-Expected: List of 11 tools including:
-- search_books
-- search_by_term (navigate by concepts)
-- get_book_metadata (60 terms, 11 booklists!)
-- download_book_to_file
-- And 7 more...
+Expected: Five tools:
+- search
+- get_book
+- download
+- get_limits
+- get_history
 ```
 
 ---
@@ -115,8 +117,8 @@ EOF
 **Step 3**: Use it!
 ```
 "Search Z-Library for books on phenomenology by Hegel"
-"Get the complete metadata for the first result including terms and booklists"
-"Download it and process for RAG"
+"Inspect the first result with get_book using its ref"
+"Download that ref to server disk as the original file"
 ```
 
 ---
@@ -157,7 +159,7 @@ Each server provides its own tools. Use what you need!
 
 1. Verify .mcp.json has correct absolute path
 2. Restart Claude Code
-3. Check logs: `~/mcp-servers/zlibrary-mcp/logs/`
+3. Check the MCP client's captured server stderr
 
 ### "ENOENT: no such file"
 
@@ -175,16 +177,16 @@ Each server provides its own tools. Use what you need!
 
 ## Summary
 
-**System Location**: `/home/rookslog/mcp-servers/zlibrary-mcp/` ✅
+**Example Location**: `/home/rookslog/mcp-servers/zlibrary-mcp/`
 
 **How to Use**:
 1. Copy JSON config above
 2. Paste into project's `.mcp.json`
 3. Restart Claude Code
-4. Use 11 Z-Library tools!
+4. Use five acquisition tools!
 
 **When to Use**: Research, RAG, learning projects
 
 **When NOT to Use**: Pure coding projects (keep it clean!)
 
-**Status**: Ready to use across all your projects! 🚀
+Restart the client after changing its configuration, then check the five-tool list.

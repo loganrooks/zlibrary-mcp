@@ -8,9 +8,13 @@ import signal
 import sys
 import time
 
+if len(sys.argv) > 3:
+    time.sleep(float(sys.argv[3]) / 1000)
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "lib"))
 from acquisition import AcquisitionError, DestinationLease, acquire
+import acquisition
 from eapi_session_protocol import SessionProtocolError, request_session, _emit
 
 DEMAND_BODY = b'{"type":"session_needed","terminal":true}'
@@ -123,10 +127,11 @@ async def main():
         else:
             await asyncio.sleep(30)
         return
-    if mode in {"reply", "probe-reply"}:
+    if mode in {"reply", "probe-reply", "unanswered-reply"}:
         try:
             await request_session(
-                timeout=1 if mode == "probe-reply" else 0.3, diagnostic=session_trace
+                timeout={"reply": 0.3, "probe-reply": 1, "unanswered-reply": 30}[mode],
+                diagnostic=session_trace,
             )
             print(json.dumps({"ok": True}))
         except SessionProtocolError as error:
@@ -173,6 +178,12 @@ async def main():
         os.replace(stage, target)
         return {"file_path": str(target)}
 
+    if mode == "refuse-admission":
+        # Leave startup to the Node owner, but reserve all except 0.5s of the
+        # child's acquisition allowance: below the 1s useful-transfer minimum.
+        deadline = acquisition.WalkDeadline
+        acquisition.WalkDeadline = lambda budget: deadline(min(budget, 0.5))
+
     result = await acquire(
         {
             "source": "zlibrary",
@@ -208,6 +219,8 @@ async def run():
     except asyncio.CancelledError:
         pass
     except Exception as error:
+        if mode == "refuse-admission" and isinstance(error, AcquisitionError):
+            (root / "refusal.json").write_text(json.dumps(error.to_dict()))
         _emit(trace, "primary", "error", error=error)
         print("Synthetic private worker failed", file=sys.stderr)
         sys.exit(1)

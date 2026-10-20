@@ -5,6 +5,7 @@ import json
 import hashlib
 import re
 import tempfile
+from contextlib import suppress
 
 # Read the private pipe before importing code that could spawn grandchildren.
 os.environ.pop("ZLIBRARY_EAPI_SESSION", None)  # Retired env carrier is never trusted.
@@ -1067,17 +1068,25 @@ def _md5_digest():
 
 
 def _publish_no_replace(source: Path, destination: Path) -> None:
-    """Atomically publish one owned file without replacing an existing path."""
+    """Link and consume an owned file without replacement, including private staging."""
     os.link(source, destination)
     source.unlink()
 
 
-def _file_md5(path: Path) -> str:
-    """Digest a published artifact for catalog-identity comparison."""
+def _file_md5(path: Path, *, check_deadline: bool = False) -> str:
+    """Digest an artifact, optionally bounding a pre-commit reuse comparison."""
+    if check_deadline:
+        from lib.acquisition import _check_deadline
+
+        _check_deadline("reuse comparison")
     digest = _md5_digest()
     with open(path, "rb") as handle:
         for chunk in iter(lambda: handle.read(65536), b""):
+            if check_deadline:
+                _check_deadline("reuse comparison")
             digest.update(chunk)
+    if check_deadline:
+        _check_deadline("reuse comparison")
     return digest.hexdigest()
 
 
@@ -1086,8 +1095,10 @@ def _artifacts_match(source: Path, destination: Path, expected_md5: str) -> bool
     if source.stat().st_size != destination.stat().st_size:
         return False
     if expected_md5:
-        return _file_md5(destination) == expected_md5
-    return _file_md5(source) == _file_md5(destination)
+        return _file_md5(destination, check_deadline=True) == expected_md5
+    return _file_md5(source, check_deadline=True) == _file_md5(
+        destination, check_deadline=True
+    )
 
 
 def _publish_or_reuse(source: Path, destination: Path, expected_md5: str = "") -> bool:
@@ -1096,18 +1107,26 @@ def _publish_or_reuse(source: Path, destination: Path, expected_md5: str = "") -
     Acquisition is idempotent: re-downloading the same result into the same
     directory resolves to the same deterministic name, and finding our own
     prior artifact there is success, not a collision. A destination that does
-    not match is still never replaced. The staged file is consumed on every
-    path so no orphan temp survives the call.
+    not match is still never replaced. Stage cleanup is attempted on every
+    path; cleanup after a successful final link is best effort so a cleanup
+    failure cannot replace a committed success.
     """
+    from lib.acquisition import _check_deadline, _mark_published
+
     if source.resolve() == destination.resolve():
         return False
+    _check_deadline("publication")
     try:
-        _publish_no_replace(source, destination)
+        os.link(source, destination)
+        _mark_published()
+        with suppress(OSError):  # The final link, not cleanup, is the commit.
+            source.unlink()
         return False
     except FileExistsError:
         pass
     try:
         if _artifacts_match(source, destination, expected_md5):
+            _mark_published()
             return True
         raise FileExistsError(
             f"Refusing to replace {destination}: the existing file differs from the "
@@ -1608,9 +1627,11 @@ async def download_book(
                 and str(owned_stage) != final_file_path_str
                 and owned_stage.name.startswith(".source-")
             ):
-                owned_stage.unlink(missing_ok=True)
+                with suppress(OSError):
+                    owned_stage.unlink(missing_ok=True)
         if eapi_staging is not None:
-            eapi_staging.cleanup()
+            with suppress(OSError):
+                eapi_staging.cleanup()
 
 
 async def get_book_metadata_complete(book_id: str, book_hash: str = None) -> dict:
@@ -1939,7 +1960,11 @@ async def main():
             error_info["details"].setdefault("operation", operation)
         error_info = _safe_diagnostic(error_info)
         diagnostics = None
-        if (
+        if not (
+            function_name == "acquire_book"
+            and isinstance(e, AcquisitionError)
+            and e.reason == "walk_budget_exhausted"
+        ) and (
             needs_eapi
             or _session_input is not None
             or _eapi_client is not None
@@ -1969,6 +1994,7 @@ async def main():
                             "outcome_unknown",
                             "http_error",
                             "read_timeout",
+                            "walk_budget_exhausted",
                             "connect_timeout",
                             "configuration_error",
                             "output_refused",

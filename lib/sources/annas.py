@@ -186,11 +186,10 @@ class AnnasArchiveAdapter(SourceAdapter):
         deserves a one-probe answer naming the host, not a full request budget
         spent on a name that cannot resolve.
         """
-        if not self.config.preflight_enabled or not self.host:
-            return
         timeout = self.config.preflight_timeout
         if deadline is not None:
-            timeout = deadline.reserve(timeout, minimum=0.000001)
+            minimum = (timeout if self.config.preflight_enabled else 0.0) + 1.0
+            timeout = deadline.reserve(timeout, minimum=minimum)
             if timeout is None:
                 raise ProviderTimeoutError(
                     PROVIDER,
@@ -198,6 +197,8 @@ class AnnasArchiveAdapter(SourceAdapter):
                     "walk budget exhausted before preflight",
                     reason="walk_budget_exhausted",
                 )
+        if not self.config.preflight_enabled or not self.host:
+            return
         await probe_host(
             PROVIDER,
             self.host,

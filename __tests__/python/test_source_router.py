@@ -310,7 +310,9 @@ class TestRouterDownload:
         monkeypatch.setattr(
             router_module,
             "WalkDeadline",
-            lambda budget: RealWalkDeadline(budget, clock=lambda: now[0]),
+            lambda budget, **kwargs: RealWalkDeadline(
+                budget, clock=lambda: now[0], **kwargs
+            ),
         )
         router = SourceRouter(
             SourceConfig(
@@ -358,7 +360,9 @@ class TestRouterDownload:
         monkeypatch.setattr(
             router_module,
             "WalkDeadline",
-            lambda budget: RealWalkDeadline(budget, clock=lambda: now[0]),
+            lambda budget, **kwargs: RealWalkDeadline(
+                budget, clock=lambda: now[0], **kwargs
+            ),
         )
         router = SourceRouter(SourceConfig(walk_budget=2.0))
         seen_deadlines = []

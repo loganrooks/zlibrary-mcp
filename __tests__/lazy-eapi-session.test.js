@@ -161,9 +161,21 @@ describe('SDK lazy acquisition with real bridge and query-sensitive loopback fak
     try {
       const [ready] = await once(holder.stdout, 'data', { signal: AbortSignal.timeout(5000) });
       expect(ready.toString().trim()).toBe('held');
-      const failure = await acquire(api, 202, 'held.epub', { timeoutMs: 4000 }).catch(
-        (error) => error,
-      );
+      // The child advances a logical clock only after the real OS lease
+      // rejects entry. Startup/load cannot consume the admission margin.
+      const pythonPath = process.env.PYTHONPATH;
+      let failure;
+      try {
+        process.env.PYTHONPATH = [
+          path.resolve('__tests__/python/lease_clock_site'),
+          pythonPath,
+        ].join(path.delimiter);
+        failure = await acquire(api, 202, 'held.epub', { timeoutMs: 15000 }).catch(
+          (error) => error,
+        );
+      } finally {
+        process.env.PYTHONPATH = pythonPath;
+      }
       expect(failure.context.pythonErrorType).toBe('AcquisitionError');
       expect(failure.context.details).toMatchObject({
         reason: 'walk_budget_exhausted',

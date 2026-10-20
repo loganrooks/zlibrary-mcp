@@ -106,6 +106,12 @@ past its owner fails the guard; environment overrides are clamped at admission.
 Source configuration uses `PYTHON_BRIDGE_TIMEOUT` for searches and
 `PYTHON_BRIDGE_LONG_TIMEOUT` for downloads. Overhead is
 `min(30s, owning timer / 8)`; the walk is clamped below the remainder by 1 ms.
+Source walks require an environment owner of at least **10000 ms** (search
+or download, respectively). Smaller owners raise a configuration error before
+provider contact, including when preflight is disabled. This supported minimum
+avoids the observed millisecond-scale startup margins at 1500–2000 ms owners;
+it is not a measured cold-start guarantee on every host. Increase the owner
+on slow hosts rather than relying on a tiny allowance.
 A 15s source call therefore has 1.875s overhead and at most 13.124s of walk,
 not a fixed 30s admission charge. Adapters refuse a slice too short for useful
 work with `walk_budget_exhausted` and provider/mirror attribution. A timer
@@ -114,6 +120,12 @@ error before provider contact. Overhead is an allocation, not a measured
 cold-start guarantee. Per-call runner timeout overrides are outside this
 environment-based provider-walk admission contract; acquisition's outer deadline
 below uses the effective call owner instead.
+
+After a destination lease, both the source transfer chain and its resolution
+walk draw from `min(configured, acquisition remainder - finalization reserve)`
+(with a 1 ms reply margin). Resolution also rechecks this outer remainder after
+each yielded transfer; pausing its own clock cannot refund acquisition time.
+Range recovery remains inside that same transfer-chain deadline.
 
 The 2.0 public `search` tries each requested source in its own bridge child:
 LibGen and Anna's use explicit-source `search_multi_source`; Z-Library uses

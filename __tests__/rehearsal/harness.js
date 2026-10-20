@@ -16,7 +16,7 @@ const serverRoot = path.resolve(process.env.REHEARSAL_SERVER_ROOT || root);
 const fakeEmail = 'rehearsal-account@example.invalid';
 const fakePassword = 'rehearsal-password-canary';
 export class Rehearsal {
-  static async start(suite = 'base') {
+  static async start(suite = 'base', { python } = {}) {
     const h = new Rehearsal();
     h.temp = await mkdtemp(
       path.join(process.env.REHEARSAL_TEMP_ROOT || tmpdir(), 'zlib-rehearsal-'),
@@ -54,10 +54,10 @@ export class Rehearsal {
       h.keyText = await readFile(h.key, 'utf8');
       const fakeStarted = Date.now();
       h.fake = spawn(
-        path.join(serverRoot, '.venv/bin/python'),
+        python?.executable ?? path.join(serverRoot, '.venv/bin/python'),
         [path.join(here, 'fake_eapi.py'), h.cert, h.key],
         {
-          env: { PATH: process.env.PATH, PYTHONDONTWRITEBYTECODE: '1' },
+          env: { PATH: process.env.PATH, PYTHONDONTWRITEBYTECODE: '1', ...python?.env },
           stdio: ['pipe', 'pipe', 'pipe'],
         },
       );

@@ -1,10 +1,11 @@
 """Loopback-only EAPI contract double. Never forwards a request upstream."""
 
 from collections import Counter
+from fake_catalogue import ALL, HISTORY, LIBGEN, select, payload, libgen_html
+from fake_annas import EMPTY_SEARCH
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
-from pathlib import Path
 import re
 import ssl
 import socketserver
@@ -35,6 +36,8 @@ USER_ID = "rehearsal-cookie-id"
 USER_KEY = "rehearsal-cookie-key"
 MODES = {
     "healthy",
+    "empty",
+    "quota_exhausted",
     "login400",
     "unauthorized",
     "profile401",
@@ -69,6 +72,9 @@ class Fake(ThreadingHTTPServer):
         self.inflight = 0
         self.max_inflight = 0
         self.drop_cookies = False
+        self.remaining = 7
+        self.quota_spent = 0
+        self.events = []
         context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         startup_stage("loading-certificate")
         context.load_cert_chain(cert, key)
@@ -132,6 +138,10 @@ class Handler(BaseHTTPRequestHandler):
                     self.server.epoch = 1
                     self.server.successes = 0
                     self.server.max_inflight = 0
+                    self.server.quota_spent = 0
+                    self.server.events.clear()
+                if "remaining" in value:
+                    self.server.remaining = int(value["remaining"])
             return self.reply({"ok": True})
         if route == "/__stats":
             with self.server.lock:
@@ -143,18 +153,45 @@ class Handler(BaseHTTPRequestHandler):
                     "epoch": self.server.epoch,
                     "maxInflight": self.server.max_inflight,
                     "calls": calls,
+                    "quotaSpent": self.server.quota_spent,
+                    "remaining": self.server.remaining,
+                    "events": list(self.server.events),
                 }
             )
         with self.server.lock:
             self.server.calls[route] += 1
             mode = self.server.mode
             drop_cookies = self.server.drop_cookies
+        params = parse_qs(urlsplit(self.path).query)
+        fields = parse_qs(body.decode()) if body else params
+        with self.server.lock:
+            # Only synthetic operation parameters; never login secrets/cookies.
+            if route != "/eapi/user/login":
+                self.server.events.append({"route": route, "arguments": fields})
+        if route == "/annas/search":
+            return self.reply(EMPTY_SEARCH, content_type="text/html")
         if route == "/libgen/index.php":
+            query = params.get("req", params.get("q", [""]))[0]
             return self.reply(
-                (
-                    Path(__file__).parent / "fixtures" / "libgen-search.html"
-                ).read_bytes(),
+                libgen_html(select(query, "libgen", {"limit": ["50"]}, mode)),
                 content_type="text/html",
+            )
+        if route in {"/libgen/ads.php", "/libgen/get.php"}:
+            md5 = params.get("md5", [""])[0]
+            row = next((b for b in LIBGEN if b["md5"] == md5), None)
+            if not row:
+                return self.reply({"error": "unknown md5"}, 404)
+            if route.endswith("ads.php"):
+                return self.reply(
+                    f'<html><a href="get.php?md5={md5}&amp;key=fixture">GET</a></html>'.encode(),
+                    content_type="text/html",
+                )
+            return self.reply(
+                payload(row),
+                content_type="application/octet-stream",
+                headers={
+                    "Content-Disposition": f'attachment; filename="{row["id"]}.{row["extension"]}"'
+                },
             )
         login = route == "/eapi/user/login"
         profile = route == "/eapi/user/profile"
@@ -203,17 +240,6 @@ class Handler(BaseHTTPRequestHandler):
             }.items()
         ):
             return self.reply({"success": 0, "error": "missing session"}, 401)
-        book = {
-            "id": 101,
-            "hash": "hash101",
-            "title": "Rehearsal book 101",
-            "author": "Offline Author",
-            "extension": "txt",
-            "year": "2026",
-            "language": "english",
-            "filesize": 27,
-            "description": "Details for rehearsal book 101",
-        }
         if profile:
             return self.reply(
                 {
@@ -221,7 +247,7 @@ class Handler(BaseHTTPRequestHandler):
                     "user": {
                         "id": USER_ID,
                         "downloads_limit": 10,
-                        "downloads_today": 3,
+                        "downloads_today": 10 - self.server.remaining,
                         "isPremium": 0,
                     },
                 }
@@ -229,25 +255,49 @@ class Handler(BaseHTTPRequestHandler):
         if route == "/eapi/info/domains":
             return self.reply({"success": 1, "domains": []})
         if route == "/eapi/book/search":
-            query = parse_qs(body.decode()).get("message", [""])[0]
+            query = fields.get("message", [""])[0]
             if query.startswith("slow-"):
                 time.sleep(0.6)
             return self.reply(
-                {"success": 1, "books": [{**book, "title": f"Rehearsal {query}"}]}
+                {"success": 1, "books": select(query, fields=fields, mode=mode)}
             )
         if route in {"/eapi/user/book/downloaded", "/eapi/book/recently"}:
-            return self.reply({"success": 1, "books": [book]})
-        if re.fullmatch(r"/eapi/book/101/hash101", route):
-            return self.reply({"success": 1, "book": book})
-        if route == "/eapi/book/101/hash101/file":
+            limit = int(fields.get("limit", ["10"])[0])
+            page = int(fields.get("page", ["1"])[0])
             return self.reply(
-                {"success": 1, "file": {"downloadLink": "/files/101.txt"}}
+                {"success": 1, "books": HISTORY[(page - 1) * limit : page * limit]}
             )
-        if route == "/files/101.txt":
+        match = re.fullmatch(r"/eapi/book/(\d+)/(hash\d+)(/file)?", route)
+        if match:
+            row = ALL.get(match[1])
+            if not row or row["hash"] != match[2]:
+                return self.reply({"success": 0}, 404)
+            if match[3]:
+                with self.server.lock:
+                    if mode == "quota_exhausted" or self.server.remaining <= 0:
+                        return self.reply(
+                            {"success": 0, "error": "quota exhausted"}, 429
+                        )
+                    self.server.quota_spent += 1
+                    self.server.remaining -= 1
+                return self.reply(
+                    {
+                        "success": 1,
+                        "file": {
+                            "downloadLink": f"/files/{row['id']}.{row['extension']}"
+                        },
+                    }
+                )
+            return self.reply({"success": 1, "book": row})
+        match = re.fullmatch(r"/files/(\d+)\.\w+", route)
+        if match and match[1] in ALL:
+            row = ALL[match[1]]
             return self.reply(
-                b"Offline rehearsal book 101.\n",
-                content_type="text/plain",
-                headers={"Content-Disposition": 'attachment; filename="101.txt"'},
+                payload(row),
+                content_type="application/octet-stream",
+                headers={
+                    "Content-Disposition": f'attachment; filename="{row["id"]}.{row["extension"]}"'
+                },
             )
         self.reply({"error": "unsupported fixture endpoint"}, 404)
 

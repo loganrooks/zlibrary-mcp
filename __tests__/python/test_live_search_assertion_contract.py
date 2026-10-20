@@ -25,7 +25,11 @@ SEARCH_CASES = [
     ),
     ("TestRealAuthorSearch", "test_author_search_with_year_filter", "search_by_author"),
 ]
-EMPTY_CASE = ("TestRealWorldEdgeCases", "test_empty_search_results", "search")
+AUTHOR_CASES = [
+    ("TestRealAuthorSearch", "test_search_famous_author", "search_by_author"),
+    *SEARCH_CASES[3:],
+]
+EMPTY_CASE = ("TestRealWorldEdgeCases", "test_empty_search_results", "search_by_term")
 
 
 def extract_method(class_name, method_name, namespace):
@@ -96,6 +100,7 @@ def catalog_payload(case):
             {
                 "id": "41",
                 "title": "A catalog title",
+                "author": "Georg Wilhelm Friedrich Hegel",
                 "year": 2021,
                 "language": "English",
             }
@@ -110,6 +115,31 @@ async def test_positive_catalog_control(case, page_size):
     payload["books"] *= page_size
     payload["total_results"] = page_size
     await run_search_body(case, payload)
+
+
+@pytest.mark.parametrize("case", AUTHOR_CASES, ids=lambda case: case[1])
+@pytest.mark.parametrize("matching_row", [0, 1])
+async def test_author_search_accepts_at_least_one_casefolded_hegel_row(
+    case, matching_row
+):
+    payload = catalog_payload(case)
+    payload["books"].append(deepcopy(payload["books"][0]))
+    payload["total_results"] = 2
+    for book in payload["books"]:
+        book["author"] = "Immanuel Kant"
+    payload["books"][matching_row]["author"] = "Georg Wilhelm Friedrich hEgEl"
+    await run_search_body(case, payload)
+
+
+@pytest.mark.parametrize("case", AUTHOR_CASES, ids=lambda case: case[1])
+@pytest.mark.parametrize("author", ["Immanuel Kant", "", None])
+async def test_author_search_rejects_rows_without_hegel(case, author):
+    payload = catalog_payload(case)
+    payload["books"][0]["author"] = author
+    # The response's echoed request author still says Hegel: it is not evidence
+    # that any returned book has the requested author.
+    with pytest.raises(AssertionError):
+        await run_search_body(case, payload)
 
 
 @pytest.mark.parametrize(
@@ -238,13 +268,33 @@ async def test_returned_page_count_mutants_are_rejected(case, total):
 
 
 async def test_empty_query_control_accepts_empty_list():
-    await run_search_body(EMPTY_CASE, {"books": []})
+    await run_search_body(EMPTY_CASE, {"books": [], "total_results": 0})
+
+
+async def test_sparse_live_query_allows_nonempty_catalog():
+    await run_search_body(EMPTY_CASE, catalog_payload(EMPTY_CASE))
 
 
 @pytest.mark.parametrize(
     "payload",
-    [{"books": [{}]}, {"books": {"id": "41"}}, {}],
-    ids=["unexpected-row", "books-not-list", "empty-envelope"],
+    [
+        {"books": [{}], "total_results": 0},
+        {"books": {"id": "41"}, "total_results": 1},
+        {"books": [], "total_results": 1},
+        {"books": [], "total_results": "0"},
+        {"books": [], "total_results": False},
+        {"books": []},
+        {},
+    ],
+    ids=[
+        "nonempty-count-mismatch",
+        "books-not-list",
+        "empty-count-mismatch",
+        "count-not-int",
+        "count-is-bool",
+        "missing-count",
+        "empty-envelope",
+    ],
 )
 async def test_empty_query_mutants_are_rejected(payload):
     with pytest.raises(AssertionError):

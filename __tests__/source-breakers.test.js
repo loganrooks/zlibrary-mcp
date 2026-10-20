@@ -177,3 +177,27 @@ test('a raw search spelling the Python router sends to LibGen counts on the LibG
     expect(runner.mock.calls.length).toBe(before + 1);
   }
 });
+
+test('raw null search failures open LibGen and leave the auto scope admitted', async () => {
+  await load();
+  // Python routes an explicit null to LibGen; omission retains its auto default.
+  runner.mockImplementation(async (_script, options) => {
+    const args = JSON.parse(options.args[1]);
+    if (args.source === null) throw outage('libgen');
+    return envelope({ books: [] });
+  });
+  for (let i = 0; i < 5; i++)
+    await expect(
+      api.invokeAcquisitionBridge('search_multi_source', { query: 'x', source: null }),
+    ).rejects.toThrow(/fixture failure/);
+  await expect(api.searchMultiSource({ query: 'x', source: 'libgen' })).rejects.toMatchObject({
+    code: 'CIRCUIT_BREAKER_OPEN',
+  });
+  await expect(api.searchMultiSource({ query: 'x' })).resolves.toEqual({ books: [] });
+  await expect(api.searchMultiSource({ query: 'x', source: 'auto' })).resolves.toEqual({
+    books: [],
+  });
+  await expect(api.searchMultiSource({ query: 'x', source: 'annas' })).resolves.toEqual({
+    books: [],
+  });
+});

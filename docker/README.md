@@ -114,9 +114,13 @@ attestations](https://docs.docker.com/build/metadata/attestations/#driver-and-im
 The tag patterns, npm channel and `latest` behavior are unchanged. The GitHub
 Release now waits for both registry publications. There is no transaction across
 npm and GHCR: a GHCR failure can leave some image tags, but no npm publication;
-an npm failure leaves the verified image available in GHCR. Re-run failed jobs
-to repeat the smoke and push/verification (re-pushing the same digest is
-idempotent), then finish npm. The npm helper compares the tarball's SHA-512
+an npm failure leaves the verified image available in GHCR. A re-run of
+`publish-packages` rebuilds the image, checks its identity, re-smokes it, and
+pushes a fresh tested digest over `:X.Y.Z`, `:X.Y` and `:latest` before finishing
+npm. The fresh digest is inferred from the logged provenance `builder-id`, which
+includes the run attempt; no second attempt was run
+([#303](https://github.com/rookslog/zlibrary-mcp/issues/303)). The identity check
+and smoke still gate every push. The npm helper compares the tarball's SHA-512
 integrity with `npm view zlibrary-mcp@$V dist.integrity` and skips an identical
 published version. Only an explicit E404 allows a new npm publication; mismatched
 or missing integrity, authentication/network failures and malformed lookup

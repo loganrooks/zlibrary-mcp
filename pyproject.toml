@@ -37,25 +37,6 @@ zlibrary = { path = "./zlibrary", editable = true }
 
 # Optional dependencies
 [project.optional-dependencies]
-# PDF and EPUB extraction
-rag = [
-    "pymupdf>=1.26.0",
-    "ebooklib>=0.20",
-    "nltk>=3.8.1",
-]
-
-# Complete scholarly document processing, including the RAG tier
-scholar = [
-    "pymupdf>=1.26.0",
-    "ebooklib>=0.20",
-    "nltk>=3.8.1",
-    "ocrmypdf>=16.13.0",
-    "opencv-python-headless>=5.0.0.93",
-    "pytesseract>=0.3.10",
-    "pdf2image>=1.16.0",
-    "pillow>=11.0.0",
-]
-
 # Development and testing
 dev = [
     "pytest>=8.4.0",
@@ -118,24 +99,21 @@ required-version = ">=0.4.27"
 # Floors are raised to the lowest version pip-audit reports as fixed; keep them
 # as `>=` so Dependabot/`uv lock --upgrade` can move forward without edits here.
 constraint-dependencies = [
-    "aiohttp>=3.14.1",       # PYSEC-2026-2094..2113 (22 advisories)
+    "aiohttp>=3.14.4",       # PYSEC-2026-2094..2113 (22 advisories); CVE-2026-111063/111064, GHSA-2g87-pp6c-29x5
+    "anyio>=4.14.2",         # PYSEC-2026-4024, PYSEC-2026-4025
     "brotli>=1.2.0",         # CVE-2025-6176
     "click>=8.3.3",          # PYSEC-2026-2132
-    "pdfminer.six>=20251230", # CVE-2025-64512, GHSA-f83h-ghpp-7wcc
     "cryptography>=50.0.0",  # PYSEC-2026-36, GHSA-537c-gmf6-5ccf, PYSEC-2026-3552
     "idna>=3.15",            # PYSEC-2026-215
     "lxml>=6.1.0",           # PYSEC-2026 lxml advisories
     "msgpack>=1.2.1",        # PYSEC-2026 msgpack advisory
-    "nltk>=3.10.0",          # CVE-2025-14009, CVE-2026-33230, PYSEC-2026-3582..3584
-    "pi-heif>=1.3.0",        # transitive via ocrmypdf image stack
+    "multidict>=6.9.1",      # CVE-2026-104874
     "pygments>=2.20.0",      # PYSEC-2026-2987, CVE-2026-4539 (transitive via pytest/rich)
-    "pillow>=12.3.0",        # PYSEC-2026-3451..3496 (26 advisories)
-    "pymupdf==1.26.5",         # Pin — 1.26.6 lacks Docker wheel, 1.26.7 breaks footnote extraction; CVE-2026-3029 ignored in CI
     "python-dotenv>=1.2.2",  # PYSEC-2026-2270
     "requests>=2.33.0",      # CVE-2026-25645
     "soupsieve>=2.8.4",      # PYSEC-2026-3071, PYSEC-2026-3072
     "ujson>=5.13.0",         # PYSEC-2026-2293, PYSEC-2026-2294
-    "urllib3>=2.7.0",        # PYSEC-2026-141, PYSEC-2026-142
+    "urllib3>=2.8.0",        # PYSEC-2026-141, PYSEC-2026-142, PYSEC-2026-4175..4177
 ]
 
 # Ruff configuration
@@ -157,4 +135,4 @@ index-url = "https://pypi.org/simple"
 # - All transitive dependencies handled automatically
 # - uv.lock will be generated on first: uv sync
 # - To add deps: uv add package-name
-# - End-user document processing: uv sync --no-dev --extra rag (or --extra scholar)
+# - End-user acquisition setup: uv sync --no-dev

@@ -68,7 +68,7 @@ async def search_by_term(
     if client is None:
         # Resolve a healthy EAPI domain before login: honours an explicit
         # ZLIBRARY_EAPI_DOMAIN override, otherwise probes the fallback list
-        # via GET /eapi/info/domains (ISSUE-API-002: the old z-library.sk
+        # via one-row POST /eapi/book/search (ISSUE-API-002: the old z-library.sk
         # default is DiamWall-walled).
         domain = await resolve_eapi_domain()
         client = EAPIClient(domain)

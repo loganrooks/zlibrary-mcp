@@ -1,0 +1,110 @@
+[
+  {
+    "name": "download_book_to_file",
+    "arguments": [
+      "bookDetails",
+      "outputDir"
+    ]
+  },
+  {
+    "name": "fetch_booklist",
+    "arguments": [
+      "booklistHash",
+      "booklistId",
+      "page",
+      "topic"
+    ]
+  },
+  {
+    "name": "full_text_search",
+    "arguments": [
+      "content_types",
+      "count",
+      "exact",
+      "extensions",
+      "languages",
+      "phrase",
+      "query",
+      "words"
+    ]
+  },
+  {
+    "name": "get_book_metadata",
+    "arguments": [
+      "bookHash",
+      "bookId",
+      "include"
+    ]
+  },
+  {
+    "name": "get_download_history",
+    "arguments": [
+      "count"
+    ]
+  },
+  {
+    "name": "get_download_limits",
+    "arguments": []
+  },
+  {
+    "name": "get_recent_books",
+    "arguments": [
+      "count",
+      "format"
+    ]
+  },
+  {
+    "name": "search_advanced",
+    "arguments": [
+      "count",
+      "exact",
+      "query",
+      "yearFrom",
+      "yearTo"
+    ]
+  },
+  {
+    "name": "search_books",
+    "arguments": [
+      "content_types",
+      "count",
+      "exact",
+      "extensions",
+      "fromYear",
+      "languages",
+      "query",
+      "toYear"
+    ]
+  },
+  {
+    "name": "search_by_author",
+    "arguments": [
+      "author",
+      "count",
+      "exact",
+      "extensions",
+      "languages",
+      "yearFrom",
+      "yearTo"
+    ]
+  },
+  {
+    "name": "search_by_term",
+    "arguments": [
+      "count",
+      "extensions",
+      "languages",
+      "term",
+      "yearFrom",
+      "yearTo"
+    ]
+  },
+  {
+    "name": "search_multi_source",
+    "arguments": [
+      "count",
+      "query",
+      "source"
+    ]
+  }
+]

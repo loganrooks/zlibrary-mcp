@@ -51,8 +51,8 @@ export function getProjectRoot(): string {
  * // /home/user/zlibrary-mcp/lib/python_bridge.py
  *
  * @example
- * const ragPath = getPythonScriptPath('rag_processing.py');
- * // /home/user/zlibrary-mcp/lib/rag_processing.py
+ * const bridgePath = getPythonScriptPath('python_bridge.py');
+ * // /home/user/zlibrary-mcp/lib/python_bridge.py
  */
 export function getPythonScriptPath(scriptName: string): string {
   return path.join(getProjectRoot(), 'lib', scriptName);

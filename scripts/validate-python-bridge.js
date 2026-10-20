@@ -21,20 +21,24 @@ const projectRoot = resolve(__dirname, '..');
 // Required Python bridge files
 const requiredPythonFiles = [
   { path: 'lib/python_bridge.py', critical: true, description: 'Main Python bridge script' },
-  { path: 'lib/rag_processing.py', critical: true, description: 'RAG document processing' },
   { path: 'lib/enhanced_metadata.py', critical: true, description: 'Enhanced metadata extraction' },
   { path: 'lib/author_tools.py', critical: false, description: 'Author-specific search tools' },
   { path: 'lib/booklist_tools.py', critical: false, description: 'Booklist management' },
   { path: 'lib/term_tools.py', critical: false, description: 'Term-based search tools' },
-  { path: 'lib/__init__.py', critical: false, description: 'Python package initialization' }
+  { path: 'lib/__init__.py', critical: false, description: 'Python package initialization' },
 ];
 
 // Required TypeScript compiled files (dist/)
 const requiredCompiledFiles = [
+  { path: 'dist/lib/eapi-session.js', critical: true, description: 'In-memory EAPI session owner' },
   { path: 'dist/index.js', critical: true, description: 'Main MCP server entry point' },
-  { path: 'dist/lib/python-bridge.js', critical: true, description: 'Python bridge TypeScript wrapper' },
+  {
+    path: 'dist/lib/python-bridge.js',
+    critical: true,
+    description: 'Python bridge TypeScript wrapper',
+  },
   { path: 'dist/lib/zlibrary-api.js', critical: true, description: 'Z-Library API wrapper' },
-  { path: 'dist/lib/venv-manager.js', critical: true, description: 'Python venv management' }
+  { path: 'dist/lib/venv-manager.js', critical: true, description: 'Python venv management' },
 ];
 
 // Configuration files
@@ -42,11 +46,11 @@ const requiredConfigFiles = [
   { path: 'package.json', critical: true, description: 'Package configuration' },
   { path: 'tsconfig.json', critical: true, description: 'TypeScript configuration' },
   { path: 'pyproject.toml', critical: true, description: 'Python dependencies (UV)' },
-  { path: 'uv.lock', critical: false, description: 'UV lockfile for reproducible builds' }
+  { path: 'uv.lock', critical: false, description: 'UV lockfile for reproducible builds' },
 ];
 
 console.log('🔍 Z-Library MCP Build Validation\n');
-console.log('=' .repeat(60));
+console.log('='.repeat(60));
 
 let allValid = true;
 let criticalFailures = 0;
@@ -96,7 +100,8 @@ console.log('\n' + '='.repeat(60));
 console.log('📊 Validation Summary:');
 console.log('-'.repeat(60));
 
-const totalFiles = requiredPythonFiles.length + requiredCompiledFiles.length + requiredConfigFiles.length;
+const totalFiles =
+  requiredPythonFiles.length + requiredCompiledFiles.length + requiredConfigFiles.length;
 const passedFiles = totalFiles - criticalFailures - warnings;
 
 console.log(`Total files checked: ${totalFiles}`);

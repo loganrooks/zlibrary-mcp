@@ -57,19 +57,16 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          # lfs: false — the repo exceeded its Git LFS budget, which fails
-          # actions/checkout outright. Unhydrated-pointer guards in
-          # __tests__/python/conftest.py skip the affected tests with a clear
-          # reason (surfaced by pytest -rs). Restore to true if the budget
-          # is ever restored. See #85.
+          # Processing corpus is preserved separately; acquisition tests need no LFS PDFs.
           lfs: false
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
           registry-url: 'https://registry.npmjs.org'
       - uses: astral-sh/setup-uv@v7
       - run: npm ci
-      - run: uv sync --all-extras
+      - run: uv sync --frozen --group dev
       - run: npm run build
       - name: Run tests
         run: |
@@ -102,7 +99,9 @@ jobs:
   # would derive zero tags and the push step would fail.
   publish-docker:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [validate-release-notes]
+    # The npm job runs both test suites before publishing. Requiring its
+    # success also keeps GHCR untouched when tests or npm publication fail.
+    needs: [validate-release-notes, publish-npm]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7

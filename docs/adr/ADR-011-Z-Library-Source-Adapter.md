@@ -1,6 +1,6 @@
 # ADR-011: Promote Z-Library to a Source Adapter
 
-**Status:** Accepted
+**Status:** Accepted; compatibility-façade interval superseded by [ADR-012](ADR-012-Acquisition-Tool-Interface.md) for the 2.0 tool interface.
 
 **Date:** 2026-08-12
 
@@ -24,7 +24,8 @@ Replace the current source boundary with:
    source order and reports what it did without ranking results.
 
 The MCP surface remains file-oriented and search-result-first. Existing tool
-names remain compatibility façades during migration, but their Python paths
+names were to remain compatibility façades during migration (superseded for 2.0
+by ADR-012), but their Python paths
 must enter through `SourceRouter`. No direct-from-ID download path is added.
 
 ## Decision state and tracker reconciliation

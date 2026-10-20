@@ -10,10 +10,13 @@
 FROM node:22-alpine AS builder
 
 # UV configuration for portable Python installation
+# Keep Python on 3.14 until compiled dependencies ship 3.15 wheels (#230).
+# Bump UV_PYTHON here when validating the next Python minor version.
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
     UV_PYTHON_INSTALL_DIR=/app/python-bin \
-    UV_PYTHON_PREFERENCE=only-managed
+    UV_PYTHON_PREFERENCE=only-managed \
+    UV_PYTHON=3.14
 
 WORKDIR /app
 
@@ -33,10 +36,8 @@ COPY zlibrary/ ./zlibrary/
 COPY tsconfig.json ./
 COPY scripts/ ./scripts/
 
-# The image is a RAG-capable distribution: PDF and EPUB extraction work without
-# an interactive install step. Keep scholar dependencies out so source and npm
-# users retain the lightweight core default, and Alpine need not install OpenCV.
-RUN uv sync --frozen --no-dev --extra rag
+# Only acquisition dependencies ship in the runtime image.
+RUN uv sync --frozen --no-dev
 
 # Install Node dependencies and build TypeScript
 RUN npm ci && npm run build

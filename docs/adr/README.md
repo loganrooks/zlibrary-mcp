@@ -1,8 +1,10 @@
+> Current scope: document-processing decisions below are historical and preserved on `parked-text-processing-2026-10`; their implementation no longer ships. See [migration](../text-processing-migration.md).
+
 # Architecture Decision Records (ADR) Index
 
 **Purpose**: Index of all architecture decisions for the Z-Library MCP server
 **Format**: ADR template follows [MADR](https://adr.github.io/madr/) lightweight format
-**Status**: 11 ADRs recorded
+**Status**: 12 ADRs recorded
 
 ---
 
@@ -19,6 +21,7 @@
 
 ### Source Adapters & Routing
 - **[ADR-011](ADR-011-Z-Library-Source-Adapter.md)**: Promote Z-Library to a Source Adapter
+- **[ADR-012](ADR-012-Acquisition-Tool-Interface.md)**: Five-tool acquisition interface; supersedes ADR-011’s compatibility interval
 
 ### RAG Pipeline & Quality
 - **[ADR-006](ADR-006-Quality-Pipeline-Architecture.md)**: Quality Pipeline Architecture ⭐
@@ -260,6 +263,15 @@ IF garbled detected (Stage 1 OR custom threshold)
 
 ---
 
+### ADR-012: Five-tool acquisition interface
+**Status**: ✅ Accepted for the authorized 2.0 build
+**Date**: 2026-10-19
+**Decision**: Five tools, process-local refs, ordered routing and durable checked acquisition receipts.
+**Scope**: Supersedes ADR-011’s compatibility interval only; the adapter rebuild remains separate.
+**Related**: [ADR-012](ADR-012-Acquisition-Tool-Interface.md), [migration](../interface-migration.md).
+
+---
+
 ## ADR Status Definitions
 
 | Status | Meaning | Can Be Changed? |
@@ -275,8 +287,8 @@ IF garbled detected (Stage 1 OR custom threshold)
 ## How to Create a New ADR
 
 ### 1. Choose the Next Number
-Current: ADR-011 (latest)
-Next: ADR-012
+Current: ADR-012 (latest)
+Next: ADR-013
 
 ### 2. Use the Template
 ```markdown

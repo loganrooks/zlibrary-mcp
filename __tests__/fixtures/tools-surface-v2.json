@@ -1,0 +1,10 @@
+[
+  { "name": "download", "arguments": ["filename", "output_dir", "ref"] },
+  { "name": "get_book", "arguments": ["ref"] },
+  { "name": "get_history", "arguments": ["cursor", "limit", "source"] },
+  { "name": "get_limits", "arguments": ["mode", "sources"] },
+  {
+    "name": "search",
+    "arguments": ["author", "cursor", "exact", "formats", "languages", "limit", "query", "sources", "year_from", "year_to"]
+  }
+]

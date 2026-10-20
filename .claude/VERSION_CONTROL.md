@@ -1,5 +1,11 @@
 # Version Control & Git Workflow Guide
 
+> **Precedence:** [AGENTS.md](../AGENTS.md#working-agreements) controls current merge,
+> destructive-operation and connector-review rules. Merge or auto-merge requires an
+> instruction in the current session; destructive operations require prior approval.
+> Older direct-master, force-push and review examples below are historical reference,
+> not authority to perform them.
+
 <!-- Last Verified: 2026-02-01 -->
 
 ## Overview
@@ -31,7 +37,7 @@ deleted after merge.
 **Purpose**: Develop new features
 **Naming**: `feature/descriptive-name` or `feature/ISSUE-###-description`
 **Examples**:
-- `feature/rag-robustness-enhancement`
+- `feature/download-fallback`
 - `feature/fuzzy-search`
 - `feature/SRCH-001-advanced-filters`
 
@@ -93,7 +99,6 @@ We follow [Conventional Commits](https://www.conventionalcommits.org/) specifica
 The scope should be the area of the codebase affected:
 - `search` - Search functionality
 - `download` - Download operations
-- `rag` - RAG processing
 - `api` - API/MCP interface
 - `bridge` - Python bridge
 - `venv` - Virtual environment

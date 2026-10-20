@@ -1,7 +1,7 @@
 """
 Unified filename generation utilities for Z-Library MCP.
 
-This module provides consistent filename generation across download and RAG processing.
+This module provides consistent filename generation across original-file acquisition.
 Format: {author-lastname}-{title-slug}-{book-id}.{ext}
 
 Design Decisions:
@@ -12,6 +12,7 @@ Design Decisions:
 - Maximum filename length: 255 characters (filesystem limit)
 """
 
+import os
 import re
 import unicodedata
 from pathlib import Path
@@ -168,7 +169,7 @@ def create_unified_filename(
     publisher: str = "",
 ) -> str:
     """
-    Create unified filename for download or RAG processing.
+    Create unified filename for original-file acquisition.
 
     Format: {AuthorCamelCase}_{TitleCamelCase}[_{Year}][_{Lang}]_{BookID}[.suffix].{ext}
 
@@ -177,7 +178,7 @@ def create_unified_filename(
     Examples:
         With disambiguation: "OrwellGeorge_1984_1949_en_12345.epub"
         Without: "OrwellGeorge_1984_12345.epub"
-        RAG: "HanByungChul_TheBurnoutSociety_3505318.pdf.processed.markdown"
+        Download: "HanByungChul_TheBurnoutSociety_3505318.pdf"
 
     Args:
         book_details: Dictionary with 'author', 'title', 'id', optionally 'extension'
@@ -271,6 +272,86 @@ def create_unified_filename(
         filename = f"{base_name}{suffix}"
 
     return filename
+
+
+# Placeholders create_unified_filename substitutes when the caller's metadata
+# cannot identify the book at all.
+_PLACEHOLDER_TOKENS = frozenset({"Unknown", "UnknownAuthor", "UntitledBook", "NoID"})
+
+# A bare content hash (with or without the .download staging suffix) carries
+# no human-usable identity worth preserving.
+_MD5_ARTIFACT_RE = re.compile(r"^[0-9a-f]{32}(?:\.download)?$", re.IGNORECASE)
+
+
+def is_degraded_unified_filename(filename: str) -> bool:
+    """True when a unified filename had to invent an identity placeholder.
+
+    "UnknownAuthor_UntitledBook_12345.pdf" is deterministic but information
+    the server handed us has been destroyed: the download response usually
+    named the file from real metadata. Callers use this to decide whether to
+    keep that server-provided name instead.
+    """
+    stem = Path(filename).stem
+    return any(token in _PLACEHOLDER_TOKENS for token in stem.split("_"))
+
+
+def truncate_filename_stem(stem: str, ending: str, max_total_length: int = 200) -> str:
+    """Reserve an ending within a UTF-8 byte budget (also bounds UTF-16 units)."""
+    budget = max_total_length - len(ending.encode("utf-8"))
+    if budget < 1:
+        raise ValueError("Filename ending exceeds component budget")
+    return stem.encode("utf-8")[:budget].decode("utf-8", errors="ignore").rstrip(" .")
+
+
+def sanitize_preserved_filename(filename: str, max_total_length: int = 200) -> str:
+    """Make a server-provided filename safe to keep as the final artifact name.
+
+    Keeps the server's wording (unlike the CamelCase unified scheme, this is
+    the "we have nothing better" path), while stripping path separators,
+    control characters, and reserved punctuation, and capping length with
+    the extension preserved. Returns "" when nothing usable remains.
+    """
+    name = "".join(c for c in str(filename) if unicodedata.category(c) != "Cf")
+    name = os.path.basename(name.replace("\\", "/"))
+    name = re.sub(r'[\\/:*?"<>|\x00-\x1f]', "_", name).strip(" .")
+    if not name:
+        return ""
+    stem, ext = os.path.splitext(name)
+    if len(ext.encode("utf-8")) >= max_total_length:
+        return ""
+    device = stem.split(".", 1)[0].rstrip(" ").upper()
+    if device in {"CON", "PRN", "AUX", "NUL"} or re.fullmatch(
+        r"(?:COM|LPT)[1-9]", device
+    ):
+        stem = "_" + stem
+        name = stem + ext
+    stem = truncate_filename_stem(stem, ext, max_total_length)
+    return stem + ext if stem else ""
+
+
+def is_preservable_server_filename(filename: str) -> bool:
+    """Is a downloaded file's name real server metadata worth keeping?
+
+    Staging artifacts are not: mkstemp temporaries are dot-prefixed, and the
+    source adapters stage under the content hash. Anything that sanitizes to
+    nothing is not a name either.
+    """
+    name = str(filename).strip().rstrip(" .")
+    if not name or name.startswith("."):
+        return False
+    stem = Path(name).stem
+    if _MD5_ARTIFACT_RE.fullmatch(stem):
+        return False
+    # URL fallbacks such as book456.epub contribute no wording and should not
+    # replace the real title/author components that partial metadata provides.
+    # Treat all-digit stems as generic IDs too, even real titles such as 1984,
+    # to avoid replacing known metadata with an ambiguous numeric response name.
+    if re.fullmatch(r"(?:book|file|document|download)(?:[-_ ]?\d+)?|\d+", stem, re.IGNORECASE):
+        return False
+    if not normalize_document_extension(Path(name).suffix):
+        return False
+    sanitized = sanitize_preserved_filename(name)
+    return bool(sanitized and normalize_document_extension(Path(sanitized).suffix))
 
 
 def create_metadata_filename(original_filename: str) -> str:

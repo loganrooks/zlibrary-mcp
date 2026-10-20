@@ -60,6 +60,11 @@ def extract_metadata_from_eapi(
             "quality_score": _safe_float(book.get("qualityScore")),
         }
 
+        # Preserve edition evidence only when the upstream actually exposes it.
+        for field in ("edition", "translator"):
+            if book.get(field):
+                metadata[field] = book[field]
+
         # ISBNs
         isbn = book.get("isbn", "") or ""
         metadata["isbn_10"] = None
@@ -114,7 +119,7 @@ async def get_enhanced_metadata(
     if client is None:
         # Resolve a healthy EAPI domain before login: honours an explicit
         # ZLIBRARY_EAPI_DOMAIN override, otherwise probes the fallback list
-        # via GET /eapi/info/domains (ISSUE-API-002: the old z-library.sk
+        # via one-row POST /eapi/book/search (ISSUE-API-002: the old z-library.sk
         # default is DiamWall-walled).
         domain = await resolve_eapi_domain()
         client = EAPIClient(domain)

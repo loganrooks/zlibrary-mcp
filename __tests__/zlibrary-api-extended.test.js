@@ -1,4 +1,15 @@
-import { jest, describe, beforeEach, test, expect } from '@jest/globals';
+import { jest, describe, beforeEach, afterEach, test, expect } from '@jest/globals';
+
+// These fixtures describe a single per-call subprocess, not private acquisition.
+let previousSessionMode;
+beforeEach(() => {
+  previousSessionMode = process.env.ZLIBRARY_SESSION_MODE;
+  process.env.ZLIBRARY_SESSION_MODE = 'per-call';
+});
+afterEach(() => {
+  if (previousSessionMode === undefined) delete process.env.ZLIBRARY_SESSION_MODE;
+  else process.env.ZLIBRARY_SESSION_MODE = previousSessionMode;
+});
 import * as path from 'path';
 
 // ============================================================================
@@ -687,10 +698,8 @@ describe('Z-Library API - Extended Coverage', () => {
       expect(mockRunPythonBridge).toHaveBeenCalledTimes(6);
     });
 
-    test('a response-level failure is not marked non-retryable', async () => {
-      // Only reachability failures get the explicit veto. An HTTP error means
-      // the host answered, so whether to retry is left to the general
-      // classifier rather than being decided here.
+    test('response-level details are never retried by Node', async () => {
+      // Python owns the provider walk, including response-level failures.
       mockGetManagedPythonPath.mockResolvedValue('/fake/python');
       mockRunPythonBridge.mockRejectedValue(
         bridgeFailure({
@@ -703,7 +712,7 @@ describe('Z-Library API - Extended Coverage', () => {
         .searchMultiSource({ query: 'test', source: 'annas' })
         .catch((e) => e);
 
-      expect(error.retryable).toBe(true);
+      expect(error.retryable).toBe(false);
     });
 
     test('falls back to the raw message when stderr holds no envelope', async () => {

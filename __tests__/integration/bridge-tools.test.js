@@ -9,7 +9,7 @@
  *   npm run test:integration          # recorded mode
  *   npm run test:integration:live     # live mode (requires credentials)
  */
-import { jest, describe, beforeEach, test, expect, afterAll } from '@jest/globals';
+import { jest, describe, beforeEach, test, expect, afterEach, afterAll } from '@jest/globals';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import path from 'path';
@@ -25,8 +25,7 @@ const TOOL_BRIDGE_MAP = {
   'full_text_search':         { fn: 'full_text_search',          minArgs: { query: 'test', count: 1 }, fixture: 'full_text_search.json' },
   'get_download_history':     { fn: 'get_download_history',      minArgs: { count: 1 },                fixture: 'get_download_history.json' },
   'get_download_limits':      { fn: 'get_download_limits',       minArgs: {},                          fixture: 'get_download_limits.json' },
-  'download_book_to_file':    { fn: 'download_book',             minArgs: { book_details: { url: '/book/1/abc', id: '1' }, output_dir: '/tmp', process_for_rag: true }, fixture: 'download_book.json' },
-  'process_document_for_rag': { fn: 'process_document',          minArgs: { file_path_str: '/tmp/test.pdf' },                                   fixture: 'process_document.json' },
+  'download_book_to_file':    { fn: 'download_book',             minArgs: { book_details: { url: '/book/1/abc', id: '1' }, output_dir: '/tmp' }, fixture: 'download_book.json' },
   'get_book_metadata':        { fn: 'get_book_metadata_complete', minArgs: { book_id: '1', book_hash: 'abc' },                                  fixture: 'get_book_metadata_complete.json' },
   'search_by_term':           { fn: 'search_by_term_bridge',     minArgs: { term: 'test' },            fixture: 'search_by_term_bridge.json' },
   'search_by_author':         { fn: 'search_by_author_bridge',   minArgs: { author: 'test' },          fixture: 'search_by_author_bridge.json' },
@@ -49,23 +48,32 @@ describe('Bridge Integration Tests', () => {
 
   if (!IS_LIVE) {
     // ── Recorded mode ──
-    // Mock PythonShell so callPythonFunction returns fixture data
-    let mockPythonShellRun;
+    // Mock the Python runner so callPythonFunction returns fixture data.
+    let mockRunPythonBridge;
     let mockGetManagedPythonPath;
 
+    let previousSessionMode;
+    afterEach(() => {
+      if (previousSessionMode === undefined) delete process.env.ZLIBRARY_SESSION_MODE;
+      else process.env.ZLIBRARY_SESSION_MODE = previousSessionMode;
+    });
     beforeEach(async () => {
+      // Recorded fixtures contain tool results, not private acquisition frames.
+      previousSessionMode = process.env.ZLIBRARY_SESSION_MODE;
+      process.env.ZLIBRARY_SESSION_MODE = 'per-call';
       jest.resetModules();
       jest.clearAllMocks();
 
       mockGetManagedPythonPath = jest.fn().mockResolvedValue('/usr/bin/python3');
-      mockPythonShellRun = jest.fn();
+      mockRunPythonBridge = jest.fn();
 
       jest.unstable_mockModule('../../dist/lib/venv-manager.js', () => ({
         getManagedPythonPath: mockGetManagedPythonPath,
       }));
 
-      jest.unstable_mockModule('python-shell', () => ({
-        PythonShell: { run: mockPythonShellRun },
+      jest.unstable_mockModule('../../dist/lib/python-runner.js', () => ({
+        runPythonBridge: mockRunPythonBridge,
+        LONG_BRIDGE_TIMEOUT_MS: 2400000,
       }));
     });
 
@@ -74,10 +82,9 @@ describe('Bridge Integration Tests', () => {
         const spec = TOOL_BRIDGE_MAP[toolName];
         const fixture = loadFixture(spec.fixture);
 
-        // PythonShell.run returns array of strings (stdout lines)
-        // The fixture is the full MCP response object; callPythonFunction
-        // joins lines and parses, so we return the stringified fixture as a single line.
-        mockPythonShellRun.mockResolvedValue([JSON.stringify(fixture)]);
+        // The fixture is a full MCP response object. The runner mock returns
+        // its stdout lines without starting a Python process.
+        mockRunPythonBridge.mockResolvedValue([JSON.stringify(fixture)]);
 
         // Dynamic import after mocking
         const zlibApi = await import('../../dist/lib/zlibrary-api.js');
@@ -103,11 +110,7 @@ describe('Bridge Integration Tests', () => {
               result = await zlibApi.downloadBookToFile({
                 bookDetails: { url: '/book/1/abc', id: '1' },
                 outputDir: '/tmp',
-                process_for_rag: true,
               });
-              break;
-            case 'process_document_for_rag':
-              result = await zlibApi.processDocumentForRag({ filePath: '/tmp/test.pdf' });
               break;
             case 'get_book_metadata':
               result = await zlibApi.getBookMetadata('1', 'abc');
@@ -132,31 +135,13 @@ describe('Bridge Integration Tests', () => {
           expect(result).not.toBeNull();
 
           if (toolName === 'download_book_to_file') {
-            expect(result).toEqual(expect.objectContaining({
-              processed_file_path: expect.any(String),
-              metadata_file_path: expect.any(String),
-              output_files: expect.objectContaining({
-                body: expect.any(String),
-                metadata: expect.any(String),
-              }),
-            }));
+            expect(result).toEqual({ file_path: '/tmp/downloads/test-book.pdf' });
           }
 
-          if (toolName === 'process_document_for_rag') {
-            expect(result).toEqual(expect.objectContaining({
-              processed_file_path: expect.any(String),
-              metadata_file_path: expect.any(String),
-              output_files: expect.objectContaining({
-                body: expect.any(String),
-                metadata: expect.any(String),
-              }),
-            }));
-          }
-
-          // Verify PythonShell.run was called with correct function name
-          expect(mockPythonShellRun).toHaveBeenCalledTimes(1);
-          const callArgs = mockPythonShellRun.mock.calls[0][1]; // options
-          expect(callArgs.args[0]).toBe(spec.fn);
+          expect(mockRunPythonBridge).toHaveBeenCalledTimes(1);
+          const [, options] = mockRunPythonBridge.mock.calls[0];
+          expect(options.args[0]).toBe(spec.fn);
+          expect(JSON.parse(options.args[1])).toMatchObject(spec.minArgs);
 
           results.push({ tool: toolName, mode: 'recorded', status: 'PASS', error: null });
         } catch (err) {
@@ -193,11 +178,6 @@ describe('Bridge Integration Tests', () => {
               // Skip in live mode — requires actual book details and network
               console.log('  [SKIP] download_book_to_file requires real book details');
               results.push({ tool: toolName, mode: 'live', status: 'SKIP', error: 'requires real book details' });
-              return;
-            case 'process_document_for_rag':
-              // Skip in live mode — requires actual file
-              console.log('  [SKIP] process_document_for_rag requires real file');
-              results.push({ tool: toolName, mode: 'live', status: 'SKIP', error: 'requires real file' });
               return;
             case 'get_book_metadata':
               // Skip — requires valid book_id/hash

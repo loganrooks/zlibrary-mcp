@@ -1,3 +1,8 @@
+> **Currency:** The Node 18 and pipeline summary below is historical, not current CI
+> authority. Use the actual [CI workflow](../.github/workflows/ci.yml),
+> [package scripts](../package.json) and [AGENTS.md](../AGENTS.md#setup-and-commands)
+> for current jobs and commands (Node 22+). This pointer does not change CI.
+
 <!-- Last Verified: 2026-02-01 -->
 
 # CI/CD Infrastructure

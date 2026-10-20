@@ -7,6 +7,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking: five-tool acquisition interface
+
+- Replaced the old tool names with `search`, `get_book`, `download`, `get_limits`,
+  `get_history`; old calls return typed migration errors without contacting providers.
+- Added ordered source routing, compact process-local refs, immutable replayable
+  cursors, bounded paging and consistent closed error envelopes with quota-aware retry hints.
+- Added no-network local source limits; account history remains distinct from local files.
+- Added intent/completion acquisition sidecars, SHA-256 re-hashing before reuse,
+  cross-process destination locks and crash recovery before receipt finalization.
+- Retained the initial lease while leasing corrected-format canonical targets
+  through finalization and recovery; canonical hashed intent precedes alias intent
+  and publication, and compatible complete receipts/provenance stay authoritative.
+  Non-waiting corrected-target contention can follow a quota-counting transfer
+  (`request_issued: true`, `retry: "may_spend_quota"`); no automatic retry occurs.
+- Preserved POSIX flock/inode-checked unlink ordering and added persistent native
+  Windows byte-range leases, released on close or process death without unlink.
+  A remaining Windows lock file is not a held lease. Unsupported locking fails
+  closed; network filesystems and hostile directory swaps remain outside the guarantee.
+- Fail closed on receipt permission/I/O errors and symlink/nonregular sidecars,
+  preserving provenance instead of starting a transfer. Retryable LibGen download
+  failures are quota-safe even after issuance; no download automatically retries.
+- Share the in-memory Z-Library session owner across reads and fresh acquisitions,
+  requesting authentication only after held-lease receipt checks and durable intent.
+  Receipt hits bypass credentials/cooldown/pending login; granted transfers never
+  replay after authentication rejection. Explicit per-call mode is unchanged.
+- Downloads return `path`, `bytes`, flags and `record`; full book records and all
+  processing arguments are no longer MCP inputs. Even a saved false processing
+  flag is rejected by the new MCP surface; the internal legacy API is unchanged.
+- Source-neutral server identity and tool descriptions; package/executable/client
+  keys are unchanged. See [tool migration](docs/interface-migration.md) and ADR-012.
+
+### Breaking: acquisition-only 2.0
+
+- Removed local text processing, its tool, combined-download options, CLI paths,
+  detectors, quality helpers, and processing-only tests/dependencies. Downloads
+  return original files without processing bundles; the new MCP reply uses
+  `path` and `record` as described above.
+- Saved requests with `process_for_rag: true` (or a malformed value) or any
+  `processed_output_format` fail before authentication, quota use, or transfer.
+  `process_for_rag: false` alone remains a no-op only on the internal legacy
+  API; the new MCP tool rejects all removed fields explicitly.
+- The `rag` and `scholar` extras are gone. All current source, npm, container,
+  and CI recipes use acquisition dependencies, plus contributor tools as needed.
+- **Migration:** stay on an isolated 1.4.x installation for text processing until
+  a text add-on exists. Existing downloaded/extracted files are not deleted.
+  Code and tests are preserved at `parked/text-processing` and immutable tag
+  `parked-text-processing-2026-10` (`25fe05a`); held optical work is preserved
+  separately at `parked-pr240-optical-2026-10`. See
+  [migration details](docs/text-processing-migration.md). This does not fix the
+  four parked processing failures in issue #245.
+
 ### Added
 
 - `npm run audit:release` ([scripts/release-audit.mjs](scripts/release-audit.mjs)) and a
@@ -56,6 +107,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The release audit distinguishes explicit patch milestones from minor slots, so an
+  untagged `v1.4.1` is not treated as already shipped by `v1.4.0`. Exact patch milestones
+  own matching tags; legacy minor-only records still work. The PR-age rule is unchanged.
 - **`search_multi_source` could hang forever, and leave the Python process
   behind when it did.** Three defects compounded: the vendored
   `libgen_api_enhanced` calls `requests.get` with no `timeout=` (and catches a

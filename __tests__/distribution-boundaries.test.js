@@ -1,14 +1,9 @@
-/**
- * Distribution contracts for the optional Python dependency tiers.
- *
- * The npm tarball must contain every document linked by the README, while the
- * Docker image deliberately includes the lightweight RAG tier without making
- * that tier mandatory for source or npm users.
- */
+/** Acquisition-only packaging and installation contracts. */
 
-import { execFileSync } from 'child_process';
+import { execFileSync, spawnSync } from 'child_process';
 import {
   chmodSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -22,7 +17,7 @@ import { fileURLToPath } from 'url';
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 describe('distribution boundaries', () => {
-  function runSetupUv(args) {
+  function runSetupUv(args, { pythonVersion = [3, 10], uvVersion = '0.8.22' } = {}) {
     const tempDir = mkdtempSync(path.join(os.tmpdir(), 'zlibrary-setup-uv-'));
     const binDir = path.join(tempDir, 'bin');
     const callLog = path.join(tempDir, 'uv-calls.log');
@@ -30,15 +25,24 @@ describe('distribution boundaries', () => {
     try {
       mkdirSync(binDir, { recursive: true });
       const pythonStub = path.join(binDir, 'python3');
-      writeFileSync(pythonStub, '#!/bin/sh\nprintf "3.10\\n"\n');
+      const python = execFileSync('python3', ['-c', 'import sys; print(sys.executable)'], {
+        encoding: 'utf8',
+      }).trim();
+      // Execute the script's real comparison with a controlled version tuple.
+      writeFileSync(pythonStub, `#!${python}\nimport sys\nfrom collections import namedtuple\nsys.version_info = namedtuple('VersionInfo', 'major minor micro releaselevel serial')(${pythonVersion[0]}, ${pythonVersion[1]}, 0, 'final', 0)\ncode = sys.argv[2]\nsys.argv = ['-c', *sys.argv[3:]]\nexec(code)\n`);
       chmodSync(pythonStub, 0o755);
+
+      // A runner without version-sort must still admit supported versions.
+      const sortStub = path.join(binDir, 'sort');
+      writeFileSync(sortStub, '#!/bin/sh\nprintf "sort: unsupported option -V\\n" >&2\nexit 2\n');
+      chmodSync(sortStub, 0o755);
 
       const uvStub = path.join(binDir, 'uv');
       writeFileSync(
         uvStub,
         [
           '#!/bin/sh',
-          'if [ "$1" = "--version" ]; then printf "uv 0.8.22\\n"; exit 0; fi',
+          `if [ "$1" = "--version" ]; then printf "uv ${uvVersion}\\n"; exit 0; fi`,
           'printf "%s\\n" "$*" >> "$UV_CALL_LOG"',
           'mkdir -p .venv/bin',
           'printf "#!/bin/sh\\nexit 0\\n" > .venv/bin/python',
@@ -48,7 +52,7 @@ describe('distribution boundaries', () => {
       );
       chmodSync(uvStub, 0o755);
 
-      execFileSync('bash', [path.join(projectRoot, 'setup-uv.sh'), ...args], {
+      const result = spawnSync('bash', [path.join(projectRoot, 'setup-uv.sh'), ...args], {
         cwd: tempDir,
         encoding: 'utf8',
         env: {
@@ -58,7 +62,7 @@ describe('distribution boundaries', () => {
         },
       });
 
-      return readFileSync(callLog, 'utf8').trim();
+      return { ...result, calls: existsSync(callLog) ? readFileSync(callLog, 'utf8').trim() : '' };
     } finally {
       rmSync(tempDir, { recursive: true, force: true });
     }
@@ -81,22 +85,37 @@ describe('distribution boundaries', () => {
     );
   });
 
-  test('Docker installs the RAG extra without making source installs non-core', () => {
+  test('Docker installs only acquisition dependencies', () => {
     const dockerfile = readFileSync(path.join(projectRoot, 'docker', 'Dockerfile'), 'utf8');
 
-    expect(dockerfile).toMatch(/uv sync --frozen --no-dev --extra rag/);
+    expect(dockerfile).toMatch(/uv sync --frozen --no-dev/);
     expect(dockerfile).not.toMatch(/--all-extras/);
   });
 
   test('setup keeps end-user core separate from the contributor dev group', () => {
-    expect(runSetupUv(['--no-dev'])).toBe('sync --no-dev');
-    // Contributors get the dev group AND every extra: part of the fast suite
-    // imports scholar-tier modules at collection time, so a core-only
-    // contributor environment cannot run the verification CONTRIBUTING.md
-    // documents on the very next line (Codex on #114).
-    expect(runSetupUv([])).toBe('sync --group dev --all-extras');
-    // Deployments validate RAG processing, which core alone cannot do.
-    expect(runSetupUv(['--deploy'])).toBe('sync --no-dev --extra rag --extra scholar');
+    expect(runSetupUv(['--no-dev'])).toMatchObject({ status: 0, calls: 'sync --no-dev' });
+    // Contributor tools do not require a processing stack.
+    expect(runSetupUv([])).toMatchObject({ status: 0, calls: 'sync --group dev' });
+    // Deployment and end-user runtime dependencies match.
+    expect(runSetupUv(['--deploy'])).toMatchObject({ status: 0, calls: 'sync --no-dev' });
+  });
+
+  test.each([[3, 10], [3, 15]])('setup admits Python %i.%i without sort -V', (major, minor) => {
+    expect(runSetupUv(['--no-dev'], { pythonVersion: [major, minor], uvVersion: '0.4.27' }))
+      .toMatchObject({ status: 0, calls: 'sync --no-dev' });
+  });
+
+  test('setup refuses Python 3.9 before dependency installation with the existing diagnostic', () => {
+    const result = runSetupUv(['--no-dev'], { pythonVersion: [3, 9] });
+    expect(result).toMatchObject({ status: 1, calls: '' });
+    expect(result.stdout).toContain('Error: Python 3.10+ required, found 3.9');
+  });
+
+  test('setup refuses uv below 0.4.27 before syncing and retains its upgrade diagnostic', () => {
+    const result = runSetupUv(['--no-dev'], { uvVersion: '0.4.26' });
+    expect(result).toMatchObject({ status: 1, calls: '' });
+    expect(result.stdout).toContain('Error: UV 0.4.27+ required (dev dependencies use PEP 735 [dependency-groups]), found 0.4.26');
+    expect(result.stdout).toContain('Upgrade with: uv self update');
   });
 
   test('packed CI runs the documented core setup and rejects contributor packages', () => {
@@ -154,11 +173,11 @@ describe('distribution boundaries', () => {
     );
 
     // Contributor default must match what the fast suite needs to collect.
-    expect(setup).toContain('sync --group dev --all-extras');
+    expect(setup).toContain('sync --group dev');
     expect(contributing).toMatch(/bash setup-uv\.sh\s*$/m);
 
-    // Deployment validates RAG processing, so its tier must carry rag+scholar.
-    expect(setup).toContain('--extra rag --extra scholar');
+    // Deployment has no processing extras.
+    expect(setup).not.toMatch(/--extra (rag|scholar)/);
     expect(deployment).toContain('bash setup-uv.sh --deploy');
 
     // The health check is recommended to core installs; it must not sync dev.
@@ -177,11 +196,7 @@ describe('distribution boundaries', () => {
 
     expect(systemWide).toContain('bash setup-uv.sh --no-dev');
     expect(troubleshooting).toContain('uv sync --no-dev');
-    expect(troubleshooting).toContain('uv sync --no-dev --extra rag');
-    expect(troubleshooting).toContain('uv sync --no-dev --extra scholar');
-    // The contributor row names the script, not a flag combination: `--group
-    // dev` alone fails at collection, because a unit-marked test imports PIL
-    // at module scope and Pillow is scholar-only (Codex on #114).
+    expect(troubleshooting).not.toMatch(/--extra (rag|scholar)/);
     expect(troubleshooting).toContain('bash setup-uv.sh');
     expect(troubleshooting).not.toContain('uv sync --group dev`');
     expect(troubleshooting).not.toContain(

@@ -1,133 +1,78 @@
-# Scripts Directory
+# Scripts
 
-Organized collection of utility and validation scripts for the Z-Library MCP project.
+| Script | Use |
+|---|---|
+| `validate-python-bridge.js` | Asset validation (`npm run validate`) |
+| `validate-readme-tools.sh` | Compare registrations with the README tool list |
+| `check_upstream.py` | Source contract probes (`npm run doctor`) |
+| `release-audit.mjs` | Release-record audit; requires Git history and GitHub access |
+| `check_optional_imports.py --core-smoke` | Offline acquisition import trap |
+| `get_venv_python_path.mjs` | Locate the project Python interpreter |
+| `check-packed-artifact.mjs --offline-providers` | Clean disposable npm install and offline installed-bin smoke (source checkout only) |
 
-## Directory Structure
+Text-processing CLI paths are removed. See
+[migration](../docs/text-processing-migration.md). Scripts in `archive/` are
+historical experiments, not runnable product features.
 
+The npm package includes validation, upstream, and release-audit scripts.
+Build/lint/test/rehearsal commands require a source checkout. The release audit
+also needs that checkout's Git release records.
+
+## Packed install check
+
+After `npm run build`, run:
+
+```bash
+node scripts/check-packed-artifact.mjs --offline-providers
 ```
-scripts/
-├── validation/     # Production validation and test generation
-├── debugging/      # Debugging utilities
-├── extraction/     # Page extraction utilities
-└── archive/        # Historical development scripts (reference only)
+
+For an interpreter-specific check, set `UV_PYTHON` to its executable path.
+That optional selection is forwarded to the disposable package's setup;
+without it, uv uses its normal interpreter selection. CI does not pin this job.
+
+Requires Node 22+, Python 3.10+, uv, OpenSSL and tar. Packs once, installs that
+tarball into an empty local prefix with install hooks disabled, and runs the
+documented `bash setup-uv.sh --no-dev` in the installed package. Registry access
+during dependency setup is expected. No global npm
+install, publish, live doctor probes or user account configuration is used.
+All disposable state is removed in `finally`.
+
+Pack requests lifecycle scripts disabled with both `--ignore-scripts` and
+`npm_config_ignore_scripts=true`; `HUSKY=0` also disables Husky's hook setup.
+Some npm versions still invoke prepare and emit a Husky skip diagnostic despite
+the flag. Tarball discovery therefore requires exactly one `.tgz` file in the
+pack destination and never parses npm stdout as JSON. The check does not claim
+that every npm version honors lifecycle-script suppression.
+
+Checks every bin plus doctor/validation/start/release-audit script target, the
+installed Python bridge and package-local paths, then starts npm's actual bin
+link from outside the source tree. Every stdout line must be JSON-RPC. The
+2.0 names and argument names must match `__tests__/fixtures/tools-surface-v2.json`.
+The installed bin runs `search` → `get_book` → `download` → repeated `download`
+against the existing rehearsal HTTPS fake for both credential-free LibGen and
+synthetic-account Z-Library. It checks exact fixture bytes, SHA-256, output path,
+and the complete `.acq.json` receipt. The repeated call must hit that receipt
+without any additional fake-provider calls or quota spend, and must preserve
+the artifact and receipt bytes. LibGen's initial acquisition includes a range
+probe before the full stream; both requests are counted.
+
+`Rehearsal.start()` supplies fake startup/certificates/cleanup, and its shared
+`providerEnvironment()` supplies endpoints, trust and the Python fence. The
+LibGen URL seam covers both requests-based search and httpx-based resolution
+and streaming; production provider code is unchanged. Node/Python network
+fences are tested, then runtime must produce zero non-loopback egress attempts.
+Only the fake's exact loopback port is admitted. This is not a live-source
+health check. All output, account state and fake-server state is disposable.
+
+The first two controls damage the tarball **before** installing it. The third
+allows search/details but makes the fake file endpoint return no bytes. Each
+must exit 1:
+
+```bash
+node scripts/check-packed-artifact.mjs --offline-providers --control=missing-bridge
+node scripts/check-packed-artifact.mjs --offline-providers --control=missing-script
+node scripts/check-packed-artifact.mjs --offline-providers --control=drop-transfer
 ```
 
----
-
-## Production Scripts
-
-### validation/
-
-**Purpose**: Active scripts used for validation and testing in production workflows
-
-- **`xmark_detector.py`** - Main X-mark (sous rature) detection script
-  - Detects strikethrough text in philosophical texts
-  - Uses PyMuPDF for PDF analysis
-  - Production-ready validation tool
-
-- **`create_test_pdfs.py`** - Generate test PDFs with various formatting
-  - Creates PDFs with strikethrough, italics, bold
-  - Used for regression testing
-  - Configurable test case generation
-
-- **`test_formatting_extraction.py`** - Validate formatting extraction
-  - Tests formatting detection accuracy
-  - Compares against ground truth
-  - Quality assurance for RAG pipeline
-
-### debugging/
-
-**Purpose**: Utilities for troubleshooting extraction and formatting issues
-
-- **`debug_extraction_matching.py`** - Debug extraction match logic
-- **`debug_pdf_formatting.py`** - Debug PDF formatting detection
-
-### extraction/
-
-**Purpose**: Page extraction and manipulation utilities
-
-- **`extract_specific_pages.py`** - Extract specific pages from PDFs
-  - Used for creating test fixtures
-  - Supports page range extraction
-
----
-
-## Archive Scripts
-
-### archive/
-
-**Purpose**: Historical development and research scripts (kept for reference)
-
-These scripts were used during the development and research phase. They are preserved for:
-- Historical reference
-- Understanding evolution of solutions
-- Potential future insights
-
-**Do not use in production** - Use scripts in `validation/` instead.
-
-**Contents**:
-- `test_strikethrough_detection.py` - Early strikethrough experiments
-- `test_specific_pages_analysis.py` - Page-level analysis prototype
-- `search_sous_rature.py` - Initial sous rature search
-- `dump_derrida_pages.py` - Page extraction utility
-- `analyze_extracted_pages.py` - Page analysis tool
-- `test_xmark_detection_engineering.py` - Engineering development version
-- `test_line_classification.py` - Line classification experiments
-- `test_pymupdf_strikethrough.py` - PyMuPDF strikethrough tests
-- `visualize_line_detection.py` - Line detection visualization
-- `visualize_test_results.py` - Test result visualization
-- `test_tesseract_comparison.py` - Tesseract OCR comparison tests
-
----
-
-## Other Scripts (Root Level)
-
-Scripts in the root `scripts/` directory are legacy utilities that may still be in use:
-
-- `create_mock_pdf.py` - Mock PDF generation
-- `run_rag_tests.py` - RAG test runner
-- `test_marginalia_detection.py` - Marginalia detection tests
-- `validate-python-bridge.js` - Python bridge validation
-- `fix-cache-venv.sh` - Venv cache fix utility
-- `get_venv_python_path.mjs` - Get venv Python path
-
----
-
-## Usage Guidelines
-
-### For Production Work
-1. Use scripts in `validation/` directory
-2. Run `xmark_detector.py` for X-mark detection
-3. Use `create_test_pdfs.py` for test case generation
-4. Validate with `test_formatting_extraction.py`
-
-### For Debugging
-1. Check `debugging/` directory for relevant utilities
-2. Use debug scripts to troubleshoot specific issues
-3. Add new debug utilities to `debugging/` directory
-
-### For Reference
-1. Check `archive/` for historical context
-2. Do not modify archived scripts
-3. Extract useful patterns for new implementations
-
----
-
-## Next Steps
-
-1. **Clean Up Root**: Consider moving remaining root-level scripts to appropriate subdirectories
-2. **Documentation**: Update any references to old script paths in documentation
-3. **Testing**: Verify all moved scripts still work from new locations
-4. **Deprecation**: Mark archived scripts with deprecation notices if needed
-
----
-
-## Related Documentation
-
-- `/WORKSPACE_ORGANIZATION.md` - Complete organization report
-- `/claudedocs/strikethrough-research/` - Research documentation
-- `/test_files/` - Test fixtures and PDFs
-
----
-
-**Last Updated**: 2025-10-15
+The existing pack-check stays; a separate CI job runs this smoke on Ubuntu and
+macOS within the rehearsal job's 15-minute budget.

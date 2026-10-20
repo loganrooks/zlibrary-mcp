@@ -56,6 +56,35 @@ def _diamwall_error(domain: str, detail: str) -> DiamWallError:
     )
 
 
+class EAPIAuthenticationError(RuntimeError):
+    """An explicit rejection, not a transport failure or a generic error."""
+
+    def __init__(self, message, *, status_code=None, token=None):
+        super().__init__(message)
+        self.status_code = status_code
+        self.token = token
+
+
+class NonJSONResponseError(RuntimeError):
+    """Wall-like reply without JSON; eligible for same-cookie domain recovery."""
+
+
+def sanitized_auth_token(value):
+    return (
+        value
+        if isinstance(value, str) and re.fullmatch(r"[A-Za-z0-9 .#-]{1,64}", value)
+        else "<redacted>"
+    )
+
+
+def _auth_rejected(payload):
+    return (
+        isinstance(payload, dict)
+        and payload.get("success") == 0
+        and payload.get("error") in ("Please login", "Authentication required")
+    )
+
+
 def decode_eapi_json(resp: httpx.Response, domain: str) -> dict:
     """Parse an /eapi response as JSON, classifying anti-bot walls explicitly.
 
@@ -66,16 +95,45 @@ def decode_eapi_json(resp: httpx.Response, domain: str) -> dict:
     """
     if resp.status_code == 200:
         try:
-            return resp.json()
+            payload = resp.json()
+            if _auth_rejected(payload):
+                raise EAPIAuthenticationError(
+                    "EAPI authentication rejected",
+                    status_code=resp.status_code,
+                    token=sanitized_auth_token(payload.get("error")),
+                )
+            return payload
         except ValueError:
             pass  # fall through to wall classification
     body = resp.text
     if "diamwall" in body.lower():
         raise _diamwall_error(domain, f"HTTP {resp.status_code} DiamWall block page")
+    if resp.status_code == 401:
+        try:
+            payload = resp.json()
+        except ValueError:
+            payload = None
+        token = sanitized_auth_token(
+            payload.get("error") if isinstance(payload, dict) else None
+        )
+        raise EAPIAuthenticationError(
+            "EAPI authentication rejected", status_code=401, token=token
+        )
+    if resp.status_code == 400:
+        try:
+            payload = resp.json()
+            if _auth_rejected(payload):
+                raise EAPIAuthenticationError(
+                    "EAPI authentication rejected",
+                    status_code=400,
+                    token=sanitized_auth_token(payload.get("error")),
+                )
+        except ValueError:
+            pass
     if resp.status_code in WALLED_STATUS_CODES:
         raise _diamwall_error(domain, f"HTTP {resp.status_code}")
     resp.raise_for_status()
-    raise RuntimeError(
+    raise NonJSONResponseError(
         f"Expected JSON from {domain}, got non-JSON HTTP {resp.status_code} "
         f"response (possible block page or upstream contract change)"
     )
@@ -89,16 +147,17 @@ async def probe_eapi_domain(
 ) -> bool:
     """Cheaply check whether a domain serves real EAPI JSON.
 
-    Issues an unauthenticated GET /eapi/info/domains — never /eapi/user/login,
-    which is rate-limited (~10/hour/IP) and would lock out real credentials.
-    Healthy means HTTP 200 with a parseable JSON object containing a domains
-    payload. Redirects are NOT followed: DiamWall's 307 self-redirect is
-    itself the walled signal.
+    Issues an unauthenticated one-row POST /eapi/book/search. DiamWall leaves
+    /eapi/info/domains open even when it blocks search (#125). Never probes
+    /eapi/user/login, which is rate-limited and would lock out real credentials.
+    Healthy means HTTP 200 with a search-shaped JSON object (books or success,
+    including an unauthenticated API error). Redirects are NOT followed:
+    DiamWall's 307 self-redirect is itself the walled signal.
 
     The `transport` parameter exists for tests (httpx.MockTransport); it is
     None in production.
     """
-    url = f"https://{domain.strip().rstrip('/')}/eapi/info/domains"
+    url = f"https://{domain.strip().rstrip('/')}/eapi/book/search"
     try:
         async with httpx.AsyncClient(
             headers=EAPI_HEADERS,
@@ -106,7 +165,9 @@ async def probe_eapi_domain(
             follow_redirects=False,
             transport=transport,
         ) as client:
-            resp = await client.get(url)
+            resp = await client.post(
+                url, data={"message": "philosophy", "limit": "1", "page": "1"}
+            )
     except Exception as exc:  # noqa: BLE001 - any network failure means unusable
         logger.debug(f"EAPI probe failed for {domain}: {type(exc).__name__}: {exc}")
         return False
@@ -121,7 +182,7 @@ async def probe_eapi_domain(
     except ValueError:
         logger.debug(f"EAPI probe: {domain} returned non-JSON")
         return False
-    return isinstance(payload, dict) and "domains" in payload
+    return isinstance(payload, dict) and ("books" in payload or "success" in payload)
 
 
 async def resolve_eapi_domain(
@@ -258,6 +319,9 @@ class EAPIClient:
         self.remix_userid = remix_userid
         self.remix_userkey = remix_userkey
         self._client: Optional[httpx.AsyncClient] = None
+        # Only same-cookie domain recovery is allowed inside a child.
+        self.on_domain_failed = None
+        self.needs_profile_validation = False
 
     @property
     def _cookies(self) -> Dict[str, str]:
@@ -286,17 +350,34 @@ class EAPIClient:
         if self._client and not self._client.is_closed:
             await self._client.aclose()
 
+    async def _request_json(self, method, path, **kwargs):
+        for attempt in range(2):
+            client = await self._get_client()
+            try:
+                resp = await client.request(method, f"{self.base_url}{path}", **kwargs)
+                # Explicit auth replies raise for all clients; business envelopes return unchanged.
+                result = decode_eapi_json(resp, self.domain)
+                if isinstance(result, dict) and result.get("success") == 0:
+                    self.needs_profile_validation = True
+                return result
+            except (
+                httpx.ConnectError,
+                httpx.ConnectTimeout,
+                DiamWallError,
+                NonJSONResponseError,
+            ):
+                # One recovery only, even if this loop is later expanded.
+                if attempt or self.on_domain_failed is None:
+                    raise
+                # Login must never be retried through a session/domain hook.
+                if path == "/eapi/user/login" or not await self.on_domain_failed():
+                    raise
+
     async def _post(self, path: str, data: Optional[Dict[str, Any]] = None) -> dict:
-        client = await self._get_client()
-        url = f"{self.base_url}{path}"
-        resp = await client.post(url, data=data or {})
-        return decode_eapi_json(resp, self.domain)
+        return await self._request_json("POST", path, data=data or {})
 
     async def _get(self, path: str, params: Optional[Dict[str, Any]] = None) -> dict:
-        client = await self._get_client()
-        url = f"{self.base_url}{path}"
-        resp = await client.get(url, params=params)
-        return decode_eapi_json(resp, self.domain)
+        return await self._request_json("GET", path, params=params)
 
     # --- Auth ---
 

@@ -120,16 +120,17 @@ test.each(['ENOENT', 'EACCES', 'ENOEXEC'])('spawn %s neither retries nor counts'
   expect(runner).toHaveBeenCalledTimes(6);
 });
 
-test.each(['EAGAIN', 'EMFILE', 'ENFILE'])('spawn %s retries and counts', async (code) => {
+test.each(['EAGAIN', 'EMFILE', 'ENFILE'])('spawn %s retries and counts logical calls', async (code) => {
   process.env.RETRY_MAX_RETRIES = '1';
   runner.mockImplementation(() => {
     throw new errors.BridgeSpawnError('fixture failure', code);
   });
-  await expect(api.getDownloadLimits()).rejects.toThrow('fixture failure');
-  expect(runner).toHaveBeenCalledTimes(2);
-  await expect(api.getDownloadLimits()).rejects.toThrow('fixture failure');
+  for (let call = 1; call <= 5; call++) {
+    await expect(api.getDownloadLimits()).rejects.toThrow('fixture failure');
+    expect(runner).toHaveBeenCalledTimes(call * 2);
+  }
   await expect(api.getDownloadLimits()).rejects.toThrow(/OPEN/);
-  expect(runner).toHaveBeenCalledTimes(5);
+  expect(runner).toHaveBeenCalledTimes(10);
 });
 
 test.each(['aborted', 'signal', 'unknown', 'parse', 'auth', 'config'])(

@@ -1592,7 +1592,7 @@ async def _fetch_from_source(book_details: dict, output_dir: str) -> str:
                         if provider == "annas"
                         else "mirror_download",
                         "host": active_host or None,
-                        "mirror": None,
+                        "mirror": getattr(result, "mirror", "") or None,
                     }
                     if (
                         quota is not None
@@ -1721,6 +1721,10 @@ async def download_book(
     final_file_path_str = None  # Path with enhanced filename
     eapi_staging = None
     original_download_path_str = None
+    eapi_provenance = {"route": "eapi", "host": None, "mirror": None}
+
+    def observe_eapi_host(host: str) -> None:
+        eapi_provenance["host"] = host or None
 
     try:
         # Step 1: Fetch the file. Z-Library goes through the EAPI client;
@@ -1735,10 +1739,15 @@ async def download_book(
             # the final no-replace publication checks have run.
             Path(output_dir).mkdir(parents=True, exist_ok=True)
             eapi_staging = tempfile.TemporaryDirectory(prefix=".eapi-", dir=output_dir)
+            receipt_options = {}
+            if publication_hook is not None:
+                eapi_provenance["mirror"] = getattr(eapi, "domain", None) or None
+                receipt_options["host_observer"] = observe_eapi_host
             original_download_path_str = await eapi.download_file(
                 book_id=int(book_id),
                 book_hash=book_hash,
                 output_dir=eapi_staging.name,
+                **receipt_options,
             )
 
         if (
@@ -1823,7 +1832,7 @@ async def download_book(
             result["provenance"] = getattr(
                 original_download_path_str,
                 "provenance",
-                {"route": "eapi", "host": None, "mirror": None},
+                eapi_provenance,
             )
             quota_estimate = getattr(original_download_path_str, "quota_estimate", None)
             if quota_estimate is not None:

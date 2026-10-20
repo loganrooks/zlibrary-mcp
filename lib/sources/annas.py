@@ -520,6 +520,7 @@ class AnnasArchiveAdapter(SourceAdapter):
             url=download_url,
             source=SourceType.ANNAS_ARCHIVE,
             quota_info=quota_info,
+            mirror=self.host,
         )
 
     async def close(self) -> None:

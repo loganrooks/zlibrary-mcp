@@ -26,6 +26,10 @@ After `npm run build`, run:
 node scripts/check-packed-artifact.mjs --offline-providers
 ```
 
+For an interpreter-specific check, set `UV_PYTHON` to its executable path.
+That optional selection is forwarded to the disposable package's setup;
+without it, uv uses its normal interpreter selection. CI does not pin this job.
+
 Requires Node 22+, Python 3.10+, uv, OpenSSL and tar. Packs once, installs that
 tarball into an empty local prefix with install hooks disabled, and runs the
 documented `bash setup-uv.sh --no-dev` in the installed package. Registry access

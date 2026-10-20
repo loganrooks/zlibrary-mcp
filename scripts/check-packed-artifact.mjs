@@ -321,6 +321,8 @@ export async function main(args = process.argv.slice(2)) {
       npm_config_globalconfig: path.join(temporary, 'global-npmrc'),
       UV_CACHE_DIR: path.join(temporary, 'uv-cache'),
       UV_PYTHON_INSTALL_DIR: path.join(temporary, 'python'),
+      // Optional diagnostic selection only; CI/default installs remain unpinned.
+      ...(process.env.UV_PYTHON ? { UV_PYTHON: process.env.UV_PYTHON } : {}),
       PYTHONDONTWRITEBYTECODE: '1',
     };
     const tarball = await packArtifact(temporary, env);

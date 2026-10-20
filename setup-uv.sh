@@ -16,7 +16,7 @@ if ! command -v python3 &> /dev/null; then
 fi
 PYTHON_VERSION=$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
 REQUIRED="3.10"
-if [ "$(printf '%s\n' "$REQUIRED" "$PYTHON_VERSION" | sort -V | head -n1)" != "$REQUIRED" ]; then
+if ! python3 -c 'import sys; sys.exit(sys.version_info < (3, 10))'; then
     echo "Error: Python $REQUIRED+ required, found $PYTHON_VERSION"
     exit 1
 fi
@@ -49,11 +49,17 @@ echo "✅ UV found: $UV_VERSION"
 # 0.4.27. An older uv does not read that table and installs no dev group, so
 # `uv run pytest` fails with "not found" — a symptom that points nowhere near
 # the cause. Check it here rather than letting it surface three steps later.
-# Same `sort -V` comparison used for the Python version above.
+# Compare numeric components with Python, without a version-sort dependency.
 UV_NUMBER=$(printf '%s' "$UV_VERSION" | awk '{print $2}')
 UV_REQUIRED="0.4.27"
-if [ -n "$UV_NUMBER" ] && \
-   [ "$(printf '%s\n' "$UV_REQUIRED" "$UV_NUMBER" | sort -V | head -n1)" != "$UV_REQUIRED" ]; then
+if [ -n "$UV_NUMBER" ] && ! python3 -c '
+import sys
+try:
+    version = tuple(int(part) for part in sys.argv[1].split("."))
+except ValueError:
+    sys.exit(1)
+sys.exit(version < (0, 4, 27))
+' "$UV_NUMBER"; then
     echo "Error: UV $UV_REQUIRED+ required (dev dependencies use PEP 735 [dependency-groups]), found $UV_NUMBER"
     echo "Upgrade with: uv self update    (or reinstall: curl -LsSf https://astral.sh/uv/install.sh | sh)"
     exit 1

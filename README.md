@@ -218,6 +218,7 @@ file-reading tool in this five-tool interface.
 | `BOOK_SOURCE_TOTAL_TIMEOUT` | Per-source request budget in seconds (default `45`), bounded by the remaining walk budget |
 | `BOOK_SOURCE_PREFLIGHT` | DNS/TCP reachability probe (`true` by default); skipped when a proxy applies |
 | `BOOK_SOURCE_PREFLIGHT_TIMEOUT` | Aggregate DNS plus TCP probe budget in seconds (default `5`), shared across resolved addresses |
+| `BOOK_SOURCE_DOWNLOAD_RESUME_ATTEMPTS` | Extra `Range` requests to resume a dropped source transfer within one call (default `2`, at most `10`, `0` disables); they share the download deadline |
 | `ZLIBRARY_SESSION_MODE` | `memory` (default) or `per-call`; unknown modes fail at startup |
 
 In memory mode, reads and fresh Z-Library acquisitions share the same in-memory

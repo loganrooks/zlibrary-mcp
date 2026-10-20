@@ -159,7 +159,10 @@ test.each(
         detail: { reason: 'output_refused', request_issued: false },
       });
       expect(reply.structuredContent.error.message.length).toBeLessThanOrEqual(199);
-      expect(reply.structuredContent.error.recovery).toMatch(/different bytes/);
+      expect(reply.structuredContent.error.message).toMatch(/no matching receipt/);
+      expect(reply.structuredContent.error.message).not.toContain('different bytes');
+      expect(reply.structuredContent.error.recovery).toMatch(/no matching receipt/);
+      expect(reply.structuredContent.error.recovery).not.toContain('different bytes');
       expect(reply.structuredContent.error.recovery).toMatch(/move|rename/i);
       expect(reply.structuredContent.error.recovery).toContain('output_dir');
     }

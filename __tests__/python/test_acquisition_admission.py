@@ -72,7 +72,94 @@ async def test_occupied_destination_admission(
         assert error.value.reason == "output_refused"
         assert error.value.issued is False
         assert len(str(error.value)) <= 199
-        assert "different bytes" in str(error.value)
+        assert "no matching receipt" in str(error.value)
+        assert "different bytes" not in str(error.value)
     assert transfers == demands == writes == []
     assert {p: p.read_bytes() for p in tmp_path.glob("*.acq.json")} == receipts
     assert all(p.read_bytes() == contents for p, contents in files.items())
+
+
+def publication_transfer(directory, calls):
+    async def transfer(book, output_dir, *, filename, publication_hook):
+        calls.append(True)
+        stage, target = directory / ".stage-receipt", directory / "chosen.pdf"
+        stage.write_bytes(PAYLOAD)
+        try:
+            publication_hook(stage, target)
+            reused = bridge._publish_or_reuse(stage, target)
+            return {"file_path": str(target), "publication_reused": reused}
+        finally:
+            stage.unlink(missing_ok=True)
+
+    return transfer
+
+
+def admission_book(source, corrected):
+    return {
+        "source": source,
+        "id": "1",
+        "hash": "hash1",
+        "md5": hashlib.md5(PAYLOAD).hexdigest(),
+        "title": "Chosen",
+        "extension": "epub" if corrected else "pdf",
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("source", ["libgen", "zlibrary"])
+async def test_format_corrected_receipt_hit_ignores_occupied_predicted_name(
+    tmp_path, source
+):
+    calls = []
+    transfer = publication_transfer(tmp_path, calls)
+    book = admission_book(source, corrected=True)
+    first = await acq.acquire(
+        book, str(tmp_path), filename="chosen.epub", transfer=transfer
+    )
+    assert Path(first["path"]) == tmp_path / "chosen.pdf"
+    predicted = tmp_path / "chosen.epub"
+    predicted.write_bytes(b"unrelated file at predicted name")
+    receipts = {p: p.read_bytes() for p in tmp_path.glob("*.acq.json")}
+    calls.clear()
+
+    repeated = await acq.acquire(
+        book, str(tmp_path), filename="chosen.epub", transfer=transfer
+    )
+
+    assert repeated["transfer_skipped"] is True
+    assert repeated["path"] == first["path"]
+    assert calls == []
+    assert predicted.read_bytes() == b"unrelated file at predicted name"
+    assert Path(repeated["path"]).read_bytes() == PAYLOAD
+    assert {p: p.read_bytes() for p in tmp_path.glob("*.acq.json")} == receipts
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("source", ["libgen", "zlibrary"])
+@pytest.mark.parametrize("corrected", [False, True])
+async def test_deleted_receipt_artifact_redownloads_once(tmp_path, source, corrected):
+    calls = []
+    transfer = publication_transfer(tmp_path, calls)
+    book = admission_book(source, corrected)
+    filename = "chosen.epub" if corrected else "chosen.pdf"
+    first = await acq.acquire(book, str(tmp_path), filename=filename, transfer=transfer)
+    assert len(calls) == 1
+    Path(first["path"]).unlink()
+    calls.clear()
+
+    repeated = await acq.acquire(
+        book, str(tmp_path), filename=filename, transfer=transfer
+    )
+
+    assert repeated["transfer_skipped"] is False
+    assert calls == [True]
+    assert Path(repeated["path"]).read_bytes() == PAYLOAD
+    assert repeated["bytes"] == len(PAYLOAD)
+    receipts = list(tmp_path.glob("*.acq.json"))
+    assert Path(repeated["record"]) in receipts
+    for path in receipts:
+        record = json.loads(path.read_text())
+        assert record["state"] == "complete"
+        assert record["path"] == repeated["path"]
+        assert record["bytes"] == len(PAYLOAD)
+        assert record["sha256"] == hashlib.sha256(PAYLOAD).hexdigest()

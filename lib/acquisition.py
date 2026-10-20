@@ -434,7 +434,7 @@ def _refuse_occupied(target):
     if target.exists():
         raise AcquisitionError(
             "output_refused",
-            "Destination already holds different bytes; move or rename that file or choose another output_dir",
+            "Destination already holds a file with no matching receipt; move or rename it or choose another output_dir",
             occupied=True,
         )
 
@@ -480,8 +480,6 @@ async def acquire(
                 candidate = canonical if canonical else previous
                 path = _verified_artifact(candidate, directory)
                 if path == target and _same_identity(candidate, source, identifiers):
-                    if destination != target:
-                        _refuse_occupied(destination)
                     if candidate["state"] == "intent":
                         candidate = {
                             **candidate,

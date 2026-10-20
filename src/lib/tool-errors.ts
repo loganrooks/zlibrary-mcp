@@ -209,7 +209,7 @@ export function classifyFailure(error: any, operation: string, source?: string):
   return new ToolFailure(
     code,
     occupied
-      ? 'Destination already holds different bytes.'
+      ? 'Destination already holds a file with no matching receipt.'
       : `${operation} did not complete (${reason === 'unknown' ? code : reason}).`,
     {
       source,
@@ -217,7 +217,7 @@ export function classifyFailure(error: any, operation: string, source?: string):
       ...(occupied
         ? {
             recovery:
-              'The destination already holds different bytes; move or rename that file or choose another output_dir.',
+              'The destination already holds a file with no matching receipt; move or rename it or choose another output_dir.',
           }
         : {}),
       ...(Number.isFinite(context.retryAfterMs)

@@ -441,6 +441,7 @@ export class AcquisitionTools {
           });
         answered = true;
         selected = source;
+        note = undefined;
         const offset = cursor?.offset ?? 0;
         books =
           source === 'zlibrary' ? fetched.slice(0, count) : fetched.slice(offset, offset + count);
@@ -457,7 +458,7 @@ export class AcquisitionTools {
         };
         if (source === 'zlibrary' && books.length === count) next = { ...base, page: page + 1 };
         if (source !== 'zlibrary') {
-          note = `This source returns at most ${fetched.length} rows per query.`;
+          if (books.length) note = `This server returns at most 50 ${source} rows per query.`;
           if (offset + count < fetched.length)
             next = { ...base, page: 1, held: fetched, offset: offset + count };
         }
@@ -534,7 +535,11 @@ export class AcquisitionTools {
       ...(note
         ? { note }
         : books.length === 0 && operation === 'search'
-          ? { note: 'No matches; try exact:false, fewer filters or another source.' }
+          ? {
+              note: cursor
+                ? 'No more matches for this continuation.'
+                : 'No matches; try exact:false, fewer filters or another source.',
+            }
           : {}),
     };
   }

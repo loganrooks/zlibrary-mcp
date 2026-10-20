@@ -49,7 +49,7 @@ promising additional detail-page metadata. No direct ID input is accepted.
 | Argument | Contract |
 |---|---|
 | `ref` | Required current row ref |
-| `output_dir` | Optional directory inside the configured `ZLIBRARY_OUTPUT_ROOT`; default root, otherwise `./downloads` |
+| `output_dir` | Optional directory; relative paths resolve from the server working directory, not the output root. When `ZLIBRARY_OUTPUT_ROOT` is configured, the resolved path must be inside it. Default: configured root, otherwise `./downloads`. |
 | `filename` | Optional basename; sanitized and extension forced to acquired format |
 
 Returns `path`, `bytes`, `reused`, `transfer_skipped`, `verified: "sha256"`,
@@ -57,8 +57,12 @@ Returns `path`, `bytes`, `reused`, `transfer_skipped`, `verified: "sha256"`,
 `transfer_skipped` means this call read the receipt and hashed the current
 published bytes without contacting a provider. `reused` means a transfer occurred
 but an identical existing file was adopted; quota may have been counted.
-Different bytes are not overwritten. A different filename/directory creates a
-new destination. `record` points to `<path>.acq.json`.
+Different bytes are not overwritten. An occupied predicted destination without
+a matching verified receipt, or a modified receipt artifact, is refused with
+`output_refused` before intent, authentication or transfer; the file and prior
+receipt stay unchanged. Move or rename that file or choose another `output_dir`.
+A different filename/directory creates a new destination. `record` points to
+`<path>.acq.json`.
 
 Record version 1 includes `state` (`intent` or `complete`), file path, bytes,
 SHA-256, known MD5, source, nested provenance, edition metadata (explicit nulls

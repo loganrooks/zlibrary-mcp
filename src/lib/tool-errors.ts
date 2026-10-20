@@ -78,7 +78,9 @@ export function errorEnvelope(error: unknown, operation: string, source?: string
       ...(Number.isFinite(info.retry_after_s) ? { retry_after_s: info.retry_after_s } : {}),
       recovery:
         info.recovery ??
-        recoveries[e.code] ??
+        (e.code === 'outcome_unknown' && attempted === 'libgen'
+          ? 'Call download again with the same ref if still wanted; disk receipts are checked first and LibGen transfers are quota-free.'
+          : recoveries[e.code]) ??
         'Try another source or candidate; report persistent provider drift.',
       attempts: info.attempts ?? [],
       detail: info.detail ?? {},
@@ -203,12 +205,21 @@ export function classifyFailure(error: any, operation: string, source?: string):
       ? 'may_spend_quota'
       : 'safe'
     : 'no';
+  const occupied = code === 'output_refused' && detail.destination_occupied === true;
   return new ToolFailure(
     code,
-    `${operation} did not complete (${reason === 'unknown' ? code : reason}).`,
+    occupied
+      ? 'Destination already holds different bytes.'
+      : `${operation} did not complete (${reason === 'unknown' ? code : reason}).`,
     {
       source,
       retry,
+      ...(occupied
+        ? {
+            recovery:
+              'The destination already holds different bytes; move or rename that file or choose another output_dir.',
+          }
+        : {}),
       ...(Number.isFinite(context.retryAfterMs)
         ? { retry_after_s: Math.ceil(context.retryAfterMs / 1000) }
         : {}),

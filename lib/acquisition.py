@@ -33,13 +33,18 @@ _WINDOWS = os.name == "nt"
 
 
 class AcquisitionError(ValueError):
-    def __init__(self, reason, message, *, issued=False):
+    def __init__(self, reason, message, *, issued=False, occupied=False):
         super().__init__(message)
         self.reason = reason
         self.issued = issued
+        self.occupied = occupied
 
     def to_dict(self):
-        return {"reason": self.reason, "request_issued": self.issued}
+        return {
+            "reason": self.reason,
+            "request_issued": self.issued,
+            **({"destination_occupied": True} if self.occupied else {}),
+        }
 
 
 def _now():
@@ -425,6 +430,15 @@ def _refuse_foreign(record, target, directory, source, identifiers, *, issued=Fa
         )
 
 
+def _refuse_occupied(target):
+    if target.exists():
+        raise AcquisitionError(
+            "output_refused",
+            "Destination already holds different bytes; move or rename that file or choose another output_dir",
+            occupied=True,
+        )
+
+
 async def acquire(
     book_details, output_dir=None, filename=None, request=None, *, transfer
 ):
@@ -466,6 +480,8 @@ async def acquire(
                 candidate = canonical if canonical else previous
                 path = _verified_artifact(candidate, directory)
                 if path == target and _same_identity(candidate, source, identifiers):
+                    if destination != target:
+                        _refuse_occupied(destination)
                     if candidate["state"] == "intent":
                         candidate = {
                             **candidate,
@@ -479,9 +495,11 @@ async def acquire(
                     if receipt_path != canonical_path and previous != candidate:
                         _atomic_json(receipt_path, candidate)
                     return _reply(candidate, canonical_path, True)
+                _refuse_occupied(target)
             else:
                 _refuse_foreign(previous, destination, directory, source, identifiers)
 
+            _refuse_occupied(destination)
             record = _record(book, source, identifiers, destination, request or {})
             _atomic_json(receipt_path, record)  # before authentication/provider work
             checkpoint_target = None

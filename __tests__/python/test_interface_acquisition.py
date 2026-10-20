@@ -42,10 +42,15 @@ async def test_sha256_reuse_refuses_same_size_altered_file(tmp_path):
     again = await acquire(BOOK, str(tmp_path), transfer=provider)
     assert again["transfer_skipped"] is True
     assert provider.await_count == 1
+    receipt = Path(first["record"]).read_bytes()
     Path(first["path"]).write_bytes(b"x" * len(PAYLOAD))
-    with pytest.raises(FileExistsError):
+    with pytest.raises(AcquisitionError) as error:
         await acquire(BOOK, str(tmp_path), transfer=provider)
-    assert provider.await_count == 2  # not a checksum-blind quota-free success
+    assert error.value.reason == "output_refused"
+    assert error.value.issued is False
+    assert provider.await_count == 1  # refuse changed bytes without a second transfer
+    assert Path(first["record"]).read_bytes() == receipt
+    assert Path(first["path"]).read_bytes() == b"x" * len(PAYLOAD)
 
 
 @pytest.mark.asyncio
@@ -470,10 +475,14 @@ async def test_sha_mismatch_cannot_overwrite_different_bytes_through_real_public
     )
     altered = b"x" * len(PAYLOAD)
     Path(first["path"]).write_bytes(altered)
-    with pytest.raises(FileExistsError, match="Refusing to replace"):
+    receipt = Path(first["record"]).read_bytes()
+    with pytest.raises(AcquisitionError) as error:
         await acquire(
             book, str(tmp_path), filename="chosen.pdf", transfer=bridge.download_book
         )
-    assert provider.await_count == 2  # current-byte digest rejects blind receipt reuse
+    assert error.value.reason == "output_refused"
+    assert error.value.issued is False
+    assert provider.await_count == 1  # current-byte digest refuses before transfer
+    assert Path(first["record"]).read_bytes() == receipt
     assert Path(first["path"]).read_bytes() == altered
     assert not list(tmp_path.glob(".source-*"))

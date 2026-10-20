@@ -1,0 +1,175 @@
+import { afterAll, afterEach, beforeAll, beforeEach, expect, jest, test } from '@jest/globals';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { createHash } from 'node:crypto';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
+import { Rehearsal } from './rehearsal/harness.js';
+
+jest.setTimeout(30000);
+const actualRunner = await import('../dist/lib/python-runner.js');
+let demands = 0;
+jest.unstable_mockModule('../lib/python-runner.js', () => ({
+  ...actualRunner,
+  runPythonBridge: (script, options, runOptions) =>
+    actualRunner.runPythonBridge(script, options, {
+      ...runOptions,
+      ...(runOptions?.onSessionNeeded
+        ? {
+            onSessionNeeded: (control) => {
+              demands++;
+              return runOptions.onSessionNeeded(control);
+            },
+          }
+        : {}),
+    }),
+}));
+jest.unstable_mockModule('../lib/venv-manager.js', () => ({
+  getManagedPythonPath: async () => path.resolve('.venv/bin/python'),
+}));
+let h, previous, directory, client, server;
+beforeAll(async () => {
+  h = await Rehearsal.start('agent-eval');
+});
+afterAll(async () => {
+  await h.close();
+});
+beforeEach(async () => {
+  previous = { ...process.env };
+  directory = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'admission-sdk-')));
+  Object.assign(process.env, {
+    PYTHONPATH: path.resolve('__tests__/rehearsal'),
+    PYTHONDONTWRITEBYTECODE: '1',
+    SSL_CERT_FILE: h.cert,
+    REHEARSAL_ALLOWED_PORT: String(new URL(h.origin).port),
+    REHEARSAL_EGRESS_TRAP: path.join(directory, 'egress-trap.txt'),
+    REHEARSAL_LIBGEN_ORIGIN: h.origin,
+    BOOK_SOURCE_PREFLIGHT: 'false',
+    BOOK_SOURCE_FALLBACK_ENABLED: 'false',
+    ZLIBRARY_EAPI_DOMAIN: h.domain,
+    ZLIBRARY_EMAIL: 'rehearsal-account@example.invalid',
+    ZLIBRARY_PASSWORD: 'rehearsal-password-canary',
+    ZLIBRARY_OUTPUT_ROOT: directory,
+    MCP_READABLE_ROOTS: directory,
+    ZLIBRARY_SESSION_MODE: 'memory',
+    RETRY_MAX_RETRIES: '0',
+    LOG_LEVEL: 'error',
+  });
+  await h.mode({ mode: 'healthy', reset: true, remaining: 8 });
+  jest.resetModules();
+  const { createServer } = await import('../dist/index.js');
+  server = createServer();
+  client = new Client({ name: 'admission-real-sdk', version: '1' });
+  const [a, b] = InMemoryTransport.createLinkedPair();
+  await Promise.all([client.connect(a), server.connect(b)]);
+  demands = 0;
+});
+afterEach(async () => {
+  await client?.close();
+  await server?.close();
+  expect(actualRunner.liveChildCount()).toBe(0);
+  process.env = previous;
+  await fs.rm(directory, { recursive: true, force: true });
+});
+const call = async (name, args) => client.callTool({ name, arguments: args });
+const receipts = async () =>
+  Object.fromEntries(
+    await Promise.all(
+      (await fs.readdir(directory))
+        .filter((name) => name.endsWith('.acq.json'))
+        .map(async (name) => [
+          name,
+          (await fs.readFile(path.join(directory, name))).toString('base64'),
+        ]),
+    ),
+  );
+
+test.each(
+  ['libgen', 'zlibrary'].flatMap((source) =>
+    ['modified', 'foreign', 'intact'].map((state) => [source, state]),
+  ),
+)(
+  'real SDK %s %s destination admission precedes intent, lazy demand and transfer',
+  async (source, state) => {
+    const search = await call('search', {
+      query: source === 'libgen' ? 'Persuasion' : 'Seneca Letters',
+      sources: [source],
+    });
+    expect(search.isError).not.toBe(true);
+    const row = search.structuredContent.rows[0];
+    expect(row).toBeDefined();
+    const filename = `chosen.${row.format}`;
+    let artifact = path.join(directory, filename);
+    if (state === 'foreign') await fs.writeFile(artifact, 'unrelated occupied bytes');
+    else {
+      if (source === 'libgen') {
+        // Seed the already-complete receipt premise without relying on the fake's
+        // unrelated LibGen link-resolver/download integration.
+        const details = (await call('get_book', { ref: row.ref })).structuredContent;
+        const bytes = Buffer.from('offline completed LibGen artifact');
+        await fs.writeFile(artifact, bytes);
+        await fs.writeFile(
+          `${artifact}.acq.json`,
+          JSON.stringify({
+            record_version: 1,
+            state: 'complete',
+            path: artifact,
+            bytes: bytes.length,
+            sha256: createHash('sha256').update(bytes).digest('hex'),
+            source,
+            identifiers: details.identifiers,
+            reused: false,
+            transfer_skipped: false,
+          }),
+        );
+      } else {
+        const first = await call('download', { ref: row.ref, filename });
+        expect(first.isError).not.toBe(true);
+        artifact = first.structuredContent.path;
+        expect(demands).toBe(1);
+      }
+      if (state === 'modified') await fs.writeFile(artifact, 'modified occupied bytes');
+    }
+    if (source === 'libgen' && state === 'intact') {
+      const held = server.tools.refs.get(row.ref, 'r').book;
+      const seed = JSON.parse(await fs.readFile(`${artifact}.acq.json`, 'utf8'));
+      expect(seed.identifiers).toEqual({ md5: String(held.md5).toLowerCase() });
+      expect(seed.sha256).toBe(
+        createHash('sha256')
+          .update(await fs.readFile(artifact))
+          .digest('hex'),
+      );
+      expect(seed.path).toBe(await fs.realpath(artifact));
+    }
+    const priorBytes = await fs.readFile(artifact);
+    const priorReceipts = await receipts();
+    const stats = await h.stats();
+    demands = 0;
+    const reply = await call('download', { ref: row.ref, filename });
+    if (state === 'intact') {
+      expect(reply.isError).not.toBe(true);
+      expect(reply.structuredContent.transfer_skipped).toBe(true);
+    } else {
+      expect(reply.isError).toBe(true);
+      expect(reply.structuredContent.error).toMatchObject({
+        code: 'output_refused',
+        source,
+        retry: 'no',
+        detail: { reason: 'output_refused', request_issued: false },
+      });
+      expect(reply.structuredContent.error.message.length).toBeLessThanOrEqual(199);
+      expect(reply.structuredContent.error.recovery).toMatch(/different bytes/);
+      expect(reply.structuredContent.error.recovery).toMatch(/move|rename/i);
+      expect(reply.structuredContent.error.recovery).toContain('output_dir');
+    }
+    expect(demands).toBe(0);
+    expect((await h.stats()).calls).toEqual(stats.calls);
+    expect((await h.stats()).quotaSpent).toBe(stats.quotaSpent);
+    expect(await receipts()).toEqual(priorReceipts);
+    expect(await fs.readFile(artifact)).toEqual(priorBytes);
+    await expect(fs.stat(path.join(directory, 'egress-trap.txt'))).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+  },
+);

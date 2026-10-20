@@ -62,6 +62,38 @@ pytestmark = [
 ]
 
 
+def _assert_catalog_rows(result):
+    """Positive canaries need usable rows, not a vacuously valid empty page."""
+    assert isinstance(result, dict), "Search must return an object"
+    books = result.get("books")
+    assert isinstance(books, list), "Search must return a books list"
+    assert books, "Expected results for this common catalog query"
+    for book in books:
+        assert isinstance(book, dict), "Each book must be an object"
+        book_id = book.get("id")
+        assert isinstance(book_id, str) and book_id.strip() not in {
+            "",
+            "0",
+            "None",
+            "N/A",
+        }, "Each book must have a usable id"
+        title = book.get("title")
+        assert isinstance(title, str) and title.strip() not in {
+            "",
+            "N/A",
+        }, "Each book must have a nonempty title"
+    return books
+
+
+def _assert_hegel_author(books):
+    assert any(
+        isinstance(book, dict)
+        and isinstance(book.get("author"), str)
+        and "hegel" in book["author"].casefold()
+        for book in books
+    ), "Expected at least one returned book with Hegel in its author field"
+
+
 @pytest.fixture(scope="module")
 def credentials():
     """Provide Z-Library credentials from environment."""
@@ -174,25 +206,21 @@ class TestRealBasicSearch:
             client=zlib_client,
         )
 
-        # Should return results
-        assert len(result["books"]) >= 0
-
-        # If we got results, verify years are in range
-        for book in result["books"]:
+        for book in _assert_catalog_rows(result):
             # EAPI returns year as int; older HTML scraping returned str.
             year = str(book.get("year") or "")
-            if year.isdigit():
-                year_int = int(year)
-                assert 2020 <= year_int <= 2023
+            assert year.isdecimal(), "Year-filtered results must have a year"
+            assert 2020 <= int(year) <= 2023
 
     async def test_search_with_language_filter(self, zlib_client):
         """Should respect language filters."""
         result = await python_bridge.search(
-            query="philosophy", languages=["English"], count=5, client=zlib_client
+            query="philosophy", languages=["english"], count=5, client=zlib_client
         )
 
-        # Should return results
-        assert len(result["books"]) >= 0
+        for book in _assert_catalog_rows(result):
+            language = book.get("language")
+            assert isinstance(language, str) and language.casefold() == "english"
 
     async def test_recent_books_contract(self, zlib_client):
         """Check the distinct recent endpoint using the already-authenticated fixture.
@@ -254,14 +282,21 @@ class TestRealTermSearch:
             email=credentials["email"],
             password=credentials["password"],
             year_from=2000,
-            languages="English",
+            languages="english",
             limit=5,
             eapi_client=zlib_client,
         )
 
-        # Should not error
-        assert "books" in result
-        assert result["total_results"] >= 0
+        books = _assert_catalog_rows(result)
+        assert result["term"] == "philosophy"
+        # These tools report the returned page length, not the catalog total.
+        assert type(result["total_results"]) is int
+        assert result["total_results"] == len(books)
+        for book in books:
+            year = str(book.get("year") or "")
+            assert year.isdecimal() and int(year) >= 2000
+            language = book.get("language")
+            assert isinstance(language, str) and language.casefold() == "english"
 
 
 @pytest.mark.integration
@@ -293,6 +328,7 @@ class TestRealAuthorSearch:
         first_book = result["books"][0]
         assert "title" in first_book
         assert first_book["title"] != ""
+        _assert_hegel_author(result["books"])
 
     async def test_search_author_with_comma_format(self, credentials, zlib_client):
         """Should handle 'Lastname, Firstname' format."""
@@ -306,9 +342,11 @@ class TestRealAuthorSearch:
             eapi_client=zlib_client,
         )
 
-        # Should find results
-        assert result["total_results"] >= 0
-        assert isinstance(result["books"], list)
+        books = _assert_catalog_rows(result)
+        assert result["author"] == "Hegel, Georg"
+        assert type(result["total_results"]) is int
+        assert result["total_results"] == len(books)
+        _assert_hegel_author(books)
 
     async def test_author_search_with_year_filter(self, credentials, zlib_client):
         """Should support year filtering in author search."""
@@ -318,14 +356,21 @@ class TestRealAuthorSearch:
             author="Hegel",
             email=credentials["email"],
             password=credentials["password"],
-            year_from=1800,
-            year_to=1850,
+            # EAPI years describe editions, not the author's lifetime.
+            year_from=1950,
+            year_to=2025,
             limit=5,
             eapi_client=zlib_client,
         )
 
-        # Should return filtered results
-        assert result["total_results"] >= 0
+        books = _assert_catalog_rows(result)
+        assert result["author"] == "Hegel"
+        assert type(result["total_results"]) is int
+        assert result["total_results"] == len(books)
+        _assert_hegel_author(books)
+        for book in books:
+            year = str(book.get("year") or "")
+            assert year.isdecimal() and 1950 <= int(year) <= 2025
 
 
 @pytest.mark.integration
@@ -485,19 +530,24 @@ class TestRealWorldEdgeCases:
         assert "books" in result
 
     async def test_empty_search_results(self, credentials, zlib_client):
-        """Should handle searches with no results gracefully."""
+        """Should return a consistent page even when a sparse query gains matches."""
         await asyncio.sleep(1)
 
         # Very specific query unlikely to have results
-        result = await python_bridge.search(
-            query="xyzabc123nonexistent987", count=5, client=zlib_client
+        # The term helper exposes total_results as the returned page length.
+        result = await search_by_term(
+            term="xyzabc123nonexistent987",
+            email=credentials["email"],
+            password=credentials["password"],
+            limit=5,
+            eapi_client=zlib_client,
         )
 
-        # Should return empty results, not error
-        assert "books" in result
-        assert isinstance(result["books"], list)
-        # May be empty
-        assert len(result["books"]) >= 0
+        # Catalog contents can change; deterministic emptiness is checked offline.
+        assert isinstance(result, dict)
+        assert isinstance(result.get("books"), list)
+        assert type(result.get("total_results")) is int
+        assert result["total_results"] == len(result["books"])
 
 
 @pytest.mark.integration

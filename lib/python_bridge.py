@@ -1072,12 +1072,20 @@ def _publish_no_replace(source: Path, destination: Path) -> None:
     source.unlink()
 
 
-def _file_md5(path: Path) -> str:
-    """Digest a published artifact for catalog-identity comparison."""
+def _file_md5(path: Path, *, check_deadline: bool = False) -> str:
+    """Digest an artifact, optionally bounding a pre-commit reuse comparison."""
+    if check_deadline:
+        from lib.acquisition import _check_deadline
+
+        _check_deadline("reuse comparison")
     digest = _md5_digest()
     with open(path, "rb") as handle:
         for chunk in iter(lambda: handle.read(65536), b""):
+            if check_deadline:
+                _check_deadline("reuse comparison")
             digest.update(chunk)
+    if check_deadline:
+        _check_deadline("reuse comparison")
     return digest.hexdigest()
 
 
@@ -1086,8 +1094,10 @@ def _artifacts_match(source: Path, destination: Path, expected_md5: str) -> bool
     if source.stat().st_size != destination.stat().st_size:
         return False
     if expected_md5:
-        return _file_md5(destination) == expected_md5
-    return _file_md5(source) == _file_md5(destination)
+        return _file_md5(destination, check_deadline=True) == expected_md5
+    return _file_md5(source, check_deadline=True) == _file_md5(
+        destination, check_deadline=True
+    )
 
 
 def _publish_or_reuse(source: Path, destination: Path, expected_md5: str = "") -> bool:

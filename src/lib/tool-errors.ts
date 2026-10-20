@@ -149,6 +149,17 @@ export function classifyFailure(error: any, operation: string, source?: string):
         HTTPStatusError: 'http_error',
       } as Record<string, string>
     )[context.pythonErrorType];
+  // Fill only an unknown cause: explicit timeout/abort/acquisition decisions
+  // keep their existing codes and download issuance semantics.
+  if (reason === 'unknown' && diagnostics?.failure_kind === 'transport')
+    reason =
+      (
+        {
+          WriteTimeout: 'read_timeout',
+          PoolTimeout: 'connect_timeout',
+          RemoteProtocolError: 'protocol_error',
+        } as Record<string, string>
+      )[context.pythonErrorType] ?? 'connect_error';
   if (diagnostics && ['login_failed', 'auth_rejected'].includes(reason))
     reason =
       diagnostics.failure_kind === 'auth_rejected'

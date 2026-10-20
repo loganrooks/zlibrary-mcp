@@ -191,3 +191,48 @@ test('caller abort is cancellation, not a transport outage; real timeout stays t
   const timeout = new BridgeTimeoutError('Bridge timed out', { reason: 'timeout' });
   expect(authDiagnosticsFor(timeout, diagnostics.request_id, 1, 0).failure_kind).toBe('transport');
 });
+
+// Valid typed transport evidence may fill an unknown reason, not overwrite a
+// deliberate control outcome or admit a malformed diagnostic record.
+test('ordinary transport fallback uses an existing code and preserves timeout/abort controls', () => {
+  const transport = { ...diagnostics, failure_kind: 'transport' };
+  const unknown = {
+    context: {
+      pythonErrorType: 'RuntimeError',
+      diagnostics: transport,
+      details: { request_issued: false },
+    },
+  };
+  expect(errorEnvelope(unknown, 'search', 'zlibrary').error).toMatchObject({
+    code: 'provider_unreachable',
+    retry: 'safe',
+    detail: { reason: 'connect_error' },
+  });
+  expect(
+    errorEnvelope(
+      { context: { diagnostics: { ...transport, body: 'untrusted' } } },
+      'search',
+      'zlibrary',
+    ).error.code,
+  ).toBe('internal');
+  const timeout = new BridgeTimeoutError('bounded timeout', {
+    reason: 'timeout',
+    pythonErrorType: 'WriteTimeout',
+    details: { request_issued: true },
+    diagnostics: transport,
+  });
+  expect(errorEnvelope(timeout, 'download', 'zlibrary').error).toMatchObject({
+    code: 'outcome_unknown',
+    retry: 'may_spend_quota',
+    detail: { reason: 'timeout', request_issued: true },
+  });
+  expect(isRetryableError(timeout)).toBe(false);
+  const abort = new BridgeTimeoutError('caller aborted', {
+    reason: 'aborted',
+    pythonErrorType: 'WriteError',
+    details: { request_issued: true },
+    diagnostics: transport,
+  });
+  expect(errorEnvelope(abort, 'download', 'zlibrary').error.code).toBe('cancelled');
+  expect(isRetryableError(abort)).toBe(false);
+});

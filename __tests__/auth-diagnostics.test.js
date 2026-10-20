@@ -15,7 +15,7 @@ const sentinels = [
   'i251-book',
 ];
 const poison = sentinels.join(' ');
-let temporary, modeFile, callsFile, captured, logs, api, envelope, offsets;
+let temporary, modeFile, callsFile, captured, logs, api, envelope, offsets, pythonExecutable;
 const listeners = new Map(
   ['exit', 'SIGINT', 'SIGTERM'].map((n) => [n, new Set(process.rawListeners(n))]),
 );
@@ -25,6 +25,7 @@ beforeEach(async () => {
   callsFile = path.join(temporary, 'calls');
   fs.writeFileSync(modeFile, 'success');
   const root = process.cwd();
+  pythonExecutable = path.join(root, '.venv/bin/python');
   offsets = ['logs/zlibrary_debug.log', 'logs/nodejs_debug.log'].map((file) => [
     file,
     fs.existsSync(file) ? fs.statSync(file).size : 0,
@@ -79,6 +80,9 @@ def handle(request):
     if mode=='transport': raise httpx.ReadTimeout(${JSON.stringify(poison)},request=request)
     if mode=='read-error': raise httpx.ReadError(${JSON.stringify(poison)},request=request)
     if mode=='write-error': raise httpx.WriteError(${JSON.stringify(poison)},request=request)
+    if mode=='write-timeout': raise httpx.WriteTimeout(${JSON.stringify(poison)},request=request)
+    if mode=='pool-timeout': raise httpx.PoolTimeout(${JSON.stringify(poison)},request=request)
+    if mode=='remote-protocol': raise httpx.RemoteProtocolError(${JSON.stringify(poison)},request=request)
     if mode=='malformed': return httpx.Response(200,text=${JSON.stringify(poison)})
     if mode=='wall': return httpx.Response(403,text='diamwall '+${JSON.stringify(poison)})
     if mode=='oversized': return httpx.Response(500,text=(${JSON.stringify(poison)}+'\\n')*10000)
@@ -102,7 +106,7 @@ runpy.run_path(${JSON.stringify(path.join(root, 'lib/python_bridge.py'))},run_na
   const runner = await import('../lib/python-runner.js');
   captured = [];
   jest.unstable_mockModule('../lib/venv-manager.js', () => ({
-    getManagedPythonPath: async () => path.join(root, '.venv/bin/python'),
+    getManagedPythonPath: async () => pythonExecutable,
   }));
   jest.unstable_mockModule('../lib/python-runner.js', () => ({
     LONG_BRIDGE_TIMEOUT_MS: runner.LONG_BRIDGE_TIMEOUT_MS,
@@ -462,3 +466,88 @@ test('active transport bare ReadError keeps issuance, does not replay, and count
   expect(routes()).toEqual(previous);
   expect(previous.filter((route) => route === '/eapi/user/login')).toHaveLength(1);
 });
+
+// A no-PID spawn failure used to retain Node's argument-bearing originalError
+// and a configured interpreter path in both its message and context.
+test.each([
+  ['missing', 'ENOENT'],
+  ['not-executable', 'EACCES'],
+])(
+  'failed %s interpreter spawn never exposes arguments or configured paths',
+  async (mode, errnoCode) => {
+    const pathSentinel = 'i251-spawn-path';
+    pythonExecutable = path.join(temporary, pathSentinel);
+    if (mode === 'not-executable')
+      fs.writeFileSync(pythonExecutable, 'not executable', { mode: 0o600 });
+    const failure = await api.searchBooks({ query: poison }).catch((error) => error);
+    const result = envelope(failure, 'search', 'zlibrary');
+    const files = offsets
+      .map(([file, offset]) =>
+        fs.existsSync(file) ? fs.readFileSync(file).subarray(offset).toString() : '',
+      )
+      .join('');
+    const all =
+      captured.join('') +
+      JSON.stringify(failure) +
+      String(failure.stack) +
+      JSON.stringify(logs.mock.calls) +
+      files +
+      JSON.stringify(result);
+    for (const sentinel of [...sentinels, pathSentinel]) expect(all).not.toContain(sentinel);
+    expect(failure).toMatchObject({
+      code: 'BRIDGE_SPAWN',
+      errnoCode,
+      context: { label: 'python_bridge.search', errno: expect.any(Number), errnoCode },
+    });
+    expect(failure.context.originalError).toBeUndefined();
+    expect(failure.context.path).toBeUndefined();
+    expect(JSON.stringify(failure)).not.toContain('spawnargs');
+    expect(fs.existsSync(callsFile)).toBe(false);
+  },
+);
+
+const transportCases = [
+  ['WriteTimeout', 'write-timeout', 'provider_timeout', 'read_timeout'],
+  ['PoolTimeout', 'pool-timeout', 'provider_unreachable', 'connect_timeout'],
+  ['RemoteProtocolError', 'remote-protocol', 'provider_error', 'protocol_error'],
+  ['ReadError', 'read-error', 'provider_unreachable', 'connect_error'],
+  ['WriteError', 'write-error', 'provider_unreachable', 'connect_error'],
+].flatMap(([type, mode, code, reason]) =>
+  [
+    ['search', 'safe'],
+    ['download', 'may_spend_quota'],
+  ].map(([operation, retry]) => ({ type, mode, code, reason, operation, retry })),
+);
+// Typed transport diagnostics must drive actionable public errors on ordinary
+// operations, without changing Python-owned replay or issuance evidence.
+test.each(transportCases)(
+  'ordinary $type $operation has a transport code and retry hint without replay',
+  async ({ type, mode, code, reason, operation, retry }) => {
+    process.env.ZLIBRARY_SESSION_MODE = 'memory';
+    process.env.RETRY_MAX_RETRIES = '3';
+    await api.searchBooks({ query: 'warm-session' });
+    const before = fs.readFileSync(callsFile, 'utf8').trim().split('\n');
+    fs.writeFileSync(modeFile, mode);
+    const failure = await (
+      operation === 'search'
+        ? api.searchBooks({ query: poison })
+        : api.downloadBookToFile({ bookDetails: { id: '17', book_hash: 'hash', title: 'offline' } })
+    ).catch((error) => error);
+    expect(failure.context.pythonErrorType).toBe(type);
+    const result = envelope(failure, operation, 'zlibrary');
+    expect(result.error).toMatchObject({
+      code,
+      retry,
+      detail: {
+        reason,
+        request_issued: true,
+        diagnostics: { failure_kind: 'transport', attempt: 1 },
+      },
+    });
+    const { isRetryableError } = await import('../lib/retry-manager.js');
+    expect(isRetryableError(failure)).toBe(false);
+    const after = fs.readFileSync(callsFile, 'utf8').trim().split('\n');
+    expect(after.length - before.length).toBe(1);
+    expect(after.filter((route) => route === '/eapi/user/login')).toHaveLength(1);
+  },
+);

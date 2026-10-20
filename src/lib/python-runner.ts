@@ -553,9 +553,11 @@ export function runPythonBridge(
     const onShellError = (error: NodeJS.ErrnoException) => {
       const errnoCode = error.code ?? 'UNKNOWN_SPAWN_ERROR';
       const spawnError = new BridgeSpawnError(
-        `${label} could not start the Python bridge (${errnoCode}): ${error.message}`,
+        `${label} could not start the Python bridge (${errnoCode})`,
         errnoCode,
-        { label, path: error.path, errno: error.errno, originalError: error },
+        // Native spawn errors retain argv and the configured interpreter path.
+        // Project before either the no-PID rejection or owned-child failure path.
+        { label, errno: error.errno },
       );
 
       if (processState.tree) {

@@ -440,6 +440,18 @@ def _refuse_occupied(target, *, issued=False):
         )
 
 
+def _long_bridge_budget():
+    """PYTHON_BRIDGE_LONG_TIMEOUT in seconds, parsed as Node's ``positiveIntEnv``.
+
+    Anything but a plain positive integer of at most 2**31 - 1 ms falls back to
+    the default, as the bridge deadline does, instead of refusing every download.
+    """
+    default = 2400000
+    raw = os.environ.get("PYTHON_BRIDGE_LONG_TIMEOUT", "2400000").strip()
+    value = int(raw) if re.fullmatch(r"[0-9]+", raw) else 0
+    return max(1.0, (value if 0 < value <= 2_147_483_647 else default) / 1000)
+
+
 async def acquire(
     book_details,
     output_dir=None,
@@ -462,9 +474,7 @@ async def acquire(
     source, identifiers = _identity(book)
     directory.mkdir(parents=True, exist_ok=True)
     receipt_path = Path(str(destination) + ".acq.json")
-    budget = max(
-        1.0, float(os.environ.get("PYTHON_BRIDGE_LONG_TIMEOUT", "2400000")) / 1000
-    )
+    budget = _long_bridge_budget()
     async with destination_lock(destination, budget):
         with ExitStack() as leases:
             held = {destination}

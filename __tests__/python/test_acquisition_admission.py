@@ -269,3 +269,54 @@ def test_destination_lease_default_matches_long_bridge_timeout():
     )
     assert lease is not None and bridge is not None
     assert int(lease.group(1)) == int(bridge.group(1))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "raw, budget",
+    [
+        (None, 2400.0),
+        ("2700000", 2700.0),
+        (" 2700000 ", 2700.0),
+        ("2147483647", 2147483.647),
+        ("2400000ms", 2400.0),
+        ("abc", 2400.0),
+        ("", 2400.0),
+        ("0", 2400.0),
+        ("-5", 2400.0),
+        ("1.5", 2400.0),
+        ("1e6", 2400.0),
+        ("2147483648", 2400.0),
+        ("١٢٣", 2400.0),
+    ],
+)
+async def test_long_bridge_timeout_is_parsed_as_node_parses_it(
+    tmp_path, monkeypatch, raw, budget
+):
+    # Node's positiveIntEnv falls back on anything but a plain positive integer of
+    # at most 2**31 - 1 ms; a malformed value must not refuse downloads here.
+    if raw is None:
+        monkeypatch.delenv("PYTHON_BRIDGE_LONG_TIMEOUT", raising=False)
+    else:
+        monkeypatch.setenv("PYTHON_BRIDGE_LONG_TIMEOUT", raw)
+    budgets = []
+    lock = acq.destination_lock
+
+    def watch_lock(destination, seconds):
+        budgets.append(seconds)
+        return lock(destination, seconds)
+
+    monkeypatch.setattr(acq, "destination_lock", watch_lock)
+    calls = []
+    transfer = publication_transfer(tmp_path, calls)
+    book = admission_book("libgen", corrected=False)
+    first = await acq.acquire(
+        book, str(tmp_path), filename="chosen.pdf", transfer=transfer
+    )
+    hit = await acq.acquire(
+        book, str(tmp_path), filename="chosen.pdf", transfer=transfer
+    )
+    assert first["transfer_skipped"] is False
+    assert hit["transfer_skipped"] is True
+    assert calls == [True]
+    assert budgets == [budget, budget]

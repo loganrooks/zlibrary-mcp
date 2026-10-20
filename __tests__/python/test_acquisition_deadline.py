@@ -184,7 +184,7 @@ async def test_postpublication_await_is_not_cancelled_by_transfer_deadline(
         stage, target = tmp_path / ".stage", tmp_path / filename
         stage.write_bytes(b"synthetic bytes")
         publication_hook(stage, target)
-        bridge._publish_no_replace(stage, target)
+        bridge._publish_or_reuse(stage, target)
         await asyncio.sleep(1.8)  # beyond the cooperative transfer slice
         return {"file_path": str(target)}
 

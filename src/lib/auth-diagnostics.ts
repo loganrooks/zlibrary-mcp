@@ -100,7 +100,10 @@ export function safeEapiFailureEnvelope(value: any): Record<string, any> | undef
     if (value?.type !== 'AcquisitionError' || typeof reason !== 'string' || !messages[reason])
       return;
     return {
-      error: messages[reason],
+      error:
+        reason === 'walk_budget_exhausted' && value.details.request_issued !== false
+          ? 'Acquisition deadline exhausted'
+          : messages[reason],
       type: 'AcquisitionError',
       details: {
         reason,

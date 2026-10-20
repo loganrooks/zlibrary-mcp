@@ -66,7 +66,7 @@ test('EAPI projection preserves a local budget refusal without inventing auth di
       details: { reason: 'walk_budget_exhausted', request_issued: true },
     }),
   ).toEqual({
-    error: 'Acquisition deadline exhausted; try again later',
+    error: 'Acquisition deadline exhausted',
     type: 'AcquisitionError',
     details: { reason: 'walk_budget_exhausted', request_issued: true },
   });

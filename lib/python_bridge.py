@@ -1067,12 +1067,8 @@ def _md5_digest():
 
 
 def _publish_no_replace(source: Path, destination: Path) -> None:
-    """Atomically publish one owned file without replacing an existing path."""
-    from lib.acquisition import _check_deadline, _mark_published
-
-    _check_deadline("publication")
+    """Link and consume an owned file without replacement, including private staging."""
     os.link(source, destination)
-    _mark_published()
     source.unlink()
 
 
@@ -1103,17 +1099,19 @@ def _publish_or_reuse(source: Path, destination: Path, expected_md5: str = "") -
     not match is still never replaced. The staged file is consumed on every
     path so no orphan temp survives the call.
     """
+    from lib.acquisition import _check_deadline, _mark_published
+
     if source.resolve() == destination.resolve():
         return False
+    _check_deadline("publication")
     try:
         _publish_no_replace(source, destination)
+        _mark_published()
         return False
     except FileExistsError:
         pass
     try:
         if _artifacts_match(source, destination, expected_md5):
-            from lib.acquisition import _mark_published
-
             _mark_published()
             return True
         raise FileExistsError(

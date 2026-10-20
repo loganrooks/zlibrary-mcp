@@ -70,6 +70,7 @@ afterEach(async () => {
   await client?.close();
   await server?.close();
   expect(actualRunner.liveChildCount()).toBe(0);
+  jest.restoreAllMocks();
   process.env = previous;
   await fs.rm(directory, { recursive: true, force: true });
 });
@@ -226,10 +227,16 @@ test.each(['identical', 'different'])(
   },
 );
 
-test('open EAPI breaker refuses lazy download before demand or transfer while LibGen search works', async () => {
+test('open EAPI serves an intact receipt but refuses owner admission and transfer for a non-hit while LibGen search works', async () => {
   const row = (await call('search', { query: 'Seneca Letters', sources: ['zlibrary'] }))
     .structuredContent.rows[0];
   expect(row).toBeDefined();
+  const cached = await call('download', { ref: row.ref, filename: 'cached.pdf' });
+  expect(cached.isError).not.toBe(true);
+  const cachedBytes = await fs.readFile(cached.structuredContent.path);
+  const cachedRecord = await fs.readFile(cached.structuredContent.record);
+  const { EapiSessionOwner } = await import('../dist/lib/eapi-session.js');
+  const ownerAdmission = jest.spyOn(EapiSessionOwner.prototype, 'run');
   await h.mode({ mode: 'server503' });
   for (let i = 0; i < 5; i++) {
     const failure = await call('search', { query: 'outage', sources: ['zlibrary'] });
@@ -243,7 +250,17 @@ test('open EAPI breaker refuses lazy download before demand or transfer while Li
   const before = await h.stats();
   const files = await fs.readdir(directory);
   demands = 0;
-  const refused = await call('download', { ref: row.ref });
+  ownerAdmission.mockClear();
+  const hit = await call('download', { ref: row.ref, filename: 'cached.pdf' });
+  expect(hit.isError).not.toBe(true);
+  expect(hit.structuredContent).toMatchObject({ transfer_skipped: true });
+  expect(demands).toBe(0);
+  expect(ownerAdmission).not.toHaveBeenCalled();
+  expect(await h.stats()).toEqual(before);
+  expect(await fs.readdir(directory)).toEqual(files);
+  expect(await fs.readFile(cached.structuredContent.path)).toEqual(cachedBytes);
+  expect(await fs.readFile(cached.structuredContent.record)).toEqual(cachedRecord);
+  const refused = await call('download', { ref: row.ref, filename: 'blocked.pdf' });
   expect(refused.isError).toBe(true);
   expect(refused.structuredContent.error).toMatchObject({
     code: 'breaker_open',
@@ -251,9 +268,22 @@ test('open EAPI breaker refuses lazy download before demand or transfer while Li
     retry: 'safe',
     detail: { reason: 'breaker_open', request_issued: false },
   });
-  expect(demands).toBe(0);
+  // The raw child asks only after its receipt check and durable intent.
+  // Breaker admission must deny before owner work or an operation grant.
+  expect(demands).toBe(1);
+  expect(ownerAdmission).not.toHaveBeenCalled();
   expect(await h.stats()).toEqual(before);
-  expect(await fs.readdir(directory)).toEqual(files);
+  expect((await fs.readdir(directory)).sort()).toEqual([...files, 'blocked.pdf.acq.json'].sort());
+  expect(JSON.parse(await fs.readFile(path.join(directory, 'blocked.pdf.acq.json')))).toMatchObject(
+    {
+      state: 'intent',
+      path: path.join(directory, 'blocked.pdf'),
+      sha256: null,
+    },
+  );
+  await expect(fs.stat(path.join(directory, 'blocked.pdf'))).rejects.toMatchObject({
+    code: 'ENOENT',
+  });
   const alternate = await call('search', { query: 'fixture', sources: ['libgen'], limit: 1 });
   expect(alternate.isError).not.toBe(true);
   expect(alternate.structuredContent.rows[0]).toMatchObject({

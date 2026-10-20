@@ -46,6 +46,7 @@ const dependencyBreakers = Object.fromEntries(
         const details = error?.context?.details;
         // Issuance metadata is not a provider failure verdict. Keep it in the
         // reply, but let master classify the original typed/status evidence.
+        // Empty details are likewise no verdict and intentionally stripped.
         const evidence =
           details && Object.keys(details).every((key) => key === 'request_issued')
             ? Object.assign(Object.create(error), {
@@ -178,30 +179,31 @@ async function callPythonFunction(
                   : undefined,
               onSessionNeeded: lazy
                 ? (channel) => {
-                    ownerWork = eapiSessions.run(
-                      identity,
-                      async (input, authSignal) => {
-                        if (input.action !== 'operation') {
-                          const work = invoke(input, authSignal);
-                          controlWork.push(work);
-                          return work;
-                        }
-                        const handoff = () => {
-                          if (activeTransport)
-                            throw new PythonBridgeError('Duplicate private handoff', {}, false);
-                          activeTransport = Object.freeze({ ...input });
-                          channel.grant({ ...activeTransport });
-                          // Decode independently; never await owner completion in the raw runner.
-                          return operation;
-                        };
-                        // The whole lazy call is already admitted/accounted below.
-                        return handoff();
-                      },
-                      {
-                        signal: lazySignal,
-                        timeoutMs: callOptions.timeoutMs ?? defaultTimeoutFor(functionName),
-                        operationMode: 'at-most-once',
-                      },
+                    ownerWork = breaker.execute(() =>
+                      eapiSessions.run(
+                        identity,
+                        async (input, authSignal) => {
+                          if (input.action !== 'operation') {
+                            const work = invoke(input, authSignal);
+                            controlWork.push(work);
+                            return work;
+                          }
+                          const handoff = () => {
+                            if (activeTransport)
+                              throw new PythonBridgeError('Duplicate private handoff', {}, false);
+                            activeTransport = Object.freeze({ ...input });
+                            channel.grant({ ...activeTransport });
+                            // Decode independently; never await owner completion in the raw runner.
+                            return operation;
+                          };
+                          return handoff();
+                        },
+                        {
+                          signal: lazySignal,
+                          timeoutMs: callOptions.timeoutMs ?? defaultTimeoutFor(functionName),
+                          operationMode: 'at-most-once',
+                        },
+                      ),
                     );
                     void ownerWork.catch((error) => {
                       denied = error;
@@ -331,11 +333,18 @@ async function callPythonFunction(
                   else if (ownerDenial || signal?.aborted) err = ownerDenial ?? ownerError;
                 }
               }
-              if (err && typeof err === 'object')
+              if (err && typeof err === 'object') {
+                // Owner acquisition denials can be shared by concurrent waiters.
+                // Preserve the error's type/own properties without changing theirs.
+                err = Object.create(
+                  Object.getPrototypeOf(err),
+                  Object.getOwnPropertyDescriptors(err),
+                );
                 err.context = {
                   ...err.context,
                   details: { ...err.context?.details, request_issued: !!activeTransport },
                 };
+              }
             }
             if (protocolCorrupted) {
               sessionUpdate = undefined; // No metadata adoption from corrupt fd3/fd4 streams.
@@ -415,7 +424,9 @@ async function callPythonFunction(
             }
           }
         };
-        return transport?.authRetry ? execute() : breaker.execute(execute);
+        // A lazy child may only read a local receipt. Admit/account once at
+        // its session request above, including all owner control children.
+        return lazyAcquisition || transport?.authRetry ? execute() : breaker.execute(execute);
       },
       {
         signal,

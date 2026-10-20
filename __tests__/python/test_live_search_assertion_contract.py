@@ -63,8 +63,10 @@ def extract_method(class_name, method_name, namespace):
 
 async def run_search_body(case, payload):
     class_name, method_name, endpoint = case
+    requests = []
 
     async def respond(**kwargs):
+        requests.append(kwargs)
         return deepcopy(payload)
 
     async def no_delay(seconds):
@@ -80,6 +82,7 @@ async def run_search_body(case, payload):
     if "credentials" in parameters:
         fixtures["credentials"] = {"email": "offline", "password": "offline"}
     await method(None, **fixtures)
+    return requests
 
 
 def catalog_payload(case):
@@ -93,7 +96,7 @@ def catalog_payload(case):
             {
                 "id": "41",
                 "title": "A catalog title",
-                "year": 1820 if "author" in method else 2021,
+                "year": 2021,
                 "language": "English",
             }
         ],
@@ -107,6 +110,44 @@ async def test_positive_catalog_control(case, page_size):
     payload["books"] *= page_size
     payload["total_results"] = page_size
     await run_search_body(case, payload)
+
+
+@pytest.mark.parametrize(
+    "case,languages",
+    [(SEARCH_CASES[1], ["english"]), (SEARCH_CASES[2], "english")],
+    ids=["basic-search", "term-search"],
+)
+async def test_language_filter_uses_canonical_value_and_accepts_casefolded_rows(
+    case, languages
+):
+    payload = catalog_payload(case)
+    payload["books"][0]["language"] = "eNgLiSh"
+    requests = await run_search_body(case, payload)
+    assert len(requests) == 1
+    assert requests[0]["languages"] == languages
+
+
+@pytest.mark.parametrize("year", [1950, 2025])
+async def test_author_filter_uses_broad_edition_window(year):
+    case = SEARCH_CASES[4]
+    payload = catalog_payload(case)
+    payload["books"][0]["year"] = year
+    requests = await run_search_body(case, payload)
+    assert len(requests) == 1
+    assert requests[0]["year_from"] == 1950
+    assert requests[0]["year_to"] == 2025
+
+
+@pytest.mark.parametrize("year", [1949, 2026])
+@pytest.mark.parametrize("row_index", [0, 1])
+async def test_author_filter_rejects_any_row_outside_edition_window(year, row_index):
+    case = SEARCH_CASES[4]
+    payload = catalog_payload(case)
+    payload["books"].append(deepcopy(payload["books"][0]))
+    payload["total_results"] = 2
+    payload["books"][row_index]["year"] = year
+    with pytest.raises(AssertionError):
+        await run_search_body(case, payload)
 
 
 @pytest.mark.parametrize("case", SEARCH_CASES, ids=lambda case: case[1])
@@ -166,7 +207,7 @@ async def test_catalog_mutants_are_rejected(case, mutation):
         (SEARCH_CASES[1], "language", ""),
         (SEARCH_CASES[2], "year", 1999),
         (SEARCH_CASES[2], "language", "French"),
-        (SEARCH_CASES[4], "year", 1851),
+        (SEARCH_CASES[4], "year", 1949),
         (SEARCH_CASES[4], "year", ""),
     ],
     ids=[

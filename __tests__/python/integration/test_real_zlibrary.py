@@ -206,7 +206,7 @@ class TestRealBasicSearch:
     async def test_search_with_language_filter(self, zlib_client):
         """Should respect language filters."""
         result = await python_bridge.search(
-            query="philosophy", languages=["English"], count=5, client=zlib_client
+            query="philosophy", languages=["english"], count=5, client=zlib_client
         )
 
         for book in _assert_catalog_rows(result):
@@ -273,7 +273,7 @@ class TestRealTermSearch:
             email=credentials["email"],
             password=credentials["password"],
             year_from=2000,
-            languages="English",
+            languages="english",
             limit=5,
             eapi_client=zlib_client,
         )
@@ -345,8 +345,9 @@ class TestRealAuthorSearch:
             author="Hegel",
             email=credentials["email"],
             password=credentials["password"],
-            year_from=1800,
-            year_to=1850,
+            # EAPI years describe editions, not the author's lifetime.
+            year_from=1950,
+            year_to=2025,
             limit=5,
             eapi_client=zlib_client,
         )
@@ -357,7 +358,7 @@ class TestRealAuthorSearch:
         assert result["total_results"] == len(books)
         for book in books:
             year = str(book.get("year") or "")
-            assert year.isdecimal() and 1800 <= int(year) <= 1850
+            assert year.isdecimal() and 1950 <= int(year) <= 2025
 
 
 @pytest.mark.integration

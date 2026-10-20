@@ -83,30 +83,24 @@ const GetRecentBooksParamsSchema = z.object({
   format: z.string().optional().describe('Filter by file format (e.g., "pdf", "epub")'),
 });
 
-const DownloadBookToFileParamsSchema = z.object({
-  bookDetails: z
-    .object({})
-    .loose()
-    .describe('The full book details object obtained from search_books'),
-  outputDir: z
-    .string()
-    .optional()
-    .default('./downloads')
-    .describe('Directory to save the file to (default: "./downloads")'),
-  process_for_rag: z
-    .boolean()
-    .optional()
-    .describe('Whether to process the document content for RAG after download'),
-  processed_output_format: z
-    .string()
-    .optional()
-    .describe('Desired output format for RAG processing (e.g., "text", "markdown")'),
-});
-
-const ProcessDocumentForRagParamsSchema = z.object({
-  file_path: z.string().describe('Path to the downloaded file to process'),
-  output_format: z.string().optional().describe('Desired output format (e.g., "text", "markdown")'),
-});
+const DownloadBookToFileParamsSchema = z
+  .object({
+    bookDetails: z
+      .object({})
+      .loose()
+      .meta({ additionalProperties: true })
+      .describe('The full book details object obtained from search_books'),
+    outputDir: z
+      .string()
+      .optional()
+      .default('./downloads')
+      .describe('Directory to save the file to (default: "./downloads")'),
+  })
+  // Preserve raw saved-call fields for admitDownloadArgs. Zod's JSON-schema
+  // metadata closes the advertised top level without stripping those fields
+  // before our compatibility/unknown-key guard can give the intended error.
+  .loose()
+  .meta({ additionalProperties: false });
 
 const GetBookMetadataParamsSchema = z.object({
   bookId: z.string().describe('Z-Library book ID'),
@@ -209,13 +203,6 @@ const toolAnnotations: Record<string, ToolAnnotations> = {
     openWorldHint: true,
     title: 'Download Book',
   },
-  process_document_for_rag: {
-    readOnlyHint: false,
-    destructiveHint: false,
-    idempotentHint: true,
-    openWorldHint: false,
-    title: 'Process for RAG',
-  },
   get_book_metadata: {
     readOnlyHint: true,
     idempotentHint: true,
@@ -278,7 +265,6 @@ interface HandlerMap {
   getDownloadHistory: (args: any, options?: HandlerOptions) => Promise<any>;
   getDownloadLimits: (args: any, options?: HandlerOptions) => Promise<any>;
   downloadBookToFile: (args: any, options?: HandlerOptions) => Promise<any>;
-  processDocumentForRag: (args: any, options?: HandlerOptions) => Promise<any>;
   getBookMetadata: (args: any, options?: HandlerOptions) => Promise<any>;
   searchByTerm: (args: any, options?: HandlerOptions) => Promise<any>;
   searchByAuthor: (args: any, options?: HandlerOptions) => Promise<any>;
@@ -397,23 +383,6 @@ const handlers: HandlerMap = {
           ...(details === undefined ? {} : { details }),
         },
       };
-    }
-  },
-
-  processDocumentForRag: async (
-    args: z.infer<typeof ProcessDocumentForRagParamsSchema>,
-    options: HandlerOptions = {},
-  ) => {
-    try {
-      return await zlibraryApi.processDocumentForRag(
-        {
-          filePath: args.file_path,
-          outputFormat: args.output_format,
-        },
-        options,
-      );
-    } catch (error: any) {
-      return { error: { message: error.message || 'Failed to process document for RAG' } };
     }
   },
 
@@ -572,16 +541,9 @@ const toolRegistry: Record<string, ToolRegistryEntry> = {
   },
   get_recent_books: { description: 'Get recently added books', schema: GetRecentBooksParamsSchema },
   download_book_to_file: {
-    description:
-      'Download a book to file and optionally return a processed RAG bundle with body text, metadata, and optional sibling outputs.',
+    description: 'Download a book and return its local file path.',
     schema: DownloadBookToFileParamsSchema,
     handler: handlers.downloadBookToFile,
-  },
-  process_document_for_rag: {
-    description:
-      'Process EPUB, PDF, or TXT into a file-based RAG bundle with processed body text, metadata, and optional footnotes/endnotes/citations.',
-    schema: ProcessDocumentForRagParamsSchema,
-    handler: handlers.processDocumentForRag,
   },
   get_book_metadata: {
     description: 'Get book metadata',
@@ -713,7 +675,7 @@ export function createServer(): McpServer {
   });
 
   // ========================================================================
-  // Register all 13 tools via server.tool()
+  // Register the twelve acquisition tools
   // ========================================================================
 
   // Helper to get annotations with proper typing
@@ -798,28 +760,18 @@ export function createServer(): McpServer {
   );
 
   // 6. download_book_to_file
-  server.tool(
+  server.registerTool(
     'download_book_to_file',
-    'Download a book to a local file. Pass the full bookDetails object from search_books results. Optionally process the document for RAG (text extraction) after download. Returns file paths for both the original book and processed text.',
-    DownloadBookToFileParamsSchema.shape,
-    ann('download_book_to_file'),
+    {
+      description:
+        'Download a book to a local file. Pass the full bookDetails object from search results. Returns the original file_path; does not extract text.',
+      inputSchema: DownloadBookToFileParamsSchema,
+      annotations: ann('download_book_to_file'),
+    },
     async (args, extra) =>
       wrapResult(
         await handlers.downloadBookToFile(args as any, { signal: extra?.signal }),
         'download_book_to_file',
-      ),
-  );
-
-  // 7. process_document_for_rag
-  server.tool(
-    'process_document_for_rag',
-    'Process a downloaded document (EPUB, TXT, PDF) to extract clean text content for RAG (Retrieval-Augmented Generation). Extracts text, preserves structure, detects footnotes, and outputs a text file.',
-    ProcessDocumentForRagParamsSchema.shape,
-    ann('process_document_for_rag'),
-    async (args, extra) =>
-      wrapResult(
-        await handlers.processDocumentForRag(args as any, { signal: extra?.signal }),
-        'process_document_for_rag',
       ),
   );
 

@@ -1,3 +1,5 @@
+> Scope: acquisition-only server. Document-extraction examples below are historical illustrations, not callable APIs; use [current tests and migration](../docs/text-processing-migration.md).
+
 # Development Standards
 
 **Purpose**: Coding standards and best practices specific to this codebase
@@ -11,12 +13,12 @@
 ### Python Module Standards
 
 **File Naming**: snake_case for all Python files
-- ✅ `rag_processing.py`, `garbled_text_detection.py`
+- ✅ `python_bridge.py`, `filename_utils.py`
 - ❌ `RagProcessing.py`, `garbled-text-detection.py`
 
 **Module Size**: Target <1000 lines per file
 - If module exceeds 1000 lines, consider extraction:
-  - Example: `rag_processing.py` extracted to `garbled_text_detection.py`, `strikethrough_detection.py`
+  - Example: `python_bridge.py` extracted to `filename_utils.py`, `enhanced_metadata.py`
 
 **Import Order** (PEP 8):
 ```python
@@ -27,12 +29,10 @@ from pathlib import Path
 from typing import Optional, Set
 
 # 2. Third-party
-import fitz
-import ebooklib
+import httpx
 
 # 3. Local modules
-from lib.rag_data_models import TextSpan, PageRegion
-from lib.garbled_text_detection import detect_garbled_text
+from lib.filename_utils import create_unified_filename
 ```
 
 ### TypeScript/Node.js Standards
@@ -107,42 +107,21 @@ See the documentation-guidelines paragraph in [AGENTS.md](../AGENTS.md) for the 
 - Describe: Feature or component name
 - Test: Specific behavior
 
-### TDD Workflow (RAG Features)
-
-**MANDATORY for all RAG pipeline features**:
-
-1. **Acquire real test PDF** with the feature you're implementing
-2. **Create ground truth** JSON documenting expected outputs
-3. **Write failing test** using real PDF (NO MOCKS for detection/extraction)
-4. **Implement** until test passes
-5. **Manual verification**: Side-by-side PDF vs output review
-6. **Performance validation**: Check against budgets
-7. **Regression check**: Run ALL real PDF tests
-
-See: [TDD_WORKFLOW.md](TDD_WORKFLOW.md) for complete process
-
 ### Test Coverage Targets
 
-- **Node.js**: 80% line coverage (current: 78%)
-- **Python**: 85% line coverage (current: 82%)
-- **Critical paths**: 100% coverage (RAG quality pipeline, download flow)
+- **Node.js**: floors in `jest.config.js`
+- **Python**: floor in `pytest.ini`
+- **Critical paths**: 100% coverage (download flow)
 
 ---
 
 ## Performance Standards
 
-### Budgets (Hard Constraints)
+### Acquisition budgets
 
-Defined in: `test_files/performance_budgets.json`
-
-**All operations must stay within budget** - failing performance tests blocks merge.
-
-| Operation | Budget | Enforcement |
-|-----------|--------|-------------|
-| X-mark detection | <10ms/page | Automated test |
-| Garbled detection | <2ms/region | Automated test |
-| Search latency | <2s (p95) | Manual monitoring |
-| RAG processing | <15s/page | Automated test |
+Use the source and runner timeout contracts in [retry configuration](../docs/RETRY_CONFIGURATION.md).
+Processing budgets in `test_files/performance_budgets.json` are historical and
+belong to the preserved text implementation.
 
 ### Optimization Principles
 
@@ -286,7 +265,7 @@ throw new PythonBridgeError(
 - `test/` - Test additions/fixes
 
 **Examples**:
-- ✅ `feature/rag-pipeline-enhancements-v2`
+- ✅ `feature/source-search`
 - ✅ `fix/venv-manager-test-warnings`
 - ✅ `docs/workspace-reorganization`
 
@@ -296,7 +275,7 @@ throw new PythonBridgeError(
 
 ```bash
 # ✅ Good
-feat(rag): implement formatting preservation with span grouping
+feat(search): support source filters
 fix(tests): update Stage 2 test signatures for tuple return
 docs(workspace): reorganize with kebab-case naming
 
@@ -383,7 +362,7 @@ bash .claude/scripts/archive_old_docs.sh
 **Frequency**: Before major commits or end of significant features
 
 **Checklist**:
-- [ ] All tests passing (including real PDF tests)
+- [ ] All tests passing (retained acquisition suite)
 - [ ] Performance budgets met
 - [ ] Code follows patterns from PATTERNS.md
 - [ ] Documentation updated (README, CLAUDE.md, ADRs as needed)
@@ -469,13 +448,13 @@ See: research findings formerly at `claudedocs/research/claude-code-best-practic
 
 | Item | Standard | Examples |
 |------|----------|----------|
-| Python files | snake_case | `rag_processing.py` |
+| Python files | snake_case | `python_bridge.py` |
 | TypeScript files | kebab-case | `zlibrary-api.ts` |
 | Python classes | PascalCase | `TextSpan`, `PageRegion` |
 | Python functions | snake_case | `detect_garbled_text()` |
 | TypeScript classes | PascalCase | `VenvManager` |
 | TypeScript functions | camelCase | `downloadBook()` |
-| Test files (Python) | test_{module}.py | `test_rag_processing.py` |
+| Test files (Python) | test_{module}.py | `test_python_bridge.py` |
 | Test files (TS) | {module}.test.js | `zlibrary-api.test.js` |
 | Documentation | kebab-case | `sous-rature-validation.md` |
 | Specifications | SCREAMING_SNAKE | `PDF_QUALITY_SPEC.md` |
@@ -497,7 +476,6 @@ Required checks before commit:
 
 Required before merging to master:
 - [ ] All quality gates passed
-- [ ] Real PDF tests passing (for RAG features)
 - [ ] Performance budgets met
 - [ ] Documentation updated
 - [ ] CODE_REVIEW.md checklist completed
@@ -513,20 +491,6 @@ Required before version bump:
 ---
 
 ## Project-Specific Patterns
-
-### RAG Pipeline Development
-
-**Always**:
-- ✅ Use real PDFs for testing (no synthetic mocks for extraction)
-- ✅ Create ground truth JSON before implementation
-- ✅ Validate against performance budgets
-- ✅ Manual side-by-side verification
-
-**Never**:
-- ❌ Skip real PDF validation
-- ❌ Lower performance budgets to make tests pass
-- ❌ Use fragile heuristics (user will push back!)
-- ❌ Assume text patterns (use robust metadata/bbox analysis)
 
 ### Python Bridge Communication
 
@@ -580,7 +544,7 @@ Required before version bump:
 → **Solution**: Always use YYYY-MM-DD prefix for session notes
 
 ❌ **Documentation Without Context**: "analysis.md", "notes.md", "report.md"
-→ **Solution**: Descriptive names: "rag-pipeline-analysis.md"
+→ **Solution**: Descriptive names: "source-routing-analysis.md"
 
 ❌ **Temporary Files Committed**: debug.sh, test_output.txt, temp/
 → **Solution**: Clean before commit, add to .gitignore
@@ -588,8 +552,6 @@ Required before version bump:
 ❌ **Fragile Heuristics**: Pattern matching that only works for one case
 → **Solution**: Robust metadata/bbox analysis, statistical methods
 
-❌ **Skipping Real PDF Tests**: Using only synthetic/mocked tests for RAG
-→ **Solution**: TDD workflow requires real PDFs with ground truth
 
 ---
 
@@ -603,7 +565,7 @@ Required before version bump:
 **Code Quality**:
 - >80% test coverage maintained
 - Performance budgets met consistently
-- Zero regressions in real PDF tests
+- Zero regressions in retained acquisition tests
 
 **Documentation Health**:
 - <10 files in claudedocs/session-notes/ (rest archived)
@@ -622,5 +584,4 @@ Required before version bump:
 - **Coding Patterns**: [PATTERNS.md](PATTERNS.md)
 - **TDD Process**: [TDD_WORKFLOW.md](TDD_WORKFLOW.md)
 - **Git Workflow**: [VERSION_CONTROL.md](VERSION_CONTROL.md)
-- **Quality Framework**: [RAG_QUALITY_FRAMEWORK.md](RAG_QUALITY_FRAMEWORK.md)
 - **Session State System**: research formerly in `claudedocs/research/claude-code-best-practices/` (in git history)

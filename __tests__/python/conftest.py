@@ -31,7 +31,7 @@ def require_real_fixture(path):
     if is_lfs_pointer(path):
         pytest.skip(
             f"fixture {os.path.basename(path)} is an unhydrated Git LFS pointer. "
-            "Run 'git lfs install && git lfs pull' to fetch the real PDF."
+            "Run 'git lfs pull' to fetch the real PDF."
         )
 
 
@@ -39,17 +39,6 @@ def require_real_fixture(path):
 def lfs_fixture():
     """Fixture form of require_real_fixture for tests that prefer injection."""
     return require_real_fixture
-
-
-@pytest.fixture(autouse=True)
-def _clear_pymupdf_cache():
-    """Clear PyMuPDF textpage cache before each test to prevent stale object ID reuse."""
-    try:
-        from lib.rag.utils.cache import _clear_textpage_cache
-
-        _clear_textpage_cache()
-    except ImportError:
-        pass
 
 
 @pytest.fixture(autouse=True)

@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, expect, test } from '@jest/globals';
-import { readFile, realpath, writeFile } from 'node:fs/promises';
+import { readFile, readdir, realpath } from 'node:fs/promises';
 import path from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { Rehearsal } from './harness.js';
@@ -109,11 +109,10 @@ test('S4 authentication outage respects the selected login policy; listing survi
       const cooldownObservedMs = Date.now() - started;
       // v3's first failed-login window is 30 seconds; do not cross its expiry.
       if (reuse) expect(cooldownObservedMs).toBeLessThan(30000);
-      const file = path.join(h.downloads, 'local.txt');
-      await writeFile(file, 'local reader survives');
-      const local = await h.call(c, 'process_document_for_rag', { file_path: file }, true);
-      localResult = local;
-      if (reuse) expect(local.error).toBeUndefined();
+      const removed = await c.callTool({ name: 'process_document_for_rag', arguments: { file_path: '/unused' } });
+      localResult = removed;
+      expect(removed.isError).toBe(true);
+      expect(await h.stats()).toEqual(before);
       h.scan(await c.listTools());
       expect((await c.listTools()).tools.length).toBeGreaterThan(0);
       alternateResult = await h.call(
@@ -135,7 +134,7 @@ test('S4 authentication outage respects the selected login policy; listing survi
               authenticationRepliesChecked: 6,
             }
           : {}),
-        localBridge: local.error ? 'blocked' : 'works',
+        removedProcessing: 'unknown tool; no provider contact',
         toolsList: 'works',
         alternateSources: alternateResult.error
           ? 'Library Genesis blocked'
@@ -171,8 +170,8 @@ test('Base scans have zero unexpected sentinel findings', () => {
 redactionTest('Base known cookie-ID log finding is absent', () => {
   expect(h.knownFindings).toBe(0);
 });
-sourceSurvivalTest('S4 local document processing survives authentication failures', () => {
-  expect(localResult.error).toBeUndefined();
+test('S4 removed processing call cannot contact providers during authentication failures', () => {
+  expect(localResult.isError).toBe(true);
 });
 test('C5 fake rejects a search without cookies', async () => {
   await h.mode({ mode: 'healthy', reset: true });
@@ -211,14 +210,14 @@ test('S6 healthy Library Genesis search reaches the real parser and fixture', as
 
 const breakerTest = expectedFixes.has('breaker') ? test : test.failing;
 breakerTest(
-  'S7 transient EAPI outage opens only EAPI; Library Genesis and local work survive',
+  'S7 transient EAPI outage opens only EAPI; Library Genesis survives and saved processing is refused',
   async () => {
     await h.scenario(
       'S7',
       async (connect) => {
         const started = performance.now();
         const c = await connect();
-        await h.call(c, 'search_books', { query: 'warm-session' });
+        const search = await h.call(c, 'search_books', { query: 'warm-session' });
         expect((await h.stats()).logins).toBe(1);
         await h.mode({ mode: 'server503' });
         const warmed = performance.now();
@@ -246,12 +245,20 @@ breakerTest(
           title: 'Rehearsal LibGen fixture',
           source: 'libgen',
         });
-        const file = path.join(h.downloads, 'breaker-local.txt');
-        await writeFile(file, 'Local work during a transient EAPI outage.');
-        const local = await h.call(c, 'process_document_for_rag', { file_path: file });
-        expect(await readFile(local.processed_file_path, 'utf8')).toContain(
-          'Local work during a transient EAPI outage.',
+        const beforeRefusal = await h.stats();
+        const refused = await h.call(
+          c,
+          'download_book_to_file',
+          {
+            bookDetails: search.books[0],
+            outputDir: h.downloads,
+            process_for_rag: true,
+          },
+          true,
         );
+        expect(refused.error.message).toMatch(/text processing was removed in 2\.0/i);
+        expect(await h.stats()).toEqual(beforeRefusal);
+        expect(await readdir(h.downloads)).toEqual([]);
         const after = await h.stats();
         expect(after.logins).toBe(1);
         expect(after.calls['/eapi/book/search']).toBe(6);
@@ -261,7 +268,7 @@ breakerTest(
           outage: 'HTTP 503 (non-auth)',
           breaker: 'EAPI OPEN after five failures',
           blockedCallDispatched: false,
-          localBridge: 'works',
+          savedProcessing: 'refused before authentication or transfer; no files created',
           alternateSources: 'Library Genesis works',
           toolsList: 'works',
           timingMs: {

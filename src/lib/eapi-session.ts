@@ -24,7 +24,7 @@ function milliseconds(name: string, fallback: number): number {
   return Number.isSafeInteger(value) && value > 0 && value <= 2147483647 ? value : fallback;
 }
 export function needsEapi(functionName: string, args: Record<string, any>): boolean {
-  if (functionName === 'process_document' || functionName === 'search_multi_source') return false;
+  if (functionName === 'search_multi_source') return false;
   return (
     functionName !== 'download_book' ||
     !['libgen', 'annas', 'annas_archive'].includes(

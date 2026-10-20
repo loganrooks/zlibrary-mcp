@@ -203,14 +203,9 @@ test('per-call mode and non-EAPI work have no session channel', async () => {
   runPythonBridge.mockImplementation(async (_s, options, ro) => {
     expect(ro.sessionInput).toBeUndefined();
     expect(options.env.ZLIBRARY_EAPI_SESSION).toBeUndefined();
-    return envelope(
-      options.args[0] === 'process_document'
-        ? { processed_file_path: '/synthetic/result.txt' }
-        : { books: [], sources_used: [] },
-    );
+    return envelope({ books: [], sources_used: [] });
   });
   await api.searchMultiSource({ query: 'offline', source: 'libgen' });
-  await api.processDocumentForRag({ filePath: '/synthetic/input.txt' });
   process.env.ZLIBRARY_SESSION_MODE = 'per-call';
   await call();
   await call();

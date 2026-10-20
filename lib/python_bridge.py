@@ -41,8 +41,6 @@ from filename_utils import (
 )
 import logging
 
-# Import the new RAG processing functions
-from lib import rag_processing
 
 # Import enhanced metadata extraction
 from lib import enhanced_metadata
@@ -892,41 +890,6 @@ async def get_download_limits():
 # --- Core Bridge Functions ---
 
 
-async def process_document(
-    file_path_str: str,
-    output_format: str = "txt",
-    book_id: str = None,  # Add metadata params
-    author: str = None,
-    title: str = None,
-) -> dict:
-    """
-    Process a local document and return the path-first structured-output bundle.
-    """
-    file_path = Path(file_path_str)
-    if not file_path.exists():
-        raise FileNotFoundError(f"File not found: {file_path_str}")
-
-    try:
-        logger.info(f"Starting processing for: {file_path} with format {output_format}")
-        book_details_dict = {
-            key: value
-            for key, value in {"id": book_id, "author": author, "title": title}.items()
-            if value is not None
-        }
-        return await rag_processing.process_document(
-            file_path_str=str(file_path),
-            output_format=output_format,
-            book_details=book_details_dict or None,
-        )
-
-    except Exception as e:
-        logger.exception(
-            f"Error processing document {file_path_str}"
-        )  # Log full traceback
-        # Re-raise to be caught by the main handler
-        raise RuntimeError(f"Error processing document {file_path_str}: {e}") from e
-
-
 # --- download_book function needs to be async ---
 SOURCE_ALIASES = {"libgen", "annas", "annas_archive"}
 _MD5_RE = re.compile(r"^[0-9a-f]{32}$")
@@ -1099,7 +1062,7 @@ async def _download_url_to_file(
     """Stream a resolved source URL to disk and return the raw path.
 
     The source-agnostic half of acquisition: everything downstream of this
-    (unified filename, RAG processing, the bundle contract) already works on
+    (unified filename and publication contract) already works on
     any source, so this is the only piece that had to exist for LibGen and
     Anna's results to become downloadable.
 
@@ -1371,69 +1334,22 @@ async def _fetch_from_source(book_details: dict, output_dir: str) -> str:
         raise
 
 
-def _require_rag_tier_for(book_details: dict) -> None:
-    """Fail before downloading when the format's processor is not installed.
-
-    Only the extension the result advertises is checked. A core-only user
-    downloading a `.txt` with `process_for_rag` needs neither PyMuPDF nor
-    EbookLib, and refusing that would be a worse bug than the one this
-    prevents — a preflight that blocks working operations is not a preflight,
-    it is an outage.
-
-    An unknown or absent extension is allowed through: the tier check still
-    runs inside `process_document`, so the guarantee is unchanged. What is lost
-    in that case is only the early exit, and guessing wrong in the other
-    direction would cost the user a download they could have had.
-    """
-    from lib.rag.utils.deps import (  # noqa: PLC0415
-        EBOOKLIB_AVAILABLE,
-        PYMUPDF_AVAILABLE,
-        require_optional_dependency,
-    )
-
-    name = str(
-        book_details.get("name")
-        or book_details.get("title")
-        or book_details.get("filename")
-        or ""
-    )
-    extension = str(book_details.get("extension") or "").strip().lower().lstrip(".")
-    if not extension and "." in name:
-        extension = name.rsplit(".", 1)[-1].strip().lower()
-
-    if extension == "pdf":
-        require_optional_dependency(PYMUPDF_AVAILABLE, "PyMuPDF (fitz)", "rag")
-    elif extension == "epub":
-        require_optional_dependency(EBOOKLIB_AVAILABLE, "EbookLib", "rag")
+def _admit_download_args(arguments: dict) -> None:
+    """Reject removed options before authentication, quota use or transfer."""
+    if (
+        "process_for_rag" in arguments and arguments["process_for_rag"] is not False
+    ) or "processed_output_format" in arguments:
+        raise ValueError(
+            "Text processing was removed in 2.0. Use a separate 1.4.x installation for text processing."
+        )
+    unknown = arguments.keys() - {"book_details", "output_dir", "process_for_rag"}
+    if unknown:
+        raise ValueError(f"Unknown download argument(s): {', '.join(sorted(unknown))}")
 
 
-async def download_book(
-    book_details: dict,
-    output_dir: str,
-    process_for_rag: bool = False,
-    processed_output_format: str = "txt",
-):
-    """
-    Downloads a book, optionally processes it, and returns file paths.
-
-    Uses EAPIClient.download_file for the actual download.
-
-    Args:
-        book_details: Book dictionary from search (must have 'id' and 'hash'/'book_hash')
-        output_dir: Directory to save downloaded file
-        process_for_rag: If True, also extract text for RAG
-        processed_output_format: Format for RAG output ('txt' or 'markdown')
-
-    Returns:
-        dict with 'file_path' and optional 'processed_file_path'
-    """
-    # A missing RAG tier is knowable before any bytes move, and finding out
-    # afterwards is expensive: the file has already been fetched and published,
-    # the call then errors WITHOUT returning the path, and on Z-Library it has
-    # spent one of roughly ten downloads the account gets that day (Codex on
-    # #114). Nothing about the answer changes by waiting, so it is checked here.
-    if process_for_rag:
-        _require_rag_tier_for(book_details)
+async def download_book(book_details: dict, output_dir: str, **legacy_arguments):
+    """Download the original book and return its local file_path."""
+    _admit_download_args(legacy_arguments)
 
     # Route by source. A result from search_multi_source carries md5 + source
     # and has no Z-Library id/hash, so it takes the source path — which also
@@ -1463,8 +1379,6 @@ async def download_book(
 
     downloaded_file_path_str = None
     final_file_path_str = None  # Path with enhanced filename
-    processed_file_path_str = None  # Path for RAG processed file
-    process_result = None
     eapi_staging = None
 
     try:
@@ -1515,7 +1429,7 @@ async def download_book(
         )
         final_filename = unified_filename
         # Preserve the server's wording for sparse metadata while keeping the
-        # normalized extension and deterministic identity suffix used by RAG.
+        # normalized extension and deterministic identity suffix used by acquisition.
         if is_degraded_unified_filename(unified_filename):
             server_name = Path(original_download_path_str).name
             if is_preservable_server_filename(server_name):
@@ -1534,13 +1448,6 @@ async def download_book(
                     final_filename = stem + ending
         final_file_path = Path(output_dir) / final_filename
         final_file_path_str = str(final_file_path)
-
-        if process_for_rag and final_file_path.suffix.lower() not in {
-            ".pdf",
-            ".epub",
-            ".txt",
-        }:
-            raise ValueError("RAG processing supports only PDF, EPUB, and TXT files")
 
         # Step 3: Rename the downloaded file to the enhanced filename, or adopt
         # an identical artifact a previous acquisition of this book already
@@ -1563,28 +1470,7 @@ async def download_book(
             )
         downloaded_file_path_str = final_file_path_str
 
-        # Step 4: Optionally process for RAG.
-        if process_for_rag and downloaded_file_path_str:
-            logger.info(
-                f"Processing downloaded file for RAG: {downloaded_file_path_str}"
-            )
-            process_result = await process_document(
-                file_path_str=downloaded_file_path_str,
-                output_format=processed_output_format,
-                book_id=book_details.get("id"),
-                author=book_details.get("author"),
-                title=book_details.get("name") or book_details.get("title"),
-            )
-            processed_file_path_str = process_result.get("processed_file_path")
-
-        result = {
-            "file_path": downloaded_file_path_str,
-            "processed_file_path": processed_file_path_str,
-        }
-        if process_for_rag and process_result:
-            result.update(process_result)
-            result["file_path"] = downloaded_file_path_str
-        return result
+        return {"file_path": downloaded_file_path_str}
 
     except Exception as e:
         identifier = book_details.get("id") or book_details.get("md5") or "unknown"
@@ -1835,13 +1721,13 @@ async def search_multi_source(
 def _requires_eapi_client(function_name: str, args_dict: dict) -> bool:
     """Whether this invocation needs an authenticated Z-Library EAPI client.
 
-    Local document processing and multi-source search never do. Neither does
+    Multi-source search never does. Neither does
     a download whose bookDetails came from search_multi_source (source in
     SOURCE_ALIASES): download_book only acquires the EAPI client on its
     Z-Library branch, and logging in up front took LibGen — the
     credential-free fallback — down with every Z-Library auth outage (#129).
     """
-    if function_name in ("process_document", "search_multi_source"):
+    if function_name == "search_multi_source":
         return False
     if function_name == "download_book":
         source = str((args_dict.get("book_details") or {}).get("source") or "").lower()
@@ -1907,6 +1793,10 @@ async def main():
 
     needs_eapi = False
     try:
+        if function_name == "download_book":
+            _admit_download_args(args_dict)
+        elif function_name == "process_document":
+            raise ValueError("Text processing was removed in 2.0.")
         # Decide before dispatch whether this call needs Z-Library
         # authentication at all — see _requires_eapi_client (#106, #129).
         needs_eapi = _requires_eapi_client(function_name, args_dict)
@@ -2035,10 +1925,6 @@ async def _dispatch_bridge_function(function_name: str, args_dict: dict):
         return await get_download_limits(**args_dict)
     elif function_name == "download_book":
         return await download_book(**args_dict)
-    elif function_name == "process_document":
-        if "file_path" in args_dict:
-            args_dict["file_path_str"] = args_dict.pop("file_path")
-        return await process_document(**args_dict)
     elif function_name == "get_book_metadata_complete":
         return await get_book_metadata_complete(**args_dict)
     elif function_name == "search_by_term_bridge":

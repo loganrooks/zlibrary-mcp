@@ -23,7 +23,7 @@ This Z-Library MCP server is installed **system-wide** and can be used by any pr
 
 **When to use**:
 - Research projects (literature reviews, citations)
-- RAG/AI projects (knowledge base building)
+- Research projects (corpus acquisition)
 - Learning projects (finding study materials)
 - Document analysis projects
 
@@ -49,7 +49,7 @@ Create or edit `.mcp.json` in your project root:
 **Then**:
 1. Restart Claude Code in that project
 2. The 11 Z-Library tools will be available
-3. Start using: search, download, process, metadata extraction, etc.
+3. Start using: search, download, and metadata retrieval.
 
 ---
 
@@ -128,7 +128,6 @@ When a project configures this server, it gets access to:
 
 ### Download/Process (2 methods)
 8. `download_book_to_file` - Download PDF/EPUB
-9. `process_document_for_rag` - Extract clean text
 
 ### Utility (2 methods)
 10. `get_download_limits` - Check quota
@@ -156,10 +155,10 @@ When a project configures this server, it gets access to:
 }
 ```
 
-### RAG System Project
+### Corpus Acquisition Project
 
 ```json
-// ~/projects/rag-knowledge-base/.mcp.json
+// ~/projects/research-corpus/.mcp.json
 {
   "mcpServers": {
     "zlibrary": {
@@ -250,8 +249,7 @@ bash setup-uv.sh --no-dev
 ```
 
 This installs the lightweight search/download core without contributor test and
-lint tools. Add PDF/EPUB processing with `uv sync --no-dev --extra rag`, or the
-complete scholarly/OCR tier with `uv sync --no-dev --extra scholar`.
+lint tools. Text processing is removed in 2.0; see [migration](../text-processing-migration.md).
 
 ### "Path not found" in .mcp.json
 - Verify path is absolute: `/home/rookslog/mcp-servers/zlibrary-mcp/dist/index.js`

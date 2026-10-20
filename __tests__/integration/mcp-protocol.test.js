@@ -22,7 +22,6 @@ const EXPECTED_TOOLS = [
   'get_download_limits',
   'get_recent_books',
   'download_book_to_file',
-  'process_document_for_rag',
   'get_book_metadata',
   'search_by_term',
   'search_by_author',
@@ -48,7 +47,6 @@ const READ_ONLY_TOOLS = [
 // Tools that modify state (download files, process documents)
 const MUTATING_TOOLS = [
   'download_book_to_file',
-  'process_document_for_rag'
 ];
 
 describe('MCP Protocol Integration Tests', () => {
@@ -85,6 +83,10 @@ describe('MCP Protocol Integration Tests', () => {
         const annotations = args[3];
         const handler = args[4];
         registeredTools[name] = { description, shape, annotations, handler };
+      }),
+      registerTool: jest.fn((name, config, handler) => {
+        registeredTools[name] = { description: config.description, shape: config.inputSchema.shape,
+          annotations: config.annotations, handler };
       }),
       close: jest.fn(),
     };
@@ -133,9 +135,9 @@ describe('MCP Protocol Integration Tests', () => {
     test('McpServer.tool() should be called for all tools (including get_recent_books)', async () => {
       await setupMockedServer();
 
-      // 13 tools registered via server.tool()
+      // 12 acquisition tools registered
       const registeredNames = Object.keys(registeredTools);
-      expect(registeredNames.length).toBeGreaterThanOrEqual(13);
+      expect(registeredNames.length).toBeGreaterThanOrEqual(12);
 
       EXPECTED_TOOLS.forEach(expectedTool => {
         expect(registeredNames).toContain(expectedTool);
@@ -223,17 +225,6 @@ describe('MCP Protocol Integration Tests', () => {
       }
     });
 
-    test('local-only tools should have openWorldHint: false', async () => {
-      await setupMockedServer();
-
-      const localOnlyTools = ['process_document_for_rag'];
-
-      for (const toolName of localOnlyTools) {
-        const tool = registeredTools[toolName];
-        expect(tool).toBeDefined();
-        expect(tool.annotations?.openWorldHint).toBe(false);
-      }
-    });
 
     test('pure search tools should be idempotent', async () => {
       await setupMockedServer();
@@ -247,7 +238,6 @@ describe('MCP Protocol Integration Tests', () => {
         'search_multi_source',
         'get_book_metadata',
         'fetch_booklist',
-        'process_document_for_rag'
       ];
 
       for (const toolName of idempotentTools) {
@@ -480,7 +470,7 @@ describe('Schema Validation (Standalone)', () => {
 
     expect(toolRegistry).toBeDefined();
     expect(typeof toolRegistry).toBe('object');
-    expect(Object.keys(toolRegistry).length).toBe(13);
+    expect(Object.keys(toolRegistry).length).toBe(12);
   });
 
   test('all tools should have Zod schemas that can be converted to JSON Schema', async () => {

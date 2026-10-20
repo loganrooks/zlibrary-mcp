@@ -1,5 +1,5 @@
 export const requiredCases = [
-  'S7 transient EAPI outage opens only EAPI; Library Genesis and local work survive',
+  'S7 transient EAPI outage opens only EAPI; Library Genesis survives and saved processing is refused',
   'C8 fake binds and loads TLS without hostname resolution',
   'C9 startup deadline reports captured stderr and live process status',
   'C10 startup exit and spawn errors retain stderr and status',
@@ -14,7 +14,7 @@ export const requiredCases = [
   'C7 PID mismatch still closes every client',
   'Base known cookie-ID log finding is absent',
   'Epoch known cookie-ID log finding is absent',
-  'S4 local document processing survives authentication failures',
+  'S4 removed processing call cannot contact providers during authentication failures',
   'S1 sequential calls preserve identity and download exact bytes inside temp storage',
   'S2 five concurrent slow/fast calls correlate; count logins independently',
   'S2 session reuse: exactly one login (expected failure on master)',

@@ -34,7 +34,6 @@ from lib.sources.models import DownloadResult, SourceType
 # Import functions from the module under test
 from python_bridge import (
     main,
-    process_document,
     download_book,
     normalize_book_details,
     eapi_health_check,
@@ -138,12 +137,6 @@ def mock_eapi_download(mocker, mock_eapi_client):
         return_value="/mock/downloaded/book.epub"
     )
     return mock_eapi_client
-
-
-@pytest.fixture
-def mock_rag_process_document(mocker):
-    """Mock the shared RAG orchestrator entry point used by the bridge."""
-    return mocker.patch("lib.rag_processing.process_document", AsyncMock())
 
 
 # --- Tests for normalize_book_details (EAPI format) ---
@@ -344,8 +337,12 @@ class TestNodePythonDispatchContract:
         import re
 
         repo_root = Path(__file__).resolve().parents[2]
-        node_src = (repo_root / "src" / "lib" / "zlibrary-api.ts").read_text(encoding="utf-8")
-        bridge_src = (repo_root / "lib" / "python_bridge.py").read_text(encoding="utf-8")
+        node_src = (repo_root / "src" / "lib" / "zlibrary-api.ts").read_text(
+            encoding="utf-8"
+        )
+        bridge_src = (repo_root / "lib" / "python_bridge.py").read_text(
+            encoding="utf-8"
+        )
 
         node_names = set(re.findall(r"callPythonFunction\(\s*'([^']+)'", node_src))
         assert node_names, "no callPythonFunction() names found — regex drifted?"
@@ -1613,9 +1610,7 @@ asyncio.run(python_bridge.main())
                 time.sleep(0.02)
             assert ready.exists()
             assert not partial.exists()
-            staging_files = [
-                path for path in tmp_path.rglob("*.part")
-            ]
+            staging_files = [path for path in tmp_path.rglob("*.part")]
             assert len(staging_files) == 1
 
             process.send_signal(signal.SIGTERM)
@@ -1623,9 +1618,7 @@ asyncio.run(python_bridge.main())
             stdout, _stderr = process.communicate()
 
             assert not partial.exists()
-            assert not [
-                path for path in tmp_path.rglob("*.part")
-            ]
+            assert not [path for path in tmp_path.rglob("*.part")]
             assert not list(tmp_path.glob(".eapi-*"))
             assert stdout == ""
         finally:
@@ -2133,7 +2126,7 @@ asyncio.run(python_bridge.main())
         assert result["file_path"].endswith("libgen-book.pdf")
 
     @pytest.mark.asyncio
-    async def test_empty_declared_extension_uses_recovered_path_at_rag_boundary(
+    async def test_empty_declared_extension_uses_recovered_download_path(
         self, tmp_path, mocker
     ):
         """Whitespace metadata cannot erase a response-supported EPUB suffix."""
@@ -2142,16 +2135,6 @@ asyncio.run(python_bridge.main())
         mocker.patch(
             "python_bridge._fetch_from_source",
             new=AsyncMock(return_value=str(raw_path)),
-        )
-
-        async def process_real_boundary(file_path_str, **_kwargs):
-            boundary_path = Path(file_path_str)
-            assert boundary_path.exists()
-            assert boundary_path.suffix == ".epub"
-            return {"processed_file_path": str(boundary_path) + ".processed.txt"}
-
-        mocker.patch(
-            "python_bridge.process_document", side_effect=process_real_boundary
         )
 
         result = await download_book(
@@ -2163,45 +2146,12 @@ asyncio.run(python_bridge.main())
                 "extension": "   ",
             },
             output_dir=str(tmp_path),
-            process_for_rag=True,
         )
 
         final_path = Path(result["file_path"])
         assert final_path.exists()
         assert final_path.suffix == ".epub"
         assert final_path.name.endswith(f"_{'a' * 32}.epub")
-
-    @pytest.mark.asyncio
-    async def test_rag_rejects_safe_but_unsupported_document_before_publish(
-        self, tmp_path, mocker
-    ):
-        """A valid acquisition extension is not automatically a valid RAG format."""
-        raw_path = tmp_path / ".source-owned.mobi"
-        raw_path.write_bytes(b"MOBI book bytes")
-        mocker.patch(
-            "python_bridge._fetch_from_source",
-            new=AsyncMock(return_value=str(raw_path)),
-        )
-        process = mocker.patch(
-            "python_bridge.process_document",
-            new=AsyncMock(side_effect=AssertionError("unsupported path reached RAG")),
-        )
-
-        with pytest.raises(ValueError, match="RAG processing supports"):
-            await download_book(
-                book_details={
-                    "md5": "a" * 32,
-                    "source": "annas_archive",
-                    "title": "Unsupported RAG",
-                    "extension": "mobi",
-                },
-                output_dir=str(tmp_path),
-                process_for_rag=True,
-            )
-
-        process.assert_not_awaited()
-        assert raw_path.exists()
-        assert not list(tmp_path.glob("UnknownAuthor_UnsupportedRAG_*"))
 
     @pytest.mark.asyncio
     async def test_download_book_success(
@@ -2228,7 +2178,6 @@ asyncio.run(python_bridge.main())
         mocker.patch(
             "python_bridge.create_unified_filename", return_value=expected_filename
         )
-        mocker.patch("python_bridge.process_document", AsyncMock())
 
         result = await download_book(
             book_details=book_details_mock,
@@ -2237,59 +2186,7 @@ asyncio.run(python_bridge.main())
         )
 
         assert result["file_path"] == expected_final_path
-        assert result.get("processed_file_path") is None
-
-    @pytest.mark.asyncio
-    async def test_download_book_with_rag(
-        self, mock_eapi_download, tmp_path, mocker, patch_eapi_client
-    ):
-        """Tests download_book with RAG processing."""
-        book_details_mock = {
-            "id": "988",
-            "extension": "txt",
-            "name": "RAG Test Book",
-            "author": "RAG Author",
-            "url": "https://example.com/book/988/test",
-            "hash": "raghash123",
-        }
-        output_dir_mock = str(tmp_path / "downloads_rag")
-        original_path = str(Path(output_dir_mock) / "988.txt")
-        expected_filename = "AuthorRAG_RAG_Test_Book_988.txt"
-        expected_final_path = str(Path(output_dir_mock) / expected_filename)
-        processed_path = expected_final_path + ".processed.md"
-
-        mock_eapi_download.download_file.return_value = original_path
-        Path(output_dir_mock).mkdir(parents=True)
-        Path(original_path).write_text("EAPI text fixture", encoding="utf-8")
-        mocker.patch(
-            "python_bridge.create_unified_filename", return_value=expected_filename
-        )
-        mocker.patch(
-            "python_bridge.process_document",
-            AsyncMock(
-                return_value={
-                    "processed_file_path": processed_path,
-                    "metadata_file_path": processed_path + ".metadata.json",
-                    "content_types_produced": ["body", "metadata"],
-                    "output_files": {
-                        "body": processed_path,
-                        "metadata": processed_path + ".metadata.json",
-                    },
-                }
-            ),
-        )
-
-        result = await download_book(
-            book_details=book_details_mock,
-            output_dir=output_dir_mock,
-            process_for_rag=True,
-            processed_output_format="markdown",
-        )
-
-        assert result["file_path"] == expected_final_path
-        assert result["processed_file_path"] == processed_path
-        assert result["metadata_file_path"] == processed_path + ".metadata.json"
-        assert result["output_files"]["body"] == processed_path
+        assert set(result) == {"file_path"}
 
     @pytest.mark.asyncio
     async def test_download_book_error(
@@ -2313,133 +2210,7 @@ asyncio.run(python_bridge.main())
             )
 
 
-# --- Tests for process_document (unchanged — local file processing) ---
-
-
-@pytest.mark.asyncio
-async def test_process_document_epub_success(
-    tmp_path, mocker, mock_rag_process_document
-):
-    epub_path = tmp_path / "test.epub"
-    epub_path.touch()
-    expected_result = {
-        "processed_file_path": "/tmp/test.epub.processed.txt",
-        "metadata_file_path": "/tmp/test.epub.metadata.json",
-        "stats": {"word_count": 5, "char_count": 34, "format": "txt"},
-        "content_types_produced": ["body"],
-        "output_files": {
-            "body": "/tmp/test.epub.processed.txt",
-            "metadata": "/tmp/test.epub.metadata.json",
-        },
-    }
-    mock_rag_process_document.return_value = expected_result
-
-    result = await process_document(
-        str(epub_path), book_id=None, author=None, title=None
-    )
-
-    mock_rag_process_document.assert_called_once_with(
-        file_path_str=str(epub_path),
-        output_format="txt",
-        book_details=None,
-    )
-    assert result == expected_result
-
-
-@pytest.mark.asyncio
-async def test_process_document_epub_read_error(
-    tmp_path, mocker, mock_rag_process_document
-):
-    epub_path = tmp_path / "test.epub"
-    epub_path.touch()
-    mock_rag_process_document.side_effect = Exception("EPUB read failed")
-
-    with pytest.raises(
-        RuntimeError, match=r"Error processing document .*test\.epub: EPUB read failed"
-    ):
-        await process_document(str(epub_path), book_id=None, author=None, title=None)
-    mock_rag_process_document.assert_called_once()
-
-
-@pytest.mark.asyncio
-async def test_process_document_txt_utf8(tmp_path, mocker, mock_rag_process_document):
-    txt_path = tmp_path / "test_utf8.txt"
-    content = "This is a UTF-8 file.\nWith multiple lines.\nAnd special chars."
-    txt_path.write_text(content, encoding="utf-8")
-    expected_result = {
-        "processed_file_path": "/tmp/test_utf8.txt.processed.txt",
-        "metadata_file_path": "/tmp/test_utf8.txt.metadata.json",
-        "stats": {"word_count": 12, "char_count": len(content), "format": "txt"},
-        "content_types_produced": ["body"],
-        "output_files": {
-            "body": "/tmp/test_utf8.txt.processed.txt",
-            "metadata": "/tmp/test_utf8.txt.metadata.json",
-        },
-    }
-    mock_rag_process_document.return_value = expected_result
-
-    result = await process_document(
-        str(txt_path), book_id=None, author=None, title=None
-    )
-
-    mock_rag_process_document.assert_called_once_with(
-        file_path_str=str(txt_path),
-        output_format="txt",
-        book_details=None,
-    )
-    assert result == expected_result
-
-
-@pytest.mark.asyncio
-async def test_process_document_pdf_success(
-    tmp_path, mocker, mock_rag_process_document
-):
-    pdf_path = tmp_path / "sample.pdf"
-    pdf_path.touch()
-    expected_result = {
-        "processed_file_path": "/tmp/sample.pdf.processed.markdown",
-        "metadata_file_path": "/tmp/sample.pdf.metadata.json",
-        "footnotes_file_path": "/tmp/sample.pdf.processed_footnotes.markdown",
-        "stats": {"word_count": 4, "char_count": 24, "format": "markdown"},
-        "content_types_produced": ["body", "footnotes"],
-        "output_files": {
-            "body": "/tmp/sample.pdf.processed.markdown",
-            "metadata": "/tmp/sample.pdf.metadata.json",
-            "footnotes": "/tmp/sample.pdf.processed_footnotes.markdown",
-        },
-    }
-    mock_rag_process_document.return_value = expected_result
-
-    result = await process_document(
-        str(pdf_path),
-        output_format="markdown",
-        book_id="123",
-        author="Test Author",
-        title="Test Title",
-    )
-
-    mock_rag_process_document.assert_called_once_with(
-        file_path_str=str(pdf_path),
-        output_format="markdown",
-        book_details={"id": "123", "author": "Test Author", "title": "Test Title"},
-    )
-    assert result == expected_result
-
-
-@pytest.mark.asyncio
-async def test_process_document_pdf_encrypted(
-    tmp_path, mocker, mock_rag_process_document
-):
-    pdf_path = tmp_path / "encrypted.pdf"
-    pdf_path.touch()
-    mock_rag_process_document.side_effect = ValueError("PDF is encrypted")
-
-    with pytest.raises(
-        RuntimeError,
-        match=r"Error processing document .*encrypted\.pdf: PDF is encrypted",
-    ):
-        await process_document(str(pdf_path), book_id=None, author=None, title=None)
-    mock_rag_process_document.assert_called_once()
+# --- Acquisition authentication routing ---
 
 
 class TestRequiresEapiClient:
@@ -2457,7 +2228,7 @@ class TestRequiresEapiClient:
     def test_local_and_multi_source_functions_do_not(self):
         from lib import python_bridge
 
-        assert python_bridge._requires_eapi_client("process_document", {}) is False
+        assert python_bridge._requires_eapi_client("search_multi_source", {}) is False
         assert python_bridge._requires_eapi_client("search_multi_source", {}) is False
 
     def test_download_of_zlibrary_result_requires_eapi(self):

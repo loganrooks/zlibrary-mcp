@@ -125,7 +125,7 @@ describe('Python Bridge', () => {
     );
   });
 
-  test.each(['download_book', 'process_document'])(
+  test.each(['download_book'])(
     'uses the long bridge default for %s',
     async (functionName) => {
       const { pythonBridge, runPythonBridge } = await setup();

@@ -69,7 +69,7 @@ describe('MCP Server E2E', () => {
     const toolNames = result.tools.map(t => t.name);
     expect(toolNames).toContain('search_books');
     expect(toolNames).toContain('download_book_to_file');
-    expect(toolNames).toContain('process_document_for_rag');
+    expect(toolNames).not.toContain('process_document_for_rag');
     expect(toolNames).toContain('get_download_limits');
 
     // Each tool should have name, description, and inputSchema

@@ -37,11 +37,6 @@ const cases = {
     'download_book',
     { file_path: '/offline/book.pdf' },
   ],
-  process_document_for_rag: [
-    { file_path: '/offline/book.pdf' },
-    'process_document',
-    { processed_file_path: '/offline/book.txt' },
-  ],
   get_book_metadata: [
     { bookId: '1', bookHash: 'offline' },
     'get_book_metadata_complete',
@@ -82,9 +77,7 @@ const expectedBridgeArgs = {
   get_recent_books: { count: 1 },
   download_book_to_file: {
     book_details: { id: '1', hash: 'offline' }, output_dir: './downloads',
-    process_for_rag: false, processed_output_format: 'txt',
   },
-  process_document_for_rag: { file_path_str: '/offline/book.pdf', output_format: 'txt' },
   get_book_metadata: { book_id: '1', book_hash: 'offline' },
   search_by_term: { term: 'offline', languages: [], extensions: [], limit: 25 },
   search_by_author: {
@@ -124,20 +117,13 @@ const forwardingCases = [
     name: 'download_book_to_file',
     args: {
       bookDetails: { id: '2', hash: 'other', title: 'Preserved details' },
-      outputDir: '/offline/downloads', process_for_rag: true,
-      processed_output_format: 'markdown',
+      outputDir: '/offline/downloads',
     },
     expectedArgs: {
       book_details: { id: '2', hash: 'other', title: 'Preserved details' },
-      output_dir: '/offline/downloads', process_for_rag: true,
-      processed_output_format: 'markdown',
+      output_dir: '/offline/downloads',
     },
-    payload: { file_path: '/offline/book.pdf', processed_file_path: '/offline/book.md' },
-  },
-  {
-    name: 'process_document_for_rag',
-    args: { file_path: '/offline/other.pdf', output_format: 'markdown' },
-    expectedArgs: { file_path_str: '/offline/other.pdf', output_format: 'markdown' },
+    payload: { file_path: '/offline/book.pdf' },
   },
   {
     name: 'search_by_term',
@@ -186,7 +172,6 @@ const characterBaselines = {
   get_download_limits: 417,
   get_recent_books: 585,
   download_book_to_file: 1097,
-  process_document_for_rag: 733,
   get_book_metadata: 1323,
   search_by_term: 1265,
   search_by_author: 1346,
@@ -230,8 +215,8 @@ test('tools/list has a fixture for every advertised tool and bounded schema cost
   // #196: 13,346 total characters at f779ee3; ±10% is the accepted envelope.
   expect(advertised.tools.map((tool) => tool.name).sort()).toEqual(Object.keys(cases).sort());
   const total = JSON.stringify(advertised).length;
-  expect(total).toBeGreaterThanOrEqual(Math.floor(13346 * 0.9));
-  expect(total).toBeLessThanOrEqual(Math.ceil(13346 * 1.1));
+  expect(total).toBeGreaterThanOrEqual(Math.floor(12613 * 0.9));
+  expect(total).toBeLessThanOrEqual(Math.ceil(12613 * 1.1));
   for (const tool of advertised.tools) {
     expect(JSON.stringify(tool).length).toBeLessThanOrEqual(
       Math.ceil(characterBaselines[tool.name] * 1.1),

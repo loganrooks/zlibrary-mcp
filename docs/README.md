@@ -14,8 +14,8 @@ is in the Reference section.
 | [TROUBLESHOOTING.md](TROUBLESHOOTING.md) | Setup and runtime troubleshooting |
 | [DEPLOYMENT.md](DEPLOYMENT.md) | Deployment paths and edge cases |
 | [RETRY_CONFIGURATION.md](RETRY_CONFIGURATION.md) | Retry and circuit-breaker configuration |
-| [specifications/](specifications/) | Formal technical specifications (RAG pipeline features) |
-| [MIGRATION_V2.md](MIGRATION_V2.md) | UV migration guide (pip/venv to UV) |
+| [specifications/](specifications/) | Historical specifications; processing features are parked |
+| [text-processing-migration.md](text-processing-migration.md) | Acquisition-only 2.0 migration and preserved text-processing tree |
 | [examples/](examples/) | MCP config templates and usage examples |
 | [installation/](installation/) | System-wide setup notes |
 
@@ -67,3 +67,5 @@ readiness checklists from the v1.2 release cycle)
 
 **Archive:** [archive/](archive/) (explicitly archived analyses and session
 reports)
+
+Historical UV migration: [history/MIGRATION_V2.md](history/MIGRATION_V2.md) (old unshipped version label).

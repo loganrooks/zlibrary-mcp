@@ -1,3 +1,5 @@
+> Historical text-processing example; use the preserved tag, not the acquisition-only server. See [migration](../text-processing-migration.md).
+
 # Metadata Verification Examples
 
 ## Quick Start

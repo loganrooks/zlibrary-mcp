@@ -34,7 +34,7 @@ const eapiSessions = new EapiSessionOwner();
 
 // Python owns alternative-source failover, so LibGen/Anna/auto share one scope.
 const dependencyBreakers = Object.fromEntries(
-  ['eapi', 'libgen', 'local'].map((scope) => [
+  ['eapi', 'libgen'].map((scope) => [
     scope,
     new CircuitBreaker({
       threshold: parseInt(process.env.CIRCUIT_BREAKER_THRESHOLD || '5'),
@@ -47,13 +47,13 @@ const dependencyBreakers = Object.fromEntries(
 );
 
 /**
- * Bridge functions whose work is bounded by file size and CPU, not by a
- * network round trip. Downloading a large book and OCR-ing a scanned one both
- * routinely outrun the ordinary budget, and killing them would turn a slow
+ * Bridge functions whose work is bounded by file size, not by a single
+ * network round trip. Downloading a large book can routinely outrun the
+ * ordinary budget, and killing it would turn a slow
  * success into a hard failure — the opposite of what the budget is for. They
  * are still bounded (PYTHON_BRIDGE_LONG_TIMEOUT), just far more generously.
  */
-const LONG_RUNNING_FUNCTIONS = new Set(['download_book', 'process_document']);
+const LONG_RUNNING_FUNCTIONS = new Set(['download_book']);
 
 /**
  * Default wall-clock budget for a bridge function, in ms.
@@ -71,7 +71,7 @@ function defaultTimeoutFor(functionName: string): number | undefined {
 export interface CallOptions {
   /**
    * Wall-clock budget in ms. Defaults to PYTHON_BRIDGE_TIMEOUT, or
-   * PYTHON_BRIDGE_LONG_TIMEOUT for download/processing calls.
+   * PYTHON_BRIDGE_LONG_TIMEOUT for download calls.
    */
   timeoutMs?: number;
   /** Abort signal from the MCP request, so a cancelled call kills the child. */
@@ -93,8 +93,7 @@ async function callPythonFunction(
   args: Record<string, any> = {},
   callOptions: CallOptions = {},
 ): Promise<any> {
-  const nonEapiScope = functionName === 'process_document' ? 'local' : 'libgen';
-  const breaker = dependencyBreakers[needsEapi(functionName, args) ? 'eapi' : nonEapiScope]!;
+  const breaker = dependencyBreakers[needsEapi(functionName, args) ? 'eapi' : 'libgen']!;
   const configuredEnv = { ...process.env };
   const identity = configuredEnv.ZLIBRARY_EMAIL || '';
   const reuse = needsEapi(functionName, args) && getSessionMode() === 'memory';
@@ -346,103 +345,24 @@ interface DownloadBookToFileArgs {
   // format?: string | null; // Replaced by bookDetails
   bookDetails: Record<string, any>; // Expect the full book details object
   outputDir?: string;
-  process_for_rag?: boolean;
-  processed_output_format?: string;
 }
 
-interface ProcessDocumentForRagArgs {
-  filePath: string;
-  outputFormat?: string;
-}
-
-interface ProcessedDocumentStats {
-  word_count: number;
-  char_count: number;
-  format: string;
-}
-
-interface ProcessedDocumentBundle {
-  processed_file_path: string | null;
-  metadata_file_path?: string | null;
-  footnotes_file_path?: string | null;
-  endnotes_file_path?: string | null;
-  citations_file_path?: string | null;
-  stats?: ProcessedDocumentStats | null;
-  content_types_produced?: string[];
-  output_files?: Record<string, string>;
-}
-
-interface DownloadBookResult extends ProcessedDocumentBundle {
+interface DownloadBookResult {
   file_path: string;
-  processing_error?: string;
 }
 
-function isStringArray(value: unknown): value is string[] {
-  return Array.isArray(value) && value.every((item) => typeof item === 'string');
-}
-
-function isStringRecord(value: unknown): value is Record<string, string> {
-  return (
-    Boolean(value) &&
-    typeof value === 'object' &&
-    !Array.isArray(value) &&
-    Object.values(value as Record<string, unknown>).every((item) => typeof item === 'string')
+/** Admit saved calls before any session acquisition or subprocess launch. */
+function admitDownloadArgs(args: Record<string, unknown>): void {
+  if (
+    ('process_for_rag' in args && args.process_for_rag !== false) ||
+    'processed_output_format' in args
+  ) {
+    throw new Error('Text processing was removed in 2.0. Use a separate 1.4.x installation for text processing.');
+  }
+  const unknown = Object.keys(args).filter(
+    (key) => !['bookDetails', 'outputDir', 'process_for_rag'].includes(key),
   );
-}
-
-function isProcessedDocumentStats(value: unknown): value is ProcessedDocumentStats {
-  return (
-    Boolean(value) &&
-    typeof value === 'object' &&
-    typeof (value as ProcessedDocumentStats).word_count === 'number' &&
-    typeof (value as ProcessedDocumentStats).char_count === 'number' &&
-    typeof (value as ProcessedDocumentStats).format === 'string'
-  );
-}
-
-function validateNullablePathField(result: Record<string, any>, fieldName: string): void {
-  if (!(fieldName in result)) {
-    return;
-  }
-  const value = result[fieldName];
-  if (value !== null && typeof value !== 'string') {
-    throw new Error(`Invalid response from Python bridge: ${fieldName} must be a string or null.`);
-  }
-}
-
-function validateStructuredDocumentBundle(
-  result: Record<string, any>,
-  { requireProcessedFilePath = true }: { requireProcessedFilePath?: boolean } = {},
-): asserts result is ProcessedDocumentBundle {
-  if (!result || typeof result !== 'object') {
-    throw new Error('Invalid response from Python bridge: Expected an object.');
-  }
-  if (requireProcessedFilePath && !('processed_file_path' in result)) {
-    throw new Error(
-      'Invalid response from Python bridge during processing. Missing processed_file_path key.',
-    );
-  }
-  validateNullablePathField(result, 'processed_file_path');
-  validateNullablePathField(result, 'metadata_file_path');
-  validateNullablePathField(result, 'footnotes_file_path');
-  validateNullablePathField(result, 'endnotes_file_path');
-  validateNullablePathField(result, 'citations_file_path');
-
-  if ('content_types_produced' in result && !isStringArray(result.content_types_produced)) {
-    throw new Error(
-      'Invalid response from Python bridge: content_types_produced must be an array of strings.',
-    );
-  }
-  if ('output_files' in result && !isStringRecord(result.output_files)) {
-    throw new Error(
-      'Invalid response from Python bridge: output_files must be an object of string paths.',
-    );
-  }
-  if ('stats' in result && result.stats !== null && !isProcessedDocumentStats(result.stats)) {
-    throw new Error(
-      'Invalid response from Python bridge: stats must include word_count, char_count, and format.',
-    );
-  }
+  if (unknown.length) throw new Error(`Unknown download argument(s): ${unknown.join(', ')}`);
 }
 
 /**
@@ -583,50 +503,14 @@ export async function getRecentBooks(
 }
 
 /**
- * Process a downloaded document for RAG
- */
-export async function processDocumentForRag(
-  { filePath, outputFormat = 'txt' }: ProcessDocumentForRagArgs,
-  options: CallOptions = {},
-): Promise<ProcessedDocumentBundle> {
-  if (!filePath) {
-    throw new Error('Missing required argument: filePath');
-  }
-  logger.debug(`Calling Python bridge to process document: ${filePath}`);
-  // Ensure the file path is absolute or correctly relative for the Python script
-  const absoluteFilePath = path.resolve(filePath);
-  // Pass arguments as an object matching Python function signature
-  const result = await callPythonFunction(
-    'process_document',
-    { file_path_str: absoluteFilePath, output_format: outputFormat },
-    options,
-  );
-
-  // Check if the Python script returned an error structure
-  if (result && result.error) {
-    throw new Error(`Python processing failed: ${result.error}`);
-  }
-
-  validateStructuredDocumentBundle(result, { requireProcessedFilePath: true });
-  return result;
-}
-
-// Removed unused generateSafeFilename function
-
-/**
  * Download a book directly to a file
  */
 export async function downloadBookToFile(
-  {
-    // id, // Replaced by bookDetails
-    // format = null, // Replaced by bookDetails
-    bookDetails, // Use bookDetails object
-    outputDir = './downloads',
-    process_for_rag = false,
-    processed_output_format = 'txt',
-  }: DownloadBookToFileArgs,
+  args: DownloadBookToFileArgs,
   options: CallOptions = {},
 ): Promise<DownloadBookResult> {
+  admitDownloadArgs(args as unknown as Record<string, unknown>);
+  const { bookDetails, outputDir = './downloads' } = args;
   try {
     // Call the Python function, passing the bookDetails object
     const result = await callPythonFunction(
@@ -636,15 +520,13 @@ export async function downloadBookToFile(
         // book_id: id, // Removed
         // format: format, // Removed
         output_dir: outputDir,
-        process_for_rag: process_for_rag,
-        processed_output_format: processed_output_format,
       },
       options,
     );
 
     // Check if the Python script returned an error structure
     if (result && result.error) {
-      throw new Error(`Python download/processing failed: ${result.error}`);
+      throw new Error(`Python download failed: ${result.error}`);
     }
 
     // Validate the response structure
@@ -657,26 +539,14 @@ export async function downloadBookToFile(
       throw new Error('Invalid response from Python bridge: file_path must be a string.');
     }
 
-    if (process_for_rag && !('processed_file_path' in result)) {
-      throw new Error(
-        'Invalid response from Python bridge: Processing requested but processed_file_path key is missing.',
-      );
+    const processingKeys = [
+      'processed_file_path', 'metadata_file_path', 'footnotes_file_path',
+      'endnotes_file_path', 'citations_file_path', 'stats',
+      'content_types_produced', 'output_files', 'processing_error',
+    ];
+    if (processingKeys.some((key) => key in result)) {
+      throw new Error('Invalid response from Python bridge: unexpected text-processing bundle.');
     }
-
-    if (process_for_rag || 'processed_file_path' in result) {
-      validateStructuredDocumentBundle(result, { requireProcessedFilePath: false });
-    }
-
-    if (
-      'processing_error' in result &&
-      typeof result.processing_error !== 'string' &&
-      typeof result.processing_error !== 'undefined'
-    ) {
-      throw new Error(
-        'Invalid response from Python bridge: processing_error must be a string when present.',
-      );
-    }
-
     return result as DownloadBookResult;
   } catch (error: any) {
     // Keep the normalized bridge context on the public error itself. A generic

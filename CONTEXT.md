@@ -1,7 +1,7 @@
 # Z-Library MCP
 
-An MCP server that finds books across several catalogues, acquires them, and turns them
-into RAG-ready text. Its language centres on *sources* — the catalogues it reads — and the
+An MCP server that finds books across several catalogues, and downloads the original files. Text processing is parked; see
+[the migration guide](docs/text-processing-migration.md). Its language centres on *sources* — the catalogues it reads — and the
 distinct *routes* by which a source will hand over a file.
 
 ## Language
@@ -107,11 +107,9 @@ Obtaining a file from a source and placing it on disk. Distinct from *search*, w
 returns candidates.
 _Avoid_: Download (use for the raw transfer step only), fetch
 
-**Processing**:
-Turning an acquired file into RAG-ready text output. Yields paths on disk rather than the
-text itself — never the text itself. A document whose extraction produces no usable text
-yields **no path**: `processed_file_path` is null, which callers must handle.
-_Avoid_: Extraction, conversion
+**Text processing (parked)**:
+Extraction and analysis of an acquired document, outside the 2.0 acquisition
+server. See [migration and preservation](docs/text-processing-migration.md).
 
 **Book details**:
 The result object from a search, carrying the identifiers acquisition needs. Acquisition

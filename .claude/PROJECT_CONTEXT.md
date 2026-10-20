@@ -3,7 +3,7 @@
 <!-- Last Verified: 2026-07-24 -->
 
 ## Mission Statement
-Build a robust, resilient MCP server for Z-Library integration that provides comprehensive book search, download, and RAG processing capabilities for AI assistants, with emphasis on reliability despite Z-Library's infrastructure changes.
+Build a robust, resilient MCP server for Z-Library integration that provides comprehensive book search and download capabilities for AI assistants, with emphasis on reliability despite Z-Library's infrastructure changes.
 
 ## Core Architecture Principles
 
@@ -18,7 +18,7 @@ Build a robust, resilient MCP server for Z-Library integration that provides com
 ### 2. Abstraction Layers
 ```
 +---------------------------+
-|   MCP Interface           | <- 13 tools exposed to AI assistants (MCP SDK 1.25+, server.tool())
+|   MCP Interface           | <- 12 tools exposed to AI assistants (MCP SDK 1.25+, server.tool())
 +---------------------------+
 |   Service Layer           | <- src/lib/zlibrary-api.ts: orchestration, retry + circuit breaker
 +---------------------------+
@@ -27,40 +27,33 @@ Build a robust, resilient MCP server for Z-Library integration that provides com
 |   Backends                | <- EAPIClient (zlibrary/ fork, httpx JSON)
 |                           |    SourceRouter -> Anna's Archive / LibGen adapters (lib/sources/)
 +---------------------------+
-|   RAG Pipeline            | <- lib/rag/ domain modules; file-based structured output bundle
 +---------------------------+
 ```
 
 ### 3. Development Philosophy
-- **Test-Driven**: Write tests first; RAG features require real-PDF ground truth (`.claude/TDD_WORKFLOW.md`)
 - **Observable**: Diagnostics go to **stderr only** via `src/lib/logger.ts` — stdout is the JSON-RPC protocol channel, enforced by `__tests__/stdio-purity.test.js`
 - **Maintainable**: Clear separation of concerns, modules under 500 lines
-- **Quality-Verified**: RAG output validated per `.claude/RAG_QUALITY_FRAMEWORK.md`
 
-## Current State (v1.2.1, verified 2026-07-24)
+## Acquisition-only implementation
 
 ### Working Features
-- **13 MCP tools** via McpServer `server.tool()` API (MCP SDK 1.25+); the README tool table is kept in sync by CI (`scripts/validate-readme-tools.sh`)
+- **12 MCP tools** via McpServer `server.tool()` API (MCP SDK 1.25+); the README tool table is kept in sync by CI (`scripts/validate-readme-tools.sh`)
 - EAPI JSON transport for search, metadata, browse, and download operations
 - Multi-source search (`search_multi_source`) across Anna's Archive and LibGen with automatic fallback
-- RAG processing (EPUB, TXT, PDF) with quality detection pipeline and OCR recovery framework
-- **Structured RAG output bundle** (v1.2.1): processing returns `processed_file_path` plus a canonical `.metadata.json` sidecar, optional sibling outputs (footnotes/endnotes/citations), and an `output_files` map — additive over the original single-path contract
 - UV-based Python dependency management (project-local `.venv/`, `uv.lock`)
-- Python monolith decomposed into `lib/rag/` domain modules with facade pattern
 - Health check with Cloudflare detection; scheduled upstream contract monitoring
 
 ### Known Limitations
 - Booklist tools gracefully degrade (no EAPI booklist endpoint)
 - Full-text search routes through regular EAPI search (no dedicated mode)
 - Terms and IPFS CIDs return empty defaults (not available via EAPI)
-- Anna's Archive adapter (`lib/sources/annas.py`) and EPUB internals are the residual DOM-fragile (HTML-parsed) surfaces
+- Anna's Archive adapter (`lib/sources/annas.py`) is the residual HTML-parsed surface
 - Z-Library itself is not yet a `SourceAdapter` — its tools bypass `SourceRouter`
 
 ### Future Direction
-- RAG quality scoring harness and CI quality reporting (Phases 20-21; see `claudedocs/architecture/phase-20-21-review-2026-07-24.md`)
 - Promote Z-Library to a `SourceAdapter` so all tools route through `SourceRouter`
 - Windows support and publish-pipeline fixes land in the next release (v1.3.0)
-- Live health assessment and roadmap: `claudedocs/architecture/repo-health-and-roadmap-2026-07-24.md`
+- Read current priorities from GitHub milestones; dated reports are historical.
 
 ## Domain Model
 
@@ -93,24 +86,11 @@ interface SearchParams {
 - `UnifiedBookResult` — normalized search result shape shared by all source adapters
 - `DownloadResult` — download URL plus optional quota info (Anna's Archive fast-download quota)
 
-### RAG Output Bundle (Python, returned through the bridge)
-```json
-{
-  "processed_file_path": ".../book.pdf.processed.markdown",
-  "metadata_file_path": ".../book.pdf.metadata.json",
-  "footnotes_file_path": ".../book.pdf.processed_footnotes.markdown",
-  "content_types_produced": ["body", "footnotes"],
-  "stats": { "word_count": 0, "char_count": 0, "format": "markdown" },
-  "output_files": { "body": "...", "metadata": "...", "footnotes": "..." }
-}
-```
-Only file paths cross the protocol boundary — never raw document text (prevents AI context overflow).
-
 ## Technical Decisions
 
 ### Why Python Bridge?
 - Z-Library community libraries are Python-based
-- Better document processing libraries (PyMuPDF, ebooklib, OpenCV, pytesseract)
+- Async HTTP, source adapters, and file acquisition libraries
 - Async support with asyncio; EAPI client uses httpx
 - Spawned per-call via PythonShell from `src/lib/zlibrary-api.ts` (stateless, crash-isolated)
 
@@ -134,12 +114,6 @@ Only file paths cross the protocol boundary — never raw document text (prevent
 - `SourceAdapter` ABC (`lib/sources/base.py`) fixes the contract: `search`, `get_download_url`, `close`
 - `SourceRouter` handles primary/fallback selection and quota exhaustion (`ANNAS_SECRET_KEY` gates Anna's Archive)
 
-### Why Python Decomposition?
-- `rag_processing.py` was ~5,000 lines (unmaintainable)
-- Decomposed into `lib/rag/` with domain modules under 500 lines
-- Facade pattern preserves backward compatibility
-- See ADR-009 for full rationale
-
 ## Integration Points
 
 ### Upstream Dependencies
@@ -154,11 +128,10 @@ Only file paths cross the protocol boundary — never raw document text (prevent
 ## Development Workflow
 
 ### Standard Flow
-1. **Planning**: Review `ISSUES.md` and the current health assessment (`claudedocs/architecture/repo-health-and-roadmap-2026-07-24.md`)
+1. **Planning**: Read current priorities from GitHub milestones and consult `ISSUES.md` for context.
 2. **Implementation**: Follow patterns in `.claude/PATTERNS.md`
-3. **RAG features**: Mandatory real-PDF TDD per `.claude/TDD_WORKFLOW.md`
-4. **Testing**: Unit (Jest/Pytest) -> Integration -> live/E2E where credentialed
-5. **Contribution process**: See `CONTRIBUTING.md`
+3. **Testing**: Unit (Jest/Pytest) -> Integration -> live/E2E where credentialed
+4. **Contribution process**: See `CONTRIBUTING.md`
 
 ### Branch Strategy
 - `master` — stable, production-ready (primary branch)

@@ -4,7 +4,7 @@
 [![npm version](https://img.shields.io/npm/v/zlibrary-mcp)](https://www.npmjs.com/package/zlibrary-mcp)
 [![License: MIT](https://img.shields.io/github/license/rookslog/zlibrary-mcp)](https://github.com/rookslog/zlibrary-mcp/blob/master/LICENSE)
 
-A Model Context Protocol (MCP) server that gives AI assistants -- Claude Code, Claude Desktop, RooCode, Cline -- the ability to search for books, download them, and extract document content for Retrieval-Augmented Generation (RAG) workflows. The server reads from Z-Library and Library Genesis. It uses a Node.js/TypeScript MCP frontend and a Python bridge backend for document processing.
+A Model Context Protocol (MCP) server that gives AI assistants -- Claude Code, Claude Desktop, RooCode, Cline -- the ability to search for books and download the original files. The server reads from Z-Library and Library Genesis. It uses a Node.js/TypeScript MCP frontend and a Python bridge backend for acquisition.
 
 For what this project is — and deliberately isn't — see [VISION.md](VISION.md).
 
@@ -18,10 +18,9 @@ npm install -g zlibrary-mcp
 cd "$(npm root -g)/zlibrary-mcp" && bash setup-uv.sh --no-dev   # one-time core setup
 ```
 
-This installs the lightweight core for search, metadata, and downloads. Document
-processing is opt-in: run `uv sync --no-dev --extra rag` for PDF/EPUB extraction, or
-`uv sync --no-dev --extra scholar` for the complete scholarly/OCR pipeline. See
-[Optional Python dependencies](docs/optional-dependencies.md) for the tier details.
+This installs search, metadata, and downloads. Text processing is removed in 2.0;
+see [migration and preservation](docs/text-processing-migration.md) if you need it.
+See [Python dependencies](docs/optional-dependencies.md) for installation choices.
 
 Then add the server to your MCP client config (Claude Code `.mcp.json`, Claude Desktop `claude_desktop_config.json`):
 
@@ -74,7 +73,6 @@ flowchart LR
     end
     subgraph "Python Bridge"
         C[python_bridge.py]
-        D[lib/rag/ modules]
     end
     subgraph "Sources"
         E[Z-Library EAPI]
@@ -84,22 +82,20 @@ flowchart LR
     A -->|stdio| B
     A -->|SSE/HTTP| SG -->|stdio| B
     B -->|PythonShell| C
-    C --> D
     C -->|httpx| E
     C -->|SourceRouter| F
     C -->|SourceRouter| G
 ```
 
-- **Node.js/TypeScript MCP Server**: 13 tools registered via McpServer `server.tool()` API (MCP SDK 1.25+)
-- **Python Bridge**: Z-Library EAPI client (httpx) + document processing (lib/rag/ modules)
+- **Node.js/TypeScript MCP Server**: 12 acquisition tools registered via McpServer (MCP SDK 1.25+)
+- **Python Bridge**: Z-Library EAPI client (httpx), source routing, and file publication
 - **Source Router**: routes Library Genesis and Anna's Archive requests, with mirror
   failover on downloads (`lib/sources/`). Z-Library keeps its own path until #40 lands.
 - **EAPI Transport**: JSON API endpoints at `/eapi/` bypass Cloudflare browser challenges
 - **UV-Based Python Environment**: Project-local `.venv/` with `uv.lock` for reproducible builds
 - **Vendored Z-Library Fork**: Custom EAPI client for search and file downloads
-- **RAG Pipeline**: EPUB/PDF/TXT extraction with quality detection, output to files (not memory)
 
-## Available MCP Tools (13 Total)
+## Available MCP Tools (12 Total)
 
 ### Search Tools (7)
 
@@ -125,12 +121,11 @@ flowchart LR
 |------|-------------|
 | `fetch_booklist` | Expert-curated collection contents |
 
-### Download & Processing Tools (2)
+### Download Tools (1)
 
 | Tool | Description |
 |------|-------------|
-| `download_book_to_file` | Download with optional file-based RAG bundle output |
-| `process_document_for_rag` | Extract a file-based RAG bundle from EPUB/PDF/TXT |
+| `download_book_to_file` | Download the original file and return its local path |
 
 ### Utility Tools (2)
 
@@ -165,8 +160,7 @@ result to `download_book_to_file`.
 { "query": "Phenomenology of Spirit", "source": "libgen", "count": 5 }
 
 // 2. Download a result. Pass the book object from step 1 as bookDetails.
-{ "bookDetails": { "md5": "...", "source": "libgen", "title": "...", "extension": "pdf" },
-  "process_for_rag": true }
+{ "bookDetails": { "md5": "...", "source": "libgen", "title": "...", "extension": "pdf" } }
 ```
 
 The server resolves a download link at the moment you request the file. It tries the
@@ -264,18 +258,14 @@ git clone https://github.com/rookslog/zlibrary-mcp.git
 cd zlibrary-mcp
 git lfs pull         # Hydrates LFS-tracked test PDFs (don't run `git lfs install`;
                      # it conflicts with the repo's Husky-managed hooks)
-bash setup-uv.sh    # Creates .venv/ with every tier plus the dev group
+bash setup-uv.sh    # Creates .venv/ with core plus the dev group
 npm install          # Installs Node.js dependencies
 npm run build        # Compiles TypeScript to dist/
 ```
 
-The source bootstrap installs **every optional tier along with the contributor
-tools**, because part of the fast test suite imports scholar-tier modules while
-collecting — a core-only contributor environment cannot run the project's own
-verification. Nothing further is needed to work on the RAG pipeline or to run
-the complete Python suite.
-
-End users want a smaller install: see [Optional Python dependencies](docs/optional-dependencies.md).
+The source bootstrap installs acquisition dependencies and contributor tools. The
+retained Python suite collects without document-processing packages.
+End users can omit contributor tools; see [Python dependencies](docs/optional-dependencies.md).
 
 **MCP client configuration (stdio transport):**
 
@@ -340,10 +330,7 @@ curl -s -N --max-time 3 http://localhost:8000/sse | head -2
 # data: /message?sessionId=...
 ```
 
-The image includes the `rag` tier, so PDF and EPUB extraction work without an
-additional install step. It does not include the `scholar` tier. In particular,
-OpenCV-backed X-mark detection remains unavailable on Alpine; see [Optional
-Python dependencies](docs/optional-dependencies.md) for the tier boundaries.
+The image includes acquisition dependencies only, matching the source and npm runtime.
 
 **Building from source instead** (adds a `/health` endpoint via compose):
 
@@ -367,36 +354,17 @@ curl http://localhost:8000/health
 }
 ```
 
-## Output Format (RAG Processing)
+## Download output
 
-The RAG pipeline processes downloaded documents (EPUB, PDF, TXT) into clean text files for use in retrieval-augmented generation workflows.
-
-PDF and EPUB processing require `uv sync --no-dev --extra rag`. Scholarly analysis and OCR
-require `uv sync --no-dev --extra scholar`, which includes the RAG tier. If a required tier is
-missing, the operation returns the exact `uv sync` command to install it.
-
-- **Output location:** Processed text files are saved to `./processed_rag_output/`
-- **File-based output:** Tools return file paths rather than raw text content, avoiding context overflow in AI assistants
-- **Bundle contract:** `processed_file_path` remains the body-text anchor, with additive sibling fields like `metadata_file_path`, optional `footnotes_file_path`, and an `output_files` map when available
-- **Supported formats:** EPUB, PDF, and TXT
-- **Quality detection:** The pipeline automatically detects document quality (OCR vs. digital text) and applies appropriate extraction strategies
-- **Scholarly formatting:** Preserves footnotes, chapter structure, and academic formatting where possible
-
-Use `download_book_to_file` with `process_for_rag: true` for combined download and processing, or `process_document_for_rag` to process an existing file.
-
-The MCP `process_document_for_rag` tool does not run optical strikethrough/X-mark
-detection. For direct Python callers of the legacy `process_pdf` function,
-detection is off by default, even with OpenCV installed. To opt in on that path,
-set `RAG_DETECT_STRIKETHROUGH=true` (OpenCV is required).
-`RAG_XMARK_DETECTION_MODE` further filters documents: `always` allows all,
-`never` disables detection, and the default `auto` allows unknown documents.
-Setting a document mode alone does not enable detection; explicitly setting
-`RAG_DETECT_STRIKETHROUGH=false` keeps it off.
+`download_book_to_file` returns `{ "file_path": "/local/path/book.pdf" }` for
+the original file. Paths are local to the server; the tool does not return book
+contents or produce text, metadata sidecars, or note bundles. Existing files from
+older installations are left in place. See [migration](docs/text-processing-migration.md).
 
 ## Configuration
 
 Z-Library operations require credentials set as environment variables.
-Credential-free sources and local processing remain available without them:
+Credential-free sources remain available without them:
 
 | Variable | Required | Description |
 |----------|----------|-------------|
@@ -421,8 +389,7 @@ acquisition waiter has its own deadline/abort signal; an operation's budget star
 when it holds a session. Node accepts updates and rejections only for the current
 account and generation. An abort cannot invalidate other warm callers. Changing
 the email never reuses the previous account's cookies; changing only the password
-leaves an accepted session valid. Alternative-source and local-processing calls
-receive no session. Explicit domain pins always win.
+leaves an accepted session valid. Alternative-source calls receive no Z-Library session. Explicit domain pins always win.
 
 The profile is checked on acquisition, after an idle gap, and on the call after
 an operation returns `success:0` (even when the tool normalizes it to empty
@@ -507,6 +474,10 @@ consuming retry or shared circuit-breaker health budgets.
 
 ## Development
 
+Build, test, and rehearsal commands require a source checkout. `audit:release`
+also needs Git history and GitHub access; installed `doctor` includes that source-only
+audit after its upstream probe. See [scripts](scripts/README.md).
+
 ### Running Tests
 
 ```bash
@@ -516,11 +487,11 @@ npm test
 # Python tests -- fast suite (the routine command)
 uv run pytest -m "not slow and not integration and not performance"
 
-# Python tests -- full corpus (requires LFS-hydrated test PDFs)
+# Python tests -- full retained suite (live tests require credentials)
 uv run pytest
 
 # Specific Python test
-uv run pytest __tests__/python/test_rag_processing.py
+uv run pytest __tests__/python/test_python_bridge.py
 ```
 
 ### Building

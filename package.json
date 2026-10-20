@@ -57,7 +57,19 @@
     "setup-uv.sh",
     "docs/optional-dependencies.md",
     "!**/__pycache__/",
-    "!**/*.pyc"
+    "!**/*.pyc",
+    "scripts/validate-python-bridge.js",
+    "scripts/check_upstream.py",
+    "scripts/release-audit.mjs",
+    "tsconfig.json",
+    "docs/RELEASE_PROCESS.md",
+    "docs/text-processing-migration.md",
+    "docs/api.md",
+    "scripts/README.md",
+    "VISION.md",
+    "CONTRIBUTING.md",
+    "docs/RETRY_CONFIGURATION.md",
+    "docs/TROUBLESHOOTING.md"
   ],
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.25.3",

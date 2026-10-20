@@ -18,25 +18,14 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          # lfs: false — the repo exceeded its Git LFS budget, which fails
-          # actions/checkout outright. Unhydrated-pointer guards in
-          # __tests__/python/conftest.py skip the affected tests with a clear
-          # reason (surfaced by pytest -rs). Restore to true if the budget
-          # is ever restored. See #85.
+          # Processing corpus is preserved separately; acquisition tests need no LFS PDFs.
           lfs: false
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
       - uses: astral-sh/setup-uv@v7
       - run: npm ci
-      - run: uv sync --all-extras
-      # NLTK's punkt data is not a package dependency and
-      # lib/footnote_continuation.py deliberately never downloads it at import
-      # time — a RAG operation has to be deterministic and usable offline. It
-      # is provisioned here instead, explicitly, so CI exercises the NLTK
-      # sentence-boundary path rather than silently testing only the
-      # deterministic fallback (#103).
-      - run: uv run python -m nltk.downloader -q punkt punkt_tab
+      - run: uv sync --frozen --group dev
       - run: npm run build
       - name: Verify targeted Jest scripts select tests
         shell: bash
@@ -74,14 +63,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      # Pinned: on macos-latest uv otherwise picks CPython 3.15, for which
-      # pi-heif has no wheel and its source build fails.
+      # Keep rehearsal Python stable across runners.
       - uses: astral-sh/setup-uv@v7
         with:
           python-version: '3.13'
       - run: npm ci
-      - run: uv sync --all-extras
-      - run: uv run python -m nltk.downloader -q punkt punkt_tab
+      - run: uv sync --frozen --group dev
       - run: npm run build && npm run test:rehearsal
       - name: Upload rehearsal manifest
         if: always()
@@ -99,25 +86,14 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          # lfs: false — the repo exceeded its Git LFS budget, which fails
-          # actions/checkout outright. Unhydrated-pointer guards in
-          # __tests__/python/conftest.py skip the affected tests with a clear
-          # reason (surfaced by pytest -rs). Restore to true if the budget
-          # is ever restored. See #85.
+          # Processing corpus is preserved separately; acquisition tests need no LFS PDFs.
           lfs: false
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
       - uses: astral-sh/setup-uv@v7
       - run: npm ci
-      - run: uv sync --all-extras
-      # NLTK's punkt data is not a package dependency and
-      # lib/footnote_continuation.py deliberately never downloads it at import
-      # time — a RAG operation has to be deterministic and usable offline. It
-      # is provisioned here instead, explicitly, so CI exercises the NLTK
-      # sentence-boundary path rather than silently testing only the
-      # deterministic fallback (#103).
-      - run: uv run python -m nltk.downloader -q punkt punkt_tab
+      - run: uv sync --frozen --group dev
       - run: npm run build
       - run: node --experimental-vm-modules node_modules/jest/bin/jest.js
       - run: uv run pytest -rs
@@ -131,24 +107,13 @@ jobs:
           node-version: '22'
       - uses: astral-sh/setup-uv@v7
       - run: npm ci
-      - run: uv sync --all-extras
+      - run: uv sync --frozen --group dev
       - run: npm audit --omit=dev --audit-level=critical
       # Blocking gate: any advisory with an available fix must be picked up via
       # tool.uv.constraint-dependencies. Only advisories with NO shipped fix, or
       # whose fix is blocked by a documented pin, may be ignored here — each one
       # needs a reason on the line.
-      - run: >
-          uv run pip-audit
-          --ignore-vuln CVE-2026-3029
-          --ignore-vuln PYSEC-2026-3001
-          --ignore-vuln PYSEC-2026-597
-          --ignore-vuln PYSEC-2026-3740
-        # CVE-2026-3029   pymupdf - fix requires 1.26.7, blocked by the pin in pyproject.toml
-        # PYSEC-2026-3001 pymupdf - same pin, same fix version; tracked in #148
-        # PYSEC-2026-597  nltk    - no fix published as of 2026-07
-        # PYSEC-2026-3740 nltk    - no patched release; GHSA-8mgp-746c-j5xp lists none, PyPI latest is 3.10.3 (2026-10-14)
-        # Runtime uses only nltk.tokenize.sent_tokenize, not the affected model-artifact APIs;
-        # NLTK is optional (rag/scholar extras). Review this ignore when NLTK ships a fix.
+      - run: uv run pip-audit
 
   lint:
     runs-on: ubuntu-latest

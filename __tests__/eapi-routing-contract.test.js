@@ -5,7 +5,6 @@ import { needsEapi } from '../lib/eapi-session.js';
 
 test('Node and Python need-auth routing share the same independent case table', () => {
   const cases = [
-    ['process_document', {}, false],
     ['search_multi_source', { source: 'zlibrary' }, false],
     ...['libgen', 'annas', 'annas_archive', 'LiBgEn', 'ANNAS_ARCHIVE'].map((source) => [
       'download_book',

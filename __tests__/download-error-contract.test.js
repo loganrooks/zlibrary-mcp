@@ -132,8 +132,7 @@ describe('download error contract', () => {
 
   test.each([
     { file_path: '/synthetic/book.epub' },
-    { file_path: '/synthetic/book.epub', processed_file_path: null, processing_error: 'synthetic optional processing failure' },
-  ])('retains the successful or partial-processing result %#', async (result) => {
+  ])('retains the successful acquisition result %#', async (result) => {
     runPythonBridge.mockResolvedValue(envelope(result));
     await expect(api.downloadBookToFile(args)).resolves.toEqual(result);
   });

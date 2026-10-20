@@ -11,7 +11,6 @@ const providerFailure = (details, type = 'SourceError', extra = {}) =>
   Object.assign(new Error('bridge exit'), {
     stderr: JSON.stringify({ error: 'fixture failure', type, details, ...extra }),
   });
-const localBundle = { processed_file_path: '/tmp/fixture.txt' };
 
 beforeEach(async () => {
   saved = { ...process.env };
@@ -42,20 +41,16 @@ async function fiveFailures(call, message = /fixture failure/) {
   for (let i = 0; i < 5; i++) await expect(call()).rejects.toThrow(message);
 }
 
-test('five LibGen outages open only the source-walk breaker; local and EAPI survive', async () => {
+test('five LibGen outages open only the source-walk breaker; EAPI survives', async () => {
   runner.mockRejectedValue(providerFailure({ provider: 'libgen', reason: 'read_timeout' }));
   await fiveFailures(() => api.searchMultiSource({ query: 'x', source: 'libgen' }));
   await expect(api.searchMultiSource({ query: 'x', source: 'libgen' })).rejects.toThrow(/OPEN/);
   expect(runner).toHaveBeenCalledTimes(5);
-  runner.mockResolvedValue(envelope(localBundle));
-  await expect(api.processDocumentForRag({ filePath: '/tmp/fixture.txt' })).resolves.toEqual(
-    localBundle,
-  );
   runner.mockResolvedValue(envelope({ daily_limit: 10 }));
   await expect(api.getDownloadLimits()).resolves.toEqual({ daily_limit: 10 });
 });
 
-test('five EAPI 503 failures leave LibGen search, source download and local work usable', async () => {
+test('five EAPI 503 failures leave LibGen search and source download usable', async () => {
   runner.mockRejectedValue(providerFailure(undefined, 'HTTPStatusError', { status_code: 503 }));
   await fiveFailures(() => api.getDownloadLimits());
   await expect(api.getDownloadLimits()).rejects.toThrow(/OPEN/);
@@ -71,30 +66,40 @@ test('five EAPI 503 failures leave LibGen search, source download and local work
       process_for_rag: false,
     }),
   ).resolves.toMatchObject({ file_path: '/tmp/book.pdf' });
-  runner.mockResolvedValue(envelope(localBundle));
-  await expect(api.processDocumentForRag({ filePath: '/tmp/fixture.txt' })).resolves.toEqual(
-    localBundle,
-  );
 });
 
-test('five missing-file errors cannot block a valid local document', async () => {
-  runner.mockRejectedValue(providerFailure(undefined, 'FileNotFoundError'));
-  await fiveFailures(() => api.processDocumentForRag({ filePath: '/tmp/missing.txt' }));
-  runner.mockResolvedValue(envelope(localBundle));
-  await expect(api.processDocumentForRag({ filePath: '/tmp/fixture.txt' })).resolves.toEqual(
-    localBundle,
-  );
-  expect(runner).toHaveBeenCalledTimes(6);
-});
+test.each(['zlibrary', 'libgen'])(
+  'five missing-file errors during %s downloads cannot open either network breaker',
+  async (source) => {
+    process.env.RETRY_MAX_RETRIES = '3';
+    const download = () => api.downloadBookToFile({
+      bookDetails: { source, id: '101', book_hash: 'hash101', md5: 'a'.repeat(32) },
+    });
+    runner.mockRejectedValue(providerFailure(undefined, 'FileNotFoundError'));
+    await fiveFailures(download);
+    expect(runner).toHaveBeenCalledTimes(5);
+    runner.mockResolvedValue(envelope({ file_path: '/tmp/book.pdf' }));
+    await expect(download()).resolves.toEqual({ file_path: '/tmp/book.pdf' });
+    expect(runner).toHaveBeenCalledTimes(6);
+    runner.mockResolvedValue(envelope({ daily_limit: 10 }));
+    await expect(api.getDownloadLimits()).resolves.toEqual({ daily_limit: 10 });
+    runner.mockResolvedValue(envelope({ books: [{ source: 'libgen' }] }));
+    await expect(api.searchMultiSource({ query: 'x', source: 'libgen' })).resolves.toEqual({
+      books: [{ source: 'libgen' }],
+    });
+    expect(runner).toHaveBeenCalledTimes(8);
+  },
+);
 
 test.each(['ReadTimeout', 'ConnectTimeout'])('typed EAPI %s opens only EAPI', async (type) => {
   runner.mockRejectedValue(providerFailure(undefined, type));
   await fiveFailures(() => api.getDownloadLimits());
   await expect(api.getDownloadLimits()).rejects.toThrow(/OPEN/);
-  runner.mockResolvedValue(envelope(localBundle));
-  await expect(api.processDocumentForRag({ filePath: '/tmp/fixture.txt' })).resolves.toEqual(
-    localBundle,
-  );
+  expect(runner).toHaveBeenCalledTimes(5);
+  runner.mockResolvedValue(envelope({ books: [{ source: 'libgen' }] }));
+  await expect(api.searchMultiSource({ query: 'x', source: 'libgen' })).resolves.toEqual({
+    books: [{ source: 'libgen' }],
+  });
 });
 
 test.each([400, 401, 403, 404])('HTTP %i does not count despite outage words', async (status) => {
@@ -147,13 +152,21 @@ test.each(['aborted', 'signal', 'unknown', 'parse', 'auth', 'config'])(
   },
 );
 
-test('a full bridge deadline counts locally but never starts another process', async () => {
+test('a full download deadline counts once in its source scope and never starts another process', async () => {
   process.env.RETRY_MAX_RETRIES = '3';
   runner.mockImplementation(() => {
     throw new errors.BridgeTimeoutError('fixture failure', { reason: 'timeout' });
   });
-  await fiveFailures(() => api.processDocumentForRag({ filePath: '/tmp/fixture.txt' }));
-  await expect(api.processDocumentForRag({ filePath: '/tmp/fixture.txt' })).rejects.toThrow(/OPEN/);
+  const download = () => api.downloadBookToFile({
+    bookDetails: { source: 'libgen', md5: 'a'.repeat(32) },
+  });
+  for (let attempt = 1; attempt <= 5; attempt++) {
+    await expect(download()).rejects.toThrow('fixture failure');
+    expect(runner).toHaveBeenCalledTimes(attempt);
+    expect(runner.mock.lastCall[1].args[0]).toBe('download_book');
+    expect(runner.mock.lastCall[2].timeoutMs).toBe(2400000);
+  }
+  await expect(download()).rejects.toThrow(/OPEN/);
   expect(runner).toHaveBeenCalledTimes(5);
   runner.mockResolvedValue(envelope({ ok: true }));
   await expect(api.getDownloadLimits()).resolves.toEqual({ ok: true });

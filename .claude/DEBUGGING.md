@@ -221,18 +221,7 @@ if (!venvPath) {
 }
 ```
 
-### Issue: RAG Processing Fails
-
-**Symptoms:**
-```
-Error: Failed to process document for RAG
-AttributeError: 'NoneType' object has no attribute 'get_text'
-```
-
-**Diagnosis:**
-```python
 # Test document processing directly
-from lib.rag_processing import process_document
 
 # Test with a known good file
 result = process_document('test_files/sample.pdf', 'markdown')
@@ -500,7 +489,7 @@ if [ "$response" = "y" ]; then
     rm -rf dist/ node_modules/ .venv/ __pycache__/
 
     # Clean logs and cache
-    rm -rf logs/ cache/ downloads/ processed_rag_output/
+    rm -rf logs/ cache/ downloads/
 
     # Clean test artifacts
     rm -rf coverage/ .pytest_cache/

@@ -25,11 +25,11 @@ export const isCampbell = (row) =>
 export const isSearch = (name) => /^(search|full_text)/.test(name);
 export const isDownload = (name) => ['download', 'download_book_to_file'].includes(name);
 const allowed = {
-  T1: ['search', 'download', 'get_book'],
+  T1: ['search', 'download'],
   T2: ['search', 'detail'],
   T3: ['download'],
   T4: ['limits'],
-  T5: [],
+  T5: ['limits'],
   T6: ['search'],
   T7: ['history'],
   T8: ['search', 'download'],
@@ -43,7 +43,7 @@ const allowedA = {
   T2: ['search_books', 'get_book_metadata'],
   T3: ['download_book_to_file'],
   T4: ['get_download_limits'],
-  T5: [],
+  T5: ['get_download_limits'],
   T6: ['search_books'],
   T7: ['get_download_history'],
   T8: ['search_multi_source', 'download_book_to_file'],
@@ -77,11 +77,29 @@ export async function scoreTask({
   remainingBefore,
   context = {},
 }) {
-  const wrong = [];
-  const mark = (reason, c) => wrong.push({ reason, tool: c?.name, arguments: c?.args });
+  const wrong = [],
+    wrongCalls = new Set();
+  let activeCallIndex;
+  const mark = (reason, c, index = activeCallIndex ?? trace.indexOf(c)) => {
+    if (c) wrongCalls.add(index);
+    wrong.push({ reason, tool: c?.name, arguments: c?.args, ...(c ? { callIndex: index } : {}) });
+  };
   const b = arm.build === 'B';
   const selected = (c) => c.selected ?? c.args?.bookDetails ?? {};
   const successful = (c) => !c.error && !c.reply?.isError && !dataOf(c.reply ?? {}).error;
+  const usableSources = (c) => {
+    const a = c.args ?? {};
+    if (a.sources !== undefined)
+      return Array.isArray(a.sources) && a.sources.length > 0 && !a.sources.includes('zlibrary');
+    const order = arm.defaultOrder;
+    return (
+      arm.id === 'B-Q2-default' &&
+      Array.isArray(order) &&
+      order.includes('libgen') &&
+      (!order.includes('zlibrary') || order.indexOf('libgen') < order.indexOf('zlibrary')) &&
+      dataOf(c.reply ?? {}).routing?.served_by === 'libgen'
+    );
+  };
   const matchingSearches = (download, index) => {
     const row = selected(download);
     return trace.flatMap((search, searchIndex) =>
@@ -99,12 +117,13 @@ export async function scoreTask({
         : [],
     );
   };
-  for (const c of trace) {
+  for (const [index, c] of trace.entries()) {
+    activeCallIndex = index;
     const a = c.args ?? {},
       kind = category(c.name),
       row = selected(c);
     if (
-      !(task.id === 'T7' && !arm.history ? [] : allowed[task.id]).includes(kind) ||
+      !(task.id === 'T7' && !arm.history ? ['limits'] : allowed[task.id]).includes(kind) ||
       (!b && !allowedA[task.id].includes(c.name))
     )
       mark('off-oracle tool', c);
@@ -127,9 +146,19 @@ export async function scoreTask({
       )
         mark('wrong filename/destination', c);
     }
-    if (task.id === 'T6' && b && (Object.keys(a).length !== 1 || a.cursor !== context.cursor))
+    if (
+      task.id === 'T6' &&
+      kind === 'search' &&
+      b &&
+      (Object.keys(a).length !== 1 || a.cursor !== context.cursor)
+    )
       mark('cursor must be the observed cursor alone', c);
-    if (task.id === 'T6' && !b && (a.count !== 20 || a.query !== 'Phenomenology'))
+    if (
+      task.id === 'T6' &&
+      kind === 'search' &&
+      !b &&
+      (a.count !== 20 || a.query !== 'Phenomenology')
+    )
       mark('baseline paging workaround must request twenty', c);
     if (
       task.id === 'T8' &&
@@ -143,12 +172,13 @@ export async function scoreTask({
       task.id === 'T11' &&
       kind === 'search' &&
       (b
-        ? !a.sources?.length || a.sources.includes('zlibrary')
+        ? !usableSources(c)
         : c.name !== 'search_multi_source' || !['libgen', 'annas'].includes(a.source))
     )
       mark('retry exhausted source', c);
     if (
       task.id === 'T4' &&
+      kind === 'limits' &&
       b &&
       (a.mode !== 'live' || (a.sources && !a.sources.includes('zlibrary')))
     )
@@ -165,6 +195,7 @@ export async function scoreTask({
         mark('wrong author', c);
     }
   }
+  activeCallIndex = undefined;
   if (
     ['T8', 'T11'].includes(task.id) &&
     providerEvents.some(
@@ -196,7 +227,7 @@ export async function scoreTask({
           isSearch(c.name) &&
           successful(c) &&
           (b
-            ? c.args?.sources?.includes('libgen')
+            ? usableSources(c) && (c.args?.sources ?? arm.defaultOrder)?.includes('libgen')
             : c.name === 'search_multi_source' && c.args?.source === 'libgen') &&
           rowsOf(dataOf(c.reply ?? {})).some(
             (row) =>
@@ -254,7 +285,7 @@ export async function scoreTask({
       if (!isDownload(download.name)) return [];
       const searches = matchingSearches(download, index);
       if (!searches.length)
-        mark('missing corresponding same-task search before download', download);
+        mark('missing corresponding same-task search before download', download, index);
       return [searches];
     });
     // Match distinct calls, not rows: one broad search cannot stand in for three.
@@ -270,10 +301,11 @@ export async function scoreTask({
   if (['T1', 'T8'].includes(task.id))
     for (const [index, download] of trace.entries())
       if (isDownload(download.name) && !matchingSearches(download, index).length)
-        mark('missing corresponding same-task search before download', download);
+        mark('missing corresponding same-task search before download', download, index);
   // Success is a current artifact check, not merely a model's assertion.
   const files = [];
-  for (const c of trace.filter((c) => isDownload(c.name))) {
+  for (const [index, c] of trace.entries()) {
+    if (!isDownload(c.name)) continue;
     const data = dataOf(c.reply ?? {}),
       file = data.path ?? data.file_path;
     try {
@@ -294,7 +326,7 @@ export async function scoreTask({
         throw new Error('wrong fixture bytes');
       files.push({ path: actual, bytes: bytes.length });
     } catch {
-      mark('missing or wrong artifact', c);
+      mark('missing or wrong artifact', c, index);
     }
   }
   const successfulTrace = trace.filter(
@@ -321,7 +353,7 @@ export async function scoreTask({
       : answer.status === 'manual-review'
         ? null
         : ['correct', 'not-required'].includes(answer.status),
-    wrongDecisions: wrong.length,
+    wrongDecisions: wrongCalls.size + wrong.filter((w) => w.tool === undefined).length,
     wrong,
     calls: trace.length,
     quotaSpent,

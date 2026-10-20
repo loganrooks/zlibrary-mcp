@@ -1,3 +1,4 @@
+import { driverEnvironmentRecord } from './driver-environment.js';
 import { spawn, execFileSync } from 'node:child_process';
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -649,6 +650,7 @@ export async function runDriver(command, prompt, directory, limits = {}) {
     throw new Error(`CLI version mismatch: ${current}; expected ${pin.version}`);
   const env = { ...process.env, ...command.env };
   for (const name of command.unsetEnv) delete env[name];
+  const driverEnvironment = driverEnvironmentRecord(driver, env);
   await limits.beforeSpawn?.();
   const { stdout, stderr, capture } = await captureChild(
     command.binary,
@@ -672,6 +674,7 @@ export async function runDriver(command, prompt, directory, limits = {}) {
   const events = parseEvents(stdout);
   const result = {
     version: current,
+    driverEnvironment,
     capture,
     events,
     rawFiles: {

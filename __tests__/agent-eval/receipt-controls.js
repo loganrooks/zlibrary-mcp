@@ -1,4 +1,5 @@
 // Synthetic complete receipts for deterministic gate tests; never model evidence.
+import { driverEnvironmentRecord } from './driver-environment.js';
 import { syntheticNodeProof } from './node-receipt-controls.js';
 import { digest } from './evaluator-identity.js';
 import { pythonPolicy } from './python-runtime.js';
@@ -139,6 +140,7 @@ export function measured(arm, input = 100) {
     fencePassed: true,
     baselinePin: 'a'.repeat(40),
     driver: 'claude',
+    driverEnvironment: driverEnvironmentRecord('claude', {}),
     driverVersion: '2.1.303 (Claude Code)',
     arm,
     settings: {
@@ -178,6 +180,7 @@ export function measured(arm, input = 100) {
           task: t.id,
           session: `session-${run}`,
           driverVersion: '2.1.303 (Claude Code)',
+          driverEnvironment: driverEnvironmentRecord('claude', {}),
           success: true,
           pathCorrect: true,
           answer: { status: 'correct' },
@@ -192,6 +195,10 @@ export function measured(arm, input = 100) {
               scope: 'owned-posix-process-group',
               pgid: 12345,
               state: 'gone',
+              termSent: false,
+              killSent: false,
+              reason: 'closed',
+              observations: ['gone'],
               success: true,
             },
             residualGroup: false,

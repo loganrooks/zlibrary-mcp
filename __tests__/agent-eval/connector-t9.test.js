@@ -1,11 +1,45 @@
 import { beforeEach, afterEach, test, expect } from '@jest/globals';
-import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, writeFile, rm, readFile } from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
+import vm from 'node:vm';
+import ts from 'typescript';
+import { z } from 'zod';
+import { root } from './server.js';
 import os from 'node:os';
 import path from 'node:path';
 import { tasks, arms } from './tasks.js';
 import { scoreTask } from './oracles.js';
 
 let downloads;
+// Read, but never start, the actual current A declarations. Evaluating the
+// isolated Zod initializer has no server/provider side effects. On B integration
+// this A-only static check is inapplicable; the pinned A runtime gate is separate.
+const sourceText = await readFile(path.join(root, 'src/index.ts'), 'utf8');
+const parsed = ts.createSourceFile('index.ts', sourceText, ts.ScriptTarget.Latest, true);
+const schemas = {};
+for (const statement of parsed.statements)
+  if (ts.isVariableStatement(statement))
+    for (const declaration of statement.declarationList.declarations)
+      if (
+        ['SearchBooksParamsSchema', 'SearchMultiSourceParamsSchema'].includes(
+          declaration.name.getText(parsed),
+        )
+      )
+        schemas[declaration.name.getText(parsed)] = vm.runInNewContext(
+          declaration.initializer.getText(parsed),
+          { z },
+        );
+const catalogue = JSON.parse(
+  execFileSync(
+    path.join(root, '.venv/bin/python'),
+    [
+      '-B',
+      '-c',
+      `import sys,json;sys.path.insert(0,${JSON.stringify(path.join(root, '__tests__/rehearsal'))});from fake_catalogue import select;print(json.dumps({s:[select(t,source=s)[0] for t in ['Pride and Prejudice','Middlemarch','On Liberty']] for s in ['zlibrary','libgen']}))`,
+    ],
+    { encoding: 'utf8', env: { PATH: process.env.PATH, PYTHONDONTWRITEBYTECODE: '1' } },
+  ),
+);
 beforeEach(async () => {
   downloads = await mkdtemp(path.join(os.tmpdir(), 'eval-t9-'));
 });
@@ -16,17 +50,22 @@ for (const build of ['A', 'B']) {
   for (const source of ['libgen', 'zlibrary']) {
     const ids = source === 'libgen' ? ['303', '304', '305'] : ['209', '210', '211'];
     const rows = ['Pride and Prejudice', 'Middlemarch', 'On Liberty'].map((title, i) => ({
+      ...catalogue[source][i],
       id: ids[i],
       title,
       source,
       ...(build === 'B' ? { ref: `observed-${source}-${ids[i]}` } : {}),
     }));
     const search = (items) => ({
-      name: build === 'A' ? 'search_multi_source' : 'search',
+      name:
+        build === 'A' ? (source === 'zlibrary' ? 'search_books' : 'search_multi_source') : 'search',
       args:
         build === 'A'
-          ? { query: 'author/title variant', source }
-          : { query: 'author/title variant', sources: [source] },
+          ? {
+              query: items.length === 1 ? items[0].title : 'Jane Austen',
+              ...(source === 'libgen' ? { source } : {}),
+            }
+          : { query: items.length === 1 ? items[0].title : 'Jane Austen', sources: [source] },
       reply: { structuredContent: build === 'A' ? { books: items } : { rows: items } },
     });
     const download = async (row) => {
@@ -53,6 +92,22 @@ for (const build of ['A', 'B']) {
         const trace = interleaved
           ? rows.flatMap((r, i) => [search([r]), ds[i]])
           : [...rows.map((r) => search([r])), ...ds];
+        if (build === 'A' && schemas.SearchBooksParamsSchema) {
+          for (const c of trace.filter((c) => c.name.startsWith('search'))) {
+            const schema =
+              c.name === 'search_books'
+                ? schemas.SearchBooksParamsSchema
+                : schemas.SearchMultiSourceParamsSchema;
+            expect(schema.safeParse(c.args).success).toBe(true);
+            expect(c.args.query).toBe(c.reply.structuredContent.books[0].title);
+          }
+          expect(
+            schemas.SearchMultiSourceParamsSchema.safeParse({
+              query: 'Pride and Prejudice',
+              source: 'zlibrary',
+            }).success,
+          ).toBe(false);
+        }
         expect(await score(trace)).toMatchObject({ success: true, wrong: [] });
       });
     for (const [name, searches] of [

@@ -280,6 +280,14 @@ if (!selfTest && !opts.paid) {
             raw = error.driverResult ?? raw;
             final ??= '';
           }
+          if (raw?.driverEnvironment) {
+            if (
+              plan.driverEnvironment &&
+              plan.driverEnvironment.sha256 !== raw.driverEnvironment.sha256
+            )
+              taskFailure ??= new Error('driver environment changed within cell');
+            plan.driverEnvironment ??= raw.driverEnvironment;
+          }
           const observations = await s.finishTask();
           const attempts = reconcileAttempts(raw?.events ?? [], observations.trace);
           observations.trace = attempts.trace;
@@ -319,6 +327,7 @@ if (!selfTest && !opts.paid) {
             rawUsage: raw?.usage,
             rawFiles: raw?.rawFiles,
             capture: raw?.capture,
+            driverEnvironment: raw?.driverEnvironment,
             ...scored,
             usage,
             final,

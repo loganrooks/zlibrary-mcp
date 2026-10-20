@@ -277,7 +277,10 @@ export class EvaluationServer {
   }
   async beginTask(task) {
     this.trace = [];
-    await this.fake.mode({ mode: 'healthy', remaining: task.id === 'T11' ? 0 : 2 });
+    await this.fake.mode({
+      mode: 'healthy',
+      remaining: task.id === 'T11' ? 0 : task.id === 'T9' ? 3 : 2,
+    });
     this.before = await this.fake.stats();
   }
   async finishTask() {

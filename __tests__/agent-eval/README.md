@@ -215,7 +215,9 @@ silently counted as success or omitted from a denominator. Such evidence is
 ineligible for an automatic comparison until resolved outside this scorer.
 
 The runner appends a JSON-only answer-shape instruction for these tasks. The
-instruction uses placeholders, never the expected translations, years, quota
+instruction is identical across every arm sharing a prompt, including B/B′ T7
+and T10. Neutral keys/types do not name a scored mode, source, tool or capability.
+It uses placeholders, never the expected translations, years, quota
 number or result titles. Arrays must contain all matching observed facts; the
 example is an item shape, not a count. `answers.js` compares exact keys/types and
 facts; swapped editions, duplicate translators, extra contradictory properties
@@ -224,6 +226,38 @@ canonical sentences/list grammar also remains supported. Arbitrary prose,
 including correct-looking text followed by a contradictory sentence, goes to
 manual review. This is intentionally not a general semantic judge. Other
 acquisition tasks still require their real artifact and decision checks.
+
+T4 A accepts either `unknown` or `none` for the LibGen cap; B requires `none`.
+Exact legacy JSON schemas remain a compatibility grammar, not driver instructions.
+B′ T7 accepts the neutral `{"answer":null}` or the full-string inability grammar
+(`I cannot tell.` / `I cannot determine that.` / the original account-history
+unavailable sentence). `false` is not an inability claim. A read-only limits call
+is permitted on T5 and B′ T7; search/acquisition remains wrong. T10 uses the same
+neutral instruction in every arm, but B acquisition success still depends on its
+real named inbox artifact, not an extra fact-answer requirement. N4's exact-string
+fact mismatch policy is deliberately unchanged.
+
+Each call contributes at most one wrong decision while retaining every reason
+and its call index. Task-level missing-evidence/provider violations remain separate
+diagnostics. T4 argument checks apply only to limits calls. In Q2 T11, omitted
+sources require the declared default to put LibGen ahead of exhausted Z-Library
+and an observed `routing.served_by: "libgen"`; T8 still requires an explicit
+LibGen-only request. T9 starts at three remaining downloads and retains three
+distinct same-task search requirements; its A Z-Library control uses `search_books`,
+never `search_multi_source` with the unsupported `source: "zlibrary"`.
+
+Only arm B receives an A-bar verdict. `variantComparisons` reports B versus Q1,
+Q2 and B′ under identical driver/search/settings identity, descriptively without
+an A-bar verdict. Every phase/task includes a quota-spent distribution. B′ T7
+correct inability has its own count, not equivalent task-completion success.
+History removal is expressible only with all three enabled B arms admitted for
+Codex/search-off and Claude/search-off/on, no within-cohort compatibility drift,
+and zero history use anywhere in those cells. Any admitted enabled use retains it.
+
+[Driver environment identity](driver-environment.md) documents the exact value /
+presence-only key inventory, primary sources, unconfirmed candidates and limits.
+Missing or drifting per-row records are refused; differing cell digests do not
+pair. This does not attest settings/auth file contents or resolved provider state.
 
 ### Evidence admission and bars (EVAL-R1-02/03/05)
 
@@ -439,7 +473,12 @@ Receipt JSON is structural evidence from a trusted local producer, not a signatu
 Model-driver capture is POSIX-only and refuses unsupported platforms **before**
 CLI version/model invocation; this does not alter product Windows support.
 Detached `ChildProcess.pid` is the sole trusted owned PGID. Normal drained zero-exit
-leaders are checked for residual members too. Timeout, drain timeout or residual
+leaders are checked for residual members too. Only a drained, zero-exit, clean
+close gets a **100 ms natural-exit window**, measured against one monotonic
+deadline; observations never reset that bound. Only an observed ESRCH before the
+bound proves absence. EPERM remains unknown (even if ESRCH arrives later), never
+success. A group still alive at the deadline is residual; later strict cleanup
+cannot promote that capture to complete. Timeout, drain timeout or residual
 groups trigger one idempotent bounded TERM → KILL → observation sequence;
 leader exit never cancels escalation. ESRCH is gone; EPERM/error or a group still
 observable after the deadline is unknown/failed. Signals stop once gone. Readers
@@ -449,6 +488,13 @@ proven group cleanup; timeout/residual capture remains incomplete even if cleanu
 succeeds. This contains ordinary same-PGID descendants only, not deliberate setsid
 escape or numerical PGID reuse; no broad process scans, stdout-derived signal
 PIDs or unref-based escape are used by capture.
+
+Successful capture admission additionally requires TERM/KILL both false, reason
+`closed`, and observations ending in `gone` with no unknown/invalid states. The
+test-only residual teardown has a separate bounded observation window: transient
+EPERM after KILL is observed until ESRCH; persistent EPERM fails loudly. A teardown
+failure does not stop attempts for other owned children. Evidence is copied in
+`finally`; failures are collected and rethrown, not used to admit a capture.
 
 T1/T8 now require a successful corresponding current-task search before each
 download, matching title/source/identity and B ref, with no literal query rule.

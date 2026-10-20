@@ -432,10 +432,10 @@ async def test_wrappers_preserve_typed_rejection_for_parent(
 @pytest.mark.parametrize(
     "status,upstream,expected",
     [
-        (401, "Invalid credentials #1", "Invalid credentials #1"),
-        (400, "Login denied #2", "Login denied #2"),
-        (401, "fake-password-marker", "<redacted>"),
-        (401, "unsafe / value", "<redacted>"),
+        (401, "Invalid credentials #1", "Authentication rejected"),
+        (400, "Login denied #2", "Upstream request failed"),
+        (401, "fake-password-marker", "Authentication rejected"),
+        (401, "unsafe / value", "Authentication rejected"),
     ],
 )
 async def test_login_failure_returns_safe_http_cause(

@@ -165,6 +165,32 @@ characters without raw upstream stacks or credential-bearing URLs. `attempts`
 is always an array; `detail.reason` retains sub-reasons. Independent tests
 validate the closed envelope even though the SDK does not validate error outputs.
 
+Authentication and EAPI failures can include `detail.diagnostics`, a closed
+record shared with diagnostic logs:
+
+| Field | Values |
+|---|---|
+| `failure_kind` | `auth_rejected`, `transport`, `wall`, or `ambiguous_status` |
+| `http_status` | Integer 100–599; omitted when unknown |
+| `attempt` | One-based bridge/retry attempt, capped at 65535 |
+| `refresh_count` | Owner-controlled authentication refresh count for the failed invocation (0 or 1 under the current owner), capped at 65535 |
+| `request_id` | Internally generated UUID correlating one logical call across its bridge invocations |
+
+A generic HTTP 400 and malformed non-HTTP responses are not authentication
+rejections. A 400 does not invalidate a warm session or trigger login/download
+replay. Local acquisition refusals before EAPI contact keep their existing
+error details without EAPI diagnostics. A cooldown refusal can carry the prior
+failed invocation's counts with a new caller correlation id.
+
+Diagnostics contain no account identifiers, credentials, cookies, tokens,
+response bodies, book details, or URLs. Malformed diagnostic records are
+discarded whole. The limits are 512 UTF-8 bytes and one line per diagnostic
+record, 2048 UTF-8 bytes and one line per EAPI bridge failure envelope, and
+8192 UTF-8 bytes / 32 lines of retained subprocess stderr. Oversized stderr
+records are discarded, not truncated into apparently valid records. Legacy
+unstructured bridge debug logs and search-argument file logging are suppressed;
+the bridge file/stderr handlers and Node logger use allowlisted diagnostics.
+
 | Code | Meaning |
 |---|---|
 | `invalid_argument` | Invalid/removed tool or argument, bounds or wrong handle kind |

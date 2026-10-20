@@ -5,7 +5,6 @@ import json
 import hashlib
 import re
 import tempfile
-import traceback
 
 # Read the private pipe before importing code that could spawn grandchildren.
 os.environ.pop("ZLIBRARY_EAPI_SESSION", None)  # Retired env carrier is never trusted.
@@ -50,6 +49,13 @@ from filename_utils import (
     truncate_filename_stem,
 )
 import logging
+from lib.auth_diagnostics import (
+    DiagnosticLogFilter,
+    failure_diagnostics,
+    failure_type,
+    encode_failure,
+    certificate_failure,
+)
 
 
 # Import enhanced metadata extraction
@@ -140,6 +146,9 @@ DEBUG_MODE = os.environ.get("ZLIBRARY_DEBUG", os.environ.get("DEBUG", "")).lower
 
 def _configure_debug_logging():
     """Configure logging based on debug mode setting."""
+    for target in (logger, logging.getLogger("lib.enhanced_metadata")):
+        if not any(isinstance(f, DiagnosticLogFilter) for f in target.filters):
+            target.addFilter(DiagnosticLogFilter())
     # Wire-level response headers may contain bearer cookies even in debug mode.
     for name in ("httpx", "httpcore"):
         logging.getLogger(name).setLevel(logging.WARNING)
@@ -585,10 +594,11 @@ async def eapi_health_check() -> dict:
             return {
                 "status": "unhealthy",
                 "transport": "eapi",
-                "error": f"Unexpected response: success={response.get('success')}",
+                "error": "Unexpected EAPI response",
                 "error_code": "malformed_response",
+                "diagnostics": failure_diagnostics(RuntimeError()),
             }
-    except EAPIAuthenticationError:
+    except EAPIAuthenticationError as e:
         if _session_input is not None:
             raise
         return {
@@ -596,13 +606,18 @@ async def eapi_health_check() -> dict:
             "transport": "eapi",
             "error": "EAPI authentication rejected",
             "error_code": "unknown_error",
+            "diagnostics": failure_diagnostics(e),
         }
     except Exception as e:
+        diagnostics = failure_diagnostics(e)
         return {
             "status": "unhealthy",
             "transport": "eapi",
-            "error": str(e),
+            "error": "DiamWall anti-bot wall detected; set ZLIBRARY_EAPI_DOMAIN to a working domain"
+            if diagnostics["failure_kind"] == "wall"
+            else "EAPI health check failed",
             "error_code": _classify_health_error(e),
+            "diagnostics": diagnostics,
         }
 
 
@@ -1831,35 +1846,6 @@ def _requires_eapi_client(function_name: str, args_dict: dict) -> bool:
     return True
 
 
-def _login_failure_info(error):
-    """Only allowlisted cause metadata crosses the failed-acquisition boundary."""
-    response = getattr(error, "response", None)
-    status = getattr(error, "status_code", None) or getattr(
-        response, "status_code", None
-    )
-    token = getattr(error, "token", None)
-    if token is None and response is not None:
-        try:
-            payload = response.json()
-            token = payload.get("error") if isinstance(payload, dict) else None
-        except ValueError:
-            pass
-    if token is None:
-        if "certificate" in str(error).lower() or "ssl" in str(error).lower():
-            token = "TLS certificate verification failed"
-        elif isinstance(error, httpx.TimeoutException):
-            token = "Upstream timeout"
-        elif isinstance(error, httpx.RequestError):
-            token = "Upstream connection failed"
-        elif isinstance(error, ValueError) and "environment variables required" in str(
-            error
-        ):
-            token = "Missing configured credentials"
-    return _safe_diagnostic(
-        {"status_code": status, "token": sanitized_auth_token(token)}
-    )
-
-
 async def main():
     global _session_published
     _session_published = None
@@ -1871,17 +1857,7 @@ async def main():
     function_name = cli_args.function_name
     termination, original_signal_handlers = _install_cooperative_signal_handlers()
     try:
-        logger.info(f"python_bridge.main: Received raw args_json: {cli_args.args_json}")
-        args_dict_immediately_after_parse = json.loads(cli_args.args_json)
-        logger.info(
-            f"python_bridge.main: args_dict_immediately_after_parse: {args_dict_immediately_after_parse}"
-        )
-
-        # Use a new variable for subsequent operations
-        args_dict = args_dict_immediately_after_parse.copy()
-        logger.info(
-            f"python_bridge.main: Initial args_dict (now a copy) for processing: {args_dict}"
-        )
+        args_dict = json.loads(cli_args.args_json)
 
     except json.JSONDecodeError:
         print(
@@ -1943,11 +1919,7 @@ async def main():
         ):
             _publish_eapi_session()
         # Print error as JSON to stderr
-        error_info = {
-            "error": str(e),
-            "type": type(e).__name__,
-            "traceback": traceback.format_exc(),
-        }
+        error_info = {"error": str(e), "type": type(e).__name__}
         if isinstance(e, httpx.HTTPStatusError):
             error_info["status_code"] = e.response.status_code
         # Provider failures carry which source failed and why (DNS vs connect
@@ -1966,48 +1938,103 @@ async def main():
             )
             error_info["details"].setdefault("operation", operation)
         error_info = _safe_diagnostic(error_info)
+        diagnostics = None
+        if (
+            needs_eapi
+            or _session_input is not None
+            or _eapi_client is not None
+            or getattr(e, "_eapi_initialization_failure", False) is True
+        ):
+            diagnostics = failure_diagnostics(
+                e,
+                refreshed=bool(
+                    _session_input and _session_input.get("authRetry") is True
+                ),
+            )
+            error_info["error"] = f"EAPI request failed ({diagnostics['failure_kind']})"
+            error_info["diagnostics"] = diagnostics
+            error_info["type"] = failure_type(e)
+            # Acquisition wrappers carry useful issuance/reason evidence, not prose.
+            if "details" in error_info:
+                detail = error_info["details"]
+                error_info["details"] = {
+                    k: detail[k]
+                    for k in ("reason", "request_issued", "destination_occupied")
+                    if k in detail
+                    and (
+                        type(detail[k]) is bool
+                        or detail[k]
+                        in (
+                            "auth_rejected",
+                            "outcome_unknown",
+                            "http_error",
+                            "read_timeout",
+                            "connect_timeout",
+                            "configuration_error",
+                            "output_refused",
+                            "invalid_argument",
+                            "breaker_open",
+                            "integrity_mismatch",
+                            "internal",
+                        )
+                    )
+                }
+            logger.warning("", extra={"auth_diagnostics": diagnostics})
         if _session_input is not None and _session_input["action"] == "login":
-            failure = _login_failure_info(e)
+            failure = {"status_code": diagnostics.get("http_status")}
             status = failure["status_code"]
             cause = (
                 "Z-Library rejected the login"
-                if status in (200, 400, 401, 403)
+                if diagnostics["failure_kind"] == "auth_rejected"
                 else "Z-Library login failed"
             )
             if status:
                 cause += f" (HTTP {status})"
-            if failure["token"] != "<redacted>":
-                cause += f": {failure['token']}"
+            # Do not treat a short, regex-clean provider string as an allowlist.
+            failure["token"] = (
+                "TLS certificate verification failed"
+                if certificate_failure(e)
+                else "Authentication rejected"
+                if diagnostics["failure_kind"] == "auth_rejected"
+                else "Upstream request failed"
+            )
             error_info = {
                 "error": cause,
-                "type": type(e).__name__,
+                "type": failure_type(e),
                 "login_failed": failure,
+                "diagnostics": diagnostics,
             }
-            print(
-                json.dumps(
-                    {"content": [{"type": "text", "text": json.dumps(error_info)}]}
-                )
-            )
+            print(encode_failure(error_info, mcp=True))
         elif isinstance(e, EAPIAuthenticationError) and _session_input is not None:
             # The parent alone refreshes, with generation CAS and a login cooldown.
-            error_info.pop("traceback", None)
             error_info["auth_rejected"] = {"generation": _session_input["generation"]}
-            print(
-                json.dumps(
-                    {"content": [{"type": "text", "text": json.dumps(error_info)}]}
-                )
-            )
+            print(encode_failure(error_info, mcp=True))
         else:
-            print(json.dumps(error_info), file=sys.stderr)
+            print(
+                encode_failure(error_info) if diagnostics else json.dumps(error_info),
+                file=sys.stderr,
+            )
             sys.exit(1)
     finally:
         try:
-            # Clean up EAPI client
-            if _eapi_client:
-                await _eapi_client.close()
-            # Clean up source router
-            if _source_router:
-                await _source_router.close()
+            for resource in (_eapi_client, _source_router):
+                if resource is None:
+                    continue
+                try:
+                    await resource.close()
+                except Exception as cleanup_error:
+                    if not (
+                        needs_eapi
+                        or _session_input is not None
+                        or _eapi_client is not None
+                    ):
+                        raise
+                    # Cleanup must not replace the already emitted result/failure
+                    # with a traceback containing an upstream exception's payload.
+                    logger.warning(
+                        "",
+                        extra={"auth_diagnostics": failure_diagnostics(cleanup_error)},
+                    )
         finally:
             _restore_signal_handlers(original_signal_handlers)
 
@@ -2027,7 +2054,13 @@ async def _dispatch_bridge_function(function_name: str, args_dict: dict):
                         "configuration_error",
                         "Configure ZLIBRARY_EMAIL and ZLIBRARY_PASSWORD",
                     )
-                await initialize_eapi_client()
+                try:
+                    await initialize_eapi_client()
+                except Exception as error:
+                    # Deferred per-call login/discovery can fail before either
+                    # global exists. Mark the failure, not local receipt refusals.
+                    error._eapi_initialization_failure = True
+                    raise
             elif source in {"annas", "annas_archive"} and not os.environ.get(
                 "ANNAS_SECRET_KEY"
             ):
@@ -2038,14 +2071,8 @@ async def _dispatch_bridge_function(function_name: str, args_dict: dict):
 
         return await acquire(**args_dict, transfer=authenticated_transfer)
     if function_name == "search":
-        logger.info(
-            f"python_bridge.main: About to call search with args_dict: {args_dict}"
-        )
         return await search(**args_dict)
     elif function_name == "full_text_search":
-        logger.info(
-            f"python_bridge.main: About to call full_text_search with args_dict: {args_dict}"
-        )
         return await full_text_search(**args_dict)
     elif function_name == "get_download_history":
         return await get_download_history(**args_dict)

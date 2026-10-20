@@ -2,6 +2,7 @@ import { spawn, execFileSync } from 'node:child_process';
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { performance } from 'node:perf_hooks';
 import { here } from './server.js';
 
 export const driverPins = {
@@ -532,19 +533,64 @@ export async function captureChild(binary, args, options, limits = {}) {
         done(state);
         return;
       }
-      if (reason === 'closed') capture.residualGroup = true;
-      cleanup.state = 'terminating';
-      if (!send('SIGTERM')) return;
-      killTimer = setTimeout(() => {
-        if (send('SIGKILL')) cleanup.state = 'observing-after-kill';
-      }, killGraceMs);
-      cleanupDeadline = setTimeout(() => {
-        const state = probe();
-        done(state === 'gone' ? 'gone' : state === 'unknown' ? 'unknown' : 'alive-after-deadline');
-        drainExpired = true;
-        maybeFinish();
-      }, killGraceMs + drainTimeoutMs);
-      observeTimer = setTimeout(observe, 25);
+      const terminate = () => {
+        // Irreversible even if the pre-signal probe now finds the group gone.
+        if (reason === 'closed') capture.residualGroup = true;
+        cleanup.state = 'terminating';
+        if (!send('SIGTERM')) return;
+        killTimer = setTimeout(() => {
+          if (send('SIGKILL')) cleanup.state = 'observing-after-kill';
+        }, killGraceMs);
+        cleanupDeadline = setTimeout(() => {
+          const state = probe();
+          done(
+            state === 'gone' ? 'gone' : state === 'unknown' ? 'unknown' : 'alive-after-deadline',
+          );
+          drainExpired = true;
+          maybeFinish();
+        }, killGraceMs + drainTimeoutMs);
+        observeTimer = setTimeout(observe, 25);
+      };
+      if (
+        reason === 'closed' &&
+        capture.leaderExited &&
+        capture.code === 0 &&
+        !capture.signal &&
+        !capture.spawnError &&
+        !capture.timedOut &&
+        !capture.drainTimedOut &&
+        !capture.residualGroup
+      ) {
+        // EOF/close is not immediate PGID absence. Only ESRCH observed within
+        // this monotonic window admits natural exit; a late timer cannot extend it.
+        const deadline = performance.now() + 100;
+        const observeNatural = () => {
+          if (cleanupDone) return;
+          if (
+            performance.now() >= deadline ||
+            capture.spawnError ||
+            capture.timedOut ||
+            capture.drainTimedOut
+          ) {
+            terminate();
+            return;
+          }
+          const state = probe();
+          if (state !== 'alive') {
+            // A delayed probe cannot extend admission, but ESRCH still stops
+            // all future probes/signals, even when observed too late to pass.
+            if (performance.now() >= deadline) capture.residualGroup = true;
+            done(state);
+            return;
+          }
+          observeTimer = setTimeout(
+            observeNatural,
+            Math.min(25, Math.max(1, deadline - performance.now())),
+          );
+        };
+        cleanup.state = 'observing-natural-exit';
+        observeTimer = setTimeout(observeNatural, 25);
+      } else terminate();
     };
     try {
       child = spawn(binary, args, { ...options, detached: true });

@@ -29,7 +29,7 @@ def run_invalid_login(client):
         "os": SimpleNamespace(environ={}),
     }
     exec(compile(module, str(source_path), "exec"), namespace)
-    coroutine = namespace[method.name](None)
+    coroutine = namespace[method.name](None, "offline.example.test")
     try:
         coroutine.send(None)
     except StopIteration:

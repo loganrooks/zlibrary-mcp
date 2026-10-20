@@ -61,14 +61,18 @@ async def test_live_login_uses_runtime_default_and_override(monkeypatch, entrypo
 
         monkeypatch.setattr(zlibrary.eapi, "EAPIClient", OfflineClient)
         monkeypatch.setattr(fixtures, "EAPIClient", OfflineClient)
+        domain = fixtures.eapi_domain.__wrapped__()
+        assert domain == expected
         if entrypoint == "fixture":
-            generator = fixtures.zlib_client.__wrapped__()
+            generator = fixtures.zlib_client.__wrapped__(domain)
             await anext(generator)
             with pytest.raises(StopAsyncIteration):
                 await anext(generator)
         else:
             test = getattr(live.TestRealAuthentication(), entrypoint)
             if entrypoint == "test_authentication_fails_with_invalid_credentials":
-                await test()
+                await test(domain)
             else:
-                await test({"email": "offline@example.test", "password": "offline"})
+                await test(
+                    {"email": "offline@example.test", "password": "offline"}, domain
+                )

@@ -46,6 +46,10 @@ async def resolve():
     return 'fake.example.test'
 eapi.resolve_eapi_domain=resolve
 async def get_client(self):
+    with open(${JSON.stringify(modeFile)}) as f: mode=f.read()
+    if mode=='local-budget':
+        from lib.acquisition import AcquisitionError
+        raise AcquisitionError('walk_budget_exhausted','synthetic local refusal',issued=False)
     if self._client is None or self._client.is_closed:
         self._client=httpx.AsyncClient(transport=httpx.MockTransport(handle),cookies=self._cookies)
     return self._client
@@ -427,6 +431,39 @@ test.each([
     expect(fs.readFileSync(callsFile, 'utf8').trim().split('\n')).toEqual(calls);
   },
 );
+
+// Catches session presence overriding Python's explicit pre-request verdict.
+test('warm memory session preserves explicit pre-issuance budget refusal', async () => {
+  process.env.ZLIBRARY_SESSION_MODE = 'memory';
+  process.env.RETRY_MAX_RETRIES = '3';
+  await api.searchBooks({ query: 'warm-session' });
+  const before = fs.readFileSync(callsFile, 'utf8');
+  fs.writeFileSync(modeFile, 'local-budget');
+  for (let i = 0; i < 3; i++) {
+    const failure = await api
+      .downloadBookToFile({
+        bookDetails: { id: '17', book_hash: 'hash', title: 'offline' },
+      })
+      .catch((error) => error);
+    expect(JSON.parse(failure.context.stderr).details.request_issued).toBe(false);
+    expect(failure.context.details).toMatchObject({
+      reason: 'walk_budget_exhausted',
+      request_issued: false,
+    });
+    expect(envelope(failure, 'download', 'zlibrary').error).toMatchObject({
+      code: 'provider_timeout',
+      retry: 'safe',
+      detail: { reason: 'walk_budget_exhausted', request_issued: false },
+    });
+  }
+  expect(fs.readFileSync(callsFile, 'utf8')).toBe(before);
+  fs.writeFileSync(modeFile, 'success');
+  await expect(api.searchBooks({ query: 'still-warm-and-not-open' })).resolves.toMatchObject({
+    books: [],
+  });
+  const calls = fs.readFileSync(callsFile, 'utf8').trim().split('\n');
+  expect(calls.filter((route) => route === '/eapi/user/login')).toHaveLength(1);
+});
 
 // Bare Python envelopes remain Python-owned even when a typed outage counts
 // for dependency health. Losing active issuance metadata must never permit replay.

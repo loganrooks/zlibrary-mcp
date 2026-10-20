@@ -568,7 +568,12 @@ async function callPythonFunction(
                     details: {
                       ...err.context?.details,
                       ...bridgeError.details,
-                      ...(activeTransport ? { request_issued: true } : {}),
+                      // Lazy transport is assigned only at this call's handoff;
+                      // that grant wins a child false, mere availability does not.
+                      ...(activeTransport &&
+                      (lazy || typeof bridgeError.details?.request_issued !== 'boolean')
+                        ? { request_issued: true }
+                        : {}),
                     },
                     pythonErrorType: bridgeError.type,
                     httpStatus: bridgeError.status_code,

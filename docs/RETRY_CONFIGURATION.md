@@ -95,7 +95,7 @@ about a host. Raise `BOOK_SOURCE_WALK_BUDGET` to fix it, unless the walk is
 already clamped to the owning bridge timer; then raise `PYTHON_BRIDGE_TIMEOUT`
 (or `PYTHON_BRIDGE_LONG_TIMEOUT` for downloads) instead.
 
-**Scope: provider walks, not whole tools or acquisitions.**
+**Allocation-helper scope: provider walks, not whole tools or acquisitions.**
 `worst_case_search_seconds()` allocates one provider search walk plus bridge
 overhead; `worst_case_download_seconds()` allocates one provider download chain
 plus overhead. Tests compare these allocations strictly below the owning Node
@@ -110,8 +110,9 @@ not a fixed 30s admission charge. Adapters refuse a slice too short for useful
 work with `walk_budget_exhausted` and provider/mirror attribution. A timer
 with no positive remainder after overhead and the 1ms margin is a configuration
 error before provider contact. Overhead is an allocation, not a measured
-cold-start guarantee. Arbitrary per-call runner timeout overrides are outside
-this environment-based admission contract.
+cold-start guarantee. Per-call runner timeout overrides are outside this
+environment-based provider-walk admission contract; acquisition's outer deadline
+below uses the effective call owner instead.
 
 The 2.0 public `search` tries each requested source in its own bridge child:
 LibGen and Anna's use explicit-source `search_multi_source`; Z-Library uses
@@ -124,10 +125,30 @@ can exceed a per-attempt search budget. This timeout wraps resolution **and**
 transfer; do not add the 165s resolution walk again. With 30s overhead its
 allocation is 1530s, leaving 870s under the default 2400s long owner. Download
 configuration also clamps the chain timeout to that owner's remainder.
-This is **not** a whole-acquisition bound: destination lease waiting,
-receipt verification and finalization are excluded. A shared deadline across
-those phases is tracked separately in [#280](https://github.com/rookslog/zlibrary-mcp/issues/280).
 Text processing does not ship in 2.0; there is no OCR allocation here.
+
+Acquisition has a separate **outer deadline** derived from the effective Node
+call timer, normally `PYTHON_BRIDGE_LONG_TIMEOUT`. The runner passes its validated
+per-spawn timeout through the internal `PYTHON_BRIDGE_CALL_TIMEOUT_MS` environment
+value, overriding any inherited value; direct Python calls fall back to
+`PYTHON_BRIDGE_LONG_TIMEOUT` when it is absent. The acquisition budget subtracts
+`min(30s, owning timer / 8)` and a 1ms margin from that owner, including when
+`CallOptions.timeoutMs` shortens it. One clock spans lease waiting, receipt verification,
+transfer and finalization; the provider chain remains an inner bound. Transfer
+may spend only the remaining time minus a reserved finalization slice of
+`min(135s, initial acquisition budget / 8)`.
+
+Deadline checks apply before the commit point, including staging and hashing
+an existing destination to decide whether it can be reused. The commit point is
+final publication (or adoption of a verified identical destination), not private
+staging. After that point there is **no cooperative deadline refusal**:
+post-publication hashing, receipt writing and the reply finish under the Node
+long timer's hard stop. This avoids reporting a local timeout after committing
+an artifact, without promising unlimited post-commit execution.
+
+On download, `walk_budget_exhausted` maps to `outcome_unknown` when a request was
+issued, and to `provider_timeout` before issuance. Local budget exhaustion is
+not evidence of a provider failure and does not trip its circuit breaker.
 
 Source downloads have a separate 1,500-second default because a valid large
 book can exceed the 45-second search and URL-resolution budget. The 2,400-second

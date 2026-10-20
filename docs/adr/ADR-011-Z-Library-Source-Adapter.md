@@ -400,6 +400,25 @@ and OCR is removed. Whole-acquisition composition is deferred to
 [the current budgets and short-timer policy](../RETRY_CONFIGURATION.md#multi-source-timeout-configuration)
 for the owning ordinary/long timers and strict margins.
 
+**Whole-acquisition amendment (#280, 2026-10-20):** the deferral in the preceding
+PR153 scope correction is superseded by the acquisition deadline shipped in
+this change. One outer `WalkDeadline`, derived from the Node long bridge timer
+minus `min(30s, owning timer / 8)` and a 1ms margin, spans destination lease
+waiting, receipt verification, transfer and finalization. Provider-chain
+timeouts remain inner bounds. Transfer reserves
+`min(135s, initial acquisition budget / 8)` for finalization rather than spending
+the entire remaining outer budget.
+
+The commit point is final publication, or adoption of an existing destination
+after verifying identical bytes; private staging is not publication. Reuse
+comparison hashing is still pre-commit and checks the outer deadline. After
+commit there is no cooperative deadline refusal: digest, receipt and reply
+completion remain subject to the Node long timer's hard stop. On download,
+`walk_budget_exhausted` maps to `outcome_unknown` if a request was issued and to
+`provider_timeout` before issuance, without charging local exhaustion as a
+provider circuit-breaker failure. The earlier provider-walk decision below is
+retained as history; see the linked retry configuration for the current model.
+
 What shipped instead is `WalkDeadline`: `SourceRouter` creates one per search or
 download, every provider and every mirror draws its per-attempt budget from what
 that deadline has left, and a mirror it never reaches is reported as

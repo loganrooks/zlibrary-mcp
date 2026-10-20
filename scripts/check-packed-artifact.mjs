@@ -1,17 +1,29 @@
 #!/usr/bin/env node
 /* global process, setTimeout, clearTimeout */
 // Offline installed-package smoke. Dependency installation may use registries;
-// the installed runtime is credential-free and fenced against provider egress.
+// real provider egress is fenced; accounts used below are synthetic fixtures.
 import assert from 'node:assert/strict';
+import { Buffer } from 'node:buffer';
 import { spawn, execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { once } from 'node:events';
-import { access, mkdtemp, mkdir, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises';
+import {
+  access,
+  mkdtemp,
+  mkdir,
+  readFile,
+  readdir,
+  realpath,
+  rm,
+  stat,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
+import { Rehearsal } from '../__tests__/rehearsal/harness.js';
 
 const execute = promisify(execFile);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -68,7 +80,21 @@ async function run(command, args, options = {}) {
   }
 }
 
-async function protocolSmoke(bin, cwd, env, expected, version) {
+export async function packArtifact(destination, env) {
+  await run('npm', ['pack', '--ignore-scripts', '--json', '--pack-destination', destination], {
+    cwd: root,
+    env: { ...env, npm_config_ignore_scripts: 'true' },
+  });
+  // npm 10 may emit a prepare/Husky diagnostic ahead of --json output.
+  // The materialized artifact, not npm stdout, is the authority.
+  const tarballs = (await readdir(destination, { withFileTypes: true })).filter(
+    (entry) => entry.isFile() && entry.name.endsWith('.tgz'),
+  );
+  assert.equal(tarballs.length, 1, 'Expected exactly one .tgz in pack destination');
+  return path.join(destination, tarballs[0].name);
+}
+
+async function protocolSmoke(bin, cwd, env, expected, version, journey) {
   // Spawn the npm-created executable link itself, not node <source>/dist/index.js.
   await access(bin);
   const child = spawn(bin, [], { cwd, env, stdio: ['pipe', 'pipe', 'pipe'] });
@@ -130,6 +156,16 @@ async function protocolSmoke(bin, cwd, env, expected, version) {
       clearTimeout(timer);
     }
   }
+  async function call(name, args) {
+    const reply = await request('tools/call', { name, arguments: args });
+    const data = JSON.parse(reply.content[0].text);
+    assert(
+      !reply.isError && !data.error,
+      `${name} returned a tool error: ${JSON.stringify(data.error)}`,
+    );
+    assert.deepEqual(data, reply.structuredContent);
+    return data;
+  }
   try {
     const initialized = await request('initialize', {
       protocolVersion: '2025-11-25',
@@ -149,18 +185,13 @@ async function protocolSmoke(bin, cwd, env, expected, version) {
       }))
       .sort((a, b) => a.name.localeCompare(b.name));
     assert.deepEqual(surface, expected, 'Installed tools differ from the 2.0 fixture');
-    const limits = await request('tools/call', {
-      name: 'get_limits',
-      arguments: { mode: 'local' },
-    });
-    assert(!limits.isError, 'Local limits returned a tool error');
-    const data = JSON.parse(limits.content[0].text);
-    assert.deepEqual(data, limits.structuredContent);
+    const data = await call('get_limits', { mode: 'local' });
     assert.equal(data.sources.libgen.download_available, true);
-    assert.equal(data.sources.zlibrary.configured, false);
+    assert.equal(data.sources.zlibrary.configured, Boolean(env.ZLIBRARY_EMAIL));
     process.stdout.write(
       `Installed bin: initialize, tools/list (${surface.length} tools), get_limits local passed.\n`,
     );
+    if (journey) await journey(call);
   } finally {
     child.stdin.end();
     const kill = setTimeout(() => child.kill('SIGTERM'), 1000);
@@ -176,7 +207,82 @@ async function protocolSmoke(bin, cwd, env, expected, version) {
     }
   }
   if (failure) throw failure;
-  assert.equal(responses, 3);
+  assert.equal(responses, nextId);
+}
+
+async function acquisitionJourney(call, fake, source, output, dropTransfer) {
+  const zlibrary = source === 'zlibrary';
+  const expectedBytes = zlibrary
+    ? Buffer.from('Offline rehearsal book 101.\n')
+    : Buffer.concat([
+        Buffer.from([0x50, 0x4b, 3, 4]),
+        Buffer.from('Synthetic fixture 301\n'.repeat(60)),
+      ]);
+  const query = zlibrary ? 'sequential' : 'Persuasion';
+  const search = await call('search', { sources: [source], query, limit: 1 });
+  assert.equal(search.rows.length, 1, `Expected one ${source} fixture row`);
+  const row = search.rows[0];
+  assert.equal(row.source, source);
+  assert.equal(row.title, zlibrary ? 'Rehearsal sequential' : 'Persuasion');
+  const detail = await call('get_book', { ref: row.ref });
+  assert.equal(detail.ref, row.ref);
+  assert.equal(detail.title, row.title);
+  const args = {
+    ref: row.ref,
+    output_dir: output,
+    filename: `packed-${source}.${zlibrary ? 'txt' : 'epub'}`,
+  };
+  if (dropTransfer) {
+    await fake.mode({ mode: 'drop_transfer' });
+    process.stdout.write(
+      `Failure control: drop-transfer (${source}); search/details completed, file endpoint returns no bytes.\n`,
+    );
+  }
+  const first = await call('download', args);
+  assert.equal(first.path, path.join(output, args.filename));
+  assert.equal(await realpath(first.path), first.path);
+  assert.equal(first.record, first.path + '.acq.json');
+  assert.equal(first.verified, 'sha256');
+  assert.equal(first.transfer_skipped, false);
+  assert.equal(first.reused, false);
+  assert.equal(first.bytes, expectedBytes.length);
+  assert.deepEqual(await readFile(first.path), expectedBytes, 'Downloaded fixture bytes differ');
+  const receiptBytes = await readFile(first.record);
+  const receipt = JSON.parse(receiptBytes);
+  const digest = createHash('sha256').update(expectedBytes).digest('hex');
+  assert.equal(receipt.record_version, 1);
+  assert.equal(receipt.state, 'complete');
+  assert.equal(receipt.path, first.path);
+  assert.equal(receipt.bytes, expectedBytes.length);
+  assert.equal(receipt.sha256, digest);
+  assert.equal(receipt.source, source);
+  assert.equal(receipt.request.ref, row.ref);
+  const before = await fake.stats();
+  if (zlibrary) {
+    assert.equal(before.quotaSpent, 1);
+    assert.equal(before.calls['/files/101.txt'], 1);
+    assert.equal(receipt.identifiers.id, '101');
+  } else {
+    // One range probe plus one actual acquisition stream.
+    assert.equal(before.calls['/libgen/get.php'], 2);
+    assert.equal(before.logins, 0, 'LibGen journey must remain credential-free');
+    assert.equal(receipt.identifiers.md5, createHash('md5').update(expectedBytes).digest('hex'));
+  }
+  const repeat = await call('download', args);
+  assert.equal(repeat.transfer_skipped, true, 'Repeated download did not hit its receipt');
+  assert.equal(repeat.reused, false);
+  assert.equal(repeat.path, first.path);
+  assert.equal(repeat.record, first.record);
+  assert.equal(repeat.bytes, first.bytes);
+  assert.equal(repeat.verified, 'sha256');
+  assert.deepEqual(await readFile(first.path), expectedBytes);
+  assert.deepEqual(await readFile(first.record), receiptBytes, 'Receipt hit rewrote provenance');
+  const after = await fake.stats();
+  assert.deepEqual(after.calls, before.calls, 'Receipt hit contacted a fake provider');
+  assert.equal(after.quotaSpent, before.quotaSpent);
+  process.stdout.write(
+    `Installed ${source} journey passed: search -> get_book -> download -> receipt hit; bytes=${first.bytes}; sha256=${digest}; body endpoint requests=${before.calls[zlibrary ? '/files/101.txt' : '/libgen/get.php']}; repeat provider calls=0.\n`,
+  );
 }
 
 export async function main(args = process.argv.slice(2)) {
@@ -186,7 +292,7 @@ export async function main(args = process.argv.slice(2)) {
   );
   const control = args.find((arg) => arg.startsWith('--control='))?.split('=')[1];
   assert(
-    !control || ['missing-bridge', 'missing-script'].includes(control),
+    !control || ['missing-bridge', 'missing-script', 'drop-transfer'].includes(control),
     'Unknown failure control',
   );
   assert(
@@ -217,15 +323,8 @@ export async function main(args = process.argv.slice(2)) {
       UV_PYTHON_INSTALL_DIR: path.join(temporary, 'python'),
       PYTHONDONTWRITEBYTECODE: '1',
     };
-    const packed = JSON.parse(
-      await run('npm', ['pack', '--ignore-scripts', '--json', '--pack-destination', temporary], {
-        cwd: root,
-        env,
-      }),
-    );
-    assert.equal(packed.length, 1, 'Expected exactly one packed artifact');
-    const tarball = path.join(temporary, packed[0].filename);
-    if (control) {
+    const tarball = await packArtifact(temporary, env);
+    if (control === 'missing-bridge' || control === 'missing-script') {
       const scratch = path.join(temporary, 'damaged');
       await mkdir(scratch);
       await run('tar', ['xzf', tarball, '-C', scratch], { env });
@@ -324,10 +423,37 @@ export async function main(args = process.argv.slice(2)) {
     const expected = JSON.parse(
       await readFile(path.join(root, '__tests__/fixtures/tools-surface-v2.json'), 'utf8'),
     );
-    await protocolSmoke(bin, home, runtime, expected, manifest.version);
+    // The same startup/certificate/fence wiring is used by source rehearsal.
+    // Its fake runs using the installed core Python, not the contributor venv.
+    const fake = await Rehearsal.start('packed-install', { python: { executable: python, env } });
+    try {
+      for (const source of ['libgen', 'zlibrary']) {
+        await fake.mode({ mode: 'healthy', reset: true, remaining: 7 });
+        const output = path.join(home, 'outputs', source);
+        await mkdir(output, { recursive: true });
+        const providerEnv = {
+          ...runtime,
+          ...fake.providerEnvironment({ libgen: true, credentials: source === 'zlibrary' }),
+          ZLIBRARY_OUTPUT_ROOT: output,
+          RETRY_MAX_RETRIES: '0',
+          PYTHON_BRIDGE_TIMEOUT: '15000',
+        };
+        await protocolSmoke(bin, home, providerEnv, expected, manifest.version, (call) =>
+          acquisitionJourney(call, fake, source, output, control === 'drop-transfer'),
+        );
+        assert.equal(await readFile(trap, 'utf8'), '', 'Journey attempted non-loopback egress');
+      }
+    } finally {
+      try {
+        process.stdout.write(`Final fake counters: ${JSON.stringify(await fake.stats())}\n`);
+        assert.equal(await readFile(trap, 'utf8'), '', 'Journey attempted non-loopback egress');
+      } finally {
+        await fake.close();
+      }
+    }
     assert.equal(await readFile(trap, 'utf8'), '', 'Installed runtime attempted provider egress');
     process.stdout.write(
-      'PASS: exact packed package installed clean; offline runtime had zero egress attempts.\n',
+      'PASS: exact packed package installed clean; offline runtime had zero non-loopback egress attempts.\n',
     );
   } finally {
     await rm(temporary, { recursive: true, force: true });

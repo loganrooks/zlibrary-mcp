@@ -47,16 +47,37 @@ socket.getaddrinfo = _getaddrinfo
 if os.environ.get("REHEARSAL_LIBGEN_ORIGIN"):
     from urllib.parse import urlsplit
     import requests
+    import httpx
+
+    def _fixture_url(url):
+        parsed = urlsplit(str(url))
+        if parsed.hostname not in {"libgen.li", "libgen.vg", "libgen.la"}:
+            return None
+        target = os.environ["REHEARSAL_LIBGEN_ORIGIN"] + "/libgen" + parsed.path
+        if parsed.query:
+            target += "?" + parsed.query
+        return target
 
     _request = requests.Session.request
 
     def _fixture_request(self, method, url, *args, **kwargs):
-        parsed = urlsplit(url)
-        if parsed.hostname in {"libgen.li", "libgen.vg", "libgen.la"}:
-            url = os.environ["REHEARSAL_LIBGEN_ORIGIN"] + "/libgen" + parsed.path
-            if parsed.query:
-                url += "?" + parsed.query
+        target = _fixture_url(url)
+        if target:
+            url = target
             kwargs["verify"] = os.environ["SSL_CERT_FILE"]
         return _request(self, method, url, *args, **kwargs)
 
     requests.Session.request = _fixture_request
+
+    # Resolver and streamed transfers use httpx, unlike the search library.
+    # Rewrite only the URL; keep the real TLS, HTTP and streaming stack.
+    _send = httpx.AsyncClient.send
+
+    async def _fixture_send(self, request, *args, **kwargs):
+        target = _fixture_url(request.url)
+        if target:
+            request.url = httpx.URL(target)
+            request.headers["Host"] = request.url.netloc.decode("ascii")
+        return await _send(self, request, *args, **kwargs)
+
+    httpx.AsyncClient.send = _fixture_send

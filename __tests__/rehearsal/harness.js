@@ -123,6 +123,25 @@ export class Rehearsal {
   mode(body) {
     return this.request('/__mode', body);
   }
+  // Shared endpoint, certificate and fence wiring for real source and packed bins.
+  providerEnvironment({ libgen = false, credentials = true } = {}) {
+    return {
+      SSL_CERT_FILE: this.cert,
+      PYTHONPATH: here,
+      PYTHONDONTWRITEBYTECODE: '1',
+      REHEARSAL_ALLOWED_PORT: String(new URL(this.origin).port),
+      ZLIBRARY_EAPI_DOMAIN: this.domain,
+      ...(libgen ? {
+        REHEARSAL_LIBGEN_ORIGIN: this.origin,
+        BOOK_SOURCE_PREFLIGHT: 'false',
+        BOOK_SOURCE_FALLBACK_ENABLED: 'false',
+      } : {}),
+      ...(credentials ? {
+        ZLIBRARY_EMAIL: fakeEmail,
+        ZLIBRARY_PASSWORD: fakePassword,
+      } : {}),
+    };
+  }
   scan(value, source = 'reply') {
     const text = typeof value === 'string' ? value : JSON.stringify(value);
     const found = classifySentinels(text, source, this.keyText, {
@@ -181,21 +200,9 @@ export class Rehearsal {
           PATH: process.env.PATH,
           HOME: home,
           TMPDIR: home,
-          PYTHONPATH: here,
-          PYTHONDONTWRITEBYTECODE: '1',
-          ...(options.untrusted ? {} : { SSL_CERT_FILE: this.cert }),
-          REHEARSAL_ALLOWED_PORT: String(new URL(this.origin).port),
+          ...this.providerEnvironment({ libgen: options.libgen }),
+          ...(options.untrusted ? { SSL_CERT_FILE: undefined } : {}),
           REHEARSAL_EGRESS_TRAP: path.join(home, 'egress-trap.txt'),
-          ZLIBRARY_EAPI_DOMAIN: this.domain,
-          ...(options.libgen
-            ? {
-                REHEARSAL_LIBGEN_ORIGIN: this.origin,
-                BOOK_SOURCE_PREFLIGHT: 'false',
-                BOOK_SOURCE_FALLBACK_ENABLED: 'false',
-              }
-            : {}),
-          ZLIBRARY_EMAIL: fakeEmail,
-          ZLIBRARY_PASSWORD: fakePassword,
           ZLIBRARY_SESSION_DIR: path.join(home, 'session'),
           XDG_STATE_HOME: home,
           XDG_CACHE_HOME: home,

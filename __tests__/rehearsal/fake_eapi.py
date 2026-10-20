@@ -36,6 +36,7 @@ USER_ID = "rehearsal-cookie-id"
 USER_KEY = "rehearsal-cookie-key"
 MODES = {
     "healthy",
+    "drop_transfer",
     "empty",
     "quota_exhausted",
     "login400",
@@ -186,6 +187,8 @@ class Handler(BaseHTTPRequestHandler):
                     f'<html><a href="get.php?md5={md5}&amp;key=fixture">GET</a></html>'.encode(),
                     content_type="text/html",
                 )
+            if mode == "drop_transfer":
+                return self.reply(b"", 503, "application/octet-stream")
             return self.reply(
                 payload(row),
                 content_type="application/octet-stream",
@@ -292,6 +295,8 @@ class Handler(BaseHTTPRequestHandler):
         match = re.fullmatch(r"/files/(\d+)\.\w+", route)
         if match and match[1] in ALL:
             row = ALL[match[1]]
+            if mode == "drop_transfer":
+                return self.reply(b"", 503, "application/octet-stream")
             return self.reply(
                 payload(row),
                 content_type="application/octet-stream",

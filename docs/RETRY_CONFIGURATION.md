@@ -32,7 +32,7 @@ The Z-Library MCP server implements comprehensive retry logic with exponential b
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `CIRCUIT_BREAKER_THRESHOLD` | `5` | Number of failures before opening circuit |
+| `CIRCUIT_BREAKER_THRESHOLD` | `5` | Number of failed logical dependency calls before opening circuit |
 | `CIRCUIT_BREAKER_TIMEOUT` | `60000` | Time in ms before attempting to close circuit (1 minute) |
 
 ### Multi-Source Timeout Configuration
@@ -192,6 +192,19 @@ receipt-only bridge child still serves an intact receipt; anything else returns 
 `breaker_open` refusal without an intent or provider contact. Concurrent memory-mode
 Z-Library downloads sharing one failed owner login count that failure once.
 
+Breakers count **logical dependency calls, not retry attempts** (#263). Ordinary
+breaker admission wraps the complete Node retry sequence: a call that exhausts
+four attempts adds one failure, and a call that recovers on a retry adds none.
+The default threshold remains five failed logical calls; with three retries this
+allows up to twenty failed attempts before opening. Non-transient final errors
+and caller cancellation, including cancellation during backoff, add no failure.
+A HALF_OPEN probe keeps its admission across retries and delivers one final
+verdict. Existing long-probe hold limits still apply.
+
+An OPEN-breaker refusal never starts or extends the session owner's login
+cooldown (#261). A login that actually runs and fails still uses that policy;
+breaker recovery can proceed without an extra cooldown caused by refused logins.
+
 ## Error Classification
 
 ### Retryable Errors
@@ -321,18 +334,18 @@ const breaker = new CircuitBreaker({
 });
 
 // Wrap operation with retry logic
-const result = await withRetry(
-  async () => {
-    return breaker.execute(async () => {
+const result = await breaker.execute(() =>
+  withRetry(
+    async () => {
       // Your operation here
       return await fetchData();
-    });
-  },
-  {
-    maxRetries: 3,
-    initialDelay: 1000,
-    shouldRetry: isRetryableError
-  }
+    },
+    {
+      maxRetries: 3,
+      initialDelay: 1000,
+      shouldRetry: isRetryableError
+    }
+  )
 );
 ```
 

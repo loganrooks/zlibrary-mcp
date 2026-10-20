@@ -107,9 +107,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `BOOK_SOURCE_READ_TIMEOUT`, `BOOK_SOURCE_TOTAL_TIMEOUT`,
   `BOOK_SOURCE_PREFLIGHT`, `BOOK_SOURCE_PREFLIGHT_TIMEOUT`,
   `PYTHON_BRIDGE_TIMEOUT`, `PYTHON_BRIDGE_LONG_TIMEOUT`,
-  `PYTHON_BRIDGE_KILL_GRACE`. Use valid positive numeric values. The Node runner
-  falls back for invalid timer values, but the Python acquisition path does not
-  yet apply that same validation to `PYTHON_BRIDGE_LONG_TIMEOUT`. See
+  `PYTHON_BRIDGE_KILL_GRACE`. A malformed value falls back to its default rather
+  than disabling the timeout, on the Node runner and on the Python acquisition
+  path for `PYTHON_BRIDGE_LONG_TIMEOUT` alike. See
   [docs/RETRY_CONFIGURATION.md](docs/RETRY_CONFIGURATION.md) for how the Python
   and Node budgets compose.
 
@@ -164,6 +164,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Each provider has its own circuit breaker: Z-Library, LibGen and Anna's Archive
+  (ADR-011). An outage at one no longer refuses the others, and an ordered
+  `["annas","libgen"]` search reaches LibGen while Anna's is down. 1.4.0 ran one
+  breaker for every bridge call.
 - `CONTEXT.md` added as the terminology glossary, splitting the overloaded term
   "keyless" into *keyed fast_download*, *operator-cookie slow_download*, and
   *machine-solved challenge*. The ambiguity had caused approved work to be recorded as

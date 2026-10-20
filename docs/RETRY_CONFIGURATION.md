@@ -54,9 +54,9 @@ the outer Node budget must remain larger than the worst-case inner provider walk
 
 The Node runner falls back to defaults for malformed, non-positive, non-finite,
 and oversized timer values. Node timers accept at most `2,147,483,647`
-milliseconds; that exact value is valid. The Python acquisition path separately
-parses `PYTHON_BRIDGE_LONG_TIMEOUT` and does not yet share that validation:
-use a valid positive numeric value rather than relying on fallback.
+milliseconds; that exact value is valid. The Python acquisition path parses
+`PYTHON_BRIDGE_LONG_TIMEOUT` the same way, with the same trimming and the same
+fallback, so a malformed value never refuses downloads.
 
 Preflight is skipped when `HTTP_PROXY` or `HTTPS_PROXY` covers the target, with
 `NO_PROXY` honored. A direct DNS/TCP socket cannot represent a proxied request;
@@ -158,8 +158,13 @@ Under the [ratified #192 rule](https://github.com/rookslog/zlibrary-mcp/issues/1
 read-timeout, integrity, and mixed permanent/transient details. Python owns its
 provider walk. Transient aggregate leaves still count as dependency-health evidence.
 
-Breakers are independent: EAPI, Library Genesis/Anna/auto (one Python-owned source
-walk). Only positively classified transient health failures count:
+Breakers are independent, one per provider: EAPI, Library Genesis, and Anna's Archive
+([ADR-011](adr/ADR-011-Z-Library-Source-Adapter.md)). Each 2.0 search or download
+bridge call names one source, so an Anna's outage never refuses LibGen, nor the
+reverse; an ordered `["annas","libgen"]` search still reaches LibGen while Anna's is
+open. A bridge-level `auto` walk, which no 2.0 tool sends, covers both providers in
+one Python call and so keeps a fourth breaker of its own. Only positively classified
+transient health failures count:
 transport/timeouts, HTTP 408/429/5xx, integrity failures, and spawn resource pressure.
 HTTP source details need a numeric status or the adapter's exact `HTTP NNN` token;
 unknown statuses/reasons, TLS/config/auth/caller/parse errors, missing interpreter,

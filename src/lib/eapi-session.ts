@@ -258,7 +258,9 @@ export class EapiSessionOwner {
               // Fence late acquisition output only; never invalidate other warm callers.
               if (identity === this.identity && this.generation === input.generation)
                 this.generation++;
-            } else {
+            } else if (error?.code !== 'CIRCUIT_BREAKER_OPEN') {
+              // Admission was refused before login; it is not a login failure
+              // and must not start or extend the owner's cooldown episode.
               this.backoff(identity, error);
             }
             throw error;

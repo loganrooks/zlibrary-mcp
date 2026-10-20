@@ -313,8 +313,9 @@ class TestLibgenAdapterDownload:
         [
             (b"<html>" + b"x" * 600 + b"</html>", "text/html"),
             (b"x" * 100, "application/octet-stream"),
+            (b"x" * 511, "application/octet-stream"),
         ],
-        ids=["html-over-512-bytes", "100-byte-non-pdf"],
+        ids=["html-over-512-bytes", "100-byte-non-pdf", "511-byte-non-pdf"],
     )
     @pytest.mark.asyncio
     async def test_rejected_body_advances_to_next_mirror(
@@ -327,6 +328,8 @@ class TestLibgenAdapterDownload:
             seen.append((request.url.host, request.url.path))
             if request.url.path == "/ads.php":
                 return httpx.Response(200, text=ADS_PAGE_WITH_KEY)
+            assert request.url.path == "/get.php"
+            assert request.headers["Range"] == "bytes=0-2047"
             if request.url.host == "libgen.li":
                 return httpx.Response(
                     200, content=body, headers={"content-type": content_type}
@@ -347,6 +350,29 @@ class TestLibgenAdapterDownload:
             ("libgen.vg", "/ads.php"),
             ("libgen.vg", "/get.php"),
         ]
+
+    @pytest.mark.asyncio
+    async def test_512_byte_non_pdf_is_admitted_without_next_mirror(self, adapter):
+        """A higher floor or PDF-only admission must not reject valid non-PDF bytes."""
+        seen = []
+
+        def handler(request):
+            seen.append((request.url.host, request.url.path))
+            if request.url.path == "/ads.php":
+                return httpx.Response(200, text=ADS_PAGE_WITH_KEY)
+            assert request.url.path == "/get.php"
+            assert request.headers["Range"] == "bytes=0-2047"
+            return httpx.Response(
+                206,
+                content=b"x" * 512 if request.url.host == "libgen.li" else PDF_BYTES,
+                headers={"content-type": "application/octet-stream"},
+            )
+
+        with self._patched_client(handler):
+            result = await adapter.get_download_url(MD5)
+
+        assert result.url == f"https://libgen.li/get.php?md5={MD5}&key=TESTKEY123"
+        assert seen == [("libgen.li", "/ads.php"), ("libgen.li", "/get.php")]
 
     @pytest.mark.asyncio
     async def test_range_ignoring_probe_stops_after_the_inspection_window(

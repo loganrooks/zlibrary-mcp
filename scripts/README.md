@@ -76,3 +76,56 @@ node scripts/check-packed-artifact.mjs --offline-providers --control=drop-transf
 
 The existing pack-check stays; a separate CI job runs this smoke on Ubuntu and
 macOS within the rehearsal job's 15-minute budget.
+
+## Upgrade and rollback check
+
+From a built source checkout:
+
+```bash
+node scripts/check-install-upgrades.mjs --matrix all --offline-providers
+```
+
+Installs **published `zlibrary-mcp@1.4.0` from npm**, runs its documented
+`bash setup-uv.sh`, prepares its public NLTK Punkt resources, then starts the
+actual npm bin against the rehearsal fake. It downloads a synthetic TXT and
+uses the old processing tool to produce real extracted text and metadata.
+It replaces that same local-prefix installation with the candidate tarball,
+runs `bash setup-uv.sh --no-dev`, verifies existing artifact hashes, and checks
+all 13 retired names plus both old download flag values and malformed/format
+arguments. Invalid calls must return `invalid_argument` with recovery guidance
+and `retry:no`, without changing provider counters or output files. New
+LibGen and Z-Library acquisition journeys must succeed. Finally, reinstalling
+registry 1.4.0, preparing its environment again, and restarting/searching must
+succeed with the original artifacts intact.
+
+`RAG_QUALITY_STRATEGY=technical` is adopted by the old processing configuration,
+then retained during candidate calls to show it cannot restore removed tools.
+The receipt reports replacement of an environment-choice canary inside `.venv`;
+package-owned dependencies and diagnostics are not user-artifact preservation
+promises. Files under the disposable user home are hashed, excluding mutable
+egress/debug logs. New files are allowed; no preexisting artifact may change
+or disappear. The check never touches real user configuration or outputs.
+
+The interpreter defaults to **3.13** for the published processing stack;
+`UV_PYTHON` may select an executable. This is separate from the unpinned fresh
+packed-install check. Requires Node22+, uv, Python3.10+ for the setup guard,
+OpenSSL and tar; registry/Python/NLTK dependency downloads are expected during
+setup. Runtime Node/Python fences are self-tested and only admit the fake's
+exact loopback port. No global install, publication, real-provider traffic,
+or migration alias is used. All disposable state is removed in `finally`.
+
+Each destructive-upgrade control runs a real legacy install/seed and candidate
+npm replacement, then simulates a destructive upgrade side effect before the
+preservation check. Each must fail with the corresponding preservation error:
+
+```bash
+node scripts/check-install-upgrades.mjs --offline-providers --control=delete-output
+node scripts/check-install-upgrades.mjs --offline-providers --control=rewrite-output
+node scripts/check-install-upgrades.mjs --offline-providers --control=delete-state
+```
+
+`--matrix all` means all cases in this acquisition-only upgrade check, not the
+historical proposed base/rag/scholar/Text installer matrix. No rag/scholar or
+Text installation is supplied. The current npm manifest still says 1.4.0;
+the check identifies candidate code by its packed hash, distinct runtime bytes
+and exact five-tool 2.0 surface, not a version bump performed by this script.

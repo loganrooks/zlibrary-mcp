@@ -81,3 +81,22 @@ saved options before any subprocess starts. These offline checks do not attest
 to live provider availability or qualify a separately deployed reader. The
 output-root guard is now in the acquisition path; deployment and publication
 remain separate from source-level changes.
+
+## Dropped processing environment settings
+
+`RAG_QUALITY_STRATEGY` configured the 1.4.0 processing pipeline (for example,
+`technical` instead of the default `hybrid`). It has no processing effect in
+2.0 because that pipeline and its tools are absent. Keeping the variable does
+not restore extraction or make a saved processing call valid. Keep processing
+settings with the isolated pinned 1.4.x installation; do not rename them to
+acquisition settings.
+
+The source-checkout upgrade check exercises published npm 1.4.0, a packed
+candidate, and a disposable in-place rollback. It prepares 1.4.0's NLTK data
+before fencing runtime networking, downloads and processes a synthetic TXT
+fixture, and checks the original, extracted text and metadata bytes across npm
+replacement. It reports whether a package-local environment-choice canary was
+replaced; it does not promise to preserve that environment. This rollback
+experiment is not a supported text-restoration command and does not replace
+the separate pinned installation recommendation above. See
+[the check's instructions](../scripts/README.md#upgrade-and-rollback-check).

@@ -62,7 +62,7 @@ export async function inspectInstalledPackage(directory) {
   return { manifest, targets };
 }
 
-async function run(command, args, options = {}) {
+export async function run(command, args, options = {}) {
   process.stdout.write(`> ${command} ${args.join(' ')}\n`);
   try {
     const result = await execute(command, args, {
@@ -94,7 +94,15 @@ export async function packArtifact(destination, env) {
   return path.join(destination, tarballs[0].name);
 }
 
-async function protocolSmoke(bin, cwd, env, expected, version, journey) {
+export async function protocolSmoke(
+  bin,
+  cwd,
+  env,
+  expected,
+  version,
+  journey,
+  { legacy = false } = {},
+) {
   // Spawn the npm-created executable link itself, not node <source>/dist/index.js.
   await access(bin);
   const child = spawn(bin, [], { cwd, env, stdio: ['pipe', 'pipe', 'pipe'] });
@@ -158,6 +166,7 @@ async function protocolSmoke(bin, cwd, env, expected, version, journey) {
   }
   async function call(name, args) {
     const reply = await request('tools/call', { name, arguments: args });
+    assert(!reply.isError, `${name} returned a tool error: ${reply.content[0].text}`);
     const data = JSON.parse(reply.content[0].text);
     assert(
       !reply.isError && !data.error,
@@ -172,7 +181,7 @@ async function protocolSmoke(bin, cwd, env, expected, version, journey) {
       capabilities: {},
       clientInfo: { name: 'packed-install-smoke', version: '1' },
     });
-    assert.equal(initialized.serverInfo.name, 'book-acquisition');
+    assert.equal(initialized.serverInfo.name, legacy ? 'zlibrary-mcp' : 'book-acquisition');
     assert.equal(initialized.serverInfo.version, version);
     child.stdin.write(
       JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }) + '\n',
@@ -184,14 +193,21 @@ async function protocolSmoke(bin, cwd, env, expected, version, journey) {
         arguments: Object.keys(tool.inputSchema.properties ?? {}).sort(),
       }))
       .sort((a, b) => a.name.localeCompare(b.name));
-    assert.deepEqual(surface, expected, 'Installed tools differ from the 2.0 fixture');
-    const data = await call('get_limits', { mode: 'local' });
-    assert.equal(data.sources.libgen.download_available, true);
-    assert.equal(data.sources.zlibrary.configured, Boolean(env.ZLIBRARY_EMAIL));
-    process.stdout.write(
-      `Installed bin: initialize, tools/list (${surface.length} tools), get_limits local passed.\n`,
-    );
-    if (journey) await journey(call);
+    if (expected)
+      assert.deepEqual(surface, expected, 'Installed tools differ from the 2.0 fixture');
+    if (legacy) {
+      assert.equal(surface.length, 13);
+      assert(surface.some((tool) => tool.name === 'process_document_for_rag'));
+      process.stdout.write('Installed legacy bin: initialize and tools/list (13 tools) passed.\n');
+    } else {
+      const data = await call('get_limits', { mode: 'local' });
+      assert.equal(data.sources.libgen.download_available, true);
+      assert.equal(data.sources.zlibrary.configured, Boolean(env.ZLIBRARY_EMAIL));
+      process.stdout.write(
+        `Installed bin: initialize, tools/list (${surface.length} tools), get_limits local passed.\n`,
+      );
+    }
+    if (journey) await journey(call, request);
   } finally {
     child.stdin.end();
     const kill = setTimeout(() => child.kill('SIGTERM'), 1000);
@@ -210,7 +226,7 @@ async function protocolSmoke(bin, cwd, env, expected, version, journey) {
   assert.equal(responses, nextId);
 }
 
-async function acquisitionJourney(call, fake, source, output, dropTransfer) {
+export async function acquisitionJourney(call, fake, source, output, dropTransfer) {
   const zlibrary = source === 'zlibrary';
   const expectedBytes = zlibrary
     ? Buffer.from('Offline rehearsal book 101.\n')

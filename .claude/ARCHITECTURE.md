@@ -27,7 +27,7 @@
 +-----------------------------v-----------------------------+
 |              Python Bridge (lib/)                          |
 |  - python_bridge.py: dispatch, auth, EAPI init             |
-|  - Tool modules (author_tools, term_tools, booklist_tools) |
+|  - Tool modules (author_tools, term_tools)                 |
 |  - Multi-source router (lib/sources/)                      |
 +--------------+-----------------------------+--------------+
                |                             |
@@ -127,7 +127,7 @@ Full index: [docs/adr/README.md](../docs/adr/README.md)
 | Module | Responsibility |
 |--------|---------------|
 | `python_bridge.py` | Main bridge: function dispatch, EAPI init, auth, search, download |
-| `author_tools.py` / `term_tools.py` / `booklist_tools.py` | Author / term / booklist operations via EAPI (booklists degrade gracefully) |
+| `author_tools.py` / `term_tools.py` | Author / term query helpers via EAPI |
 | `enhanced_metadata.py` | Book metadata extraction via EAPI |
 | `filename_utils.py` | Stable acquisition filenames and publication helpers |
 
@@ -224,7 +224,7 @@ zlibrary-mcp/
 - **Credentials**: environment variables only (`ZLIBRARY_EMAIL`, `ZLIBRARY_PASSWORD`, `ANNAS_SECRET_KEY`); never committed
 - **Isolation**: Python bridge runs in UV-managed `.venv/`; download directory configurable
 - **Download safety**: `Content-Disposition` filenames are reduced to a bare basename (posixpath + ntpath) before joining onto the output directory (path-traversal defense)
-- **Resilience**: circuit breaker + retry on all bridge calls; graceful degradation for booklists/terms/IPFS
+- **Resilience**: circuit breaker + retry on all bridge calls; fields EAPI does not supply (terms, booklists, IPFS ids) are omitted, not faked (#256)
 - **Disclosure**: see `SECURITY.md` for reporting policy and the `LOG_LEVEL=debug` caveat
 
 ---

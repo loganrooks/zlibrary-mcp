@@ -1646,7 +1646,7 @@ async def get_book_metadata_complete(book_id: str, book_hash: str = None) -> dic
 # --- Main Execution Block ---
 import argparse  # Moved import here
 
-# ===== PHASE 3: TERM, AUTHOR, AND BOOKLIST TOOLS =====
+# ===== PHASE 3: TERM AND AUTHOR TOOLS =====
 
 
 async def search_by_term_bridge(
@@ -1718,33 +1718,6 @@ async def search_by_author_bridge(
         languages=langs_str,
         extensions=exts_str,
         limit=limit,
-        eapi_client=eapi,
-    )
-
-    return result
-
-
-async def fetch_booklist_bridge(
-    booklist_id: str, booklist_hash: str, topic: str, page: int = 1
-) -> dict:
-    """
-    Fetch a Z-Library booklist via EAPI (degraded: topic search fallback).
-    """
-    from lib import booklist_tools
-
-    eapi = await get_eapi_client()
-
-    logger.info(
-        f"python_bridge.fetch_booklist: id={booklist_id}, hash={booklist_hash}, topic='{topic}'"
-    )
-
-    result = await booklist_tools.fetch_booklist(
-        booklist_id=booklist_id,
-        booklist_hash=booklist_hash,
-        topic=topic,
-        email="",
-        password="",
-        page=page,
         eapi_client=eapi,
     )
 
@@ -2088,8 +2061,6 @@ async def _dispatch_bridge_function(function_name: str, args_dict: dict):
         return await search_by_author_bridge(**args_dict)
     elif function_name == "search_advanced":
         return await search_advanced(**args_dict)
-    elif function_name == "fetch_booklist_bridge":
-        return await fetch_booklist_bridge(**args_dict)
     elif function_name == "get_recent_books":
         return await get_recent_books(**args_dict)
     elif function_name == "eapi_health_check":

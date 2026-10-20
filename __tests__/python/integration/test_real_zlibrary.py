@@ -28,9 +28,25 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "li
 
 from term_tools import search_by_term
 from author_tools import search_by_author
-from booklist_tools import fetch_booklist
 import python_bridge
 
+
+# Keys get_book_metadata_complete may return: the detail fields get_book reports
+# (lib/enhanced_metadata.py) plus the echoed id and hash. No terms, booklists or
+# IPFS ids: EAPI does not expose them (#256).
+DETAIL_FIELDS = {
+    "id",
+    "book_hash",
+    "description",
+    "rating",
+    "series",
+    "categories",
+    "quality_score",
+    "edition",
+    "translator",
+    "isbn_10",
+    "isbn_13",
+}
 
 # Skip all integration tests if credentials not available
 pytestmark = [
@@ -322,90 +338,47 @@ class TestRealAuthorSearch:
 class TestRealMetadataExtraction:
     """Test metadata extraction with real book pages."""
 
-    @pytest.mark.skip(
-        reason="terms and booklists not available via EAPI — were HTML-scraped"
-    )
-    async def test_extract_from_known_book(self, credentials, zlib_client, known_book):
-        """Test metadata extraction from a known good book."""
-        # Hegel's Encyclopaedia - we know this book exists
-        # ID: 1252896, Hash: 882753
-        await asyncio.sleep(1)
+    async def test_detail_matches_get_book_shape(
+        self, credentials, zlib_client, known_book
+    ):
+        """The live detail reply carries only fields get_book can report (#256).
 
-        # Use the isolated client (python_bridge.get_book_metadata_complete doesn't support client param yet)
-        # But the reset_global_client fixture ensures clean state
-        metadata = await python_bridge.get_book_metadata_complete(
-            book_id=known_book["id"], book_hash=known_book["hash"]
-        )
-
-        # Validate core structure
-        assert metadata is not None
-        assert isinstance(metadata, dict)
-
-        # Note: enhanced_metadata extracts ENHANCED fields, not basic fields
-        # Basic fields like title/author come from search results
-        # This function extracts: terms, booklists, description, IPFS, etc.
-
-        # CRITICAL: Validate terms extraction (60+ terms expected)
-        assert "terms" in metadata
-        assert isinstance(metadata["terms"], list)
-        assert len(metadata["terms"]) > 50, (
-            f"Expected 60+ terms, got {len(metadata['terms'])}"
-        )
-
-        # Verify known terms are present (based on actual Hegel book terms)
-        terms_lower = [t.lower() for t in metadata["terms"]]
-        # From our exploration, we know this book has these terms:
-        assert "absolute" in terms_lower, (
-            f"Expected 'absolute' in terms, got: {terms_lower[:10]}"
-        )
-        assert "reflection" in terms_lower or "determination" in terms_lower
-
-        # CRITICAL: Validate booklists extraction (11+ booklists expected)
-        assert "booklists" in metadata
-        assert isinstance(metadata["booklists"], list)
-        assert len(metadata["booklists"]) > 5, (
-            f"Expected 11+ booklists, got {len(metadata['booklists'])}"
-        )
-
-        # Validate booklist structure
-        first_booklist = metadata["booklists"][0]
-        assert "topic" in first_booklist or "name" in first_booklist
-        assert "id" in first_booklist
-        assert "quantity" in first_booklist or "count" in first_booklist
-
-        # Validate description
-        assert "description" in metadata
-        assert len(metadata["description"]) > 500, (
-            f"Expected 800+ char description, got {len(metadata['description'])}"
-        )
-
-        # Log what we got for debugging
-        print("\n=== Metadata Extraction Results ===")
-        print(f"Terms: {len(metadata['terms'])}")
-        print(f"Booklists: {len(metadata['booklists'])}")
-        print(f"Description length: {len(metadata.get('description', ''))}")
-        print(f"Keys in metadata: {list(metadata.keys())}")
-
-    @pytest.mark.skip(reason="IPFS CIDs not available via EAPI — were HTML-scraped")
-    async def test_extract_ipfs_cids(self, credentials, zlib_client, known_book):
-        """Test that IPFS CIDs are extracted."""
+        EAPI exposes no terms, booklists or IPFS ids. Absent upstream values
+        are omitted rather than returned empty, so every key present must hold
+        a value of the documented type.
+        """
         await asyncio.sleep(1)
 
         metadata = await python_bridge.get_book_metadata_complete(
             book_id=known_book["id"], book_hash=known_book["hash"]
         )
 
-        # Should have IPFS CIDs
-        assert "ipfs_cids" in metadata
-        assert isinstance(metadata["ipfs_cids"], list)
-        assert len(metadata["ipfs_cids"]) >= 2, "Expected 2 IPFS CID formats"
+        assert metadata["id"] == known_book["id"]
+        assert metadata["book_hash"] == known_book["hash"]
+        assert set(metadata) <= DETAIL_FIELDS, (
+            f"Unexpected detail fields: {sorted(set(metadata) - DETAIL_FIELDS)}"
+        )
+        # The bridge always echoes id and book_hash; a reply with nothing else
+        # means EAPI dropped or renamed every detail field.
+        assert set(metadata) - {"id", "book_hash"}, (
+            "Live detail reply carried no get_book field besides the identifiers"
+        )
+        for key in ("description", "series", "edition", "translator"):
+            if key in metadata:
+                assert isinstance(metadata[key], str) and metadata[key]
+        for key in ("isbn_10", "isbn_13"):
+            if key in metadata:
+                assert isinstance(metadata[key], str) and metadata[key]
+        if "categories" in metadata:
+            assert metadata["categories"]
+            assert all(set(c) == {"name"} and c["name"] for c in metadata["categories"])
+        if "rating" in metadata:
+            assert isinstance(metadata["rating"]["value"], float)
+            assert set(metadata["rating"]) <= {"value", "count"}
+        if "quality_score" in metadata:
+            assert isinstance(metadata["quality_score"], float)
 
-        # Validate CID format (should be long alphanumeric strings)
-        for cid in metadata["ipfs_cids"]:
-            assert len(cid) > 40, f"CID too short: {cid}"
-            assert cid.startswith("Qm") or cid.startswith("baf"), (
-                f"Unexpected CID format: {cid}"
-            )
+        print(f"\nDetail fields from live EAPI: {sorted(metadata)}")
 
     async def test_extract_rating_data(self, credentials, zlib_client, known_book):
         """Test that rating and quality metrics are extracted."""
@@ -415,12 +388,11 @@ class TestRealMetadataExtraction:
             book_id=known_book["id"], book_hash=known_book["hash"]
         )
 
-        # Rating is None when the book has no rating; when present it is a
-        # dict with value/count (see enhanced_metadata._extract_rating_from_eapi).
-        assert "rating" in metadata
-        if metadata["rating"] is not None:
-            assert "value" in metadata["rating"] or "score" in metadata["rating"]
-            assert "count" in metadata["rating"] or "votes" in metadata["rating"]
+        # Rating is omitted when the book has no rating; when present it is a
+        # dict with value and, if upstream sends it, count
+        # (see enhanced_metadata._extract_rating_from_eapi).
+        if "rating" in metadata:
+            assert "value" in metadata["rating"]
 
     @pytest.mark.skip(
         reason="download link not part of EAPI metadata — downloads flow "
@@ -460,82 +432,6 @@ class TestRealMetadataExtraction:
         # Verify we got data despite speed
         assert metadata is not None
         assert isinstance(metadata, dict)
-
-
-@pytest.mark.integration
-class TestRealBooklistFetching:
-    """Test booklist fetching with real Z-Library."""
-
-    async def test_fetch_known_booklist(self, credentials, zlib_client):
-        """Should fetch a known booklist (Philosophy list)."""
-        await asyncio.sleep(1)
-
-        result = await fetch_booklist(
-            booklist_id="409997",
-            booklist_hash="370858",
-            topic="philosophy",
-            email=credentials["email"],
-            password=credentials["password"],
-            page=1,
-            eapi_client=zlib_client,
-        )
-
-        # Verify structure
-        assert "metadata" in result
-        assert "books" in result
-        assert "booklist_id" in result
-
-        # Verify we got books
-        assert len(result["books"]) > 0, "Philosophy booklist should have books"
-
-        # Verify metadata extraction worked
-        assert "name" in result["metadata"] or "total_books" in result["metadata"]
-
-        # Validate book structure
-        first_book = result["books"][0]
-        assert "title" in first_book
-        assert first_book["title"] != ""
-
-    async def test_booklist_pagination(self, credentials, zlib_client):
-        """Should support paginating through large booklists."""
-        await asyncio.sleep(1)
-
-        # Fetch page 1
-        page1 = await fetch_booklist(
-            booklist_id="409997",
-            booklist_hash="370858",
-            topic="philosophy",
-            email=credentials["email"],
-            password=credentials["password"],
-            page=1,
-            eapi_client=zlib_client,
-        )
-
-        await asyncio.sleep(2)  # Longer delay between requests
-
-        # Fetch page 2
-        page2 = await fetch_booklist(
-            booklist_id="409997",
-            booklist_hash="370858",
-            topic="philosophy",
-            email=credentials["email"],
-            password=credentials["password"],
-            page=2,
-            eapi_client=zlib_client,
-        )
-
-        # Both should have results
-        assert len(page1["books"]) > 0
-        assert len(page2["books"]) > 0
-
-        # Page 2 should have different books than page 1
-        page1_ids = {b.get("id", b.get("href")) for b in page1["books"]}
-        page2_ids = {b.get("id", b.get("href")) for b in page2["books"]}
-
-        # Some books should be different (allowing for some overlap)
-        assert len(page1_ids & page2_ids) < len(page1_ids), (
-            "Pages should have mostly different books"
-        )
 
 
 @pytest.mark.integration

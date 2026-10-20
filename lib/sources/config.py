@@ -10,6 +10,7 @@ Environment variables:
     BOOK_SOURCE_READ_TIMEOUT: Response-read budget, seconds (default: 30)
     BOOK_SOURCE_TOTAL_TIMEOUT: Per-provider wall-clock budget, seconds (default: 45)
     BOOK_SOURCE_DOWNLOAD_TIMEOUT: Full source-file transfer budget, seconds (default: 1500)
+    BOOK_SOURCE_DOWNLOAD_RESUME_ATTEMPTS: Extra same-call transfer attempts (default: 2, max: 10)
     BOOK_SOURCE_PREFLIGHT: Probe host reachability before searching (default: true)
     BOOK_SOURCE_PREFLIGHT_TIMEOUT: Budget per probe phase, seconds (default: 5)
 """
@@ -154,6 +155,7 @@ class SourceConfig:
         read_timeout: Seconds allowed to read a response
         total_timeout: Seconds allowed for a whole provider operation
         download_timeout: Seconds allowed for a complete source-file transfer
+        download_resume_attempts: Extra same-call transfer attempts after partial progress
         preflight_enabled: Probe host reachability before the real request
         preflight_timeout: Seconds allowed for each probe phase
         walk_budget: Seconds allowed for a WHOLE walk, across every
@@ -175,6 +177,7 @@ class SourceConfig:
     preflight_timeout: float = DEFAULT_PREFLIGHT_TIMEOUT
     walk_budget: float = DEFAULT_WALK_BUDGET
     bridge_overhead: float = WALK_OVERHEAD_ALLOWANCE
+    download_resume_attempts: int = 2
 
     @property
     def has_annas_key(self) -> bool:
@@ -225,6 +228,15 @@ def _positive_float(name: str, default: float) -> float:
     except ValueError:
         return default
     return value if math.isfinite(value) and value > 0 else default
+
+
+def _resume_attempts() -> int:
+    """Zero disables recovery; invalid budgets default to two, capped at ten."""
+    try:
+        value = int(os.environ.get("BOOK_SOURCE_DOWNLOAD_RESUME_ATTEMPTS", "2"))
+    except ValueError:
+        return 2
+    return min(value, 10) if value >= 0 else 2
 
 
 def get_preflight_timeout() -> float:
@@ -298,6 +310,7 @@ def get_source_config(*, for_download: bool = False) -> SourceConfig:
         download_timeout=(
             min(download_timeout, available) if for_download else download_timeout
         ),
+        download_resume_attempts=_resume_attempts(),
         preflight_enabled=os.environ.get("BOOK_SOURCE_PREFLIGHT", "true").lower()
         == "true",
         preflight_timeout=get_preflight_timeout(),

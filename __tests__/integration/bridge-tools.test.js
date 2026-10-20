@@ -1,5 +1,5 @@
 /**
- * Integration tests for all 11 MCP tools via the Python bridge.
+ * Integration tests for Python bridge operations, keyed by the tool that used them.
  *
  * Modes:
  *   - Recorded (default): Uses static JSON fixtures, no network needed.
@@ -26,10 +26,9 @@ const TOOL_BRIDGE_MAP = {
   'get_download_history':     { fn: 'get_download_history',      minArgs: { count: 1 },                fixture: 'get_download_history.json' },
   'get_download_limits':      { fn: 'get_download_limits',       minArgs: {},                          fixture: 'get_download_limits.json' },
   'download_book_to_file':    { fn: 'download_book',             minArgs: { book_details: { url: '/book/1/abc', id: '1' }, output_dir: '/tmp' }, fixture: 'download_book.json' },
-  'get_book_metadata':        { fn: 'get_book_metadata_complete', minArgs: { book_id: '1', book_hash: 'abc' },                                  fixture: 'get_book_metadata_complete.json' },
+  'get_book':                 { fn: 'get_book_metadata_complete', minArgs: { book_id: '1', book_hash: 'abc' },                                  fixture: 'get_book_metadata_complete.json' },
   'search_by_term':           { fn: 'search_by_term_bridge',     minArgs: { term: 'test' },            fixture: 'search_by_term_bridge.json' },
   'search_by_author':         { fn: 'search_by_author_bridge',   minArgs: { author: 'test' },          fixture: 'search_by_author_bridge.json' },
-  'fetch_booklist':           { fn: 'fetch_booklist_bridge',     minArgs: { booklist_id: '1', booklist_hash: 'abc', topic: 'test' }, fixture: 'fetch_booklist_bridge.json' },
   'search_advanced':          { fn: 'search_advanced',           minArgs: { query: 'test' },           fixture: 'search_advanced.json' },
 };
 
@@ -112,17 +111,14 @@ describe('Bridge Integration Tests', () => {
                 outputDir: '/tmp',
               });
               break;
-            case 'get_book_metadata':
-              result = await zlibApi.getBookMetadata('1', 'abc');
+            case 'get_book':
+              result = await zlibApi.invokeAcquisitionBridge('get_book_metadata_complete', { book_id: '1', book_hash: 'abc' });
               break;
             case 'search_by_term':
               result = await zlibApi.searchByTerm({ term: 'test' });
               break;
             case 'search_by_author':
               result = await zlibApi.searchByAuthor({ author: 'test' });
-              break;
-            case 'fetch_booklist':
-              result = await zlibApi.fetchBooklist({ booklistId: '1', booklistHash: 'abc', topic: 'test' });
               break;
             case 'search_advanced':
               result = await zlibApi.searchAdvanced({ query: 'test' });
@@ -179,9 +175,9 @@ describe('Bridge Integration Tests', () => {
               console.log('  [SKIP] download_book_to_file requires real book details');
               results.push({ tool: toolName, mode: 'live', status: 'SKIP', error: 'requires real book details' });
               return;
-            case 'get_book_metadata':
+            case 'get_book':
               // Skip — requires valid book_id/hash
-              console.log('  [SKIP] get_book_metadata requires valid book_id');
+              console.log('  [SKIP] get_book requires valid book_id');
               results.push({ tool: toolName, mode: 'live', status: 'SKIP', error: 'requires valid book_id' });
               return;
             case 'search_by_term':
@@ -190,11 +186,6 @@ describe('Bridge Integration Tests', () => {
             case 'search_by_author':
               result = await zlibApi.searchByAuthor({ author: 'Kant' });
               break;
-            case 'fetch_booklist':
-              // Skip — requires valid booklist URL
-              console.log('  [SKIP] fetch_booklist requires valid booklist');
-              results.push({ tool: toolName, mode: 'live', status: 'SKIP', error: 'requires valid booklist' });
-              return;
             case 'search_advanced':
               result = await zlibApi.searchAdvanced({ query: 'philosophy' });
               break;

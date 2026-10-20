@@ -115,6 +115,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `get_book` no longer names `terms`, `booklists` or `ipfs_cids` in `evidence.detail`:
+  EAPI exposes none of them, and the detail reply now carries only fields upstream
+  actually sent. Empty `categories`, the empty category `url` and a `rating.count`
+  absent upstream are no longer invented. Each reported field is pinned by an offline
+  EAPI-shaped fixture, and the live canary asserts the 2.0 detail shape instead of
+  skipping its terms, booklist and IPFS checks (#256).
+- Removed the internal `fetch_booklist_bridge` operation and the `getBookMetadata`
+  and `fetchBooklist` wrappers, which only the retired `fetch_booklist` and
+  `get_book_metadata` tools reached. Neither is an MCP tool; see
+  [tool migration](docs/interface-migration.md) for those.
 - The release audit distinguishes explicit patch milestones from minor slots, so an
   untagged `v1.4.1` is not treated as already shipped by `v1.4.0`. Exact patch milestones
   own matching tags; legacy minor-only records still work. The PR-age rule is unchanged.

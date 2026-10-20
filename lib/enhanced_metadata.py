@@ -1,13 +1,13 @@
 """
 Enhanced metadata extraction for Z-Library books via EAPI.
 
-Extracts comprehensive metadata from the EAPI /book/{id}/{hash} endpoint
-including: description, categories, ISBNs, series, rating, publisher, pages.
+Extracts the detail fields get_book can report from the EAPI
+/book/{id}/{hash} endpoint: description, categories, ISBN, series, edition,
+translator, rating and quality score.
 
-Some fields previously available via HTML scraping (terms, booklists, IPFS CIDs)
-are not available through the EAPI and are returned as empty/None.
-
-Implementation migrated from HTML scraping to EAPI JSON access.
+Only fields the reply actually carries are returned; an absent or empty upstream
+value leaves its key out. EAPI exposes no terms, booklists or IPFS ids, so this
+module returns none (#256).
 """
 
 import logging
@@ -30,63 +30,48 @@ def extract_metadata_from_eapi(
     """
     Extract enhanced metadata from an EAPI book info response.
 
-    Maps EAPI JSON fields to the existing metadata return format.
-
     Args:
         book_info: Raw response from EAPIClient.get_book_info()
         mirror_url: Base URL for constructing full URLs (unused with EAPI)
 
     Returns:
-        Dictionary with comprehensive metadata matching the legacy format
+        Dictionary holding only the detail fields present in the reply
     """
     if not book_info:
-        return _empty_metadata()
+        return {}
 
     # The EAPI response contains the book data directly or under a "book" key
     book = book_info.get("book", book_info)
 
     try:
         metadata = {
-            # Tier 1: Essential
             "description": book.get("description") or None,
-            "terms": [],  # Not available via EAPI
-            "booklists": [],  # Not available via EAPI; see booklist_tools.py for enriched topic search fallback
-            # Tier 2: Important
             "rating": _extract_rating_from_eapi(book),
-            "ipfs_cids": [],  # Not available via EAPI
             "series": book.get("series") or None,
-            "categories": _extract_categories_from_eapi(book),
-            # Tier 3: Optional
+            "categories": _extract_categories_from_eapi(book) or None,
             "quality_score": _safe_float(book.get("qualityScore")),
+            "edition": book.get("edition") or None,
+            "translator": book.get("translator") or None,
         }
-
-        # Preserve edition evidence only when the upstream actually exposes it.
-        for field in ("edition", "translator"):
-            if book.get(field):
-                metadata[field] = book[field]
 
         # ISBNs
         isbn = book.get("isbn", "") or ""
-        metadata["isbn_10"] = None
-        metadata["isbn_13"] = None
         if isbn:
             cleaned = isbn.replace("-", "").strip()
-            if len(cleaned) == 13:
-                metadata["isbn_13"] = isbn
-            elif len(cleaned) == 10:
+            if len(cleaned) == 10:
                 metadata["isbn_10"] = isbn
             else:
-                # Store in isbn_13 as default
+                # Thirteen digits, or an unrecognised length stored as ISBN-13
                 metadata["isbn_13"] = isbn
 
         logger.info(
             "Extracted EAPI metadata for book: %s", book.get("title", "unknown")
         )
-        return metadata
+        return {key: value for key, value in metadata.items() if value is not None}
 
     except Exception as e:
         logger.error(f"Error extracting EAPI metadata: {e}")
-        return _empty_metadata()
+        return {}
 
 
 async def get_enhanced_metadata(
@@ -100,9 +85,6 @@ async def get_enhanced_metadata(
     """
     Fetch and extract enhanced metadata for a book via EAPI.
 
-    This is the main entry point, replacing the old HTML-based
-    extract_complete_metadata() function.
-
     Args:
         book_id: Z-Library book ID
         book_hash: Z-Library book hash
@@ -112,7 +94,7 @@ async def get_enhanced_metadata(
         eapi_client: Optional pre-authenticated EAPIClient instance
 
     Returns:
-        Dictionary with comprehensive metadata
+        Dictionary holding only the detail fields present in the reply
     """
     client = eapi_client
     should_close = False
@@ -134,38 +116,16 @@ async def get_enhanced_metadata(
             await client.close()
 
 
-# Legacy compatibility alias
-def extract_complete_metadata(
-    html: str = None, mirror_url: str = None, **kwargs
-) -> Dict[str, Any]:
-    """
-    Legacy compatibility wrapper.
-
-    Previously parsed HTML; now returns empty metadata since HTML parsing
-    is removed. Use get_enhanced_metadata() with EAPI client instead.
-    """
-    logger.warning(
-        "extract_complete_metadata() is deprecated. Use get_enhanced_metadata() with EAPI client."
-    )
-    return _empty_metadata()
-
-
-# Keep extract_description as a no-op for backward compat with python_bridge imports
-def extract_description(html: str = None) -> Optional[str]:
-    """Deprecated: Use get_enhanced_metadata() via EAPI instead."""
-    return None
-
-
 def _extract_rating_from_eapi(book: dict) -> Optional[Dict[str, Any]]:
     """Extract rating info from EAPI book data."""
     rating_val = book.get("rating")
     if rating_val is None:
         return None
     try:
-        return {
-            "value": float(rating_val),
-            "count": int(book.get("ratingCount", 0)),
-        }
+        rating = {"value": float(rating_val)}
+        if book.get("ratingCount") is not None:
+            rating["count"] = int(book["ratingCount"])
+        return rating
     except (ValueError, TypeError):
         return None
 
@@ -176,9 +136,9 @@ def _extract_categories_from_eapi(book: dict) -> List[Dict[str, str]]:
     if not categories:
         return []
     if isinstance(categories, list):
-        return [{"name": str(c), "url": ""} for c in categories]
+        return [{"name": str(c)} for c in categories if c]
     if isinstance(categories, str):
-        return [{"name": categories, "url": ""}]
+        return [{"name": categories}]
     return []
 
 
@@ -190,19 +150,3 @@ def _safe_float(value) -> Optional[float]:
         return float(value)
     except (ValueError, TypeError):
         return None
-
-
-def _empty_metadata() -> Dict[str, Any]:
-    """Return empty metadata structure with default values."""
-    return {
-        "description": None,
-        "terms": [],
-        "booklists": [],
-        "rating": None,
-        "ipfs_cids": [],
-        "series": None,
-        "categories": [],
-        "isbn_10": None,
-        "isbn_13": None,
-        "quality_score": None,
-    }

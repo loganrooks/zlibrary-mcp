@@ -1,3 +1,5 @@
+> Historical (1.x, HTML era): the terms, booklists and IPFS ids described here are not exposed by Z-Library's API and are not returned in 2.0 (#256). Current `get_book` fields are in [api.md](api.md); retired tools are in [tool migration](interface-migration.md).
+
 # Z-Library MCP Research Tools Specification
 
 **Version**: 2.0

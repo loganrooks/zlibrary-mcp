@@ -34,7 +34,7 @@ const eapiSessions = new EapiSessionOwner();
 
 // Python owns alternative-source failover, so LibGen/Anna/auto share one scope.
 const dependencyBreakers = Object.fromEntries(
-  ['eapi', 'libgen', 'local'].map((scope) => [
+  ['eapi', 'libgen'].map((scope) => [
     scope,
     new CircuitBreaker({
       threshold: parseInt(process.env.CIRCUIT_BREAKER_THRESHOLD || '5'),
@@ -47,9 +47,9 @@ const dependencyBreakers = Object.fromEntries(
 );
 
 /**
- * Bridge functions whose work is bounded by file size and CPU, not by a
- * network round trip. Downloading a large book and OCR-ing a scanned one both
- * routinely outrun the ordinary budget, and killing them would turn a slow
+ * Bridge functions whose work is bounded by file size, not by a single
+ * network round trip. Downloading a large book can routinely outrun the
+ * ordinary budget, and killing it would turn a slow
  * success into a hard failure — the opposite of what the budget is for. They
  * are still bounded (PYTHON_BRIDGE_LONG_TIMEOUT), just far more generously.
  */
@@ -71,7 +71,7 @@ function defaultTimeoutFor(functionName: string): number | undefined {
 export interface CallOptions {
   /**
    * Wall-clock budget in ms. Defaults to PYTHON_BRIDGE_TIMEOUT, or
-   * PYTHON_BRIDGE_LONG_TIMEOUT for download/processing calls.
+   * PYTHON_BRIDGE_LONG_TIMEOUT for download calls.
    */
   timeoutMs?: number;
   /** Abort signal from the MCP request, so a cancelled call kills the child. */
@@ -93,8 +93,7 @@ async function callPythonFunction(
   args: Record<string, any> = {},
   callOptions: CallOptions = {},
 ): Promise<any> {
-  const nonEapiScope = functionName === 'process_document' ? 'local' : 'libgen';
-  const breaker = dependencyBreakers[needsEapi(functionName, args) ? 'eapi' : nonEapiScope]!;
+  const breaker = dependencyBreakers[needsEapi(functionName, args) ? 'eapi' : 'libgen']!;
   const configuredEnv = { ...process.env };
   const identity = configuredEnv.ZLIBRARY_EMAIL || '';
   const reuse = needsEapi(functionName, args) && getSessionMode() === 'memory';

@@ -201,6 +201,30 @@ jobs:
       - uses: ./.github/actions/setup
       - run: node scripts/check-packed-artifact.mjs --offline-providers
 
+  install-upgrades:
+    name: Published install upgrade/rollback (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          lfs: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      # Legacy 1.4.0's processing stack needs its own supported interpreter lane.
+      # The separate packed-install job still exercises the runner's default.
+      - uses: astral-sh/setup-uv@v7
+        with:
+          python-version: '3.13'
+      - run: npm ci
+      - run: npm run build
+      - run: node scripts/check-install-upgrades.mjs --matrix all --offline-providers
+
   docs-check:
     runs-on: ubuntu-latest
     steps:

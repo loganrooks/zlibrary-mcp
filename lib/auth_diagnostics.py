@@ -178,6 +178,14 @@ class DiagnosticLogFilter(logging.Filter):
     """
 
     def filter(self, record):
+        # Handler filters also see unrelated records propagated to root.
+        if not (
+            record.name == "zlibrary"
+            or record.name.startswith("zlibrary.")
+            or record.name == "lib.enhanced_metadata"
+            or record.name.startswith("lib.enhanced_metadata.")
+        ):
+            return True
         diagnostics = read_diagnostics(getattr(record, "auth_diagnostics", None))
         if diagnostics is None:
             return False

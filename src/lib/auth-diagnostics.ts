@@ -86,6 +86,15 @@ export function authDiagnosticsFor(
 export function safeEapiFailureEnvelope(value: any): Record<string, any> | undefined {
   const diagnostics = readAuthDiagnostics(value?.diagnostics);
   if (!diagnostics) {
+    // main validates arguments before authentication. Preserve the typed local
+    // verdict only when diagnostics are absent, never when a record was rejected.
+    // Do not retain its argument-bearing exception message.
+    if (['ValueError', 'TypeError'].includes(value?.type) && !('diagnostics' in value))
+      return {
+        error: 'Invalid bridge arguments',
+        type: value.type,
+        details: { reason: 'invalid_argument', request_issued: false },
+      };
     // A lazy acquisition can refuse a local receipt/output before requesting EAPI.
     // Keep that original typed decision, but never its arbitrary message/path.
     const messages: Record<string, string> = {

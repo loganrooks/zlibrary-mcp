@@ -1,6 +1,7 @@
 import { expect, test } from '@jest/globals';
 import { readFileSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { join } from 'node:path';
 import ts from 'typescript';
 import { authDiagnosticsFor, safeEapiFailureEnvelope } from '../lib/auth-diagnostics.js';
@@ -69,19 +70,21 @@ function acquisitionReasons() {
   expect(reasons.length).toBeGreaterThan(0);
   return reasons;
 }
-function python(code, args = []) {
+async function python(code, args = []) {
   return JSON.parse(
-    execFileSync(join(process.cwd(), '.venv/bin/python'), ['-c', code, ...args], {
-      encoding: 'utf8',
-      env: { ...process.env, PYTHONPATH: join(process.cwd(), 'lib') },
-    }),
+    (
+      await promisify(execFile)(join(process.cwd(), '.venv/bin/python'), ['-c', code, ...args], {
+        encoding: 'utf8',
+        env: { ...process.env, PYTHONPATH: join(process.cwd(), 'lib') },
+      })
+    ).stdout,
   );
 }
 
 test('transient type parity: Python, TypeScript and retry policy preserve the same names', async () => {
   const retryTypes = sourcePolicy('src/lib/retry-manager.ts', 'error.context?.pythonErrorType');
   const tsTypes = sourcePolicy('src/lib/auth-diagnostics.ts', 'value.type');
-  const py = python(
+  const py = await python(
     `import json, sys, zlibrary
 from auth_diagnostics import FAILURE_TYPES, failure_type
 projected = {name: failure_type(type(name, (Exception,), {})()) for name in json.loads(sys.argv[1])}
@@ -113,9 +116,9 @@ print(json.dumps({'origin': zlibrary.__file__, 'types': sorted(FAILURE_TYPES),
   );
 });
 
-test('acquisition reason parity preserves Python/TypeScript envelopes, codes and recovery', () => {
+test('acquisition reason parity preserves Python/TypeScript envelopes, codes and recovery', async () => {
   const reasons = acquisitionReasons();
-  const py = python(
+  const py = await python(
     `import asyncio, contextlib, io, json, sys
 import python_bridge as bridge
 from lib.acquisition import AcquisitionError
@@ -235,4 +238,23 @@ test('ordinary transport fallback uses an existing code and preserves timeout/ab
   });
   expect(errorEnvelope(abort, 'download', 'zlibrary').error.code).toBe('cancelled');
   expect(isRetryableError(abort)).toBe(false);
+});
+
+// These consumers have their own closed lists beyond the bridge projection and
+// retry policy. Every listed type must survive both language boundaries.
+test.each([
+  ['src/lib/auth-diagnostics.ts', 'type'],
+  ['src/lib/tool-errors.ts', 'context.pythonErrorType'],
+])('closed consumer type parity covers %s (%s)', async (file, argument) => {
+  const types = [...new Set(sourcePolicy(file, argument))];
+  const projected = await python(
+    `import json, sys
+from auth_diagnostics import failure_type
+print(json.dumps({name: failure_type(type(name, (Exception,), {})()) for name in json.loads(sys.argv[1])}))`,
+    [JSON.stringify(types)],
+  );
+  for (const type of types) {
+    expect(projected[type]).toBe(type);
+    expect(safeEapiFailureEnvelope({ type, diagnostics }).type).toBe(type);
+  }
 });

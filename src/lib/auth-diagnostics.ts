@@ -87,8 +87,9 @@ export function safeEapiFailureEnvelope(value: any): Record<string, any> | undef
   const diagnostics = readAuthDiagnostics(value?.diagnostics);
   if (!diagnostics) {
     // main validates arguments before authentication. Preserve the typed local
-    // verdict without retaining its argument-bearing exception message.
-    if (['ValueError', 'TypeError'].includes(value?.type))
+    // verdict only when diagnostics are absent, never when a record was rejected.
+    // Do not retain its argument-bearing exception message.
+    if (['ValueError', 'TypeError'].includes(value?.type) && !('diagnostics' in value))
       return {
         error: 'Invalid bridge arguments',
         type: value.type,

@@ -261,7 +261,12 @@ class SourceRouter:
         """Flatten candidate streams, crossing providers only for ``auto``."""
         candidates = self._download_candidates(source)
         failures: List[SourceError] = []
-        deadline = WalkDeadline(self.config.walk_budget)
+        from lib.acquisition import _remaining_transfer_budget
+
+        deadline = WalkDeadline(
+            _remaining_transfer_budget(self.config.walk_budget),
+            remaining_limit=_remaining_transfer_budget,
+        )
 
         for name in candidates:
             provider_stream = None

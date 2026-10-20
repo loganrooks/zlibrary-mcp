@@ -1644,9 +1644,11 @@ async def _fetch_from_source(book_details: dict, output_dir: str) -> str:
         active_host = host
 
     try:
+        from lib.acquisition import _remaining_transfer_budget
+
         return await bounded_await(
             acquire(),
-            config.download_timeout,
+            _remaining_transfer_budget(config.download_timeout),
             provider=selection,
             host=active_host,
             operation="download",

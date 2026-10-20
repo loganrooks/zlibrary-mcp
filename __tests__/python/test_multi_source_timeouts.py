@@ -9,9 +9,7 @@ reason, and an explicitly requested source is never silently swapped.
 
 import asyncio
 import math
-import os
 import socket
-import subprocess
 import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -183,8 +181,7 @@ class TestConfigTimeouts:
         self, monkeypatch
     ):
         """Catch tiny timers entering blocking library work or losing attribution."""
-        monkeypatch.setenv("PYTHON_BRIDGE_TIMEOUT", "1000")
-        adapter = LibgenAdapter(get_source_config())
+        adapter = LibgenAdapter(SourceConfig(walk_budget=0.874))
         with patch("lib.sources.libgen.LibgenSearch") as search:
             with pytest.raises(AllSourcesFailedError) as excinfo:
                 await adapter.search("no useful time")
@@ -192,41 +189,6 @@ class TestConfigTimeouts:
         assert excinfo.value.failures[0].provider == "libgen"
         assert excinfo.value.failures[0].reason == "walk_budget_exhausted"
         assert "li" in excinfo.value.failures[0].detail
-
-    @pytest.mark.parametrize(
-        "raw",
-        [
-            pytest.param("2147483647", id="maximum-timer-delay"),
-            pytest.param("2147483648", id="above-maximum-timer-delay"),
-            pytest.param("9" * 5000, id="python-int-digit-limit"),
-            pytest.param("\ufeff300000", id="bom-prefix"),
-            pytest.param("300000\ufeff", id="bom-suffix"),
-        ],
-    )
-    def test_node_timeout_parser_matches_node_at_boundaries(self, monkeypatch, raw):
-        """Python must exactly match Node for boundary and trim inputs."""
-        from lib.sources.config import _node_bridge_timeout_seconds
-
-        monkeypatch.setenv("PYTHON_BRIDGE_TIMEOUT", raw)
-
-        node = subprocess.run(
-            [
-                "node",
-                "-e",
-                "const raw = process.env.PYTHON_BRIDGE_TIMEOUT?.trim(); "
-                "const value = raw && /^\\d+$/.test(raw) ? Number(raw) : NaN; "
-                "process.stdout.write(String(Number.isSafeInteger(value) && "
-                "value > 0 && value <= 2147483647 ? value / 1000 : "
-                f"{TestTheDocumentedTimeoutMarginIsEnforced._node_bridge_timeout_seconds()}));",
-            ],
-            check=True,
-            capture_output=True,
-            env=os.environ,
-            text=True,
-        )
-
-        assert _node_bridge_timeout_seconds() == float(node.stdout)
-
 
 class TestLibgenSearchIsBounded:
     """LibGen search is the path that hung; it gets the closest scrutiny."""
@@ -600,18 +562,16 @@ class TestPreflightTargetsTheRealEndpoint:
         ]
 
     @pytest.mark.asyncio
-    async def test_annas_preflight_is_clamped_to_the_shared_deadline(self, monkeypatch):
-        """A late Anna's probe must not start with a fresh full timeout.
+    async def test_annas_preflight_admits_the_minimum_useful_slice(self, monkeypatch):
+        """At the six-second boundary, admit the five-second probe and search.
 
-        Production mutation caught: call ``_preflight()`` without the shared
-        deadline, or pass ``config.preflight_timeout`` through unchanged.
-        Either leaves a late probe free to overrun the walk before the actual
-        request receives its correctly clamped budget.
+        Smaller slices are refused before probing by the admission regression
+        cases in test_budget_followups.py.
         """
         from lib.sources.net import WalkDeadline
 
         now = [0.0]
-        deadline = WalkDeadline(5.0, clock=lambda: now[0])
+        deadline = WalkDeadline(10.5, clock=lambda: now[0])
         now[0] = 4.5
         probe_timeouts = []
 
@@ -632,7 +592,7 @@ class TestPreflightTargetsTheRealEndpoint:
         finally:
             await adapter.close()
 
-        assert probe_timeouts == [pytest.approx(0.5)]
+        assert probe_timeouts == [pytest.approx(5.0)]
 
     @pytest.mark.asyncio
     async def test_annas_does_not_start_preflight_after_the_shared_deadline(

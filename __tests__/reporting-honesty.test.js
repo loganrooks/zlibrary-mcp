@@ -3,6 +3,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 const runFile = promisify(execFile);
 import { AcquisitionTools } from '../dist/lib/acquisition-tools.js';
+import * as acquisitionModule from '../dist/lib/acquisition-tools.js';
 
 // These checks exercise reporting, with only provider calls replaced.
 const credentials = {
@@ -40,7 +41,7 @@ print(json.dumps(asyncio.run(python_bridge.get_download_limits())))
   expect(invoke.mock.calls.filter(([op]) => op === 'get_download_limits')).toHaveLength(1);
 });
 
-// Both keyed and search-only reports must reject unusable/untrusted configuration.
+// Both keyed and search-only reports must reject unusable configuration.
 const badBases = [
   '', '   ', '\t\n', 'http://', 'https://', '/path/only', 'urn:isbn:0451450523',
   'ftp://annas-archive.gl', 'annas-archive.gl', 'http://[', 'http://]',
@@ -51,7 +52,6 @@ const badBases = [
   'https://annas-archive.gl?x=1', 'https://annas-archive.gl#x',
   'https://annas-archive.gl?', 'https://annas-archive.gl#',
   'https://annas-archive.%67l', 'https://%61nnas-archive.gl',
-  'https://annas-archive.li', 'https://annas-archive.gl.evil.invalid',
   'https://annas-archive.gl@evil.invalid', 'https://user:synthetic-secret@annas-archive.gl',
   'https://annas-archive.gl\\@evil.invalid',
 ];
@@ -64,6 +64,7 @@ for (const key of ['', 'synthetic-secret']) {
       expect(result.sources.annas).toMatchObject({
         configured: false, search_available: false, download_available: false,
       });
+      expect(result.sources.annas.note).toMatch(/base.*unusable/i);
       expect(JSON.stringify(result)).not.toMatch(/synthetic-secret|evil\.invalid/);
     }
     const search = await tools.call('search', { query: 'book', sources: ['annas'] });
@@ -71,6 +72,50 @@ for (const key of ['', 'synthetic-secret']) {
     expect(invoke).not.toHaveBeenCalled();
   });
 }
+
+// Trust protects the download key; a usable search URL need not be allowlisted.
+for (const key of ['', 'synthetic-secret']) {
+  test.each([
+    'https://annas-archive.li', 'https://annas-archive.gl.evil.invalid',
+    'http://localhost:8080', 'http://localhost:8080/annas',
+    'http://[::1]:8080/prefix/',
+  ])('Anna searches usable untrusted base %j with key ' + Boolean(key), async base => {
+    const invoke = jest.fn(async () => ({ books: [] }));
+    const tools = new AcquisitionTools(invoke, { ANNAS_BASE_URL: base, ANNAS_SECRET_KEY: key });
+    for (const mode of ['local', 'live']) {
+      const result = await tools.call('get_limits', { mode, sources: ['annas'] });
+      expect(result.sources.annas).toMatchObject({
+        configured: false, search_available: true, download_available: false,
+      });
+      expect(result.sources.annas.note).toMatch(/base.*not trusted.*key/i);
+      expect(JSON.stringify(result)).not.toMatch(/synthetic-secret|evil\.invalid/);
+    }
+    expect(invoke).not.toHaveBeenCalled();
+    const search = await tools.call('search', { query: 'book', sources: ['annas'] });
+    expect(search).not.toHaveProperty('error');
+    expect(search.rows).toEqual([]);
+    expect(search.routing.attempts).toEqual([{ source: 'annas', outcome: 'empty' }]);
+    expect(invoke).toHaveBeenCalledWith('search_multi_source',
+      { query: 'book', source: 'annas', count: 50 }, {});
+  });
+}
+
+test.each([
+  ['http://', '', ['ANNAS_BASE_URL', 'ANNAS_SECRET_KEY']],
+  ['http://', 'synthetic-key', ['ANNAS_BASE_URL']],
+  ['http://localhost:8080', '', ['ANNAS_BASE_URL', 'ANNAS_SECRET_KEY']],
+  ['http://localhost:8080', 'synthetic-key', ['ANNAS_BASE_URL']],
+  ['https://annas-archive.gl', '', ['ANNAS_SECRET_KEY']],
+])('Anna download guard lists every missing requirement for %j with key %j',
+  (base, key, variables) => {
+    const tools = new AcquisitionTools(jest.fn(), { ANNAS_BASE_URL: base, ANNAS_SECRET_KEY: key });
+    // The public download delegates admission to Python after offline receipt reuse.
+    expect(() => tools.configured('annas', true)).toThrow(expect.objectContaining({
+      code: 'credentials_missing', info: expect.objectContaining({
+        detail: { reason: 'configuration_error', variables },
+      }),
+    }));
+  });
 
 test('supported operations are symmetric across configured and unconfigured sources', async () => {
   const invoke = jest.fn();
@@ -133,6 +178,7 @@ from lib.sources.config import ANNAS_TRUSTED_HOSTS, DEFAULT_ANNAS_BASE_URL
 print(json.dumps({'hosts': sorted(ANNAS_TRUSTED_HOSTS), 'default': DEFAULT_ANNAS_BASE_URL}))
 `], { encoding: 'utf8' });
   const config = JSON.parse(stdout);
+  expect(acquisitionModule.annasTrustedHosts).toEqual(new Set(config.hosts));
   for (const base of [undefined, config.default, ...config.hosts.map(h => 'https://' + h),
     'https://ANNAS-ARCHIVE.GL/', 'http://annas-archive.gl:8080/prefix/',
     'https://annas-archive.pk:8443/prefix/nested']) {

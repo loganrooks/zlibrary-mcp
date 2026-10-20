@@ -89,7 +89,11 @@ interface Attempt {
 }
 const allSources: Source[] = ['libgen', 'zlibrary', 'annas'];
 // Match lib/sources/config.py. The cross-language reporting test guards drift.
-const annasTrustedHosts = new Set(['annas-archive.gl', 'annas-archive.pk', 'annas-archive.gd']);
+export const annasTrustedHosts = new Set([
+  'annas-archive.gl',
+  'annas-archive.pk',
+  'annas-archive.gd',
+]);
 function usableAnnasBase(raw = 'https://annas-archive.gl'): boolean {
   // Reject raw characters that URL() would silently normalize or reinterpret.
   if (
@@ -100,11 +104,11 @@ function usableAnnasBase(raw = 'https://annas-archive.gl'): boolean {
     return false;
   try {
     const url = new URL(raw);
-    // Python's urlsplit checks the literal host, not URL()'s percent-decoded host.
-    const rawHost = raw.split('/')[2]?.split(':')[0]?.toLowerCase();
+    // Preserve the literal host rather than URL()'s percent-decoded spelling.
+    // Reject userinfo too, including forms Python's hostname would accept.
+    const rawHost = raw.split('/')[2]?.replace(/:\d*$/, '').toLowerCase();
     return (
       rawHost === url.hostname &&
-      annasTrustedHosts.has(rawHost) &&
       !url.username &&
       !url.password &&
       url.port !== '0'
@@ -112,6 +116,9 @@ function usableAnnasBase(raw = 'https://annas-archive.gl'): boolean {
   } catch {
     return false;
   }
+}
+function trustedAnnasBase(raw = 'https://annas-archive.gl'): boolean {
+  return usableAnnasBase(raw) && annasTrustedHosts.has(new URL(raw).hostname);
 }
 const sourceName = (value: any): Source =>
   value === 'annas_archive' ? 'annas' : (value ?? 'zlibrary');
@@ -176,16 +183,17 @@ export class AcquisitionTools {
     }
   }
   private capabilities(source: Source) {
-    const annasBaseAvailable = usableAnnasBase(this.env.ANNAS_BASE_URL);
+    const annasBaseUsable = usableAnnasBase(this.env.ANNAS_BASE_URL);
+    const annasBaseTrusted = trustedAnnasBase(this.env.ANNAS_BASE_URL);
     const configured =
       source === 'libgen' ||
       (source === 'zlibrary'
         ? Boolean(this.env.ZLIBRARY_EMAIL && this.env.ZLIBRARY_PASSWORD)
-        : Boolean(this.env.ANNAS_SECRET_KEY) && annasBaseAvailable);
+        : Boolean(this.env.ANNAS_SECRET_KEY) && annasBaseTrusted);
     return {
       configured,
       search_available:
-        source === 'annas' ? annasBaseAvailable : source !== 'zlibrary' || configured,
+        source === 'annas' ? annasBaseUsable : source !== 'zlibrary' || configured,
       download_available: configured,
       operations: [
         'search',
@@ -200,9 +208,11 @@ export class AcquisitionTools {
         ? {
             note:
               source === 'annas'
-                ? annasBaseAvailable
-                  ? 'Set ANNAS_SECRET_KEY for download; search needs no key.'
-                  : 'Set ANNAS_BASE_URL to a usable trusted Anna’s Archive URL.'
+                ? !annasBaseUsable
+                  ? 'Anna’s Archive base is unusable; set ANNAS_BASE_URL to a usable HTTP(S) URL.'
+                  : !annasBaseTrusted
+                    ? 'Anna’s Archive base is not trusted for the key; search is available. Set ANNAS_BASE_URL to a trusted host and ANNAS_SECRET_KEY for download.'
+                    : 'Set ANNAS_SECRET_KEY for download; search needs no key.'
                 : 'Set ZLIBRARY_EMAIL and ZLIBRARY_PASSWORD.',
           }
         : {}),
@@ -218,9 +228,14 @@ export class AcquisitionTools {
           variables:
             source === 'zlibrary'
               ? ['ZLIBRARY_EMAIL', 'ZLIBRARY_PASSWORD']
-              : !usableAnnasBase(this.env.ANNAS_BASE_URL)
-                ? ['ANNAS_BASE_URL']
-                : ['ANNAS_SECRET_KEY'],
+              : [
+                  ...(!(download
+                    ? trustedAnnasBase(this.env.ANNAS_BASE_URL)
+                    : usableAnnasBase(this.env.ANNAS_BASE_URL))
+                    ? ['ANNAS_BASE_URL']
+                    : []),
+                  ...(download && !this.env.ANNAS_SECRET_KEY ? ['ANNAS_SECRET_KEY'] : []),
+                ],
         },
       });
   }

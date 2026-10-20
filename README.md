@@ -95,8 +95,9 @@ Other sources expose one upstream page, sliced locally, with a stated row cap.
 `get_limits` defaults to `mode: "local"`: no network, no account call. It reports
 configuration, search/download availability and supported operations for each
 source. Supported operations stay the same when configuration changes; use the
-availability fields to plan calls. Anna's availability requires a usable trusted
-`ANNAS_BASE_URL` (default `https://annas-archive.gl`); download also needs its key.
+availability fields to plan calls. Anna's search requires a usable HTTP(S)
+`ANNAS_BASE_URL` (default `https://annas-archive.gl`); download and `configured`
+additionally require a trusted host and `ANNAS_SECRET_KEY`.
 `mode: "live"` adds Z-Library account numbers; remaining quota is omitted when
 spend is unknown. A source failure remains
 in that source's `error` entry without discarding other reports. `none`, `daily`,

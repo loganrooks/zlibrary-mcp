@@ -128,11 +128,14 @@ optional `default_order` and a `sources` object. Each source has `configured`,
 `search`, `details`, `download` for all three sources, plus `history` for
 Z-Library. An unconfigured Anna's source still lists `download`; use
 `search_available` and `download_available` to decide which calls are available.
-Anna's availability requires a usable HTTP(S) base URL on a trusted host
-(`annas-archive.gl`, `.pk`, or `.gd`; default `https://annas-archive.gl`).
-Malformed or untrusted bases make both availability fields false. A trusted
-base permits search without a key; download additionally requires
-`ANNAS_SECRET_KEY`. This local report makes no provider request.
+Anna's search requires a usable HTTP(S) base URL (default
+`https://annas-archive.gl`): it must parse with a valid nonzero port and contain
+no userinfo, query, fragment, whitespace or control characters. A usable base
+permits search without a key, including on an untrusted host. Download and
+`configured` additionally require `ANNAS_SECRET_KEY` and a trusted host
+(`annas-archive.gl`, `.pk`, or `.gd`). An unusable base makes both availability
+fields false; the note distinguishes this from a base not trusted for the key.
+This local report makes no provider request.
 
 Live Z-Library mode adds `per_day`, `used_today`, `remaining`, `premium`, `as_of`
 when available. `remaining` is computed only from a known cap and known spend;

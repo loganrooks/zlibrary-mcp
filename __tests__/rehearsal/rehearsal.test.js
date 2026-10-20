@@ -217,7 +217,7 @@ breakerTest(
       async (connect) => {
         const started = performance.now();
         const c = await connect();
-        const search = await h.call(c, 'search_books', { query: 'warm-session' });
+        const search = await h.call(c, 'search_books', { query: 'warm' });
         expect((await h.stats()).logins).toBe(1);
         await h.mode({ mode: 'server503' });
         const warmed = performance.now();

@@ -255,20 +255,17 @@ async def test_corrected_target_requires_verified_same_identity_receipt(
     assert not list(tmp_path.glob(".eapi-*"))
 
 
-def test_destination_lease_default_matches_long_bridge_timeout():
+def test_destination_lease_default_matches_long_bridge_timeout(monkeypatch):
     root = Path(__file__).resolve().parents[2]
-    python_source = (root / "lib/acquisition.py").read_text()
+    monkeypatch.delenv("PYTHON_BRIDGE_CALL_TIMEOUT_MS", raising=False)
+    monkeypatch.delenv("PYTHON_BRIDGE_LONG_TIMEOUT", raising=False)
     runner_source = (root / "src/lib/python-runner.ts").read_text()
-    lease = re.search(
-        r'os\.environ\.get\("PYTHON_BRIDGE_LONG_TIMEOUT",\s*"(\d+)"\)',
-        python_source,
-    )
     bridge = re.search(
         r"positiveIntEnv\('PYTHON_BRIDGE_LONG_TIMEOUT',\s*(\d+)\)",
         runner_source,
     )
-    assert lease is not None and bridge is not None
-    assert int(lease.group(1)) == int(bridge.group(1))
+    assert bridge is not None
+    assert acq._long_bridge_budget() * 1000 == int(bridge.group(1))
 
 
 @pytest.mark.asyncio

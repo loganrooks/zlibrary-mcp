@@ -610,14 +610,23 @@ class WalkDeadline:
         budget: Seconds the whole walk may take.
         clock: Monotonic time source, injectable for tests. Monotonic rather
             than wall-clock so an NTP step mid-walk cannot expire or extend it.
+        remaining_limit: Optional outer ceiling, rechecked even when this
+            resolution clock is suspended around a yielded transfer.
     """
 
-    def __init__(self, budget: float, clock: Callable[[], float] = time.monotonic):
+    def __init__(
+        self,
+        budget: float,
+        clock: Callable[[], float] = time.monotonic,
+        *,
+        remaining_limit: Optional[Callable[[float], float]] = None,
+    ):
         self._clock = clock
         self.budget = max(0.0, float(budget))
         self._expires_at = clock() + self.budget
         self._suspended_at: Optional[float] = None
         self._suspension_depth = 0
+        self._remaining_limit = remaining_limit
 
     @contextmanager
     def suspended(self) -> Iterator[None]:
@@ -644,7 +653,8 @@ class WalkDeadline:
     def remaining(self) -> float:
         """Seconds left, never negative."""
         clock = self._suspended_at if self._suspended_at is not None else self._clock()
-        return max(0.0, self._expires_at - clock)
+        left = max(0.0, self._expires_at - clock)
+        return self._remaining_limit(left) if self._remaining_limit else left
 
     def expired(self) -> bool:
         """True once nothing further may be started."""

@@ -65,8 +65,10 @@ DEFAULT_PREFLIGHT_TIMEOUT = 5.0
 DEFAULT_WALK_BUDGET = 165.0
 
 # Allowance around the provider walk, not a measured cold-start guarantee.
-# Reserve at most 1/8 of the owning timer so healthy short calls still work.
+# Source owners below 10s are unsupported: the scaled allowance there can
+# leave only milliseconds between an attributed reply and Node's hard stop.
 WALK_OVERHEAD_ALLOWANCE = 30.0
+MIN_SOURCE_OWNER_SECONDS = 10.0
 DEFAULT_NODE_BRIDGE_TIMEOUT_SECONDS = 240.0
 DEFAULT_NODE_LONG_TIMEOUT_SECONDS = 2400.0
 MAX_NODE_TIMER_DELAY_MS = 2_147_483_647
@@ -253,24 +255,26 @@ def _ecmascript_trim(value: str) -> str:
     return value.strip(_ECMASCRIPT_TRIM_CHARS)
 
 
-def _node_bridge_timeout_seconds(*, for_download: bool = False) -> float:
-    """Match Node's positive-integer bridge-timeout environment parsing."""
-    name = "PYTHON_BRIDGE_LONG_TIMEOUT" if for_download else "PYTHON_BRIDGE_TIMEOUT"
-    default = (
-        DEFAULT_NODE_LONG_TIMEOUT_SECONDS
-        if for_download
-        else DEFAULT_NODE_BRIDGE_TIMEOUT_SECONDS
-    )
+def _node_timeout_seconds(name: str, default: float) -> float:
+    """Match the compiled runner's positiveIntEnv, including huge zero prefixes."""
     raw = _ecmascript_trim(os.environ.get(name, ""))
     if not raw or not raw.isascii() or not raw.isdecimal():
         return default
-    try:
-        value = int(raw)
-    except ValueError:
-        return default
+    digits = raw.lstrip("0")
+    value = int(digits) if 0 < len(digits) <= 10 else 0
     if value <= 0 or value > MAX_NODE_TIMER_DELAY_MS:
         return default
     return value / 1000.0
+
+
+def _node_bridge_timeout_seconds(*, for_download: bool = False) -> float:
+    """Resolve the search or download environment owner with Node's parser."""
+    return _node_timeout_seconds(
+        "PYTHON_BRIDGE_LONG_TIMEOUT" if for_download else "PYTHON_BRIDGE_TIMEOUT",
+        DEFAULT_NODE_LONG_TIMEOUT_SECONDS
+        if for_download
+        else DEFAULT_NODE_BRIDGE_TIMEOUT_SECONDS,
+    )
 
 
 def get_source_config(*, for_download: bool = False) -> SourceConfig:
@@ -278,10 +282,13 @@ def get_source_config(*, for_download: bool = False) -> SourceConfig:
 
     Returns a fresh SourceConfig each call (not cached) to support
     environment variable changes during testing. Downloads use the long
-    owner; short timers scale overhead rather than rejecting all source work.
+    owner; supported timers scale overhead rather than paying a fixed 30s.
     Adapters refuse uninformative remaining slices with provider attribution.
     """
     owner = _node_bridge_timeout_seconds(for_download=for_download)
+    if owner < MIN_SOURCE_OWNER_SECONDS:
+        name = "PYTHON_BRIDGE_LONG_TIMEOUT" if for_download else "PYTHON_BRIDGE_TIMEOUT"
+        raise ValueError(f"{name} must be at least 10000 ms for source walks")
     overhead = min(WALK_OVERHEAD_ALLOWANCE, owner / 8.0)
     available = owner - overhead - WALK_BUDGET_SAFETY_MARGIN
     if available <= 0:

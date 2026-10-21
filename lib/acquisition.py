@@ -110,17 +110,53 @@ def destination_name(book, filename=None):
 
 def output_directory(output_dir):
     root_value = os.environ.get("ZLIBRARY_OUTPUT_ROOT")
-    root = Path(root_value).expanduser().resolve() if root_value else None
-    directory = (
-        Path(output_dir).expanduser().resolve()
-        if output_dir
-        else root or Path("downloads").resolve()
-    )
-    if root is not None and not directory.is_relative_to(root):
+    if root_value is not None:
+        root = Path(root_value).expanduser()
+        if not root_value or not root.is_absolute():
+            raise AcquisitionError(
+                "output_refused", "ZLIBRARY_OUTPUT_ROOT must be an absolute path"
+            )
+    else:
+        data = (
+            os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local"
+            if _WINDOWS
+            else os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share"
+        )
+        root = Path(data) / "zlibrary-mcp" / "downloads"
+        if not root.is_absolute():
+            raise AcquisitionError(
+                "output_refused", "Output data directory must be absolute"
+            )
+    root = root.resolve()
+    value = os.fspath(output_dir) if output_dir else ""
+    if value.startswith("~") or ".." in Path(value).parts:
         raise AcquisitionError(
-            "output_refused", "output_dir is outside ZLIBRARY_OUTPUT_ROOT"
+            "output_refused",
+            "output_dir cannot contain '..' or start with '~'; use ZLIBRARY_OUTPUT_ROOT",
+        )
+    directory = (root / value).resolve()
+    if os.environ.get(
+        "ZLIBRARY_UNRESTRICTED_OUTPUT"
+    ) != "1" and not directory.is_relative_to(root):
+        raise AcquisitionError(
+            "output_refused",
+            "output_dir is outside ZLIBRARY_OUTPUT_ROOT; trusted operators may set ZLIBRARY_UNRESTRICTED_OUTPUT=1",
         )
     return directory
+
+
+def _private_directory(directory):
+    """Chmod only levels this call creates, including missing root ancestors."""
+    if directory.is_dir():
+        return
+    _private_directory(directory.parent)
+    try:
+        directory.mkdir(mode=0o700)
+    except FileExistsError:
+        if not directory.is_dir():
+            raise
+    else:
+        directory.chmod(0o700)
 
 
 def _identity(book):
@@ -583,7 +619,7 @@ async def _acquire(
     directory = output_directory(output_dir)
     destination = _guard_target(directory / destination_name(book, filename), directory)
     source, identifiers = _identity(book)
-    directory.mkdir(parents=True, exist_ok=True)
+    _private_directory(directory)
     receipt_path = Path(str(destination) + ".acq.json")
     budget = _long_bridge_budget()
     async with destination_lock(destination, budget):
@@ -672,6 +708,7 @@ async def _acquire(
                         "Checkpoint must precede publication of a staged file",
                         issued=True,
                     )
+                stage.chmod(0o600)
                 canonical_path = Path(str(target) + ".acq.json")
                 existing = _read(canonical_path, issued=True)
                 _refuse_foreign(
@@ -765,6 +802,7 @@ async def _acquire(
                     issued=True,
                 )
             _mark_published()  # also support transfer callbacks publishing by other means
+            final.chmod(0o600)
             if (
                 _hash(final) != record["sha256"]
                 or final.stat().st_size != record["bytes"]

@@ -54,6 +54,34 @@ choose the edition, then use its current ref. Refs do not survive process
 restart. Durable library integration reads `.acq.json` records, not refs or
 account history. Existing files are not deleted or converted automatically.
 
+## Download location
+
+2.0 contains downloads in one folder by default. The root is
+`${XDG_DATA_HOME:-~/.local/share}/zlibrary-mcp/downloads` on Linux/macOS or
+`%LOCALAPPDATA%\zlibrary-mcp\downloads` on Windows. Set `ZLIBRARY_OUTPUT_ROOT`
+to an absolute path to choose it (home expansion is allowed); relative values
+fail startup. To keep the old place, start the server with:
+
+```bash
+export ZLIBRARY_OUTPUT_ROOT="$PWD/downloads"
+```
+
+Relative `output_dir` values now resolve against the root, never the working
+directory. Absolute paths inside the root work. Outside paths, including
+outside-pointing symlinks, return `output_refused` with `request_issued: false`
+before provider contact. To keep writing to unrelated absolute folders, set
+`ZLIBRARY_UNRESTRICTED_OUTPUT=1`; it lifts containment only. Any `..` component
+or leading `~` in caller `output_dir` stays refused in every mode. The flag
+accepts only `1`, `0` or unset; invalid values fail startup, and `1` logs one
+warning on stderr. With an unset root and an existing `./downloads`, startup
+reports the new location on stderr.
+
+New directory levels are 0700; existing directory permissions stay unchanged.
+Published artifacts and receipts are 0600. Docker pins the root to
+`/app/downloads`, preserving the mounted download volume without user action.
+Tunnel deployers already setting a root keep that root; relative paths now
+resolve under it even if the wrapper does not change its working directory.
+
 ## Existing 1.4.0 downloads
 
 Keep the books already in `./downloads`; upgrading does not delete or convert

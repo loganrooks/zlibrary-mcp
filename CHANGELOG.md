@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0] - YYYY-MM-DD
+
 ### Breaking: five-tool acquisition interface
 
 - Replaced the old tool names with `search`, `get_book`, `download`, `get_limits`,
@@ -67,6 +69,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Search and account-history result limits default to 10 and accept integers
+  from 1 through 50; larger result sets use bounded process-local cursors (#173).
+- LibGen search and download mirror walks share one wall-clock deadline across
+  the configured mirror and `li → vg → la`, without truncating the candidate
+  list (PR #153, #152). `BOOK_SOURCE_WALK_BUDGET` defaults to 165 seconds and is
+  clamped below the owning ordinary/download bridge deadline. Unattempted
+  mirrors are reported as `walk_budget_exhausted`, not as a host timeout (#284).
+  DNS plus TCP preflight share one aggregate `BOOK_SOURCE_PREFLIGHT_TIMEOUT`
+  budget (default 5 seconds), rather than a fresh timeout for every address.
+  See the README environment table, `.env.example` and retry configuration.
+- Typed, bounded diagnostics for Z-Library (EAPI) and sign-in failures (#251,
+  PR #285). A failed call's error may carry `error.detail.diagnostics` with exactly
+  `failure_kind` (`auth_rejected`, `transport`, `wall`, `ambiguous_status`),
+  `http_status` when known, `attempt`, `refresh_count` and an internal
+  `request_id`. The record is at most 512 bytes and is rejected whole when
+  malformed. Logs and tool errors no longer carry call arguments, exception text,
+  tracebacks, response bodies or sign-in prose. A generic HTTP 400 no longer
+  invalidates a session or starts a sign-in or download replay. See
+  [docs/api.md](docs/api.md).
+
 - `npm run audit:release` ([scripts/release-audit.mjs](scripts/release-audit.mjs)) and a
   weekly `Release Record Audit` workflow, checking that the project's record of itself is
   still true. **Drift:** every tag has a GitHub Release and a CHANGELOG section, every
@@ -112,6 +134,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   path for `PYTHON_BRIDGE_LONG_TIMEOUT` alike. See
   [docs/RETRY_CONFIGURATION.md](docs/RETRY_CONFIGURATION.md) for how the Python
   and Node budgets compose.
+
+- **One deadline for a whole download** (#280, PR #290). Lease wait, transfer,
+  digest and receipt finalization run under the bridge deadline Node enforces for
+  the call. A download issued but not finished in time reports `outcome_unknown`
+  with `retry: no`; one not yet issued reports `provider_timeout`. After the file
+  is linked into its destination, digest, receipts and the reply always finish.
+- **A dropped source transfer resumes within the same call** (#135, PR #304). The
+  transfer retries the same URL with `Range` into its own staging file, appends a
+  206 only when its `Content-Range` matches the staged offset, and re-hashes the
+  whole file before publication. `BOOK_SOURCE_DOWNLOAD_RESUME_ATTEMPTS` (default
+  2, at most 10, 0 disables) caps the extra requests, all inside the download
+  deadline. A failed resume reports reason `partial_transfer` under `provider_error`.
+  No prefix survives into the next mirror or call.
+- **The Docker image is smoked before it is published** (#227, PR #288; #291, PR
+  #297). It is built from the exact npm release tarball, started over stdio, and
+  must list the five tools with their committed schemas, answer one `search`
+  through its Python bridge with provider egress blocked, and refuse an egress
+  canary. `publish.yml` packs once, smokes that image, and only then publishes
+  npm and pushes the tested digest, with its build provenance, to GHCR.
+- A LibGen article canary in the scheduled upstream check, so column-shifted or
+  dropped journal-article rows are reported as drift (#132, PR #308).
+- **Receipts name the mirror and the host that served the bytes** (#101, PR
+  #315). The local `.acq.json` receipt records the source mirror as a lowercase
+  hostname for LibGen, Anna's and Z-Library, and the host that actually served the
+  file: the EAPI host after redirects, and the EAPI domain after link recovery. A
+  reused receipt keeps its original provenance. Nothing new reaches a reply or a
+  log.
 
 ### Fixed
 
@@ -162,10 +211,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   source.
 - The scheduled upstream contract check no longer fails spuriously (#71).
 
+- **LibGen journal-article rows no longer come back column-shifted** (#132, PR
+  #294). The cover column is found by structure, so articles keep their md5 and
+  title instead of putting the citation in `author` and the size in `extension`.
+  Rows dropped for lacking an edition link are counted in diagnostics, and
+  internal evidence keys such as `content_type` no longer appear in `get_book`
+  evidence (#301, PR #307).
+- **`get_limits` reports quota and capabilities honestly** (#278, PR #293). Live
+  remaining quota is omitted when the spend is unknown, instead of reporting the
+  full daily cap. Anna's search needs only a usable HTTP(S) base URL; download and
+  `configured` also need a trusted host and `ANNAS_SECRET_KEY`. `operations` lists
+  what a source supports; `search_available` and `download_available` carry
+  configuration. A search with no rows from any source omits `served_by`.
+- An open breaker names its dependency (`eapi`, `source_walk` or `local`) in the
+  error detail, and local refusals (breaker, argument, credential, spawn, local
+  budget) no longer carry an EAPI request diagnostic. An argument error before any
+  EAPI contact maps to `invalid_argument` again (#262, #286, PR #305).
+- An open EAPI breaker no longer starts a login cooldown, and breakers count
+  logical calls rather than each retry inside one call (#261, #263, PR #298).
+- The scheduled live suite runs on the EAPI domain the runtime uses and fails
+  closed on an anti-bot wall the reachability probe did not report (#250, PR #296;
+  PR #308).
+- certifi 2026.10.19 for GHSA-6q48-6c7w-9gw2 (PR #310).
+- **A recovering breaker refuses other calls for at most one bridge window**
+  (#302, PR #317). A HALF_OPEN probe's exclusive hold ends after one ordinary
+  bridge window (240 s by default), even while its retries or a long download
+  continue. A refusal during the hold reports the hold's remaining time as
+  `retry_after_s`, never 0. At a lazy Z-Library session handoff, an open breaker
+  now keeps `retry_after_s` and `detail.dependency` (#268), and a call cancelled
+  before it starts is reported as `cancelled`.
+- A wildcard-length Range slice (`Content-Range: bytes N-M/*`) that completes the
+  file is hashed and published when it matches the expected MD5, instead of being
+  discarded when no resume attempt or well-formed 416 is left (#311, PR #318).
+- With a proxy in use, LibGen and Anna's no longer reserve the preflight budget
+  that the proxy skips, so the last mirrors are not refused with
+  `walk_budget_exhausted` when they could still run (#282, PR #320).
+- A schema error that names `limit` says how to fix it (1 to 50, default 10, page
+  with `next_cursor`), followed by the usual hint when other fields also fail
+  (#173, PR #316).
+- The npm package ships `docs/interface-migration.md`, and links from shipped
+  docs to files the package does not ship point to the repository (#252, PR #316).
+- The scheduled live suite reports an all-skipped run as `skipped` with pass and
+  skip counts and a warning, never as `passed` (#226, PR #316).
+
 ### Changed
 
+- CI and the publish workflow pin buildx v0.38.0 and BuildKit v0.33.1 for the
+  attested image build. A re-run of `publish-packages` rebuilds, re-smokes and
+  pushes a fresh tested digest (#303, PR #319).
+- **Source deadlines have a supported minimum of 10 seconds** (#282, PR #312).
+  A `PYTHON_BRIDGE_TIMEOUT` or `PYTHON_BRIDGE_LONG_TIMEOUT` below 10000 ms used
+  as a source owner now fails configuration before any provider contact. The
+  defaults are unchanged. The download walk is now seeded from what remains of
+  the whole-download deadline, so a long lease wait no longer admits mirror
+  attempts that cannot finish (#292), and Anna's refuses a slice below its
+  preflight minimum with `walk_budget_exhausted` (#282).
 - Each provider has its own circuit breaker: Z-Library, LibGen and Anna's Archive
-  (ADR-011). An outage at one no longer refuses the others, and an ordered
+  (ADR-011, #192, PR #283). An outage at one no longer refuses the others, and an ordered
   `["annas","libgen"]` search reaches LibGen while Anna's is down. 1.4.0 ran one
   breaker for every bridge call.
 - `CONTEXT.md` added as the terminology glossary, splitting the overloaded term
@@ -514,7 +616,8 @@ source is privileged").
 - BUG-X/FIX comments cleaned from production code
 - Debug print statements converted to proper logging
 
-[Unreleased]: https://github.com/rookslog/zlibrary-mcp/compare/v1.4.0...HEAD
+[Unreleased]: https://github.com/rookslog/zlibrary-mcp/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/rookslog/zlibrary-mcp/compare/v1.4.0...v2.0.0
 [1.4.0]: https://github.com/rookslog/zlibrary-mcp/compare/v1.3.2...v1.4.0
 [1.3.2]: https://github.com/rookslog/zlibrary-mcp/compare/v1.3.1...v1.3.2
 [1.3.1]: https://github.com/rookslog/zlibrary-mcp/compare/v1.3.0...v1.3.1

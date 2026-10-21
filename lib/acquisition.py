@@ -178,18 +178,6 @@ def _prepare_directory(directory):
         )
 
 
-def _private_reuse(artifact, *receipts):
-    """Tighten verified files without changing contents or repairing receipt state."""
-    if os.name == "posix":
-        try:
-            for path in (artifact, *receipts):
-                path.chmod(0o600)
-        except OSError as error:
-            raise AcquisitionError(
-                "output_refused", "Cannot make reused files private"
-            ) from error
-
-
 def _identity(book):
     source = str(book.get("source") or "zlibrary").lower()
     if source == "annas_archive":
@@ -641,11 +629,11 @@ async def _acquire(
 ):
     """Lease initial and canonical destinations through publication and every receipt write.
 
-    With ``receipt_only`` a verified receipt is served without writing file contents
-    (POSIX permissions are tightened on reuse); otherwise
-    the usual pre-intent refusal is raised or ``{"receipt_hit": False}`` returned,
-    before an intent is written or ``transfer`` is called. The parent uses it when
-    its breaker refuses provider work.
+    Verified artifact reuse is content- and metadata-read-only. With ``receipt_only``
+    existing receipts are also read-only; otherwise ordinary calls may repair them.
+    A receipt-only miss raises the usual pre-intent refusal or returns
+    ``{"receipt_hit": False}`` before an intent is written or ``transfer`` is called.
+    The parent uses it when its breaker refuses provider work.
     """
     book = dict(book_details)
     directory = output_directory(output_dir)
@@ -682,10 +670,6 @@ async def _acquire(
                 candidate = canonical if canonical else previous
                 path = _verified_artifact(candidate, directory)
                 if path == target and _same_identity(candidate, source, identifiers):
-                    receipts = {receipt_path}
-                    if canonical:
-                        receipts.add(canonical_path)
-                    _private_reuse(path, *receipts)
                     _mark_published()  # finish any receipt repair for this usable artifact
                     promoted = candidate["state"] == "intent"
                     if promoted:
@@ -696,7 +680,7 @@ async def _acquire(
                             "reused": False,
                         }
                     if receipt_only:
-                        # No content writes: the next ordinary call repairs these receipts.
+                        # Read-only: the next ordinary call repairs these receipts.
                         held_at = canonical_path if canonical else receipt_path
                         return _reply(candidate, held_at, True)
                     if promoted or not canonical:

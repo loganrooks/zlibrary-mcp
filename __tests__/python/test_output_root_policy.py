@@ -251,8 +251,11 @@ async def test_symlink_inserted_during_directory_creation_refuses(
 @pytest.mark.asyncio
 @pytest.mark.parametrize("receipt_only", [False, True])
 @pytest.mark.parametrize("corrected", [False, True])
+@pytest.mark.parametrize("mode", [0o640, 0o440], ids=["shared", "read-only"])
 @pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits")
-async def test_verified_reuse_restores_private_modes(tmp_path, receipt_only, corrected):
+async def test_verified_reuse_preserves_existing_modes(
+    tmp_path, receipt_only, corrected, mode
+):
     async def corrected_transfer(book, directory, *, filename, publication_hook):
         return await transfer(
             {**book, "extension": "epub"},
@@ -266,14 +269,53 @@ async def test_verified_reuse_restores_private_modes(tmp_path, receipt_only, cor
     paths = [Path(first["path"]), *tmp_path.glob("*.acq.json")]
     before = {p: p.read_bytes() for p in paths}
     for path in paths:
-        path.chmod(0o644)
+        path.chmod(mode)
+    metadata = {
+        p: (p.stat().st_ino, p.stat().st_mtime_ns, p.stat().st_ctime_ns) for p in paths
+    }
     result = await acquisition.acquire(
         BOOK, str(tmp_path), receipt_only=receipt_only, transfer=provider
     )
     assert result["transfer_skipped"] is True
     assert provider.await_count == 1
     assert {p: p.read_bytes() for p in paths} == before
-    assert all(stat.S_IMODE(p.stat().st_mode) == 0o600 for p in paths)
+    assert all(stat.S_IMODE(p.stat().st_mode) == mode for p in paths)
+    assert {
+        p: (p.stat().st_ino, p.stat().st_mtime_ns, p.stat().st_ctime_ns) for p in paths
+    } == metadata
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", [0o640, 0o440], ids=["shared", "read-only"])
+@pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits")
+async def test_legacy_reuse_preserves_existing_mode(tmp_path, monkeypatch, mode):
+    async def fetch(book, directory):
+        stage = Path(directory) / ".source-test.pdf"
+        stage.write_bytes(PAYLOAD)
+        return str(stage)
+
+    monkeypatch.setattr(bridge, "_fetch_from_source", fetch)
+    book = {**BOOK, "source": "libgen"}
+    first = await bridge.download_book(book, str(tmp_path), filename="book.pdf")
+    artifact = Path(first["file_path"])
+    assert stat.S_IMODE(artifact.stat().st_mode) == 0o600
+    artifact.chmod(mode)
+    metadata = (
+        artifact.stat().st_ino,
+        artifact.stat().st_mtime_ns,
+        artifact.stat().st_ctime_ns,
+    )
+    again = await bridge.download_book(
+        book, str(tmp_path), filename="book.pdf", publication_hook=lambda *_: None
+    )
+    assert again["publication_reused"] is True
+    assert artifact.read_bytes() == PAYLOAD
+    assert stat.S_IMODE(artifact.stat().st_mode) == mode
+    assert (
+        artifact.stat().st_ino,
+        artifact.stat().st_mtime_ns,
+        artifact.stat().st_ctime_ns,
+    ) == metadata
 
 
 @pytest.mark.asyncio

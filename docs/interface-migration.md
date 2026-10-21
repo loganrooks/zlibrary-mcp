@@ -77,20 +77,21 @@ warning on stderr. With an unset root and an existing `./downloads`, startup
 reports the new location on stderr.
 
 On POSIX, new directory levels are 0700; existing directory permissions stay unchanged.
-Published artifacts and receipts are 0600. On Windows, chmod only toggles the
-read-only attribute, not access-control permissions. Docker pins the root to
-`/app/downloads`, preserving the mounted download volume without user action.
+New artifacts and receipts are 0600; files already present keep their mode on reuse.
+On Windows, chmod only toggles the read-only attribute, not access-control
+permissions. Docker pins the root to `/app/downloads`, preserving the mounted
+download volume without user action.
 On Linux bind mounts, new directories (0700) and files (0600) belong to the
 container user; use Docker `--user` or Compose `user:` to match the host UID/GID,
-or use chmod as the owner to grant host readers access.
+or use chmod as the owner to grant host readers access; reuse preserves that mode.
 Tunnel deployers already setting a root keep that root; relative paths now
 resolve under it even if the wrapper does not change its working directory.
 
 ## Existing 1.4.0 downloads
 
 Keep the books already in `./downloads`; upgrading does not delete or convert
-those files. They have no acquisition receipts. If an old file occupies the
-predicted 2.0 destination, `download` returns `output_refused` with
+those files or change their permissions. They have no acquisition receipts.
+If an old file occupies the predicted 2.0 destination, `download` returns `output_refused` with
 `destination_occupied: true` before authentication or transfer, even when the
 bytes are identical. A file found only at a format-corrected destination can
 instead be refused after a transfer. Neither case adopts the old file.

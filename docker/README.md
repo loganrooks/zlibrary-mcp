@@ -58,7 +58,8 @@ Relative `output_dir` values resolve under `/app/downloads`; outside absolute
 paths are refused unless the operator explicitly enables unrestricted output.
 On Linux bind mounts, new directories (0700) and files (0600) belong to the
 container user; use Docker `--user` or Compose `user:` to match the host UID/GID,
-or use chmod as the owner to grant host readers access.
+or use chmod as the owner to grant host readers access; files already present
+keep their mode on reuse.
 
 ## Health Check
 

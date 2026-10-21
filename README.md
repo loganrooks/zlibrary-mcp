@@ -156,13 +156,16 @@ values always resolve under the root. Absolute paths inside it are accepted;
 outside paths (including symlinks), any `..` component and a leading `~` are
 refused before provider contact (`output_refused`, `request_issued: false`).
 Trusted operators can set `ZLIBRARY_UNRESTRICTED_OUTPUT=1` to allow outside
-absolute paths; relative paths still resolve under the root and traversal/home
-shorthand stays refused. The flag accepts only `1`, `0` or unset and logs a
-startup warning when enabled. If the root is unset and `./downloads` exists,
+absolute paths; relative paths still resolve under the root, and traversal/home
+shorthand, NUL bytes and (on Windows) drive-relative (`C:foo`) or root-relative
+(`\foo`) output paths stay refused in both modes. The flag accepts only `1`, `0`
+or unset and logs a startup warning when enabled. If the root is unset and
+`./downloads` exists,
 startup reports the new location on stderr. See [download-location migration](docs/interface-migration.md#download-location).
 On POSIX, new directory levels are 0700 without changing existing directories;
-published artifacts and receipts are 0600. On Windows, chmod only toggles the
-read-only attribute; these modes do not set access-control permissions.
+new artifacts and receipts are 0600; files already present keep their mode on reuse.
+On Windows, chmod only toggles the read-only attribute; these modes do not set
+access-control permissions.
 `filename` is a sanitized basename; its extension is forced to the acquired
 format. The root guard admits arguments; it is not a sandbox against a local
 operator swapping directories during a call. On local filesystems, POSIX leases

@@ -54,7 +54,7 @@ promising additional detail-page metadata. No direct ID input is accepted.
 | Argument | Contract |
 |---|---|
 | `ref` | Required current row ref |
-| `output_dir` | Optional directory, defaulting to the output root. Relative paths resolve under that root in every mode. Absolute paths must remain inside it unless the operator sets `ZLIBRARY_UNRESTRICTED_OUTPUT=1`. Any `..` component or leading `~` is refused before provider contact. |
+| `output_dir` | Optional directory, defaulting to the output root. Relative paths resolve under that root in every mode. Absolute paths must remain inside it unless the operator sets `ZLIBRARY_UNRESTRICTED_OUTPUT=1`. Any `..` component, leading `~`, NUL byte or (on Windows) drive-relative (`C:foo`) or root-relative (`\foo`) path is refused before provider contact in both modes. |
 | `filename` | Optional basename; sanitized and extension forced to acquired format |
 
 Returns `path`, `bytes`, `reused`, `transfer_skipped`, `verified: "sha256"`,
@@ -111,7 +111,8 @@ fails startup. `ZLIBRARY_UNRESTRICTED_OUTPUT` accepts only `1`, `0` or unset;
 `output_refused` with `request_issued: false` before provider contact. Checks
 include existing symlinks but do not defend against a local operator racing to
 replace directories. On POSIX, newly created directory levels are 0700; existing
-directory permissions are preserved. Published artifacts and receipts are 0600.
+directory permissions are preserved. New artifacts and receipts are 0600;
+files already present keep their mode on reuse.
 On Windows, chmod only toggles the read-only attribute, not access-control permissions.
 
 Quota estimates exist only after an observed daily limit. Each issued fresh

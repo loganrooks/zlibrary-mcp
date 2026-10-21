@@ -1858,7 +1858,6 @@ async def download_book(
         # an identical artifact a previous acquisition of this book already
         # published under the same deterministic name.
         catalog_md5 = str(book_details.get("md5") or "").strip().lower()
-        Path(original_download_path_str).chmod(0o600)
         if publication_hook is not None:
             publication_hook(Path(original_download_path_str), final_file_path)
         reused = _publish_or_reuse(
@@ -1866,13 +1865,13 @@ async def download_book(
             final_file_path,
             catalog_md5 if _MD5_RE.fullmatch(catalog_md5) else "",
         )
-        final_file_path.chmod(0o600)
         if reused:
             logger.info(
                 f"Reused existing matching artifact at {final_file_path_str}; "
                 f"discarded redundant download {original_download_path_str}"
             )
         else:
+            final_file_path.chmod(0o600)
             logger.info(
                 f"Published downloaded file from {original_download_path_str} to {final_file_path_str}"
             )

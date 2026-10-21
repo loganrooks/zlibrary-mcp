@@ -4,7 +4,7 @@ Implementation date: 2026-10-19. This is the one breaking tool-interface change;
 package/executable/repository names and MCP client keys do not change.
 `serverInfo.name` is now `book-acquisition`. No old tool is an alias: each returns
 an `invalid_argument` envelope with a helpful replacement and no provider call.
-See [API reference](api.md) and [ADR-012](adr/ADR-012-Acquisition-Tool-Interface.md).
+See [API reference](api.md) and [ADR-012](https://github.com/rookslog/zlibrary-mcp/blob/master/docs/adr/ADR-012-Acquisition-Tool-Interface.md).
 
 | Old tool | Replacement and arguments |
 |---|---|

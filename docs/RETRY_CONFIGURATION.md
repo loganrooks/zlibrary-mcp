@@ -273,7 +273,7 @@ read-timeout, integrity, and mixed permanent/transient details. Python owns its
 provider walk. Transient aggregate leaves still count as dependency-health evidence.
 
 Breakers are independent, one per provider: EAPI, Library Genesis, and Anna's Archive
-([ADR-011](adr/ADR-011-Z-Library-Source-Adapter.md)). Each 2.0 search or download
+([ADR-011](https://github.com/rookslog/zlibrary-mcp/blob/master/docs/adr/ADR-011-Z-Library-Source-Adapter.md)). Each 2.0 search or download
 bridge call names one source, so an Anna's outage never refuses LibGen, nor the
 reverse; an ordered `["annas","libgen"]` search still reaches LibGen while Anna's is
 open. A bridge-level `auto` walk, which no 2.0 tool sends, covers both providers in
@@ -473,9 +473,9 @@ If responses are too slow:
 
 ## Related Documentation
 
-- [PATTERNS.md](../.claude/PATTERNS.md) - Code patterns and best practices
-- [ISSUES.md](../ISSUES.md) - Known issues including ISSUE-005 (resolved)
-- [ADR-002](./adr/ADR-002-Download-Workflow-Redesign.md) - Download workflow architecture
+- [PATTERNS.md](https://github.com/rookslog/zlibrary-mcp/blob/master/.claude/PATTERNS.md) - Code patterns and best practices
+- [ISSUES.md](https://github.com/rookslog/zlibrary-mcp/blob/master/ISSUES.md) - Known issues including ISSUE-005 (resolved)
+- [ADR-002](https://github.com/rookslog/zlibrary-mcp/blob/master/docs/adr/ADR-002-Download-Workflow-Redesign.md) - Download workflow architecture
 
 ## Testing
 

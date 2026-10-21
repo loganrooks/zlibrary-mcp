@@ -67,6 +67,7 @@ export interface Admission {
 
 interface Probe {
   exclusive: boolean;
+  holdUntil?: number;
   timer?: ReturnType<typeof setTimeout>;
 }
 
@@ -123,6 +124,7 @@ export class CircuitBreaker {
       holdFor: (ms) => {
         if (!holding() || probe!.timer) return;
         const token = probe!;
+        token.holdUntil = Date.now() + ms;
         token.timer = setTimeout(() => (token.exclusive = false), ms);
         token.timer.unref?.();
       },
@@ -152,7 +154,9 @@ export class CircuitBreaker {
   private openError(): CircuitBreakerOpenError {
     return new CircuitBreakerOpenError(
       this.dependency,
-      Math.max(0, this.timeout - (Date.now() - (this.lastFailureTime ?? Date.now()))),
+      this.probe?.exclusive && this.probe.holdUntil !== undefined
+        ? Math.max(1, this.probe.holdUntil - Date.now())
+        : Math.max(0, this.timeout - (Date.now() - (this.lastFailureTime ?? Date.now()))),
     );
   }
 

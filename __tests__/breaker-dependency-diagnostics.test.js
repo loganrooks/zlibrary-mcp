@@ -91,3 +91,34 @@ test('EAPI breaker refusal has no request diagnostic', async () => {
   );
   expect(runner).toHaveBeenCalledTimes(1);
 });
+
+test('a held HALF_OPEN hint stays positive when the clock passes its deadline before timer dispatch', async () => {
+  jest.useFakeTimers();
+  const breaker = new CircuitBreaker({ dependency: 'eapi', threshold: 1, timeout: 60000 });
+  await expect(
+    breaker.execute(async () => {
+      throw new Error('offline');
+    }),
+  ).rejects.toThrow();
+  await jest.advanceTimersByTimeAsync(60001);
+  let release;
+  const probe = breaker.execute((admission) => {
+    admission.holdFor(240000);
+    return new Promise((resolve) => {
+      release = resolve;
+    });
+  });
+  // Move the wall clock only: the exclusive-hold timer has not been dispatched.
+  jest.setSystemTime(Date.now() + 240001);
+  const refusedOperation = jest.fn(async () => 'must not execute');
+  try {
+    const failure = await breaker.execute(refusedOperation).catch((error) => error);
+    const reply = errorEnvelope(failure, 'search', 'zlibrary');
+    expect(reply.error.code).toBe('breaker_open');
+    expect(reply.error.retry_after_s).toBeGreaterThanOrEqual(1);
+    expect(refusedOperation).not.toHaveBeenCalled();
+  } finally {
+    release();
+    await probe;
+  }
+});

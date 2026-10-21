@@ -219,6 +219,22 @@ describe('release image gate (#291 F1/F2/F5/F6)', () => {
   });
 });
 
+test.each([
+  ['ci.yml', 'docker'],
+  ['publish.yml', 'publish-packages'],
+])('%s pins buildx and BuildKit for the attested image gate', (file, job) => {
+  const config = parse(
+    readFileSync(new URL(`../.github/workflows/${file}`, import.meta.url), 'utf8'),
+  );
+  const setup = config.jobs[job].steps.find((s) =>
+    s.uses?.startsWith('docker/setup-buildx-action@'),
+  );
+  expect(setup?.with).toEqual({
+    version: 'v0.38.0',
+    'driver-opts': 'image=moby/buildkit:v0.33.1',
+  });
+});
+
 test('PR Docker CI rehearses the pinned attested build and local-registry publication', () => {
   const ci = parse(readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8'));
   expect(ci.on.pull_request.branches).toContain('master');

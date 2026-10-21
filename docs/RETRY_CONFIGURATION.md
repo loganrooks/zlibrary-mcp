@@ -211,10 +211,10 @@ The circuit breaker protects against cascading failures:
    are refused with the ordinary `breaker_open` error while the probe holds the
    circuit. A memory-mode Z-Library download settles its probe as a success at the
    session grant, when the owner hands its transfer a valid session; the transfer
-   then counts like any CLOSED call. A probe whose call has the long download budget holds the circuit
-   for at most `PYTHON_BRIDGE_TIMEOUT`; after that further callers are admitted,
-   and the probe still delivers its own verdict. Calls with the ordinary budget
-   hold the circuit until their verdict.
+   then counts like any CLOSED call. Every probe, including an ordinary call
+   with retries, holds the circuit for at most one `PYTHON_BRIDGE_TIMEOUT` window
+   (240 seconds by default); after that further callers are admitted, and the
+   probe still delivers its own verdict. Retrying does not renew the hold.
 4. **Probe verdict**: success closes the circuit; a counted failure re-opens it for
    a fresh timeout; a probe that says nothing about health (cancelled, a
    non-transient error, a verified receipt) leaves it OPEN with the timeout spent,
@@ -232,8 +232,15 @@ four attempts adds one failure, and a call that recovers on a retry adds none.
 The default threshold remains five failed logical calls; with three retries this
 allows up to twenty failed attempts before opening. Non-transient final errors
 and caller cancellation, including cancellation during backoff, add no failure.
-A HALF_OPEN probe keeps its admission across retries and delivers one final
-verdict. Existing long-probe hold limits still apply.
+A HALF_OPEN probe delivers one final verdict across retries, but its exclusive
+hold ends at the ordinary bridge window even if retries or a long download are
+still running. Already-aborted calls are rejected before breaker admission.
+
+An OPEN refusal exposes the remaining breaker cooldown as `retry_after_s`.
+During an exclusive HALF_OPEN hold, that hint instead uses the hold's remaining
+time, rounded up to seconds; it stays positive while the hold is live. This
+hint also survives the error wrap at a lazy Z-Library session handoff. A session
+grant or an earlier probe verdict can release the hold before the hint expires.
 
 An OPEN-breaker refusal never starts or extends the session owner's login
 cooldown (#261). A login that actually runs and fails still uses that policy;
@@ -266,7 +273,7 @@ read-timeout, integrity, and mixed permanent/transient details. Python owns its
 provider walk. Transient aggregate leaves still count as dependency-health evidence.
 
 Breakers are independent, one per provider: EAPI, Library Genesis, and Anna's Archive
-([ADR-011](adr/ADR-011-Z-Library-Source-Adapter.md)). Each 2.0 search or download
+([ADR-011](https://github.com/rookslog/zlibrary-mcp/blob/master/docs/adr/ADR-011-Z-Library-Source-Adapter.md)). Each 2.0 search or download
 bridge call names one source, so an Anna's outage never refuses LibGen, nor the
 reverse; an ordered `["annas","libgen"]` search still reaches LibGen while Anna's is
 open. A bridge-level `auto` walk, which no 2.0 tool sends, covers both providers in
@@ -466,9 +473,9 @@ If responses are too slow:
 
 ## Related Documentation
 
-- [PATTERNS.md](../.claude/PATTERNS.md) - Code patterns and best practices
-- [ISSUES.md](../ISSUES.md) - Known issues including ISSUE-005 (resolved)
-- [ADR-002](./adr/ADR-002-Download-Workflow-Redesign.md) - Download workflow architecture
+- [PATTERNS.md](https://github.com/rookslog/zlibrary-mcp/blob/master/.claude/PATTERNS.md) - Code patterns and best practices
+- [ISSUES.md](https://github.com/rookslog/zlibrary-mcp/blob/master/ISSUES.md) - Known issues including ISSUE-005 (resolved)
+- [ADR-002](https://github.com/rookslog/zlibrary-mcp/blob/master/docs/adr/ADR-002-Download-Workflow-Redesign.md) - Download workflow architecture
 
 ## Testing
 

@@ -69,3 +69,5 @@ class DownloadResult:
     url: str
     source: SourceType
     quota_info: Optional[QuotaInfo] = None
+    # Resolution identity, distinct from the host observed during transfer.
+    mirror: str = ""

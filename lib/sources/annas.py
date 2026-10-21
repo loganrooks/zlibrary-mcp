@@ -34,6 +34,7 @@ from .net import (
     classify_httpx_error,
     port_of,
     probe_host,
+    proxy_in_use,
 )
 
 PROVIDER = "annas"
@@ -188,7 +189,10 @@ class AnnasArchiveAdapter(SourceAdapter):
         """
         timeout = self.config.preflight_timeout
         if deadline is not None:
-            minimum = (timeout if self.config.preflight_enabled else 0.0) + 1.0
+            preflight_runs = self.config.preflight_enabled and not proxy_in_use(
+                f"{self.scheme}://{self.host}:{self.port}"
+            )
+            minimum = (timeout if preflight_runs else 0.0) + 1.0
             timeout = deadline.reserve(timeout, minimum=minimum)
             if timeout is None:
                 raise ProviderTimeoutError(
@@ -520,6 +524,7 @@ class AnnasArchiveAdapter(SourceAdapter):
             url=download_url,
             source=SourceType.ANNAS_ARCHIVE,
             quota_info=quota_info,
+            mirror=self.host,
         )
 
     async def close(self) -> None:

@@ -12,7 +12,7 @@ import {
   authRejected,
 } from './eapi-session.js';
 import { CircuitBreaker, type Admission } from './circuit-breaker.js';
-import { ZLibraryError, PythonBridgeError } from './errors.js';
+import { ZLibraryError, PythonBridgeError, BridgeTimeoutError } from './errors.js';
 import { logger } from './logger.js';
 import { getPythonLibDirectory } from './paths.js';
 import { runPythonBridge, LONG_BRIDGE_TIMEOUT_MS } from './python-runner.js';
@@ -86,7 +86,7 @@ function sourceScope(functionName: string, args: Record<string, any>): string {
   if (functionName === 'search_multi_source') {
     // As lib/sources/router.py routes it: exact `auto` walks both providers,
     // exact `annas` reaches Anna's, and every other spelling reaches LibGen.
-    const source = args.source ?? 'auto';
+    const source = args.source === undefined ? 'auto' : args.source;
     return source === 'auto' ? 'auto' : source === 'annas' ? 'annas' : 'libgen';
   }
   const source = String(args.book_details?.source || '').toLowerCase();
@@ -105,9 +105,8 @@ const LONG_RUNNING_FUNCTIONS = new Set(['download_book', 'acquire_book']);
 
 /**
  * The ordinary bridge budget, parsed as python-runner parses
- * PYTHON_BRIDGE_TIMEOUT. A long-budget HALF_OPEN probe holds the breaker
- * exclusively for at most this long, so a slow download cannot refuse every
- * other call for the whole long budget.
+ * PYTHON_BRIDGE_TIMEOUT. Every HALF_OPEN probe holds the breaker exclusively
+ * for at most this long, even if its transfer or retry sequence takes longer.
  */
 const ORDINARY_BRIDGE_TIMEOUT_MS = (() => {
   const raw = process.env.PYTHON_BRIDGE_TIMEOUT?.trim();
@@ -210,11 +209,8 @@ async function callPythonFunction(
         ? 'eapi'
         : sourceScope(functionName, args)
     ]!;
-  const budget =
-    callOptions.timeoutMs ?? defaultTimeoutFor(functionName) ?? ORDINARY_BRIDGE_TIMEOUT_MS;
-  // Short calls keep the one-probe rule until their verdict.
   const boundProbe = (admission: Admission) => {
-    if (budget > ORDINARY_BRIDGE_TIMEOUT_MS) admission.holdFor(ORDINARY_BRIDGE_TIMEOUT_MS);
+    admission.holdFor(ORDINARY_BRIDGE_TIMEOUT_MS);
   };
   const invokeWithRetry = (transport?: SessionInput, signal = callOptions.signal) =>
     withRetry(
@@ -598,6 +594,7 @@ async function callPythonFunction(
                   functionName,
                   stderr: err.stderr,
                   details: err.context?.details,
+                  retryAfterMs: err.context?.retryAfterMs,
                   originalError: err,
                 },
               ),
@@ -625,7 +622,14 @@ async function callPythonFunction(
         shouldRetry: isRetryableError,
       },
     );
-  const invoke = (transport?: SessionInput, signal = callOptions.signal) => {
+  const invoke = async (transport?: SessionInput, signal = callOptions.signal) => {
+    if (signal?.aborted) {
+      const label = `python_bridge.${functionName}`;
+      throw new BridgeTimeoutError(`${label} aborted before it started`, {
+        label,
+        reason: 'aborted',
+      });
+    }
     // Account the logical call's final verdict, after its retry budget. A lazy
     // child is admitted once at its session request above, including owner
     // control children; receipt-only and intentional auth retries stay outside.

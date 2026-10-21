@@ -33,6 +33,7 @@ from .net import (
     classify_httpx_error,
     classify_requests_error,
     probe_host,
+    proxy_in_use,
     run_bounded,
 )
 
@@ -334,9 +335,14 @@ def mirror_host(mirror: str) -> str:
     return f"libgen.{mirror}"
 
 
-def _attempt_minimum(config: SourceConfig) -> float:
+def _attempt_minimum(config: SourceConfig, mirror: str) -> float:
     """Least useful walk slice before starting a LibGen mirror attempt."""
-    preflight_budget = config.preflight_timeout if config.preflight_enabled else 0.0
+    preflight_budget = (
+        config.preflight_timeout
+        if config.preflight_enabled
+        and not proxy_in_use(f"https://{mirror_host(mirror)}:443")
+        else 0.0
+    )
     return preflight_budget + 1.0
 
 
@@ -534,7 +540,7 @@ class LibgenAdapter(SourceAdapter):
             if (
                 deadline.reserve(
                     self.config.total_timeout,
-                    minimum=_attempt_minimum(self.config),
+                    minimum=_attempt_minimum(self.config, mirror),
                 )
                 is None
             ):
@@ -884,7 +890,7 @@ class LibgenAdapter(SourceAdapter):
                 if (
                     deadline.reserve(
                         self.config.total_timeout,
-                        minimum=_attempt_minimum(self.config),
+                        minimum=_attempt_minimum(self.config, mirror),
                     )
                     is None
                 ):

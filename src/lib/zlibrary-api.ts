@@ -86,7 +86,7 @@ function sourceScope(functionName: string, args: Record<string, any>): string {
   if (functionName === 'search_multi_source') {
     // As lib/sources/router.py routes it: exact `auto` walks both providers,
     // exact `annas` reaches Anna's, and every other spelling reaches LibGen.
-    const source = args.source ?? 'auto';
+    const source = args.source === undefined ? 'auto' : args.source;
     return source === 'auto' ? 'auto' : source === 'annas' ? 'annas' : 'libgen';
   }
   const source = String(args.book_details?.source || '').toLowerCase();

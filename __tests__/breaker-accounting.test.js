@@ -557,18 +557,20 @@ test('a non-lazy long probe that fails after its hold expired still re-opens', a
   expect(breaker.getState()).toBe('OPEN');
 });
 
-test('a short non-lazy probe keeps the one-probe rule past the normal budget', async () => {
+test('a short non-lazy probe releases the one-probe hold after the normal budget', async () => {
   await load({ PYTHON_BRIDGE_TIMEOUT: '50' });
   await open('libgen');
   jest.spyOn(Date, 'now').mockReturnValue(Date.now() + 60001);
   const release = hold('search');
   const probe = api.searchMultiSource({ query: 'x', source: 'libgen' });
-  await tick(60);
   await expect(api.searchMultiSource({ query: 'x', source: 'libgen' })).rejects.toMatchObject({
     code: 'CIRCUIT_BREAKER_OPEN',
   });
+  await tick(60);
+  const admitted = api.searchMultiSource({ query: 'x', source: 'libgen' });
   release();
   await expect(probe).resolves.toEqual({ daily_limit: 10 });
+  await expect(admitted).resolves.toEqual({ daily_limit: 10 });
   expect(breaker.getState()).toBe('CLOSED');
 });
 

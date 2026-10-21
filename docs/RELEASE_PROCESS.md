@@ -136,13 +136,20 @@ from the same tarball that npm will publish, loads it with its BuildKit
 provenance in Docker's containerd image store, checks its index digest, and runs
 the offline image smoke. Only then does it push and verify the exact tested
 image in GHCR, followed by npm publication as the last step (#291). Both CI and
-publishing pin Docker Engine **29.9.1** via `setup-docker-action`. A failed or
-skipped test gate or a failed image smoke blocks both publishers (#211).
+publishing pin Docker Engine **29.9.1** via `setup-docker-action`, and buildx
+**v0.38.0** with BuildKit **v0.33.1** via `setup-buildx-action`. A version bump is
+a deliberate edit to both workflows and the pin assertions in
+`__tests__/publish-workflow.test.js`. A failed or skipped test gate or a failed
+image smoke blocks both publishers (#211).
 
 A GHCR push or verification failure leaves npm unpublished; some GHCR tags may
-already exist. Re-run failed jobs to repeat the smoke, re-push the tested digest
-(idempotent for the same digest), and finish npm. An npm failure leaves the
-verified image in GHCR and no GitHub Release. On a re-run,
+already exist. A re-run of `publish-packages` rebuilds the image, checks its
+identity, re-smokes it, and pushes a fresh tested digest over `:X.Y.Z`, `:X.Y`
+and `:latest` before finishing npm. The fresh digest is inferred from the logged
+provenance `builder-id`, which includes the run attempt; no second attempt was run
+([#303](https://github.com/rookslog/zlibrary-mcp/issues/303)). The identity check
+and smoke still gate every push. An npm failure leaves the verified image in GHCR
+and no GitHub Release. On a re-run,
 `scripts/publish-npm-idempotent.mjs` hashes the exact tarball and queries
 `npm view zlibrary-mcp@$V dist.integrity`: identical SHA-512 integrity skips npm
 publication; an absent version (explicit E404) permits publishing with provenance.

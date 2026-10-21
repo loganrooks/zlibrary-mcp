@@ -8,9 +8,17 @@ import pytest
 import python_bridge
 
 
-@pytest.mark.parametrize("arguments", [{"count": 0}, {"page": 0}])
+@pytest.mark.parametrize(
+    "function,arguments",
+    [
+        ("search", {"count": 0}),
+        ("search", {"page": 0}),
+        ("download_book", {"unknown_option": True}),
+        ("download_book", {"processed_output_format": "txt"}),
+    ],
+)
 async def test_login_control_argument_refusal_is_not_a_failed_login(
-    arguments, monkeypatch, capsys
+    function, arguments, monkeypatch, capsys
 ):
     async def forbidden():
         pytest.fail("local arguments must be refused before login")
@@ -19,7 +27,7 @@ async def test_login_control_argument_refusal_is_not_a_failed_login(
     monkeypatch.setattr(python_bridge, "_session_input", {"action": "login"})
     monkeypatch.setattr(python_bridge, "initialize_eapi_client", forbidden)
     monkeypatch.setattr(
-        sys, "argv", ["python_bridge.py", "search", json.dumps(arguments)]
+        sys, "argv", ["python_bridge.py", function, json.dumps(arguments)]
     )
     with pytest.raises(SystemExit) as stopped:
         await python_bridge.main()
@@ -30,6 +38,93 @@ async def test_login_control_argument_refusal_is_not_a_failed_login(
     assert data["type"] == "ValueError"
     assert "diagnostics" not in data
     assert "login_failed" not in data
+
+
+@pytest.mark.parametrize("session", [None, {"action": "login"}])
+async def test_unknown_function_refused_before_authentication(
+    session, monkeypatch, capsys
+):
+    initialized = []
+
+    async def initialize():
+        initialized.append(True)
+
+    monkeypatch.setattr(python_bridge, "_eapi_client", None)
+    monkeypatch.setattr(python_bridge, "_session_input", session)
+    monkeypatch.setattr(python_bridge, "initialize_eapi_client", initialize)
+    monkeypatch.setattr(sys, "argv", ["python_bridge.py", "r1_unknown_function", "{}"])
+    with pytest.raises(SystemExit) as stopped:
+        await python_bridge.main()
+    assert stopped.value.code == 1
+    streams = capsys.readouterr()
+    assert initialized == []
+    assert streams.out == ""
+    data = json.loads(streams.err.strip().splitlines()[-1])
+    assert data["type"] == "ValueError"
+    assert "diagnostics" not in data
+    assert "login_failed" not in data
+
+
+def test_early_admission_names_match_actual_dispatch():
+    """A supported dispatch addition must not be refused by early admission."""
+    import ast
+    import inspect
+
+    tree = ast.parse(inspect.getsource(python_bridge._dispatch_bridge_function))
+    names = {
+        node.comparators[0].value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Compare)
+        and isinstance(node.left, ast.Name)
+        and node.left.id == "function_name"
+        and len(node.comparators) == 1
+        and isinstance(node.comparators[0], ast.Constant)
+        and isinstance(node.ops[0], ast.Eq)
+    }
+    assert names
+    assert python_bridge._BRIDGE_FUNCTION_NAMES == names
+
+
+@pytest.mark.parametrize(
+    "provider",
+    [
+        "libgen",
+        "annas",
+        "annas_archive",
+        "auto",
+        "zlibrary",
+        "r1_unknown_provider",
+    ],
+)
+def test_eapi_source_projection_drops_unknown_provider_and_all_hosts(provider):
+    projected = python_bridge._safe_eapi_details(
+        {
+            "provider": provider,
+            "host": "r1-secret-host.invalid",
+            "reason": "http_error",
+            "detail": "HTTP 503",
+            "message": "r1-untrusted-prose",
+            "failures": [
+                {
+                    "provider": provider,
+                    "host": "r1-secret-host.invalid",
+                    "reason": "http_error",
+                    "detail": "HTTP 503",
+                    "message": "r1-untrusted-prose",
+                }
+            ],
+        }
+    )
+    assert projected["reason"] == "http_error"
+    assert projected["failures"][0]["detail"] == "HTTP 503"
+    if provider == "r1_unknown_provider":
+        assert "provider" not in projected["failures"][0]
+        assert provider not in json.dumps(projected)
+    else:
+        assert projected["failures"][0]["provider"] == provider
+    assert "provider" not in projected
+    assert "host" not in json.dumps(projected)
+    assert "r1-untrusted-prose" not in json.dumps(projected)
 
 
 @pytest.mark.parametrize("missing", ["ZLIBRARY_EMAIL", "ZLIBRARY_PASSWORD"])

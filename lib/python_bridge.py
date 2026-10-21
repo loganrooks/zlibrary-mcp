@@ -2172,6 +2172,25 @@ def _requires_eapi_client(function_name: str, args_dict: dict) -> bool:
     return True
 
 
+_BRIDGE_FUNCTION_NAMES = frozenset(
+    {
+        "acquire_book",
+        "search",
+        "full_text_search",
+        "get_download_history",
+        "get_download_limits",
+        "download_book",
+        "get_book_metadata_complete",
+        "search_by_term_bridge",
+        "search_by_author_bridge",
+        "search_advanced",
+        "get_recent_books",
+        "eapi_health_check",
+        "search_multi_source",
+    }
+)
+
+
 async def main():
     global _session_published
     _session_published = None
@@ -2198,6 +2217,8 @@ async def main():
             _admit_download_args(args_dict)
         elif function_name == "process_document":
             raise ValueError("Text processing was removed in 2.0.")
+        if function_name not in _BRIDGE_FUNCTION_NAMES:
+            raise ValueError(f"Unknown function: {function_name}")
         # Decide before dispatch whether this call needs Z-Library
         # authentication at all — see _requires_eapi_client (#106, #129).
         if function_name in {"search", "get_download_history", "search_multi_source"}:

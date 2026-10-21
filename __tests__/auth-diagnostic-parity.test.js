@@ -328,3 +328,57 @@ test('source detail projection drops provider prose and malformed HTTP status to
   });
   expect(JSON.stringify(projected)).not.toContain('secret');
 });
+
+test('Python and TypeScript source projection reasons stay in parity with Node controls', async () => {
+  const typescriptReasons = sourcePolicy('src/lib/auth-diagnostics.ts', 'detail.reason');
+  const py = await python(
+    `import ast, inspect, json
+import python_bridge as bridge
+from lib.sources.errors import REASON_TEXT
+tree = ast.parse(inspect.getsource(bridge._safe_eapi_details))
+assignment = next(node for node in ast.walk(tree) if isinstance(node, ast.Assign)
+ and any(isinstance(target, ast.Name) and target.id == 'reasons' for target in node.targets))
+expression = assignment.value
+assert isinstance(expression, ast.BinOp) and isinstance(expression.op, ast.BitOr)
+assert ast.unparse(expression.left) == 'set(REASON_TEXT)'
+reasons = sorted(set(REASON_TEXT) | ast.literal_eval(expression.right))
+projected = {reason: bridge._safe_eapi_details({'reason': reason,
+ 'failures': [{'provider': 'libgen', 'reason': reason}]}) for reason in reasons}
+print(json.dumps({'reasons': reasons, 'projected': projected,
+ 'unknown': bridge._safe_eapi_details({'reason': 'r1_unknown_reason'})}))`,
+  );
+  // These two Node runner controls predate this PR; Python source exceptions
+  // do not emit them. All source/acquisition reasons must survive both sides.
+  expect([...new Set(typescriptReasons)].sort()).toEqual(
+    [...py.reasons, 'timeout', 'aborted'].sort(),
+  );
+  expect(py.unknown).toEqual({});
+  for (const reason of py.reasons) {
+    expect(py.projected[reason]).toEqual({
+      reason,
+      failures: [{ provider: 'libgen', reason }],
+    });
+    expect(
+      safeEapiFailureEnvelope({
+        type: 'RuntimeError',
+        diagnostics,
+        details: py.projected[reason],
+      }).details,
+    ).toEqual(py.projected[reason]);
+  }
+  for (const reason of ['timeout', 'aborted'])
+    expect(
+      safeEapiFailureEnvelope({
+        type: 'RuntimeError',
+        diagnostics,
+        details: { reason },
+      }).details,
+    ).toEqual({ reason });
+  expect(
+    safeEapiFailureEnvelope({
+      type: 'RuntimeError',
+      diagnostics,
+      details: { reason: 'r1_unknown_reason' },
+    }).details,
+  ).toEqual({});
+});

@@ -98,6 +98,12 @@ export function errorEnvelope(error: unknown, operation: string, source?: string
 export function classifyFailure(error: any, operation: string, source?: string): ToolFailure {
   if (error instanceof ToolFailure) return error;
   const context = error?.context ?? {};
+  const breakerError =
+    error instanceof CircuitBreakerOpenError
+      ? error
+      : context.originalError instanceof CircuitBreakerOpenError
+        ? context.originalError
+        : undefined;
   const diagnostics = readAuthDiagnostics(context.diagnostics);
   const detail = context.details ?? {};
   const candidate = detail.reason ?? context.reason ?? 'unknown';
@@ -274,7 +280,7 @@ export function classifyFailure(error: any, operation: string, source?: string):
         : {}),
       detail: {
         reason,
-        ...(error instanceof CircuitBreakerOpenError ? { dependency: error.dependency } : {}),
+        ...(breakerError ? { dependency: breakerError.dependency } : {}),
         ...(diagnostics ? { diagnostics } : {}),
         ...(typeof detail.request_issued === 'boolean'
           ? { request_issued: detail.request_issued }

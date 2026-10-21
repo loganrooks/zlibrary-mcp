@@ -160,8 +160,9 @@ absolute paths; relative paths still resolve under the root and traversal/home
 shorthand stays refused. The flag accepts only `1`, `0` or unset and logs a
 startup warning when enabled. If the root is unset and `./downloads` exists,
 startup reports the new location on stderr. See [download-location migration](docs/interface-migration.md#download-location).
-New directory levels are 0700 without changing existing directories; published
-artifacts and receipts are 0600.
+On POSIX, new directory levels are 0700 without changing existing directories;
+published artifacts and receipts are 0600. On Windows, chmod only toggles the
+read-only attribute; these modes do not set access-control permissions.
 `filename` is a sanitized basename; its extension is forced to the acquired
 format. The root guard admits arguments; it is not a sandbox against a local
 operator swapping directories during a call. On local filesystems, POSIX leases

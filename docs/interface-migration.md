@@ -76,9 +76,13 @@ accepts only `1`, `0` or unset; invalid values fail startup, and `1` logs one
 warning on stderr. With an unset root and an existing `./downloads`, startup
 reports the new location on stderr.
 
-New directory levels are 0700; existing directory permissions stay unchanged.
-Published artifacts and receipts are 0600. Docker pins the root to
+On POSIX, new directory levels are 0700; existing directory permissions stay unchanged.
+Published artifacts and receipts are 0600. On Windows, chmod only toggles the
+read-only attribute, not access-control permissions. Docker pins the root to
 `/app/downloads`, preserving the mounted download volume without user action.
+On Linux bind mounts, new directories (0700) and files (0600) belong to the
+container user; use Docker `--user` or Compose `user:` to match the host UID/GID,
+or use chmod as the owner to grant host readers access.
 Tunnel deployers already setting a root keep that root; relative paths now
 resolve under it even if the wrapper does not change its working directory.
 

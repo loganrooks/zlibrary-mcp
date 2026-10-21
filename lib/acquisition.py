@@ -129,10 +129,20 @@ def output_directory(output_dir):
             )
     root = root.resolve()
     value = os.fspath(output_dir) if output_dir else ""
-    if value.startswith("~") or ".." in Path(value).parts:
+    caller_path = Path(value)
+    if (
+        "\x00" in value
+        or value.startswith("~")
+        or ".." in caller_path.parts
+        or (
+            _WINDOWS
+            and (caller_path.drive or caller_path.root)
+            and not caller_path.is_absolute()
+        )
+    ):
         raise AcquisitionError(
             "output_refused",
-            "output_dir cannot contain '..' or start with '~'; use ZLIBRARY_OUTPUT_ROOT",
+            "output_dir must be relative or fully absolute, without NUL, '..' or leading '~'; use ZLIBRARY_OUTPUT_ROOT",
         )
     directory = (root / value).resolve()
     if os.environ.get(
@@ -157,6 +167,27 @@ def _private_directory(directory):
             raise
     else:
         directory.chmod(0o700)
+
+
+def _prepare_directory(directory):
+    """Create private levels, then reject a directory redirected during creation."""
+    _private_directory(directory)
+    if directory.resolve() != directory:
+        raise AcquisitionError(
+            "output_refused", "Output directory changed during creation"
+        )
+
+
+def _private_reuse(artifact, *receipts):
+    """Tighten verified files without changing contents or repairing receipt state."""
+    if os.name == "posix":
+        try:
+            for path in (artifact, *receipts):
+                path.chmod(0o600)
+        except OSError as error:
+            raise AcquisitionError(
+                "output_refused", "Cannot make reused files private"
+            ) from error
 
 
 def _identity(book):
@@ -610,7 +641,8 @@ async def _acquire(
 ):
     """Lease initial and canonical destinations through publication and every receipt write.
 
-    With ``receipt_only`` a verified receipt is served without writing any file; otherwise
+    With ``receipt_only`` a verified receipt is served without writing file contents
+    (POSIX permissions are tightened on reuse); otherwise
     the usual pre-intent refusal is raised or ``{"receipt_hit": False}`` returned,
     before an intent is written or ``transfer`` is called. The parent uses it when
     its breaker refuses provider work.
@@ -619,7 +651,7 @@ async def _acquire(
     directory = output_directory(output_dir)
     destination = _guard_target(directory / destination_name(book, filename), directory)
     source, identifiers = _identity(book)
-    _private_directory(directory)
+    _prepare_directory(directory)
     receipt_path = Path(str(destination) + ".acq.json")
     budget = _long_bridge_budget()
     async with destination_lock(destination, budget):
@@ -650,6 +682,10 @@ async def _acquire(
                 candidate = canonical if canonical else previous
                 path = _verified_artifact(candidate, directory)
                 if path == target and _same_identity(candidate, source, identifiers):
+                    receipts = {receipt_path}
+                    if canonical:
+                        receipts.add(canonical_path)
+                    _private_reuse(path, *receipts)
                     _mark_published()  # finish any receipt repair for this usable artifact
                     promoted = candidate["state"] == "intent"
                     if promoted:
@@ -660,7 +696,7 @@ async def _acquire(
                             "reused": False,
                         }
                     if receipt_only:
-                        # Read-only: the next ordinary call repairs these receipts.
+                        # No content writes: the next ordinary call repairs these receipts.
                         held_at = canonical_path if canonical else receipt_path
                         return _reply(candidate, held_at, True)
                     if promoted or not canonical:

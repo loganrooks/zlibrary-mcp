@@ -20,10 +20,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking: download location.** Downloads are contained by default in the
   platform data directory's `zlibrary-mcp/downloads`, configurable with absolute
   `ZLIBRARY_OUTPUT_ROOT`. Relative `output_dir` values resolve under that root.
-  Set `ZLIBRARY_OUTPUT_ROOT=$PWD/downloads` to retain the old location, or opt
-  into outside absolute paths with `ZLIBRARY_UNRESTRICTED_OUTPUT=1`. Traversal
+  To retain the old location, set an absolute path, for example
+  `"ZLIBRARY_OUTPUT_ROOT": "/home/alice/zlibrary-mcp/downloads"` in a JSON client
+  environment config. JSON does not expand `$PWD`; a literal `$PWD/downloads`
+  is relative and fails startup. Opt into outside absolute paths with
+  `ZLIBRARY_UNRESTRICTED_OUTPUT=1`. Traversal
   components and caller home shorthand are refused before provider contact.
-  New directories are 0700; artifacts and receipts are 0600. Docker continues
+  On POSIX, new directories are 0700; artifacts and receipts are 0600. On Windows,
+  chmod only toggles read-only, not access-control permissions. Docker continues
   using its mounted `/app/downloads`. See [migration](docs/interface-migration.md#download-location).
 - Added intent/completion acquisition sidecars, SHA-256 re-hashing before reuse,
   cross-process destination locks and crash recovery before receipt finalization.

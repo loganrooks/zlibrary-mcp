@@ -149,24 +149,28 @@ export function createServer(): AcquisitionServer {
   return server;
 }
 function outputRoot(): string {
+  const outputPath = process.platform === 'win32' ? path.win32 : path.posix;
+  // win32.isAbsolute also accepts root-relative paths; require a drive or UNC share.
+  const fullyAbsolute = (value: string): boolean =>
+    outputPath.isAbsolute(value) &&
+    (process.platform !== 'win32' || outputPath.parse(value).root.length > 1);
   const configured = process.env.ZLIBRARY_OUTPUT_ROOT;
   if (configured !== undefined) {
     const expanded =
       configured === '~'
         ? homedir()
         : configured.startsWith('~/') || configured.startsWith('~\\')
-          ? path.join(homedir(), configured.slice(2))
+          ? outputPath.join(homedir(), configured.slice(2))
           : configured;
-    if (!path.isAbsolute(expanded))
-      throw new Error('ZLIBRARY_OUTPUT_ROOT must be an absolute path');
-    return path.resolve(expanded);
+    if (!fullyAbsolute(expanded)) throw new Error('ZLIBRARY_OUTPUT_ROOT must be an absolute path');
+    return outputPath.resolve(expanded);
   }
   const data =
     process.platform === 'win32'
-      ? process.env.LOCALAPPDATA || path.join(homedir(), 'AppData', 'Local')
-      : process.env.XDG_DATA_HOME || path.join(homedir(), '.local', 'share');
-  if (!path.isAbsolute(data)) throw new Error('Output data directory must be absolute');
-  return path.join(data, 'zlibrary-mcp', 'downloads');
+      ? process.env.LOCALAPPDATA || outputPath.join(homedir(), 'AppData', 'Local')
+      : process.env.XDG_DATA_HOME || outputPath.join(homedir(), '.local', 'share');
+  if (!fullyAbsolute(data)) throw new Error('Output data directory must be absolute');
+  return outputPath.join(data, 'zlibrary-mcp', 'downloads');
 }
 function getPackageVersion(): string {
   try {

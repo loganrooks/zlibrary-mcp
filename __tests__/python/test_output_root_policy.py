@@ -1,13 +1,15 @@
 """Offline regressions for the settled #204 output policy."""
 
 import os
-from pathlib import Path
+import json
+from pathlib import Path, PureWindowsPath
 import stat
+import sys
 from unittest.mock import AsyncMock
 
 import pytest
 
-from lib import acquisition
+from lib import acquisition, python_bridge as bridge
 from test_interface_acquisition import BOOK, PAYLOAD, transfer
 
 
@@ -124,3 +126,213 @@ def test_relative_environment_root_is_refused(tmp_path, monkeypatch):
     monkeypatch.setenv("ZLIBRARY_OUTPUT_ROOT", "relative")
     with pytest.raises(acquisition.AcquisitionError, match="ZLIBRARY_OUTPUT_ROOT"):
         acquisition.output_directory(None)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("source", ["zlibrary", "libgen"])
+async def test_legacy_outside_root_refuses_before_provider(
+    tmp_path, monkeypatch, source
+):
+    monkeypatch.setenv("ZLIBRARY_OUTPUT_ROOT", str(tmp_path / "root"))
+    login = AsyncMock(side_effect=AssertionError("no authentication"))
+    provider = AsyncMock(side_effect=AssertionError("no provider contact"))
+    monkeypatch.setattr(bridge, "get_eapi_client", login)
+    monkeypatch.setattr(bridge, "_fetch_from_source", provider)
+    with pytest.raises(acquisition.AcquisitionError) as caught:
+        await bridge.download_book(
+            {**BOOK, "source": source}, str(tmp_path / "outside")
+        )
+    assert caught.value.to_dict() == {
+        "reason": "output_refused",
+        "request_issued": False,
+    }
+    login.assert_not_awaited()
+    provider.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_legacy_cli_outside_root_refuses_before_authentication(
+    tmp_path, monkeypatch, capsys
+):
+    monkeypatch.setenv("ZLIBRARY_OUTPUT_ROOT", str(tmp_path / "root"))
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "python_bridge.py",
+            "download_book",
+            json.dumps(
+                {
+                    "book_details": BOOK,
+                    "output_dir": str(tmp_path / "outside"),
+                }
+            ),
+        ],
+    )
+    login = AsyncMock(side_effect=AssertionError("no authentication"))
+    monkeypatch.setattr(bridge, "initialize_eapi_client", login)
+    monkeypatch.setattr(bridge, "_eapi_client", None)
+    monkeypatch.setattr(bridge, "_session_input", None)
+    with pytest.raises(SystemExit) as stopped:
+        await bridge.main()
+    assert stopped.value.code == 1
+    login.assert_not_awaited()
+    streams = capsys.readouterr()
+    assert streams.out == ""
+    error = json.loads(streams.err.strip().splitlines()[-1])
+    assert error["details"]["reason"] == "output_refused"
+    assert error["details"]["request_issued"] is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("output", [None, "new/nested"])
+@pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits")
+async def test_legacy_resolves_under_root_and_publishes_private_file(
+    tmp_path, monkeypatch, output
+):
+    root = tmp_path / "root"
+    monkeypatch.setenv("ZLIBRARY_OUTPUT_ROOT", str(root))
+
+    async def fetch(book, directory):
+        stage = Path(directory) / ".source-test.pdf"
+        stage.write_bytes(PAYLOAD)
+        stage.chmod(0o644)
+        return str(stage)
+
+    monkeypatch.setattr(bridge, "_fetch_from_source", fetch)
+    result = await bridge.download_book(
+        {**BOOK, "source": "libgen"}, output, filename="book.pdf"
+    )
+    directory = root / (output or "")
+    artifact = Path(result["file_path"])
+    assert artifact == directory / "book.pdf"
+    assert artifact.read_bytes() == PAYLOAD
+    assert stat.S_IMODE(artifact.stat().st_mode) == 0o600
+    assert all(
+        stat.S_IMODE(p.stat().st_mode) == 0o700
+        for p in (root, directory.parent, directory)
+        if p != tmp_path
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("legacy", [False, True])
+async def test_symlink_inserted_during_directory_creation_refuses(
+    tmp_path, monkeypatch, legacy
+):
+    root, outside = tmp_path / "root", tmp_path / "outside"
+    root.mkdir()
+    outside.mkdir()
+    monkeypatch.setenv("ZLIBRARY_OUTPUT_ROOT", str(root))
+    original = acquisition._private_directory
+
+    def swap(directory):
+        original(directory)
+        if directory == root / "nested":
+            directory.rmdir()
+            directory.symlink_to(outside, target_is_directory=True)
+
+    monkeypatch.setattr(acquisition, "_private_directory", swap)
+    provider = AsyncMock(side_effect=AssertionError("no provider contact"))
+    monkeypatch.setattr(bridge, "_fetch_from_source", provider)
+    with pytest.raises(acquisition.AcquisitionError) as caught:
+        if legacy:
+            await bridge.download_book({**BOOK, "source": "libgen"}, "nested")
+        else:
+            await acquisition.acquire(BOOK, "nested", transfer=provider)
+    assert caught.value.to_dict() == {
+        "reason": "output_refused",
+        "request_issued": False,
+    }
+    provider.assert_not_awaited()
+    assert list(outside.iterdir()) == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("receipt_only", [False, True])
+@pytest.mark.parametrize("corrected", [False, True])
+@pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits")
+async def test_verified_reuse_restores_private_modes(tmp_path, receipt_only, corrected):
+    async def corrected_transfer(book, directory, *, filename, publication_hook):
+        return await transfer(
+            {**book, "extension": "epub"},
+            directory,
+            filename=filename,
+            publication_hook=publication_hook,
+        )
+
+    provider = AsyncMock(side_effect=corrected_transfer if corrected else transfer)
+    first = await acquisition.acquire(BOOK, str(tmp_path), transfer=provider)
+    paths = [Path(first["path"]), *tmp_path.glob("*.acq.json")]
+    before = {p: p.read_bytes() for p in paths}
+    for path in paths:
+        path.chmod(0o644)
+    result = await acquisition.acquire(
+        BOOK, str(tmp_path), receipt_only=receipt_only, transfer=provider
+    )
+    assert result["transfer_skipped"] is True
+    assert provider.await_count == 1
+    assert {p: p.read_bytes() for p in paths} == before
+    assert all(stat.S_IMODE(p.stat().st_mode) == 0o600 for p in paths)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("unrestricted", ["0", "1"])
+async def test_nul_output_refuses_before_provider(tmp_path, monkeypatch, unrestricted):
+    monkeypatch.setenv("ZLIBRARY_UNRESTRICTED_OUTPUT", unrestricted)
+    provider = AsyncMock(side_effect=AssertionError("no provider contact"))
+    with pytest.raises(acquisition.AcquisitionError) as caught:
+        await acquisition.acquire(BOOK, "bad\x00path", transfer=provider)
+    assert caught.value.to_dict() == {
+        "reason": "output_refused",
+        "request_issued": False,
+    }
+    provider.assert_not_awaited()
+
+
+class LexicalWindowsPath(PureWindowsPath):
+    """Reading-level path resolution: no Windows filesystem access on POSIX."""
+
+    def resolve(self):
+        return self
+
+    def expanduser(self):
+        return self
+
+
+@pytest.mark.parametrize("value", [r"\foo", "D:foo"])
+def test_windows_configured_root_must_have_drive_and_root(monkeypatch, value):
+    monkeypatch.setattr(acquisition, "_WINDOWS", True)
+    monkeypatch.setattr(acquisition, "Path", LexicalWindowsPath)
+    monkeypatch.setenv("ZLIBRARY_OUTPUT_ROOT", value)
+    with pytest.raises(acquisition.AcquisitionError, match="ZLIBRARY_OUTPUT_ROOT"):
+        acquisition.output_directory(None)
+
+
+@pytest.mark.parametrize("unrestricted", ["0", "1"])
+@pytest.mark.parametrize("value", [r"\foo", "D:foo"])
+def test_windows_partially_anchored_output_refuses(monkeypatch, unrestricted, value):
+    monkeypatch.setattr(acquisition, "_WINDOWS", True)
+    monkeypatch.setattr(acquisition, "Path", LexicalWindowsPath)
+    monkeypatch.setenv("ZLIBRARY_OUTPUT_ROOT", r"C:\private")
+    monkeypatch.setenv("ZLIBRARY_UNRESTRICTED_OUTPUT", unrestricted)
+    with pytest.raises(acquisition.AcquisitionError) as caught:
+        acquisition.output_directory(value)
+    assert caught.value.to_dict() == {
+        "reason": "output_refused",
+        "request_issued": False,
+    }
+
+
+def test_windows_relative_and_fully_qualified_outputs(monkeypatch):
+    monkeypatch.setattr(acquisition, "_WINDOWS", True)
+    monkeypatch.setattr(acquisition, "Path", LexicalWindowsPath)
+    monkeypatch.setenv("ZLIBRARY_OUTPUT_ROOT", r"C:\private")
+    assert acquisition.output_directory("nested") == PureWindowsPath(
+        r"C:\private\nested"
+    )
+    assert acquisition.output_directory(r"C:\private\inside") == PureWindowsPath(
+        r"C:\private\inside"
+    )
+    monkeypatch.setenv("ZLIBRARY_UNRESTRICTED_OUTPUT", "1")
+    assert acquisition.output_directory(r"D:\outside") == PureWindowsPath(r"D:\outside")

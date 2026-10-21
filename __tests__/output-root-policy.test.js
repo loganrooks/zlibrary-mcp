@@ -7,7 +7,12 @@ import { createServer, start } from '../dist/index.js';
 import { AcquisitionTools } from '../dist/lib/acquisition-tools.js';
 
 const previous = { ...process.env };
-afterEach(() => { process.env = { ...previous }; jest.restoreAllMocks(); });
+const platformDescriptor = Object.getOwnPropertyDescriptor(process, 'platform');
+afterEach(() => {
+  process.env = { ...previous };
+  Object.defineProperty(process, 'platform', platformDescriptor);
+  jest.restoreAllMocks();
+});
 
 test.each(['true', '', 'yes', '2', ' 1'])('startup refuses unrestricted value %j', async value => {
   process.env.ZLIBRARY_UNRESTRICTED_OUTPUT = value;
@@ -20,6 +25,20 @@ test.each(['true', '', 'yes', '2', ' 1'])('startup refuses unrestricted value %j
 test.each(['relative', ''])('startup refuses a relative root %j', async value => {
   process.env.ZLIBRARY_OUTPUT_ROOT = value;
   expect(() => createServer()).toThrow(/ZLIBRARY_OUTPUT_ROOT/);
+});
+
+test.each(['\\foo', 'D:foo'])('Windows startup refuses partially anchored root %j', value => {
+  Object.defineProperty(process, 'platform', { ...platformDescriptor, value: 'win32' });
+  process.env.ZLIBRARY_OUTPUT_ROOT = value;
+  expect(() => createServer()).toThrow(/ZLIBRARY_OUTPUT_ROOT/);
+});
+
+test.each(['C:\\private', '\\\\server\\share\\private'])('Windows startup accepts fully qualified root %j', async value => {
+  Object.defineProperty(process, 'platform', { ...platformDescriptor, value: 'win32' });
+  expect(path.win32.isAbsolute(value)).toBe(true);
+  process.env.ZLIBRARY_OUTPUT_ROOT = value;
+  const server = createServer();
+  await server.close();
 });
 
 test.each([undefined, '0', '1'])('startup accepts unrestricted value %j', async value => {

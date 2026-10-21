@@ -110,8 +110,9 @@ fails startup. `ZLIBRARY_UNRESTRICTED_OUTPUT` accepts only `1`, `0` or unset;
 `1` lifts containment only and logs a startup warning on stderr. Refusals return
 `output_refused` with `request_issued: false` before provider contact. Checks
 include existing symlinks but do not defend against a local operator racing to
-replace directories. Newly created directory levels are 0700; existing directory
-permissions are preserved. Published artifacts and receipts are 0600.
+replace directories. On POSIX, newly created directory levels are 0700; existing
+directory permissions are preserved. Published artifacts and receipts are 0600.
+On Windows, chmod only toggles the read-only attribute, not access-control permissions.
 
 Quota estimates exist only after an observed daily limit. Each issued fresh
 transfer decrements the process estimate; skipped transfers do not. Estimates

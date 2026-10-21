@@ -155,6 +155,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   npm and pushes the tested digest, with its build provenance, to GHCR.
 - A LibGen article canary in the scheduled upstream check, so column-shifted or
   dropped journal-article rows are reported as drift (#132, PR #308).
+- **Receipts name the mirror and the host that served the bytes** (#101, PR
+  #315). The local `.acq.json` receipt records the source mirror as a lowercase
+  hostname for LibGen, Anna's and Z-Library, and the host that actually served the
+  file: the EAPI host after redirects, and the EAPI domain after link recovery. A
+  reused receipt keeps its original provenance. Nothing new reaches a reply or a
+  log.
 
 ### Fixed
 
@@ -227,9 +233,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   closed on an anti-bot wall the reachability probe did not report (#250, PR #296;
   PR #308).
 - certifi 2026.10.19 for GHSA-6q48-6c7w-9gw2 (PR #310).
+- **A recovering breaker refuses other calls for at most one bridge window**
+  (#302, PR #317). A HALF_OPEN probe's exclusive hold ends after one ordinary
+  bridge window (240 s by default), even while its retries or a long download
+  continue. A refusal during the hold reports the hold's remaining time as
+  `retry_after_s`, never 0. At a lazy Z-Library session handoff, an open breaker
+  now keeps `retry_after_s` and `detail.dependency` (#268), and a call cancelled
+  before it starts is reported as `cancelled`.
+- A wildcard-length Range slice (`Content-Range: bytes N-M/*`) that completes the
+  file is hashed and published when it matches the expected MD5, instead of being
+  discarded when no resume attempt or well-formed 416 is left (#311, PR #318).
+- With a proxy in use, LibGen and Anna's no longer reserve the preflight budget
+  that the proxy skips, so the last mirrors are not refused with
+  `walk_budget_exhausted` when they could still run (#282, PR #320).
+- A schema error that names `limit` says how to fix it (1 to 50, default 10, page
+  with `next_cursor`), followed by the usual hint when other fields also fail
+  (#173, PR #316).
+- The npm package ships `docs/interface-migration.md`, and links from shipped
+  docs to files the package does not ship point to the repository (#252, PR #316).
+- The scheduled live suite reports an all-skipped run as `skipped` with pass and
+  skip counts and a warning, never as `passed` (#226, PR #316).
 
 ### Changed
 
+- CI and the publish workflow pin buildx v0.38.0 and BuildKit v0.33.1 for the
+  attested image build. A re-run of `publish-packages` rebuilds, re-smokes and
+  pushes a fresh tested digest (#303, PR #319).
 - **Source deadlines have a supported minimum of 10 seconds** (#282, PR #312).
   A `PYTHON_BRIDGE_TIMEOUT` or `PYTHON_BRIDGE_LONG_TIMEOUT` below 10000 ms used
   as a source owner now fails configuration before any provider contact. The

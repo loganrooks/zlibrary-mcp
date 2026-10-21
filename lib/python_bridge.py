@@ -1389,9 +1389,24 @@ async def _download_url_to_file(
                         # Close it before requesting the next staged offset;
                         # the normal recovery gate charges each extra request.
                         if status == 206 and expected_total is None:
-                            raise httpx.RemoteProtocolError(
-                                f"range ended at {written} with unknown total"
-                            )
+                            # A fully delivered wildcard slice may already
+                            # complete the file. Only its expected digest can
+                            # establish that without another server response.
+                            # Hashing is completed-body validation for both
+                            # the local deadline and the caller's progress view.
+                            body_complete = True
+                            observe_progress()
+                            digest = _md5_digest()
+                            with open(attempt_path, "rb") as handle:
+                                while chunk := handle.read(65536):
+                                    digest.update(chunk)
+                                    await asyncio.sleep(0)
+                            if digest.hexdigest() != expected_md5:
+                                body_complete = False
+                                observe_progress()
+                                raise httpx.RemoteProtocolError(
+                                    f"range ended at {written} with unknown total"
+                                )
                         if expected_total is not None and written < expected_total:
                             raise httpx.RemoteProtocolError(
                                 f"range ended at {written} of {expected_total} bytes"

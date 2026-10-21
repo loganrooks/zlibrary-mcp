@@ -2,6 +2,8 @@
 
 import os
 import json
+import errno
+import hashlib
 from pathlib import Path, PureWindowsPath
 import stat
 import sys
@@ -316,6 +318,72 @@ async def test_legacy_reuse_preserves_existing_mode(tmp_path, monkeypatch, mode)
         artifact.stat().st_mtime_ns,
         artifact.stat().st_ctime_ns,
     ) == metadata
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "deny_chmod", [False, True], ids=["shared", "foreign-owned-eperm"]
+)
+@pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits")
+async def test_format_corrected_publication_reuse_preserves_mode(
+    tmp_path, monkeypatch, deny_chmod
+):
+    payload = b"PK\x03\x04synthetic epub bytes"
+
+    async def fetch(book, directory):
+        stage = Path(directory) / ".source-fixture.epub"
+        stage.write_bytes(payload)
+        return bridge._DownloadedPath(str(stage), "signature")
+
+    monkeypatch.setattr(bridge, "_fetch_from_source", fetch)
+    book = {
+        **BOOK,
+        "source": "libgen",
+        "md5": hashlib.md5(payload).hexdigest(),
+        "extension": "epub",
+    }
+    provider = AsyncMock(side_effect=bridge.download_book)
+    first = await acquisition.acquire(
+        book, str(tmp_path), filename="book.epub", transfer=provider
+    )
+    artifact = Path(first["path"])
+    artifact.chmod(0o640)
+    metadata = (
+        artifact.stat().st_ino,
+        artifact.stat().st_mtime_ns,
+        artifact.stat().st_ctime_ns,
+    )
+    canonical_receipt = Path(first["record"]).read_bytes()
+    chmod = Path.chmod
+
+    def refuse_artifact_chmod(path, *args, **kwargs):
+        if path == artifact:
+            raise PermissionError(
+                errno.EPERM, "synthetic foreign-owned artifact", str(path)
+            )
+        return chmod(path, *args, **kwargs)
+
+    if deny_chmod:
+        monkeypatch.setattr(Path, "chmod", refuse_artifact_chmod)
+    corrected = await acquisition.acquire(
+        {**book, "extension": "pdf"},
+        str(tmp_path),
+        filename="book.pdf",
+        transfer=provider,
+    )
+    assert corrected["path"] == str(artifact)
+    assert corrected["reused"] is True
+    assert corrected["transfer_skipped"] is False
+    assert provider.await_count == 2
+    assert artifact.read_bytes() == payload
+    assert stat.S_IMODE(artifact.stat().st_mode) == 0o640
+    assert (
+        artifact.stat().st_ino,
+        artifact.stat().st_mtime_ns,
+        artifact.stat().st_ctime_ns,
+    ) == metadata
+    assert Path(first["record"]).read_bytes() == canonical_receipt
+    assert (tmp_path / "book.pdf.acq.json").exists()
 
 
 @pytest.mark.asyncio

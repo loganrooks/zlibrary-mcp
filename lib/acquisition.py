@@ -822,7 +822,8 @@ async def _acquire(
                     issued=True,
                 )
             _mark_published()  # also support transfer callbacks publishing by other means
-            final.chmod(0o600)
+            if not result.get("publication_reused"):
+                final.chmod(0o600)
             if (
                 _hash(final) != record["sha256"]
                 or final.stat().st_size != record["bytes"]

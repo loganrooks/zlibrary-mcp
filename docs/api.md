@@ -112,7 +112,8 @@ fails startup. `ZLIBRARY_UNRESTRICTED_OUTPUT` accepts only `1`, `0` or unset;
 include existing symlinks but do not defend against a local operator racing to
 replace directories. On POSIX, newly created directory levels are 0700; existing
 directory permissions are preserved. New artifacts and receipts are 0600;
-files already present keep their mode on reuse.
+artifacts already present keep their mode on reuse; a receipt the server repairs
+is rewritten as 0600.
 On Windows, chmod only toggles the read-only attribute, not access-control permissions.
 
 Quota estimates exist only after an observed daily limit. Each issued fresh

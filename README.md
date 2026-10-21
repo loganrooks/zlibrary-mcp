@@ -163,7 +163,8 @@ or unset and logs a startup warning when enabled. If the root is unset and
 `./downloads` exists,
 startup reports the new location on stderr. See [download-location migration](docs/interface-migration.md#download-location).
 On POSIX, new directory levels are 0700 without changing existing directories;
-new artifacts and receipts are 0600; files already present keep their mode on reuse.
+new artifacts and receipts are 0600. Artifacts already present keep their mode
+on reuse; a receipt the server repairs is rewritten as 0600.
 On Windows, chmod only toggles the read-only attribute; these modes do not set
 access-control permissions.
 `filename` is a sanitized basename; its extension is forced to the acquired

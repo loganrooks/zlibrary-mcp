@@ -77,13 +77,14 @@ warning on stderr. With an unset root and an existing `./downloads`, startup
 reports the new location on stderr.
 
 On POSIX, new directory levels are 0700; existing directory permissions stay unchanged.
-New artifacts and receipts are 0600; files already present keep their mode on reuse.
+New artifacts and receipts are 0600. Artifacts already present keep their mode
+on reuse; a receipt the server repairs is rewritten as 0600.
 On Windows, chmod only toggles the read-only attribute, not access-control
 permissions. Docker pins the root to `/app/downloads`, preserving the mounted
 download volume without user action.
 On Linux bind mounts, new directories (0700) and files (0600) belong to the
 container user; use Docker `--user` or Compose `user:` to match the host UID/GID,
-or use chmod as the owner to grant host readers access; reuse preserves that mode.
+or use chmod as the owner to grant host readers access; reuse preserves artifact modes.
 Tunnel deployers already setting a root keep that root; relative paths now
 resolve under it even if the wrapper does not change its working directory.
 

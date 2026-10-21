@@ -27,7 +27,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ZLIBRARY_UNRESTRICTED_OUTPUT=1`. Traversal
   components and caller home shorthand are refused before provider contact.
   On POSIX, new directories are 0700; new artifacts and receipts are 0600, while
-  files already present keep their mode on reuse. On Windows,
+  artifacts already present keep their mode on reuse; a receipt the server repairs
+  is rewritten as 0600. On Windows,
   chmod only toggles read-only, not access-control permissions. Docker continues
   using its mounted `/app/downloads`. See [migration](docs/interface-migration.md#download-location).
 - `downloadBookToFile` in `./lib/*` now resolves downloads under the output root.

@@ -47,8 +47,8 @@ this existing behavior instead of imposing new producer validation.
 | `bytes` | integer or null | Null in the initial intent; nonnegative staged size after the checkpoint and in complete records. |
 | `sha256` | string or null | Null in the initial intent; 64 lowercase hexadecimal characters after the checkpoint and in complete records. Used with `bytes` for local verification. |
 | `md5` | JSON value | Catalogue MD5 as supplied, usually a string; null when absent. It is not a claim that the receipt writer verified the file's MD5, and is distinct from normalized source identity. |
-| `reused` | boolean | Initially false. At completion, whether transfer publication adopted identical existing bytes. A transfer occurred and may have spent quota. Retained on later ordinary receipt reuse. |
-| `transfer_skipped` | boolean | Initially false. Can become true when a published intent is recovered without transfer. This persisted value is not the result of every later call. |
+| `reused` | boolean | Initially false. Normally records whether transfer publication adopted identical existing bytes; promotion of an existing verified canonical intent records false even when the current call transferred (see below). Retained on later ordinary receipt reuse. |
+| `transfer_skipped` | boolean | Initially false. Can become true during recovery or promotion of an existing verified canonical intent, even when the current call transferred (see below). This persisted value is not the result of every later call. |
 | `downloaded_at` | string | UTC ISO 8601 timestamp ending in `Z`, set when the original intent is created. Retained at completion, recovery and reuse; not a completion-time measurement. |
 | `source` | string | Normalized source identity, normally `zlibrary`, `libgen` or `annas`; `annas_archive` becomes `annas`. Separate from the transport route. |
 | `provenance` | object | Route/mirror/host evidence, described below. Initialized before transfer; supplied transfer provenance replaces it on fresh completion. |
@@ -65,6 +65,11 @@ this existing behavior instead of imposing new producer validation.
 | `format` | JSON value initially; string or null after checkpoint | Catalogue `extension`, or null if absent/falsy, in the initial intent. The checkpoint replaces it with the normalized canonical filename suffix, or null if unrecognized. |
 | `identifiers` | object | Source-specific identity used for acquisition/reuse, described below. |
 | `request` | object | Original caller context, described below. Missing context values are null. |
+
+When the publication checkpoint promotes an existing verified canonical intent,
+it records `transfer_skipped: true, reused: false`, even when the current call
+transferred and may have spent quota. These two persisted fields must not be
+used to count quota spend.
 
 ### Provenance
 

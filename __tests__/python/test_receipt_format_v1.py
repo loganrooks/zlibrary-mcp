@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import AsyncMock
 
@@ -25,6 +26,174 @@ def validator():
     schema = json.loads(SCHEMA.read_text())
     Draft202012Validator.check_schema(schema)
     return Draft202012Validator(schema, format_checker=FormatChecker())
+
+
+@pytest.fixture
+def initial_record(tmp_path):
+    return {
+        "record_version": 1,
+        "state": "intent",
+        "path": str(tmp_path / "edition.pdf"),
+        "bytes": None,
+        "sha256": None,
+        "md5": None,
+        "reused": False,
+        "transfer_skipped": False,
+        "downloaded_at": "2026-10-22T05:00:00Z",
+        "source": "zlibrary",
+        "provenance": {"route": "zlibrary", "mirror": None, "host": None},
+        "title": "Edition",
+        "author": None,
+        "year": None,
+        "language": None,
+        "publisher": None,
+        "pages": None,
+        "isbn": None,
+        "series": None,
+        "edition": None,
+        "translator": None,
+        "format": "pdf",
+        "identifiers": {"id": "42", "hash": "catalog-hash"},
+        "request": {"ref": None, "query": None, "item_id": None, "why_chosen": None},
+    }
+
+
+@pytest.mark.parametrize(
+    "timestamp, valid",
+    [
+        ("2026-10-22T05:00:00Z", True),
+        ("2026-10-22T05:00:00.123456Z", True),
+        ("2026-10-22T05:00:00+00:00", False),
+        ("2026-10-22T05:00:00", False),
+        ("yesterday", False),
+        ("yesterdayZ", False),
+        ("2026-10-22T05:00:00Z\n", False),
+    ],
+)
+def test_downloaded_at_requires_utc_z_timestamp(
+    validator, initial_record, timestamp, valid
+):
+    assert validator.is_valid({**initial_record, "downloaded_at": timestamp}) is valid
+
+
+@pytest.mark.parametrize(
+    "path, valid",
+    [
+        ("/library/edition.pdf", True),
+        (r"C:\library\edition.pdf", True),
+        ("C:/library/edition.pdf", True),
+        (r"\\server\share\edition.pdf", True),
+        ("x.pdf", False),
+        ("library/x.pdf", False),
+        (r"C:x.pdf", False),
+        (r"\library\x.pdf", False),
+    ],
+)
+def test_path_requires_absolute_server_path(validator, initial_record, path, valid):
+    assert validator.is_valid({**initial_record, "path": path}) is valid
+
+
+@pytest.mark.parametrize("state", ["intent", "complete"])
+@pytest.mark.parametrize(
+    "digest, valid",
+    [
+        ("a" * 64, True),
+        ("0123456789abcdef" * 4, True),
+        ("A" * 64, False),
+        ("g" * 64, False),
+        ("a" * 63, False),
+        ("a" * 65, False),
+        ("a" * 64 + "\n", False),
+    ],
+)
+def test_sha256_requires_exact_lowercase_hex(
+    validator, initial_record, state, digest, valid
+):
+    record = {**initial_record, "state": state, "bytes": 1, "sha256": digest}
+    assert validator.is_valid(record) is valid
+
+
+@pytest.mark.parametrize(
+    "size, digest, valid",
+    [
+        (None, None, True),
+        (0, "a" * 64, True),
+        (1, None, False),
+        (None, "a" * 64, False),
+    ],
+)
+def test_intent_bytes_and_sha256_are_paired(
+    validator, initial_record, size, digest, valid
+):
+    assert (
+        validator.is_valid({**initial_record, "bytes": size, "sha256": digest}) is valid
+    )
+
+
+@pytest.mark.parametrize("state", ["intent", "complete"])
+@pytest.mark.parametrize(
+    "format_value, valid",
+    [("pdf", True), (None, True), (5, False), ({"unexpected": True}, False)],
+)
+def test_post_checkpoint_format_is_string_or_null(
+    validator, initial_record, state, format_value, valid
+):
+    record = {
+        **initial_record,
+        "state": state,
+        "bytes": 1,
+        "sha256": "a" * 64,
+        "format": format_value,
+    }
+    assert validator.is_valid(record) is valid
+
+
+@pytest.mark.parametrize("format_value", ["pdf", None, 5, {"catalogue": True}, ["pdf"]])
+def test_initial_format_accepts_catalogue_json(validator, initial_record, format_value):
+    validator.validate({**initial_record, "format": format_value})
+
+
+def test_complete_requires_format_key(validator, initial_record):
+    record = {**initial_record, "state": "complete", "bytes": 1, "sha256": "a" * 64}
+    validator.validate(record)
+    del record["format"]
+    assert not validator.is_valid(record)
+
+
+@pytest.mark.parametrize(
+    "source, identifiers, valid",
+    [
+        ("zlibrary", {"id": "42", "hash": "catalog-hash"}, True),
+        ("zlibrary", {"id": "42", "md5": "a" * 32}, False),
+        ("zlibrary", {"hash": "catalog-hash"}, False),
+        ("libgen", {"md5": "a" * 32}, True),
+        ("libgen", {"id": "42", "hash": "catalog-hash"}, False),
+        ("annas", {"md5": "a" * 32}, True),
+        ("annas", {"id": "42", "hash": "catalog-hash"}, False),
+    ],
+)
+def test_identifiers_follow_source_rule(
+    validator, initial_record, source, identifiers, valid
+):
+    assert (
+        validator.is_valid(
+            {**initial_record, "source": source, "identifiers": identifiers}
+        )
+        is valid
+    )
+
+
+@pytest.mark.parametrize("key", ["record_version", "title"])
+def test_required_keys_cannot_be_omitted(validator, initial_record, key):
+    validator.validate(initial_record)
+    del initial_record[key]
+    assert not validator.is_valid(initial_record)
+
+
+@pytest.mark.parametrize("key", ["request", "provenance", "identifiers"])
+def test_unknown_nested_keys_are_accepted(validator, initial_record, key):
+    initial_record[key]["future"] = {"ignored": True}
+    validator.validate(initial_record)
 
 
 @pytest.mark.parametrize("source", ["zlibrary", "libgen", "annas_archive"])
@@ -53,6 +222,11 @@ async def test_real_intent_checkpoint_complete_and_reuse_validate(
     def read_valid(path):
         record = json.loads(path.read_text())
         validator.validate(record)
+        assert record["downloaded_at"].endswith("Z")
+        timestamp = datetime.fromisoformat(
+            record["downloaded_at"].replace("Z", "+00:00")
+        )
+        assert timestamp.tzinfo == timezone.utc
         # Keep the contract's field inventory synchronized with the real writer.
         assert set(record) <= set(validator.schema["properties"])
         observed.append(record)

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/rookslog/zlibrary-mcp/blob/master/docs/schemas/acq-record-v1.schema.json",
+  "$id": "https://raw.githubusercontent.com/rookslog/zlibrary-mcp/master/docs/schemas/acq-record-v1.schema.json",
   "title": "Acquisition receipt v1",
   "description": "Persisted acquisition records, including initial/hashed intents and complete records. Validate files separately before use.",
   "type": "object",
@@ -44,7 +44,8 @@
     "path": {
       "type": "string",
       "minLength": 1,
-      "description": "Absolute server-side canonical artifact path, even in an alias receipt."
+      "description": "Absolute server-side canonical artifact path, even in an alias receipt.",
+      "pattern": "^(?:/|[A-Za-z]:[\\\\/]|\\\\\\\\[^\\\\/]+[\\\\/][^\\\\/]+(?:[\\\\/]|$))"
     },
     "bytes": {
       "type": [
@@ -58,7 +59,9 @@
         "string",
         "null"
       ],
-      "pattern": "^[0-9a-f]{64}$"
+      "pattern": "^[0-9a-f]{64}$",
+      "minLength": 64,
+      "maxLength": 64
     },
     "md5": {
       "$ref": "#/$defs/jsonValue",
@@ -73,7 +76,8 @@
     "downloaded_at": {
       "type": "string",
       "format": "date-time",
-      "description": "UTC time the original intent was created; retained during completion/recovery/reuse."
+      "description": "UTC time the original intent was created; retained during completion/recovery/reuse.",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]+)?Z(?![\\s\\S])"
     },
     "source": {
       "type": "string",
@@ -214,7 +218,15 @@
             },
             "sha256": {
               "type": "string",
-              "pattern": "^[0-9a-f]{64}$"
+              "pattern": "^[0-9a-f]{64}$",
+              "minLength": 64,
+              "maxLength": 64
+            },
+            "format": {
+              "type": [
+                "string",
+                "null"
+              ]
             }
           }
         }
@@ -236,7 +248,9 @@
           },
           "sha256": {
             "type": "string",
-            "pattern": "^[0-9a-f]{64}$"
+            "pattern": "^[0-9a-f]{64}$",
+            "minLength": 64,
+            "maxLength": 64
           },
           "format": {
             "type": [

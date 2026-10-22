@@ -141,6 +141,8 @@ def test_short_source_owner_names_configuration_and_retry_document(
     assert name in str(error.value)
     assert "docs/RETRY_CONFIGURATION.md" in str(error.value)
     assert error.value.to_dict()["reason"] == "configuration_error"
+    assert error.value.to_dict()["request_issued"] is False
+    assert error.value.to_dict()["variable"] == name
 
 
 @pytest.mark.parametrize(

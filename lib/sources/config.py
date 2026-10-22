@@ -292,7 +292,8 @@ def get_source_config(*, for_download: bool = False) -> SourceConfig:
         name = "PYTHON_BRIDGE_LONG_TIMEOUT" if for_download else "PYTHON_BRIDGE_TIMEOUT"
         raise SourceConfigurationError(
             f"Source deadline configuration error: {name} must be at least 10000 ms "
-            "for source walks; see docs/RETRY_CONFIGURATION.md"
+            "for source walks; see docs/RETRY_CONFIGURATION.md",
+            variable=name,
         )
     overhead = min(WALK_OVERHEAD_ALLOWANCE, owner / 8.0)
     available = owner - overhead - WALK_BUDGET_SAFETY_MARGIN
@@ -300,7 +301,8 @@ def get_source_config(*, for_download: bool = False) -> SourceConfig:
         name = "PYTHON_BRIDGE_LONG_TIMEOUT" if for_download else "PYTHON_BRIDGE_TIMEOUT"
         raise SourceConfigurationError(
             f"Source deadline configuration error: {name} leaves no time for a source "
-            "walk after overhead; see docs/RETRY_CONFIGURATION.md"
+            "walk after overhead; see docs/RETRY_CONFIGURATION.md",
+            variable=name,
         )
     download_timeout = _positive_float(
         "BOOK_SOURCE_DOWNLOAD_TIMEOUT", DEFAULT_DOWNLOAD_TIMEOUT

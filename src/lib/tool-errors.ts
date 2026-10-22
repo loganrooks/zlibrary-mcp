@@ -185,6 +185,13 @@ export function classifyFailure(error: any, operation: string, source?: string):
     detail.request_issued === true;
   const sourceConfiguration =
     reason === 'configuration_error' && context.pythonErrorType === 'SourceConfigurationError';
+  const deadlineVariable = ['PYTHON_BRIDGE_TIMEOUT', 'PYTHON_BRIDGE_LONG_TIMEOUT'].includes(
+    detail.variable,
+  )
+    ? detail.variable
+    : operation === 'download'
+      ? 'PYTHON_BRIDGE_LONG_TIMEOUT'
+      : 'PYTHON_BRIDGE_TIMEOUT';
   let code: ErrorCode = 'internal';
   if (reason === 'aborted') code = 'cancelled';
   else if (reason === 'auth_backoff') code = 'breaker_open';
@@ -268,8 +275,7 @@ export function classifyFailure(error: any, operation: string, source?: string):
       retry,
       ...(sourceConfiguration
         ? {
-            recovery:
-              'Configure the source owning PYTHON_BRIDGE_TIMEOUT or PYTHON_BRIDGE_LONG_TIMEOUT to at least 10000 ms; see docs/RETRY_CONFIGURATION.md.',
+            recovery: `Configure ${deadlineVariable} to at least 10000 ms; see docs/RETRY_CONFIGURATION.md.`,
           }
         : {}),
       ...(issuedBudget
